@@ -9,6 +9,7 @@
 #include "command_registry.h"
 #include "llm/base/auth_config.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -359,7 +360,12 @@ void ScrambleHaikuClient::poll()
     }
 
     if (feof(activePipe)) {
+        fprintf(stderr, "[scramble] poll: EOF detected, calling pclose...\n");
+        auto t0 = std::chrono::steady_clock::now();
         int exitCode = pclose(activePipe);
+        auto t1 = std::chrono::steady_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+        fprintf(stderr, "[scramble] poll: pclose took %lldms exit=%d\n", (long long)ms, exitCode);
         activePipe = nullptr;
 
         std::string result;

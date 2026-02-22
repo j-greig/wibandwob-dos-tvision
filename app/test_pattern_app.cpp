@@ -1492,7 +1492,9 @@ void TTestPatternApp::handleEvent(TEvent& event)
 
             case cmScrambleReply:
             {
+                fprintf(stderr, "[scramble-event] cmScrambleReply received in handleEvent\n");
                 deliverScrambleReply();
+                fprintf(stderr, "[scramble-event] cmScrambleReply handled\n");
                 clearEvent(event);
                 break;
             }
@@ -1606,17 +1608,24 @@ void TTestPatternApp::newBrowserWindow(const TRect& bounds)
 
 void TTestPatternApp::deliverScrambleReply()
 {
+    fprintf(stderr, "[scramble-deliver] start, reply_len=%zu window=%p\n",
+            pendingScrambleReply.size(), (void*)scrambleWindow);
     if (pendingScrambleReply.empty() || !scrambleWindow) return;
     std::string reply = std::move(pendingScrambleReply);
     pendingScrambleReply.clear();
 
     if (scrambleWindow->getView()) {
+        fprintf(stderr, "[scramble-deliver] calling say()...\n");
         scrambleWindow->getView()->setPose(spCurious);
         scrambleWindow->getView()->say(reply);
+        fprintf(stderr, "[scramble-deliver] say() done\n");
     }
     if (scrambleWindow->getMessageView()) {
+        fprintf(stderr, "[scramble-deliver] calling addMessage()...\n");
         scrambleWindow->getMessageView()->addMessage("scramble", reply);
+        fprintf(stderr, "[scramble-deliver] addMessage() done\n");
     }
+    fprintf(stderr, "[scramble-deliver] complete\n");
 }
 
 void TTestPatternApp::wireScrambleInput()
@@ -1699,13 +1708,14 @@ void TTestPatternApp::wireScrambleInput()
         bool isAsync = scrambleEngine.askAsync(input, syncResult,
             [this](const std::string& response) {
                 // Callback fires from poll() inside idle() — do NOT drawView() here.
-                // Queue the response and post a TV event for safe delivery.
+                fprintf(stderr, "[scramble-cb] callback fired, response_len=%zu\n", response.size());
                 pendingScrambleReply = response.empty() ? "... (=^..^=)" : response;
                 TEvent event;
                 event.what = evCommand;
                 event.message.command = cmScrambleReply;
                 event.message.infoPtr = nullptr;
                 putEvent(event);
+                fprintf(stderr, "[scramble-cb] putEvent done\n");
             });
 
         if (!isAsync) {
@@ -2556,6 +2566,9 @@ TRect TTestPatternApp::calculateWindowBounds(const std::string& filePath)
 void TTestPatternApp::idle()
 {
     TApplication::idle();
+    static int idleCount = 0;
+    if (++idleCount % 5000 == 0)
+        fprintf(stderr, "[idle] tick %d\n", idleCount);
     // Poll IPC server for incoming API commands
     if (ipcServer) ipcServer->poll();
     // Poll Scramble async LLM calls (non-blocking)
