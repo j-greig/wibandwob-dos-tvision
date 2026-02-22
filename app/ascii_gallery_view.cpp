@@ -228,7 +228,8 @@ void TGalleryFileList::handleEvent(TEvent& event)
     TView::handleEvent(event);
 
     if (event.what == evMouseDown) {
-        int clickY = event.mouse.where.y - origin.y;
+        TPoint local = makeLocal(event.mouse.where);
+        int clickY = local.y;
         int idx = scrollOffset + clickY;
         if (idx >= 0 && idx < (int)files.size()) {
             focused = idx;
