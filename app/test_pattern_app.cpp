@@ -100,6 +100,7 @@
 #include "tvterm_view.h"
 // App launcher (E011)
 #include "app_launcher_view.h"
+#include "ascii_gallery_view.h"
 // Factory for ASCII grid demo window (implemented in ascii_grid_view.cpp).
 class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 // #include "mech_window.h" // deferred feature; header not present yet
@@ -236,6 +237,7 @@ const ushort cmDeepSignalTerminal = 220;
 const ushort cmOpenTerminal = 214;
 const ushort cmAppLauncher = 232;    // Applications folder browser
 const ushort cmScrambleReply = 233;  // Async Scramble LLM response ready
+const ushort cmAsciiGallery = 234;   // ASCII Art Gallery browser
 
 // Glitch menu commands
 const ushort cmToggleGlitchMode = 140;
@@ -967,7 +969,12 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 clearEvent(event);
                 break;
             case cmOpenAnimation:
-                openAnimationFile();
+                if (event.message.infoPtr) {
+                    // Called from gallery with a specific file path
+                    openAnimationFilePath((const char*)event.message.infoPtr);
+                } else {
+                    openAnimationFile();
+                }
                 clearEvent(event);
                 break;
             case cmOpenTransparentText:
@@ -1187,6 +1194,19 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 if (y < 0) y = 0;
                 TRect r(x, y, x + ww, y + hh);
                 TWindow* w = createAppLauncherWindow(r);
+                deskTop->insert(w);
+                registerWindow(w);
+                clearEvent(event);
+                break;
+            }
+            case cmAsciiGallery: {
+                TRect desk = deskTop->getExtent();
+                int ww = std::min(80, desk.b.x - 4);
+                int hh = std::min(30, desk.b.y - 4);
+                int x = (desk.b.x - ww) / 2;
+                int y = (desk.b.y - hh) / 2;
+                TRect r(x, y, x + ww, y + hh);
+                TWindow* w = createAsciiGalleryWindow(r);
                 deskTop->insert(w);
                 registerWindow(w);
                 clearEvent(event);
@@ -2368,6 +2388,7 @@ TMenuBar* TTestPatternApp::initMenuBar(TRect r)
             *new TMenuItem("Monster Cam (Emo~j~i)", cmMonsterCam, kbNoKey) +
             newLine() +
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
+            *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
             newLine() +
             (TMenuItem&)(
                 *new TSubMenu("~G~ames", kbNoKey) +
