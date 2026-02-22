@@ -248,9 +248,11 @@ void TGalleryFileList::handleEvent(TEvent& event)
         switch (event.keyDown.keyCode) {
             case kbUp:
                 if (focused > 0) focused--;
+                else if (!files.empty()) focused = (int)files.size() - 1;
                 break;
             case kbDown:
                 if (focused < (int)files.size() - 1) focused++;
+                else if (!files.empty()) focused = 0;
                 break;
             case kbPgUp:
                 focused = std::max(0, focused - size.y);
