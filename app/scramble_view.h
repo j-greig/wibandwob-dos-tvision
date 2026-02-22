@@ -70,6 +70,7 @@ public:
     void setPose(ScramblePose pose);
     void toggleVisible();
     void setEngine(ScrambleEngine* engine) { scrambleEngine = engine; }
+    void setBubbleEnabled(bool enabled) { bubbleEnabled = enabled; if (!enabled) { bubbleVisible = false; drawView(); } }
     ScramblePose getPose() const { return currentPose; }
 
 private:
@@ -80,6 +81,7 @@ private:
     // Speech bubble state
     std::string bubbleText;
     bool bubbleVisible;
+    bool bubbleEnabled = true;  // false in tall mode (message view handles display)
     int bubbleFadeTicks;      // countdown ticks until bubble fades
     static const int kBubbleFadeMs = 5000;  // 5 sec bubble display
 

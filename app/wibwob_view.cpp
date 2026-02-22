@@ -198,11 +198,13 @@ void TWibWobMessageView::cancelStreamingMessage() {
 void TWibWobMessageView::rebuildWrappedLines() {
     wrappedLines.clear();
 
+    std::string prevSender;
     for (const auto& msg : messages) {
-        // Add blank line before User messages for visual clarity
-        if (msg.sender == "User" && !wrappedLines.empty()) {
+        // Add blank line between messages from different senders
+        if (!wrappedLines.empty() && !prevSender.empty() && msg.sender != prevSender) {
             wrappedLines.push_back({"", "", false});
         }
+        prevSender = msg.sender;
         std::string displayText = msg.sender.empty() ? msg.content : (msg.sender + ": " + msg.content);
         auto wrapped = wrapText(displayText, size.x > 0 ? size.x : 80);
         for (const auto& line : wrapped) {

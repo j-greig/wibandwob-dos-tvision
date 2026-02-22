@@ -235,6 +235,7 @@ const ushort cmDeepSignal = 219;
 const ushort cmDeepSignalTerminal = 220;
 const ushort cmOpenTerminal = 214;
 const ushort cmAppLauncher = 232;    // Applications folder browser
+const ushort cmScrambleReply = 233;  // Async Scramble LLM response ready
 
 // Glitch menu commands
 const ushort cmToggleGlitchMode = 140;
@@ -714,10 +715,12 @@ private:
     // Scramble cat overlay
     TScrambleWindow* scrambleWindow;
     ScrambleEngine scrambleEngine;
+    std::string pendingScrambleReply;  // Queued async response for event-loop delivery
     ScrambleDisplayState scrambleState;
     void toggleScramble();
     void toggleScrambleExpand();
     void wireScrambleInput();
+    void deliverScrambleReply();
 
     // Runtime API key (shared across all chat windows)
     static std::string runtimeApiKey;
@@ -1487,6 +1490,13 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 break;
             }
 
+            case cmScrambleReply:
+            {
+                deliverScrambleReply();
+                clearEvent(event);
+                break;
+            }
+
             // REMOVED E009: entire Glitch Effects submenu handlers
             // (cmToggleGlitchMode, cmGlitchScatter, cmGlitchColorBleed,
             //  cmGlitchRadialDistort, cmGlitchDiagonalScatter,
@@ -1594,6 +1604,21 @@ void TTestPatternApp::newBrowserWindow(const TRect& bounds)
         browser->fetchUrl("https://symbient.life");
 }
 
+void TTestPatternApp::deliverScrambleReply()
+{
+    if (pendingScrambleReply.empty() || !scrambleWindow) return;
+    std::string reply = std::move(pendingScrambleReply);
+    pendingScrambleReply.clear();
+
+    if (scrambleWindow->getView()) {
+        scrambleWindow->getView()->setPose(spCurious);
+        scrambleWindow->getView()->say(reply);
+    }
+    if (scrambleWindow->getMessageView()) {
+        scrambleWindow->getMessageView()->addMessage("scramble", reply);
+    }
+}
+
 void TTestPatternApp::wireScrambleInput()
 {
     if (!scrambleWindow || !scrambleWindow->getInputView()) return;
@@ -1673,31 +1698,23 @@ void TTestPatternApp::wireScrambleInput()
         std::string syncResult;
         bool isAsync = scrambleEngine.askAsync(input, syncResult,
             [this](const std::string& response) {
-                // Callback fires from poll() on the main thread — safe to touch views.
-                if (!scrambleWindow) return;
-                std::string r = response.empty() ? "... (=^..^=)" : response;
-                if (scrambleWindow->getView()) {
-                    scrambleWindow->getView()->setPose(spCurious);
-                    scrambleWindow->getView()->say(r);
-                }
-                if (scrambleWindow->getMessageView()) {
-                    scrambleWindow->getMessageView()->addMessage("scramble", r);
-                }
+                // Callback fires from poll() inside idle() — do NOT drawView() here.
+                // Queue the response and post a TV event for safe delivery.
+                pendingScrambleReply = response.empty() ? "... (=^..^=)" : response;
+                TEvent event;
+                event.what = evCommand;
+                event.message.command = cmScrambleReply;
+                event.message.infoPtr = nullptr;
+                putEvent(event);
             });
 
         if (!isAsync) {
-            // Slash command or fallback — show synchronous result now
-            std::string r = syncResult.empty() ? "... (=^..^=)" : syncResult;
-            if (scrambleWindow->getView()) {
-                scrambleWindow->getView()->setPose(spCurious);
-                scrambleWindow->getView()->say(r);
-            }
-            if (scrambleWindow->getMessageView()) {
-                scrambleWindow->getMessageView()->addMessage("scramble", r);
-            }
+            // Slash command or fallback — deliver immediately (not from idle)
+            pendingScrambleReply = syncResult.empty() ? "... (=^..^=)" : syncResult;
+            deliverScrambleReply();
         } else {
             // Show "thinking" state while async runs
-            if (scrambleWindow->getView()) {
+            if (scrambleWindow && scrambleWindow->getView()) {
                 scrambleWindow->getView()->setPose(spCurious);
                 scrambleWindow->getView()->say("... *thinking* /ᐠ｡ꞈ｡ᐟ\\");
             }
@@ -2639,32 +2656,27 @@ std::string api_scramble_say(TTestPatternApp& app, const std::string& text) {
     auto* msgView = app.scrambleWindow->getMessageView();
     if (msgView) msgView->addMessage("you", text);
 
-    // Use async path — response arrives via poll() callback
+    // Use async path — response arrives via cmScrambleReply event
     std::string syncResult;
     bool isAsync = app.scrambleEngine.askAsync(text, syncResult,
         [&app](const std::string& response) {
-            if (!app.scrambleWindow) return;
-            std::string r = response.empty() ? "... (=^..^=)" : response;
-            if (app.scrambleWindow->getView()) {
-                app.scrambleWindow->getView()->setPose(spCurious);
-                app.scrambleWindow->getView()->say(r);
-            }
-            if (app.scrambleWindow->getMessageView())
-                app.scrambleWindow->getMessageView()->addMessage("scramble", r);
+            // Queue for event-loop delivery (never drawView from idle)
+            app.pendingScrambleReply = response.empty() ? "... (=^..^=)" : response;
+            TEvent event;
+            event.what = evCommand;
+            event.message.command = cmScrambleReply;
+            event.message.infoPtr = nullptr;
+            app.putEvent(event);
         });
 
     if (!isAsync) {
-        // Slash command or fallback
-        std::string r = syncResult.empty() ? "... (=^..^=)" : syncResult;
-        if (app.scrambleWindow->getView()) {
-            app.scrambleWindow->getView()->setPose(spCurious);
-            app.scrambleWindow->getView()->say(r);
-        }
-        if (msgView) msgView->addMessage("scramble", r);
-        return r;
+        // Slash command or fallback — deliver immediately
+        app.pendingScrambleReply = syncResult.empty() ? "... (=^..^=)" : syncResult;
+        app.deliverScrambleReply();
+        return app.pendingScrambleReply.empty() ? syncResult : syncResult;
     }
 
-    return "*thinking* /ᐠ｡ꞈ｡ᐟ\\";  // Async started — response will arrive via poll
+    return "*thinking* /ᐠ｡ꞈ｡ᐟ\\";  // Async started — response will arrive via event
 }
 std::string api_scramble_pet(TTestPatternApp& app) {
     if (!app.scrambleWindow) return "err scramble not open";

@@ -529,7 +529,6 @@ bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
     }
 
     fprintf(stderr, "[scramble] askAsync: starting non-blocking haiku call\n");
-    haikuClient.markCalled();
 
     // Wrap callback with voice filter
     auto filteredCallback = [this, callback](const std::string& raw) {
@@ -542,7 +541,11 @@ bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
         if (callback) callback(result);
     };
 
-    return haikuClient.startAsync(input, filteredCallback);
+    bool started = haikuClient.startAsync(input, filteredCallback);
+    if (started) {
+        haikuClient.markCalled();  // Only consume rate-limit window on success
+    }
+    return started;
 }
 
 void ScrambleEngine::poll()

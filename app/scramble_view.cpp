@@ -121,8 +121,10 @@ void TScrambleView::resetIdleTimer()
 void TScrambleView::say(const std::string& text)
 {
     bubbleText = text;
-    bubbleVisible = true;
-    bubbleFadeTicks = kBubbleFadeMs / kTimerPeriodMs; // convert ms to ticks
+    if (bubbleEnabled) {
+        bubbleVisible = true;
+        bubbleFadeTicks = kBubbleFadeMs / kTimerPeriodMs; // convert ms to ticks
+    }
     drawView();
 }
 
@@ -708,7 +710,8 @@ void TScrambleWindow::layoutChildren()
     int h = interior.b.y - interior.a.y;
 
     if (displayState == sdsSmol) {
-        // Smol: cat view fills everything, message + input hidden
+        // Smol: cat view fills everything, message + input hidden, bubble enabled
+        if (scrambleView) scrambleView->setBubbleEnabled(true);
         if (messageView) messageView->hide();
         if (inputView) inputView->hide();
         if (scrambleView) {
@@ -716,7 +719,9 @@ void TScrambleWindow::layoutChildren()
             scrambleView->show();
         }
     } else if (displayState == sdsTall) {
-        // Tall layout:
+        // Tall layout: bubble disabled (message view handles text display)
+        if (scrambleView) scrambleView->setBubbleEnabled(false);
+        // Layout:
         //   [message view]  top to (bottom - catViewHeight - inputHeight)
         //   [input view]    2 rows above cat
         //   [cat view]      bottom kCatViewHeight rows
