@@ -5,6 +5,7 @@
 /*---------------------------------------------------------*/
 
 #include "wibwob_scroll_test.h"
+#include "text_wrap.h"
 
 #define Uses_TKeys
 #define Uses_TDrawBuffer
@@ -132,52 +133,6 @@ void TWibWobTestViewA::loadTestContent() {
 
 int TWibWobTestViewA::getMessageAreaHeight() const {
     return size.y;
-}
-
-std::vector<std::string> TWibWobTestViewA::wrapText(const std::string& text, int width) const {
-    std::vector<std::string> lines;
-    if (width <= 0) {
-        lines.emplace_back("");
-        return lines;
-    }
-
-    size_t lineStart = 0;
-    const size_t length = text.size();
-
-    while (lineStart <= length) {
-        size_t newlinePos = text.find('\n', lineStart);
-        std::string segment;
-        if (newlinePos == std::string::npos) {
-            segment = text.substr(lineStart);
-        } else {
-            segment = text.substr(lineStart, newlinePos - lineStart);
-        }
-
-        if (!segment.empty() && segment.back() == '\r') {
-            segment.pop_back();
-        }
-
-        if (segment.empty()) {
-            lines.emplace_back("");
-        } else {
-            size_t pos = 0;
-            while (pos < segment.size()) {
-                size_t slice = std::min(segment.size() - pos, static_cast<size_t>(width));
-                lines.push_back(segment.substr(pos, slice));
-                pos += slice;
-            }
-        }
-
-        if (newlinePos == std::string::npos) break;
-        lineStart = newlinePos + 1;
-        if (lineStart == length) {
-            lines.emplace_back("");
-            break;
-        }
-    }
-
-    if (lines.empty()) lines.emplace_back("");
-    return lines;
 }
 
 int TWibWobTestViewA::calculateTotalLines() const {
@@ -349,52 +304,6 @@ TWibWobTestViewB::TWibWobTestViewB(const TRect& bounds, TScrollBar* hScroll, TSc
 void TWibWobTestViewB::loadTestContent() {
     messages = getTestChatContent();
     rebuildWrappedLines();
-}
-
-std::vector<std::string> TWibWobTestViewB::wrapText(const std::string& text, int width) const {
-    std::vector<std::string> lines;
-    if (width <= 0) {
-        lines.emplace_back("");
-        return lines;
-    }
-
-    size_t lineStart = 0;
-    const size_t length = text.size();
-
-    while (lineStart <= length) {
-        size_t newlinePos = text.find('\n', lineStart);
-        std::string segment;
-        if (newlinePos == std::string::npos) {
-            segment = text.substr(lineStart);
-        } else {
-            segment = text.substr(lineStart, newlinePos - lineStart);
-        }
-
-        if (!segment.empty() && segment.back() == '\r') {
-            segment.pop_back();
-        }
-
-        if (segment.empty()) {
-            lines.emplace_back("");
-        } else {
-            size_t pos = 0;
-            while (pos < segment.size()) {
-                size_t slice = std::min(segment.size() - pos, static_cast<size_t>(width));
-                lines.push_back(segment.substr(pos, slice));
-                pos += slice;
-            }
-        }
-
-        if (newlinePos == std::string::npos) break;
-        lineStart = newlinePos + 1;
-        if (lineStart == length) {
-            lines.emplace_back("");
-            break;
-        }
-    }
-
-    if (lines.empty()) lines.emplace_back("");
-    return lines;
 }
 
 void TWibWobTestViewB::rebuildWrappedLines() {

@@ -54,6 +54,7 @@ add_executable(test_pattern
     # DISABLED: generative_ascii_cam_view.cpp
     text_editor_view.cpp
     browser_view.cpp
+    text_wrap.cpp
     transparent_text_view.cpp
     ansi_view.cpp
     wibwob_scroll_test.cpp

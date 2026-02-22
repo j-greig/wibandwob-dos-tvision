@@ -6,6 +6,7 @@
 /*---------------------------------------------------------*/
 
 #include "transparent_text_view.h"
+#include "text_wrap.h"
 #include <algorithm>
 
 /*---------------------------------------------------------*/
@@ -54,48 +55,7 @@ void TTransparentTextView::loadFile(const std::string& path)
 /* Word wrapping — same algorithm as TWibWobMessageView  */
 /*---------------------------------------------------------*/
 
-std::vector<std::string> TTransparentTextView::wrapText(const std::string& text, int width)
-{
-    std::vector<std::string> lines;
-    if (width <= 0) {
-        lines.emplace_back("");
-        return lines;
-    }
-
-    if (text.empty()) {
-        lines.emplace_back("");
-        return lines;
-    }
-
-    size_t pos = 0;
-    while (pos < text.size()) {
-        size_t remaining = text.size() - pos;
-        size_t slice = remaining > static_cast<size_t>(width)
-                       ? static_cast<size_t>(width) : remaining;
-        bool trimmedSpace = false;
-
-        if (remaining > static_cast<size_t>(width)) {
-            size_t breakPos = text.find_last_of(" \t", pos + width - 1);
-            if (breakPos != std::string::npos && breakPos >= pos) {
-                size_t candidate = breakPos - pos;
-                if (candidate > 0) {
-                    slice = candidate;
-                    trimmedSpace = true;
-                }
-            }
-        }
-
-        lines.push_back(text.substr(pos, slice));
-        pos += slice;
-
-        if (trimmedSpace) {
-            while (pos < text.size() && text[pos] == ' ')
-                ++pos;
-        }
-    }
-
-    return lines;
-}
+// Word wrapping now uses shared wrapText() from text_wrap.h
 
 void TTransparentTextView::rebuildDisplayLines()
 {

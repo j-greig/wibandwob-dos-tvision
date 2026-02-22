@@ -59,7 +59,6 @@ private:
     int scrollOffset = 0;
 
     int getMessageAreaHeight() const;
-    std::vector<std::string> wrapText(const std::string& text, int width) const;
     int calculateTotalLines() const;
 };
 
@@ -104,7 +103,6 @@ private:
     int maxLineWidth = 0;
 
     void rebuildWrappedLines();
-    std::vector<std::string> wrapText(const std::string& text, int width) const;
 };
 
 class TWibWobTestWindowB : public TWindow {

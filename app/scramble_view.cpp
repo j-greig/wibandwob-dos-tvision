@@ -8,6 +8,7 @@
 
 #include "scramble_view.h"
 #include "scramble_engine.h"
+#include "text_wrap.h"
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
@@ -414,42 +415,7 @@ void TScrambleView::handleEvent(TEvent& event)
 /*  TScrambleMessageView - minimal message history         */
 /*=========================================================*/
 
-static std::vector<std::string> simpleWordWrap(const std::string& text, int width)
-{
-    std::vector<std::string> lines;
-    if (text.empty() || width <= 0) return lines;
-
-    std::string current;
-    std::string word;
-
-    for (size_t i = 0; i <= text.size(); ++i) {
-        char ch = (i < text.size()) ? text[i] : ' ';
-        if (ch == ' ' || ch == '\n' || i == text.size()) {
-            if (!word.empty()) {
-                if (current.empty()) {
-                    current = word;
-                } else if (static_cast<int>(current.size() + 1 + word.size()) <= width) {
-                    current += ' ';
-                    current += word;
-                } else {
-                    lines.push_back(current);
-                    current = word;
-                }
-                word.clear();
-            }
-            if (ch == '\n' && !current.empty()) {
-                lines.push_back(current);
-                current.clear();
-            }
-        } else {
-            word += ch;
-        }
-    }
-    if (!current.empty()) {
-        lines.push_back(current);
-    }
-    return lines;
-}
+// Word wrapping now uses shared wrapText() from text_wrap.h
 
 TScrambleMessageView::TScrambleMessageView(const TRect& bounds)
     : TView(bounds)
@@ -490,7 +456,7 @@ void TScrambleMessageView::rebuildWrappedLines()
         wrappedLines.push_back(senderLine);
 
         // Wrapped content lines
-        std::vector<std::string> lines = simpleWordWrap(msg.text, textWidth - 1);
+        std::vector<std::string> lines = wrapText(msg.text, textWidth - 1);
         for (size_t j = 0; j < lines.size(); ++j) {
             WrappedLine wl;
             wl.text = " " + lines[j];
@@ -532,10 +498,6 @@ void TScrambleMessageView::draw()
     }
 }
 
-std::vector<std::string> TScrambleMessageView::wrapText(const std::string& text, int width) const
-{
-    return simpleWordWrap(text, width);
-}
 
 /*=========================================================*/
 /*  TScrambleInputView - minimal single-line input         */

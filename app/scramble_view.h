@@ -140,7 +140,7 @@ private:
     std::vector<WrappedLine> wrappedLines;
 
     void rebuildWrappedLines();
-    std::vector<std::string> wrapText(const std::string& text, int width) const;
+
 };
 
 /*---------------------------------------------------------*/

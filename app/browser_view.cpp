@@ -6,6 +6,7 @@
 /*---------------------------------------------------------*/
 
 #include "browser_view.h"
+#include "text_wrap.h"
 
 #define Uses_TKeys
 #define Uses_TDrawBuffer
@@ -356,43 +357,7 @@ void TBrowserContentView::rebuildWrappedLines() {
         vScrollBar->drawView();
 }
 
-std::vector<std::string> TBrowserContentView::wrapText(const std::string& text, int width) const {
-    std::vector<std::string> lines;
-    if (width <= 0) {
-        lines.emplace_back("");
-        return lines;
-    }
-    if (text.empty()) {
-        lines.emplace_back("");
-        return lines;
-    }
-
-    size_t lineStart = 0;
-    while (lineStart < text.size()) {
-        size_t remaining = text.size() - lineStart;
-        if (static_cast<int>(remaining) <= width) {
-            lines.push_back(text.substr(lineStart));
-            break;
-        }
-
-        // Find last space within width
-        size_t breakPos = lineStart + width;
-        size_t spacePos = text.rfind(' ', breakPos);
-        if (spacePos != std::string::npos && spacePos > lineStart) {
-            lines.push_back(text.substr(lineStart, spacePos - lineStart));
-            lineStart = spacePos + 1;
-        } else {
-            // No space found, hard break
-            lines.push_back(text.substr(lineStart, width));
-            lineStart += width;
-        }
-    }
-
-    if (lines.empty()) {
-        lines.emplace_back("");
-    }
-    return lines;
-}
+// Word wrapping now uses shared wrapText() from text_wrap.h
 
 /*---------------------------------------------------------*/
 /*  TBrowserWindow Implementation                          */

@@ -85,7 +85,6 @@ private:
     std::chrono::steady_clock::time_point lastStreamUpdate;
 
     void rebuildWrappedLines();
-    std::vector<std::string> wrapText(const std::string& text, int width) const;
 };
 
 /*---------------------------------------------------------*/

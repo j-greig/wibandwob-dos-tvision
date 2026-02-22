@@ -64,7 +64,7 @@ private:
 
     void loadFile(const std::string& path);
     void rebuildDisplayLines();
-    static std::vector<std::string> wrapText(const std::string& text, int width);
+
 };
 
 /*---------------------------------------------------------*/
