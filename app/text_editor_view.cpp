@@ -8,6 +8,7 @@
 /*---------------------------------------------------------*/
 
 #include "text_editor_view.h"
+#include "text_wrap.h"
 
 #define Uses_TWindow
 #define Uses_TFrame
@@ -20,12 +21,17 @@
 #include <algorithm>
 #include <sstream>
 
+/*---------------------------------------------------------*/
+/* Construction                                            */
+/*---------------------------------------------------------*/
+
 TTextEditorView::TTextEditorView(const TRect &bounds)
     : TView(bounds), 
       cursorLine(0), 
       cursorCol(0),
       scrollTop(0), 
       scrollLeft(0),
+      wordWrap(true),
       readOnly(false),
       showCursor(true),
       hScrollBar(nullptr),
@@ -35,109 +41,183 @@ TTextEditorView::TTextEditorView(const TRect &bounds)
     growMode = gfGrowHiX | gfGrowHiY;
     eventMask |= evBroadcast | evKeyboard;
     
-    // Initialize with empty content
     lines.push_back("");
     
-    // Set up colors
     normalColor = TColorAttr(TColorRGB(220, 220, 220), TColorRGB(0, 0, 0));
     selectedColor = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 100, 200));
+
+    rebuildVisualMap();
 }
 
-TTextEditorView::~TTextEditorView() {
-    // Cleanup handled by parent
+TTextEditorView::~TTextEditorView() {}
+
+/*---------------------------------------------------------*/
+/* Visual line mapping (logical <-> display)               */
+/*---------------------------------------------------------*/
+
+void TTextEditorView::rebuildVisualMap()
+{
+    visualMap.clear();
+    int wrapWidth = size.x > 0 ? size.x : 80;
+
+    for (size_t li = 0; li < lines.size(); ++li) {
+        const std::string& line = lines[li];
+        if (!wordWrap || line.empty()) {
+            // One visual line per logical line (or empty)
+            visualMap.push_back({li, 0, line.size()});
+        } else {
+            // Wrap at width, hard-break (no word-boundary for editor — simpler cursor math)
+            size_t pos = 0;
+            while (pos < line.size()) {
+                size_t chunk = std::min(static_cast<size_t>(wrapWidth), line.size() - pos);
+                visualMap.push_back({li, pos, chunk});
+                pos += chunk;
+            }
+            if (line.empty() || (line.size() % wrapWidth == 0)) {
+                // If line length is exact multiple of width, add empty continuation
+                // so cursor can sit at end
+            }
+        }
+    }
+    if (visualMap.empty())
+        visualMap.push_back({0, 0, 0});
 }
 
-void TTextEditorView::draw() {
+size_t TTextEditorView::visualLineForCursor() const
+{
+    for (size_t vi = 0; vi < visualMap.size(); ++vi) {
+        const auto& vm = visualMap[vi];
+        if (vm.logicalLine == cursorLine) {
+            if (cursorCol >= vm.startCol && cursorCol <= vm.startCol + vm.len) {
+                // Check if cursor is at end of this visual line AND there's a next visual
+                // line for the same logical line — cursor belongs to next visual line
+                if (cursorCol == vm.startCol + vm.len && vi + 1 < visualMap.size() &&
+                    visualMap[vi + 1].logicalLine == cursorLine) {
+                    continue;  // cursor belongs to next visual line
+                }
+                return vi;
+            }
+        }
+    }
+    return visualMap.size() - 1;
+}
+
+void TTextEditorView::cursorFromVisualLine(size_t vi, size_t visualCol)
+{
+    if (vi >= visualMap.size()) vi = visualMap.size() - 1;
+    const auto& vm = visualMap[vi];
+    cursorLine = vm.logicalLine;
+    size_t maxCol = vm.startCol + vm.len;
+    cursorCol = std::min(vm.startCol + visualCol, maxCol);
+    // Clamp to actual line length
+    if (cursorCol > lines[cursorLine].size())
+        cursorCol = lines[cursorLine].size();
+}
+
+/*---------------------------------------------------------*/
+/* Draw                                                    */
+/*---------------------------------------------------------*/
+
+void TTextEditorView::draw()
+{
     int W = size.x, H = size.y;
     if (W <= 0 || H <= 0) return;
 
-    // Calculate visible range
-    size_t endLine = std::min(scrollTop + H, lines.size());
-    
+    size_t curVisual = visualLineForCursor();
+
     for (int y = 0; y < H; ++y) {
-        size_t lineIndex = scrollTop + y;
+        size_t vi = scrollTop + y;
         TDrawBuffer b;
-        
-        if (lineIndex < lines.size()) {
-            const std::string& line = lines[lineIndex];
+
+        if (vi < visualMap.size()) {
+            const auto& vm = visualMap[vi];
+            const std::string& line = lines[vm.logicalLine];
             
-            // Calculate visible portion of line
-            size_t startCol = std::min(scrollLeft, line.length());
-            size_t endCol = std::min(scrollLeft + W, line.length());
-            
-            std::string visibleText = line.substr(startCol, endCol - startCol);
-            
-            // Draw the text
+            std::string visible;
+            if (wordWrap) {
+                visible = line.substr(vm.startCol, vm.len);
+            } else {
+                size_t start = std::min(scrollLeft, line.size());
+                size_t end = std::min(scrollLeft + W, line.size());
+                visible = line.substr(start, end - start);
+            }
+
             int col = 0;
-            if (!visibleText.empty()) {
-                ushort w = b.moveCStr(col, visibleText.c_str(), 
+            if (!visible.empty()) {
+                ushort w = b.moveCStr(col, visible.c_str(),
                     TAttrPair{normalColor, normalColor}, W - col);
                 col += (w > 0 ? w : 0);
             }
-            
-            // Fill remainder with spaces
-            if (col < W) {
+            if (col < W)
                 b.moveChar(col, ' ', normalColor, (ushort)(W - col));
-            }
         } else {
-            // Empty line
             b.moveChar(0, ' ', normalColor, (ushort)W);
         }
-        
+
         writeLine(0, y, W, 1, b);
     }
-    
-    // Show cursor if focused and in visible area
+
+    // Cursor
     if (showCursor && (state & sfFocused)) {
-        if (cursorLine >= scrollTop && cursorLine < scrollTop + H) {
-            int cursorX = (int)(cursorCol - scrollLeft);
-            int cursorY = (int)(cursorLine - scrollTop);
-            
+        if (curVisual >= scrollTop && curVisual < scrollTop + H) {
+            const auto& vm = visualMap[curVisual];
+            int cursorX, cursorY;
+            if (wordWrap) {
+                cursorX = static_cast<int>(cursorCol - vm.startCol);
+            } else {
+                cursorX = static_cast<int>(cursorCol - scrollLeft);
+            }
+            cursorY = static_cast<int>(curVisual - scrollTop);
             if (cursorX >= 0 && cursorX < W && cursorY >= 0 && cursorY < H) {
                 setCursor(cursorX, cursorY);
-                showCursor = true;
             }
         }
     }
 }
 
-void TTextEditorView::handleEvent(TEvent &ev) {
+/*---------------------------------------------------------*/
+/* Keyboard handling                                       */
+/*---------------------------------------------------------*/
+
+void TTextEditorView::handleEvent(TEvent &ev)
+{
     TView::handleEvent(ev);
-    
     if (readOnly) return;
-    
+
     if (ev.what == evKeyDown) {
         bool handled = true;
-        
+
         switch (ev.keyDown.keyCode) {
-            case kbUp:
-                if (cursorLine > 0) {
-                    cursorLine--;
-                    cursorCol = std::min(cursorCol, lines[cursorLine].length());
-                    scrollToCursor();
+            case kbUp: {
+                size_t vi = visualLineForCursor();
+                size_t visualCol = cursorCol - visualMap[vi].startCol;
+                if (vi > 0) {
+                    cursorFromVisualLine(vi - 1, visualCol);
                 }
+                scrollToCursor();
                 break;
-                
-            case kbDown:
-                if (cursorLine < lines.size() - 1) {
-                    cursorLine++;
-                    cursorCol = std::min(cursorCol, lines[cursorLine].length());
-                    scrollToCursor();
+            }
+            case kbDown: {
+                size_t vi = visualLineForCursor();
+                size_t visualCol = cursorCol - visualMap[vi].startCol;
+                if (vi + 1 < visualMap.size()) {
+                    cursorFromVisualLine(vi + 1, visualCol);
                 }
+                scrollToCursor();
                 break;
-                
+            }
             case kbLeft:
                 if (cursorCol > 0) {
                     cursorCol--;
                 } else if (cursorLine > 0) {
                     cursorLine--;
-                    cursorCol = lines[cursorLine].length();
+                    cursorCol = lines[cursorLine].size();
                 }
                 scrollToCursor();
                 break;
-                
+
             case kbRight:
-                if (cursorCol < lines[cursorLine].length()) {
+                if (cursorCol < lines[cursorLine].size()) {
                     cursorCol++;
                 } else if (cursorLine < lines.size() - 1) {
                     cursorLine++;
@@ -145,85 +225,98 @@ void TTextEditorView::handleEvent(TEvent &ev) {
                 }
                 scrollToCursor();
                 break;
-                
+
             case kbHome:
-                cursorCol = 0;
-                scrollToCursor();
-                break;
-                
-            case kbEnd:
-                cursorCol = lines[cursorLine].length();
-                scrollToCursor();
-                break;
-                
-            case kbPgUp:
-                if (scrollTop > 0) {
-                    scrollTop = (scrollTop > size.y) ? scrollTop - size.y : 0;
-                    cursorLine = scrollTop;
-                    cursorCol = std::min(cursorCol, lines[cursorLine].length());
+                if (wordWrap) {
+                    size_t vi = visualLineForCursor();
+                    cursorCol = visualMap[vi].startCol;
+                } else {
+                    cursorCol = 0;
                 }
+                scrollToCursor();
                 break;
-                
-            case kbPgDn:
-                scrollTop = std::min(scrollTop + size.y, 
-                                   (lines.size() > size.y) ? lines.size() - size.y : 0);
-                cursorLine = scrollTop;
-                cursorCol = std::min(cursorCol, lines[cursorLine].length());
+
+            case kbEnd:
+                if (wordWrap) {
+                    size_t vi = visualLineForCursor();
+                    cursorCol = visualMap[vi].startCol + visualMap[vi].len;
+                    if (cursorCol > lines[cursorLine].size())
+                        cursorCol = lines[cursorLine].size();
+                } else {
+                    cursorCol = lines[cursorLine].size();
+                }
+                scrollToCursor();
                 break;
-                
+
+            case kbPgUp: {
+                size_t vi = visualLineForCursor();
+                size_t visualCol = cursorCol - visualMap[vi].startCol;
+                size_t target = (vi > (size_t)size.y) ? vi - size.y : 0;
+                cursorFromVisualLine(target, visualCol);
+                scrollToCursor();
+                break;
+            }
+            case kbPgDn: {
+                size_t vi = visualLineForCursor();
+                size_t visualCol = cursorCol - visualMap[vi].startCol;
+                size_t target = std::min(vi + size.y, visualMap.size() - 1);
+                cursorFromVisualLine(target, visualCol);
+                scrollToCursor();
+                break;
+            }
+
             case kbEnter:
-                // Split line at cursor
                 if (cursorLine < lines.size()) {
-                    std::string currentLine = lines[cursorLine];
-                    std::string leftPart = currentLine.substr(0, cursorCol);
-                    std::string rightPart = currentLine.substr(cursorCol);
-                    
-                    lines[cursorLine] = leftPart;
-                    lines.insert(lines.begin() + cursorLine + 1, rightPart);
+                    std::string current = lines[cursorLine];
+                    lines[cursorLine] = current.substr(0, cursorCol);
+                    lines.insert(lines.begin() + cursorLine + 1, current.substr(cursorCol));
                     cursorLine++;
                     cursorCol = 0;
+                    rebuildVisualMap();
                     scrollToCursor();
                 }
                 break;
-                
+
             case kbBack:
                 if (cursorCol > 0) {
                     lines[cursorLine].erase(cursorCol - 1, 1);
                     cursorCol--;
+                    rebuildVisualMap();
                 } else if (cursorLine > 0) {
-                    // Join with previous line
-                    cursorCol = lines[cursorLine - 1].length();
+                    cursorCol = lines[cursorLine - 1].size();
                     lines[cursorLine - 1] += lines[cursorLine];
                     lines.erase(lines.begin() + cursorLine);
                     cursorLine--;
+                    rebuildVisualMap();
                 }
                 scrollToCursor();
                 break;
-                
+
             case kbDel:
-                if (cursorCol < lines[cursorLine].length()) {
+                if (cursorCol < lines[cursorLine].size()) {
                     lines[cursorLine].erase(cursorCol, 1);
+                    rebuildVisualMap();
                 } else if (cursorLine < lines.size() - 1) {
-                    // Join with next line
                     lines[cursorLine] += lines[cursorLine + 1];
                     lines.erase(lines.begin() + cursorLine + 1);
+                    rebuildVisualMap();
                 }
                 break;
-                
+
             default:
-                // Handle regular character input
-                if (ev.keyDown.charScan.charCode >= 32 && 
+                if (ev.keyDown.charScan.charCode >= 32 &&
                     ev.keyDown.charScan.charCode < 127) {
                     char ch = ev.keyDown.charScan.charCode;
                     lines[cursorLine].insert(cursorCol, 1, ch);
                     cursorCol++;
+                    rebuildVisualMap();
                     scrollToCursor();
                 } else {
                     handled = false;
                 }
                 break;
         }
-        
+
         if (handled) {
             drawView();
             clearEvent(ev);
@@ -231,228 +324,244 @@ void TTextEditorView::handleEvent(TEvent &ev) {
     }
 }
 
-void TTextEditorView::sendText(const std::string& content, const std::string& mode, const std::string& position) {
+/*---------------------------------------------------------*/
+/* Scrolling                                               */
+/*---------------------------------------------------------*/
+
+void TTextEditorView::scrollToCursor()
+{
+    size_t vi = visualLineForCursor();
+    if (vi < scrollTop) {
+        scrollTop = vi;
+    } else if (vi >= scrollTop + size.y) {
+        scrollTop = vi - size.y + 1;
+    }
+
+    if (!wordWrap) {
+        if (cursorCol < scrollLeft)
+            scrollLeft = cursorCol;
+        else if (cursorCol >= scrollLeft + size.x)
+            scrollLeft = cursorCol - size.x + 1;
+    }
+
+    updateScrollBars();
+}
+
+void TTextEditorView::scrollToEnd()
+{
+    if (visualMap.size() > (size_t)size.y)
+        scrollTop = visualMap.size() - size.y;
+    else
+        scrollTop = 0;
+
+    cursorLine = lines.size() - 1;
+    cursorCol = lines[cursorLine].size();
+    scrollToCursor();
+}
+
+void TTextEditorView::updateScrollBars()
+{
+    if (vScrollBar) {
+        int maxY = std::max(0, static_cast<int>(visualMap.size()) - size.y);
+        vScrollBar->setParams(static_cast<int>(scrollTop), 0, maxY, size.y - 1, 1);
+    }
+}
+
+/*---------------------------------------------------------*/
+/* Content API                                             */
+/*---------------------------------------------------------*/
+
+void TTextEditorView::sendText(const std::string& content, const std::string& mode, const std::string& position)
+{
     if (mode == "replace") {
         replaceContent(content);
     } else if (mode == "append") {
         appendText(content);
     } else if (mode == "insert") {
-        if (position == "cursor") {
+        if (position == "cursor")
             insertText(content, cursorLine, cursorCol);
-        } else if (position == "start") {
+        else if (position == "start")
             insertText(content, 0, 0);
-        } else { // "end"
+        else
             appendText(content);
-        }
     }
-    
+
+    rebuildVisualMap();
     scrollToCursor();
     drawView();
 }
 
-void TTextEditorView::clearContent() {
+void TTextEditorView::clearContent()
+{
     lines.clear();
     lines.push_back("");
     cursorLine = 0;
     cursorCol = 0;
     scrollTop = 0;
     scrollLeft = 0;
+    rebuildVisualMap();
     drawView();
 }
 
-void TTextEditorView::insertText(const std::string& content, size_t lineIndex, size_t colIndex) {
-    // Split content into lines
+void TTextEditorView::insertText(const std::string& content, size_t lineIndex, size_t colIndex)
+{
     std::istringstream iss(content);
     std::string line;
     std::vector<std::string> newLines;
-    
-    while (std::getline(iss, line)) {
+    while (std::getline(iss, line))
         newLines.push_back(line);
-    }
-    
     if (newLines.empty()) return;
-    
-    // Ensure we have valid line index
+
     lineIndex = std::min(lineIndex, lines.size() - 1);
-    colIndex = std::min(colIndex, lines[lineIndex].length());
-    
+    colIndex = std::min(colIndex, lines[lineIndex].size());
+
     if (newLines.size() == 1) {
-        // Single line insertion
         lines[lineIndex].insert(colIndex, newLines[0]);
         cursorLine = lineIndex;
-        cursorCol = colIndex + newLines[0].length();
+        cursorCol = colIndex + newLines[0].size();
     } else {
-        // Multi-line insertion
-        std::string currentLine = lines[lineIndex];
-        std::string leftPart = currentLine.substr(0, colIndex);
-        std::string rightPart = currentLine.substr(colIndex);
-        
-        // Replace current line with first new line
-        lines[lineIndex] = leftPart + newLines[0];
-        
-        // Insert middle lines
-        for (size_t i = 1; i < newLines.size() - 1; ++i) {
+        std::string current = lines[lineIndex];
+        std::string left = current.substr(0, colIndex);
+        std::string right = current.substr(colIndex);
+
+        lines[lineIndex] = left + newLines[0];
+        for (size_t i = 1; i < newLines.size() - 1; ++i)
             lines.insert(lines.begin() + lineIndex + i, newLines[i]);
-        }
-        
-        // Insert last line with right part
-        lines.insert(lines.begin() + lineIndex + newLines.size() - 1, 
-                    newLines.back() + rightPart);
-        
+        lines.insert(lines.begin() + lineIndex + newLines.size() - 1,
+                     newLines.back() + right);
+
         cursorLine = lineIndex + newLines.size() - 1;
-        cursorCol = newLines.back().length();
+        cursorCol = newLines.back().size();
     }
 }
 
-void TTextEditorView::appendText(const std::string& content) {
-    if (lines.empty()) {
-        lines.push_back("");
-    }
-    
-    // Move to end
+void TTextEditorView::appendText(const std::string& content)
+{
+    if (lines.empty()) lines.push_back("");
     cursorLine = lines.size() - 1;
-    cursorCol = lines[cursorLine].length();
-    
+    cursorCol = lines[cursorLine].size();
     insertText(content, cursorLine, cursorCol);
 }
 
-void TTextEditorView::replaceContent(const std::string& content) {
+void TTextEditorView::replaceContent(const std::string& content)
+{
     lines.clear();
-    
-    // Split content into lines
     std::istringstream iss(content);
     std::string line;
-    
-    while (std::getline(iss, line)) {
+    while (std::getline(iss, line))
         lines.push_back(line);
-    }
-    
-    if (lines.empty()) {
-        lines.push_back("");
-    }
-    
+    if (lines.empty()) lines.push_back("");
+
     cursorLine = 0;
     cursorCol = 0;
     scrollTop = 0;
     scrollLeft = 0;
 }
 
-void TTextEditorView::scrollToCursor() {
-    // Vertical scrolling
-    if (cursorLine < scrollTop) {
-        scrollTop = cursorLine;
-    } else if (cursorLine >= scrollTop + size.y) {
-        scrollTop = cursorLine - size.y + 1;
-    }
-    
-    // Horizontal scrolling
-    if (cursorCol < scrollLeft) {
-        scrollLeft = cursorCol;
-    } else if (cursorCol >= scrollLeft + size.x) {
-        scrollLeft = cursorCol - size.x + 1;
-    }
-}
+/*---------------------------------------------------------*/
+/* View state                                              */
+/*---------------------------------------------------------*/
 
-void TTextEditorView::scrollToEnd() {
-    if (lines.size() > size.y) {
-        scrollTop = lines.size() - size.y;
-    } else {
-        scrollTop = 0;
-    }
-    
-    cursorLine = lines.size() - 1;
-    cursorCol = lines[cursorLine].length();
-    scrollToCursor();
-}
-
-void TTextEditorView::setState(ushort s, Boolean en) {
+void TTextEditorView::setState(ushort s, Boolean en)
+{
     TView::setState(s, en);
-    if ((s & sfFocused) != 0) {
-        drawView();
-    }
+    if ((s & sfFocused) != 0) drawView();
 }
 
-void TTextEditorView::changeBounds(const TRect& b) {
+void TTextEditorView::changeBounds(const TRect& b)
+{
     TView::changeBounds(b);
+    rebuildVisualMap();
+    scrollToCursor();
     drawView();
 }
 
-std::string TTextEditorView::runFiglet(const std::string& text, const std::string& font, int width) {
-    // Escape text for shell safety
+/*---------------------------------------------------------*/
+/* Figlet                                                  */
+/*---------------------------------------------------------*/
+
+std::string TTextEditorView::runFiglet(const std::string& text, const std::string& font, int width)
+{
     std::string escapedText = text;
-    // Basic shell escaping - replace quotes with escaped quotes
     size_t pos = 0;
     while ((pos = escapedText.find("\"", pos)) != std::string::npos) {
         escapedText.replace(pos, 1, "\\\"");
         pos += 2;
     }
-    
-    // Build command
+
     std::string fontDir = "/usr/local/Cellar/figlet/2.2.5/share/figlet/fonts";
     std::string cmd = "figlet -d \"" + fontDir + "\" -f \"" + font + "\"";
-    
-    if (width > 0) {
+    if (width > 0)
         cmd += " -w " + std::to_string(width);
-    }
-    
-    cmd += " \"" + escapedText + "\" 2>/dev/null";
-    
-    // Execute and capture output
+    cmd += " \"" + escapedText + "\" </dev/null 2>/dev/null";
+
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) return {};
-    
+
     std::string output;
     char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe)) {
+    while (fgets(buffer, sizeof(buffer), pipe))
         output += buffer;
-    }
     pclose(pipe);
-    
     return output;
 }
 
-void TTextEditorView::sendFigletText(const std::string& text, const std::string& font, int width, const std::string& mode) {
-    // Use current view width if not specified
+void TTextEditorView::sendFigletText(const std::string& text, const std::string& font, int width, const std::string& mode)
+{
     int figletWidth = (width > 0) ? width : size.x - 2;
-    
-    // Generate figlet ASCII art
     std::string figletOutput = runFiglet(text, font, figletWidth);
-    
-    if (!figletOutput.empty()) {
+    if (!figletOutput.empty())
         sendText(figletOutput, mode, "end");
-    } else {
-        // Fallback to plain text if figlet fails
+    else
         sendText("[ " + text + " ]\n", mode, "end");
-    }
 }
 
-// Window wrapper implementation
-TTextEditorWindow::TTextEditorWindow(const TRect &r, const char *title) 
-    : TWindow(r, title ? title : "Text Editor", wnNoNumber), 
+/*---------------------------------------------------------*/
+/* Window wrapper                                          */
+/*---------------------------------------------------------*/
+
+TTextEditorWindow::TTextEditorWindow(const TRect &r, const char *title)
+    : TWindow(r, title ? title : "Text Editor", wnNoNumber),
       TWindowInit(&TTextEditorWindow::initFrame),
       editorView(nullptr)
 {
 }
 
-void TTextEditorWindow::setup() {
+void TTextEditorWindow::setup()
+{
     options |= ofTileable;
     TRect c = getExtent();
     c.grow(-1, -1);
-    editorView = new TTextEditorView(c);
+
+    // Vertical scroll bar
+    TRect sbRect = c;
+    sbRect.a.x = sbRect.b.x - 1;
+    auto* vsb = new TScrollBar(sbRect);
+    vsb->growMode = gfGrowLoX | gfGrowHiX | gfGrowHiY;
+    insert(vsb);
+
+    // Editor view (leave room for scroll bar)
+    TRect edRect = c;
+    edRect.b.x -= 1;
+    editorView = new TTextEditorView(edRect);
+    editorView->vScrollBar = vsb;
     insert(editorView);
 }
 
-void TTextEditorWindow::changeBounds(const TRect& b) {
+void TTextEditorWindow::changeBounds(const TRect& b)
+{
     TWindow::changeBounds(b);
     setState(sfExposed, True);
     redraw();
 }
 
-TFrame* TTextEditorWindow::initFrame(TRect r) {
+TFrame* TTextEditorWindow::initFrame(TRect r)
+{
     return new TFrame(r);
 }
 
-TWindow* createTextEditorWindow(const TRect &bounds, const char *title) {
+TWindow* createTextEditorWindow(const TRect &bounds, const char *title)
+{
     auto *w = new TTextEditorWindow(bounds, title);
     w->setup();
     return w;

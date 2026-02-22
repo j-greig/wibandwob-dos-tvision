@@ -188,9 +188,17 @@ private:
     std::string getTimestamp() const;
     std::string getCurrentTime() const;
 
-    // TTS
-    void speakResponse(const std::string& text);
+    // TTS — incremental line-by-line speech during streaming
+    void speakResponse(const std::string& text);         // legacy: speak full response at once
+    void speakLine(const std::string& voice, const std::string& text);  // queue one line
+    void ttsFlushPending();                               // flush partial line at end of turn
+    void ttsAccumulateChunk(const std::string& delta);    // call during CONTENT_DELTA
+    void ttsReset();                                      // call at start of new turn
     std::string filterTextForSpeech(const std::string& text);
+
+    // TTS state for incremental speech
+    std::string ttsAccumulator_;      // accumulates streamed text until newline
+    std::string ttsActiveVoice_;      // current detected voice (Wib/Wob)
 
     // Export
     bool exportChat(const std::string& filename = "") const;

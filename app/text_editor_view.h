@@ -44,6 +44,13 @@ public:
     void setWindowId(const std::string& id) { windowId = id; }
     const std::string& getWindowId() const { return windowId; }
 
+    // Word wrap toggle
+    void setWordWrap(bool enable) { wordWrap = enable; rebuildVisualMap(); drawView(); }
+    bool getWordWrap() const { return wordWrap; }
+
+    // Scroll bar (set by window after construction)
+    TScrollBar *vScrollBar;
+
 private:
     void insertText(const std::string& content, size_t lineIndex, size_t colIndex);
     void appendText(const std::string& content);
@@ -53,17 +60,31 @@ private:
     void scrollToCursor();
     void updateScrollBars();
 
+    // Visual line mapping for word wrap
+    struct VisualLine {
+        size_t logicalLine;  // index into lines[]
+        size_t startCol;     // byte offset within logical line
+        size_t len;          // number of bytes shown on this visual line
+    };
+    std::vector<VisualLine> visualMap;
+    void rebuildVisualMap();
+    size_t visualLineForCursor() const;
+    void cursorFromVisualLine(size_t vi, size_t visualCol);
+
     // Text content storage
     std::vector<std::string> lines;
     
-    // Cursor position
+    // Cursor position (logical)
     size_t cursorLine;
     size_t cursorCol;
     
-    // Scroll position
+    // Scroll position (in visual lines)
     size_t scrollTop;
     size_t scrollLeft;
     
+    // Word wrap
+    bool wordWrap;
+
     // Window identification for API
     std::string windowId;
     
@@ -73,7 +94,6 @@ private:
     
     // Scroll bars
     TScrollBar *hScrollBar;
-    TScrollBar *vScrollBar;
     
     // Colors
     TColorAttr normalColor;
@@ -86,7 +106,6 @@ public:
     void setup();
     virtual void changeBounds(const TRect& b) override;
     
-    // Get the editor view for API access
     TTextEditorView* getEditorView() { return editorView; }
     
 private:
@@ -94,7 +113,6 @@ private:
     TTextEditorView* editorView;
 };
 
-// Factory function
 TWindow* createTextEditorWindow(const TRect &bounds, const char *title = "Text Editor");
 
 #endif // TEXT_EDITOR_VIEW_H
