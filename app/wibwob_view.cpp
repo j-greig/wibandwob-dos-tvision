@@ -1066,6 +1066,13 @@ void TWibWobWindow::speakResponse(const std::string& text) {
                    || line.find("Wob:") != std::string::npos || line.find("[Wob]") != std::string::npos) {
             activeVoice = kVoiceWob;
         }
+        // Strip voice markers from spoken content — no need to read "Wib:" aloud
+        for (const char* marker : {"**Wib**", "**Wob**", "*Wib*", "*Wob*",
+                                    "Wib:", "Wob:", "[Wib]", "[Wob]"}) {
+            std::string m(marker);
+            auto pos = content.find(m);
+            if (pos != std::string::npos) content.erase(pos, m.size());
+        }
         std::string voice = activeVoice;
         while (!content.empty() && std::isspace((unsigned char)content.front())) content.erase(content.begin());
         while (!content.empty() && std::isspace((unsigned char)content.back())) content.pop_back();

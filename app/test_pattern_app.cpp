@@ -932,6 +932,9 @@ TTestPatternApp::TTestPatternApp() :
 
 void TTestPatternApp::handleEvent(TEvent& event)
 {
+    if (event.what == evKeyDown)
+        fprintf(stderr, "[event] keyDown: keyCode=0x%04x charCode=0x%02x\n",
+                event.keyDown.keyCode, (unsigned char)event.keyDown.charScan.charCode);
     TApplication::handleEvent(event);
     
     if (event.what == evCommand)
@@ -2569,7 +2572,7 @@ void TTestPatternApp::idle()
 {
     TApplication::idle();
     static int idleCount = 0;
-    if (++idleCount % 5000 == 0)
+    if (++idleCount % 100 == 0)
         fprintf(stderr, "[idle] tick %d\n", idleCount);
     // Poll IPC server for incoming API commands
     if (ipcServer) ipcServer->poll();

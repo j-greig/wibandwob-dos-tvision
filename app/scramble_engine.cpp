@@ -257,7 +257,7 @@ std::string ScrambleHaikuClient::buildCliCommand(const std::string& question) co
         if (c == '"' || c == '\\' || c == '$' || c == '`') cmd << '\\';
         cmd << c;
     }
-    cmd << "\" 2>/dev/null";
+    cmd << "\" </dev/null 2>/dev/null";
     return cmd.str();
 }
 

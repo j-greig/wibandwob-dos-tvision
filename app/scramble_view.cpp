@@ -639,6 +639,9 @@ void TScrambleInputView::handleEvent(TEvent& event)
     // Handle keyboard events directly — don't pass to TView first
     // (avoids TV's focus-gating on keyboard dispatch)
     if (event.what == evKeyDown) {
+        fprintf(stderr, "[scramble-input] keyDown: keyCode=0x%04x ch=0x%02x focused=%d\n",
+                event.keyDown.keyCode, (unsigned char)event.keyDown.charScan.charCode,
+                (state & sfFocused) ? 1 : 0);
         ushort keyCode = event.keyDown.keyCode;
         char ch = event.keyDown.charScan.charCode;
 
