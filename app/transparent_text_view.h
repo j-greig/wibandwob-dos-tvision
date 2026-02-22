@@ -11,6 +11,8 @@
 #define Uses_TBackground
 #define Uses_TRect
 #define Uses_TView
+#define Uses_TScroller
+#define Uses_TScrollBar
 #define Uses_TDrawBuffer
 #define Uses_TEvent
 #define Uses_TWindow
@@ -26,16 +28,18 @@
 
 /*---------------------------------------------------------*/
 /* TTransparentTextView - Text viewer with custom BG     */
+/*   Extends TScroller for proper scroll bar support     */
 /*---------------------------------------------------------*/
 
-class TTransparentTextView : public TView
+class TTransparentTextView : public TScroller
 {
 public:
-    TTransparentTextView(const TRect& bounds, const std::string& filePath);
+    TTransparentTextView(const TRect& bounds, TScrollBar* hScroll,
+                         TScrollBar* vScroll, const std::string& filePath);
     virtual ~TTransparentTextView() {}
 
     virtual void draw() override;
-    virtual void handleEvent(TEvent& event) override;
+    virtual void changeBounds(const TRect& bounds) override;
 
     // Background color control
     void setBackgroundColor(TColorRGB color);
@@ -45,17 +49,22 @@ public:
 
     const std::string& getFileName() const { return fileName; }
 
+    // Word wrapping toggle
+    void setWordWrap(bool enable);
+    bool getWordWrap() const { return wordWrap; }
+
 private:
-    std::vector<std::string> lines;
+    std::vector<std::string> rawLines;       // Original file lines
+    std::vector<std::string> displayLines;   // After word-wrap
     std::string fileName;
     TColorRGB bgColor;
     TColorRGB fgColor;
     bool useCustomBg;
-    int scrollY;
-    int scrollX;
+    bool wordWrap;
 
     void loadFile(const std::string& path);
-    size_t utf8Length(const std::string& str) const;
+    void rebuildDisplayLines();
+    static std::vector<std::string> wrapText(const std::string& text, int width);
 };
 
 /*---------------------------------------------------------*/
@@ -71,11 +80,11 @@ public:
     TTransparentTextView* getTextView() { return textView; }
     const std::string& getFilePath() const;
 
-    // Override changeBounds for proper redraw
     virtual void changeBounds(const TRect& bounds) override;
 
 private:
     TTransparentTextView* textView;
+    TScrollBar* vScrollBar;
     static TFrame* initFrame(TRect r);
 };
 

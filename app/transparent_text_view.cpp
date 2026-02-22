@@ -13,63 +13,130 @@
 /*---------------------------------------------------------*/
 
 TTransparentTextView::TTransparentTextView(const TRect& bounds,
-                                         const std::string& filePath)
-    : TView(bounds),
+                                           TScrollBar* hScroll,
+                                           TScrollBar* vScroll,
+                                           const std::string& filePath)
+    : TScroller(bounds, hScroll, vScroll),
       fileName(filePath),
-      bgColor(0, 0, 0),           // Default black background
-      fgColor(220, 220, 220),     // Default light grey foreground
-      useCustomBg(false),         // Start with terminal default
-      scrollY(0),
-      scrollX(0)
+      bgColor(0, 0, 0),
+      fgColor(220, 220, 220),
+      useCustomBg(false),
+      wordWrap(true)
 {
     growMode = gfGrowHiX | gfGrowHiY;
     options |= ofSelectable;
 
     loadFile(filePath);
+    rebuildDisplayLines();
 }
 
 void TTransparentTextView::loadFile(const std::string& path)
 {
     std::ifstream file(path);
     if (!file.is_open()) {
-        lines.push_back("Error: Could not open file");
-        lines.push_back(path);
+        rawLines.push_back("Error: Could not open file");
+        rawLines.push_back(path);
         return;
     }
 
     std::string line;
     while (std::getline(file, line)) {
-        // Remove \r if present (Windows line endings)
-        if (!line.empty() && line.back() == '\r') {
+        if (!line.empty() && line.back() == '\r')
             line.pop_back();
-        }
-        lines.push_back(line);
+        rawLines.push_back(line);
     }
 
-    if (lines.empty()) {
-        lines.push_back(""); // Ensure at least one line exists
-    }
+    if (rawLines.empty())
+        rawLines.push_back("");
 }
 
-size_t TTransparentTextView::utf8Length(const std::string& str) const
+/*---------------------------------------------------------*/
+/* Word wrapping — same algorithm as TWibWobMessageView  */
+/*---------------------------------------------------------*/
+
+std::vector<std::string> TTransparentTextView::wrapText(const std::string& text, int width)
 {
-    size_t count = 0;
-    for (size_t i = 0; i < str.size(); ) {
-        unsigned char c = str[i];
-        if (c < 0x80) {
-            i += 1;
-        } else if ((c & 0xE0) == 0xC0) {
-            i += 2;
-        } else if ((c & 0xF0) == 0xE0) {
-            i += 3;
-        } else if ((c & 0xF8) == 0xF0) {
-            i += 4;
-        } else {
-            i += 1; // Invalid UTF-8, skip
-        }
-        count++;
+    std::vector<std::string> lines;
+    if (width <= 0) {
+        lines.emplace_back("");
+        return lines;
     }
-    return count;
+
+    if (text.empty()) {
+        lines.emplace_back("");
+        return lines;
+    }
+
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t remaining = text.size() - pos;
+        size_t slice = remaining > static_cast<size_t>(width)
+                       ? static_cast<size_t>(width) : remaining;
+        bool trimmedSpace = false;
+
+        if (remaining > static_cast<size_t>(width)) {
+            size_t breakPos = text.find_last_of(" \t", pos + width - 1);
+            if (breakPos != std::string::npos && breakPos >= pos) {
+                size_t candidate = breakPos - pos;
+                if (candidate > 0) {
+                    slice = candidate;
+                    trimmedSpace = true;
+                }
+            }
+        }
+
+        lines.push_back(text.substr(pos, slice));
+        pos += slice;
+
+        if (trimmedSpace) {
+            while (pos < text.size() && text[pos] == ' ')
+                ++pos;
+        }
+    }
+
+    return lines;
+}
+
+void TTransparentTextView::rebuildDisplayLines()
+{
+    displayLines.clear();
+
+    int wrapWidth = size.x > 0 ? size.x : 80;
+
+    for (const auto& raw : rawLines) {
+        if (wordWrap) {
+            auto wrapped = wrapText(raw, wrapWidth);
+            for (auto& wl : wrapped)
+                displayLines.push_back(std::move(wl));
+        } else {
+            displayLines.push_back(raw);
+        }
+    }
+
+    // Calculate max line width for horizontal scroll
+    int maxWidth = 0;
+    for (const auto& l : displayLines)
+        maxWidth = std::max(maxWidth, static_cast<int>(l.size()));
+
+    setLimit(wordWrap ? size.x : maxWidth, static_cast<int>(displayLines.size()));
+
+    if (vScrollBar)
+        vScrollBar->drawView();
+}
+
+void TTransparentTextView::changeBounds(const TRect& bounds)
+{
+    TScroller::changeBounds(bounds);
+    rebuildDisplayLines();
+}
+
+void TTransparentTextView::setWordWrap(bool enable)
+{
+    if (wordWrap != enable) {
+        wordWrap = enable;
+        rebuildDisplayLines();
+        drawView();
+    }
 }
 
 void TTransparentTextView::draw()
@@ -81,10 +148,8 @@ void TTransparentTextView::draw()
     char fillChar = ' ';
 
     if (useCustomBg) {
-        // Custom background mode - opaque with RGB colors.
         textAttr = TColorAttr(fgColor, bgColor);
     } else {
-        // Blend with the desktop background if available.
         if (TProgram::deskTop && TProgram::deskTop->background) {
             TBackground *bg = TProgram::deskTop->background;
             textAttr = bg->getColor(0x01);
@@ -96,101 +161,27 @@ void TTransparentTextView::draw()
         }
     }
 
-    for (int i = 0; i < size.y; i++)
+    int totalLines = static_cast<int>(displayLines.size());
+
+    for (int y = 0; y < size.y; y++)
     {
-        int lineIndex = scrollY + i;
+        int lineIdx = delta.y + y;
 
-        if (lineIndex >= 0 && lineIndex < static_cast<int>(lines.size()))
+        b.moveChar(0, fillChar, textAttr, size.x);
+
+        if (lineIdx >= 0 && lineIdx < totalLines)
         {
-            const std::string& line = lines[lineIndex];
+            const std::string& line = displayLines[lineIdx];
 
-            // Seed buffer with the desktop background sample.
-            b.moveChar(0, fillChar, textAttr, size.x);
-
-            // Draw visible portion of text
-            if (scrollX < static_cast<int>(utf8Length(line)))
-            {
-                // Calculate byte offset for scrollX character position
-                int charPos = 0;
-                size_t bytePos = 0;
-                while (charPos < scrollX && bytePos < line.size()) {
-                    unsigned char c = line[bytePos];
-                    if (c < 0x80) {
-                        bytePos += 1;
-                    } else if ((c & 0xE0) == 0xC0) {
-                        bytePos += 2;
-                    } else if ((c & 0xF0) == 0xE0) {
-                        bytePos += 3;
-                    } else if ((c & 0xF8) == 0xF0) {
-                        bytePos += 4;
-                    } else {
-                        bytePos += 1;
-                    }
-                    charPos++;
-                }
-
-                // Draw text starting from calculated position
-                if (bytePos < line.size()) {
-                    std::string visibleText = line.substr(bytePos);
-                    b.moveStr(0, TStringView(visibleText.data(), visibleText.size()), textAttr);
-                }
+            // Apply horizontal scroll offset
+            int hOff = delta.x;
+            if (hOff < static_cast<int>(line.size())) {
+                std::string visible = line.substr(hOff);
+                b.moveStr(0, TStringView(visible.data(), visible.size()), textAttr);
             }
         }
-        else
-        {
-            // Empty line - keep background copy intact.
-            b.moveChar(0, fillChar, textAttr, size.x);
-        }
 
-        writeLine(0, i, size.x, 1, b);
-    }
-}
-
-void TTransparentTextView::handleEvent(TEvent& event)
-{
-    TView::handleEvent(event);
-
-    // Simple keyboard scrolling
-    if (event.what == evKeyDown)
-    {
-        int maxScrollY = std::max(0, static_cast<int>(lines.size()) - size.y);
-        switch (event.keyDown.keyCode)
-        {
-            case kbUp:
-                if (scrollY > 0) {
-                    scrollY--;
-                    drawView();
-                }
-                clearEvent(event);
-                break;
-            case kbDown:
-                if (scrollY < maxScrollY) {
-                    scrollY++;
-                    drawView();
-                }
-                clearEvent(event);
-                break;
-            case kbPgUp:
-                scrollY = std::max(0, scrollY - size.y);
-                drawView();
-                clearEvent(event);
-                break;
-            case kbPgDn:
-                scrollY = std::min(maxScrollY, scrollY + size.y);
-                drawView();
-                clearEvent(event);
-                break;
-            case kbHome:
-                scrollY = 0;
-                drawView();
-                clearEvent(event);
-                break;
-            case kbEnd:
-                scrollY = maxScrollY;
-                drawView();
-                clearEvent(event);
-                break;
-        }
+        writeLine(0, y, size.x, 1, b);
     }
 }
 
@@ -215,16 +206,25 @@ TTransparentTextWindow::TTransparentTextWindow(const TRect& bounds,
                                              const std::string& title,
                                              const std::string& filePath)
     : TWindow(bounds, title.c_str(), wnNoNumber),
-      TWindowInit(&TTransparentTextWindow::initFrame)
+      TWindowInit(&TTransparentTextWindow::initFrame),
+      vScrollBar(nullptr)
 {
     options |= ofTileable;
 
-    // Calculate interior bounds for text view
     TRect interior = getExtent();
     interior.grow(-1, -1);
 
-    // Create text view without scrollbars (keyboard scrolling only)
-    textView = new TTransparentTextView(interior, filePath);
+    // Vertical scroll bar on the right edge
+    TRect sbRect = interior;
+    sbRect.a.x = sbRect.b.x - 1;
+    vScrollBar = new TScrollBar(sbRect);
+    vScrollBar->growMode = gfGrowLoX | gfGrowHiX | gfGrowHiY;
+    insert(vScrollBar);
+
+    // Text view fills remaining space
+    TRect tvRect = interior;
+    tvRect.b.x -= 1;  // Leave room for scroll bar
+    textView = new TTransparentTextView(tvRect, nullptr, vScrollBar, filePath);
     insert(textView);
 }
 
@@ -233,9 +233,8 @@ void TTransparentTextWindow::changeBounds(const TRect& bounds)
     TWindow::changeBounds(bounds);
     setState(sfExposed, True);
 
-    if (textView) {
+    if (textView)
         textView->drawView();
-    }
 
     redraw();
 }
