@@ -115,7 +115,8 @@ std::string ScrambleHaikuClient::askViaCli(const std::string& question) const
     std::string sysPrompt = buildSystemPrompt();
 
     std::ostringstream cmd;
-    cmd << claudeCliPath << " -p --model haiku --output-format text";
+    // Run from /tmp to avoid picking up project CLAUDE.md/AGENTS.md context
+    cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence";
     cmd << " --append-system-prompt \"";
     for (char c : sysPrompt) {
         if (c == '"' || c == '\\' || c == '$' || c == '`') cmd << '\\';
@@ -243,7 +244,8 @@ std::string ScrambleHaikuClient::buildCliCommand(const std::string& question) co
 {
     std::string sysPrompt = buildSystemPrompt();
     std::ostringstream cmd;
-    cmd << claudeCliPath << " -p --model haiku --output-format text";
+    // Run from /tmp to avoid picking up project CLAUDE.md/AGENTS.md context
+    cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence";
     cmd << " --append-system-prompt \"";
     for (char c : sysPrompt) {
         if (c == '"' || c == '\\' || c == '$' || c == '`') cmd << '\\';

@@ -348,7 +348,7 @@ std::string LLMConfig::getDefaultConfigJson() {
       "enabled": true,
       "maxTurns": 50,
       "allowedTools": ["Read", "Write", "Grep", "Bash", "LS", "WebSearch", "WebFetch"],
-      "nodeScriptPath": "llm/sdk_bridge/claude_sdk_bridge.js",
+      "nodeScriptPath": "app/llm/sdk_bridge/claude_sdk_bridge.js",
       "sessionTimeout": 3600
     },
     "anthropic_api": {

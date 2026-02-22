@@ -199,7 +199,7 @@ ClaudeCodeSDKProvider::ClaudeCodeSDKProvider()
     : nodeBridge(std::make_unique<NodeBridge>()) {
     
     // Default script path - will be overridden by configuration
-    nodeScriptPath = "llm/sdk_bridge/claude_sdk_bridge.js";
+    nodeScriptPath = "app/llm/sdk_bridge/claude_sdk_bridge.js";
     
     // Initialize fallback provider
     initializeFallback();
