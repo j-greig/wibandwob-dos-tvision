@@ -2710,13 +2710,17 @@ std::string api_chat_receive(TTestPatternApp& app, const std::string& sender, co
 
 std::string api_wibwob_ask(TTestPatternApp& app, const std::string& text) {
     // Inject a user message into the Wib&Wob chat window, triggering LLM response.
+    fprintf(stderr, "[wibwob_ask] called, text_len=%zu text=%.60s\n",
+            text.size(), text.c_str());
     // Find the first TWibWobWindow on the desktop.
     TWibWobWindow* chatWin = nullptr;
+    int windowCount = 0;
     if (app.deskTop) {
         TView* v = app.deskTop->first();
         if (v) {
             TView* start = v;
             do {
+                windowCount++;
                 if (auto* ww = dynamic_cast<TWibWobWindow*>(v)) {
                     chatWin = ww;
                     break;
@@ -2725,7 +2729,11 @@ std::string api_wibwob_ask(TTestPatternApp& app, const std::string& text) {
             } while (v != start);
         }
     }
-    if (!chatWin) return "err no wibwob chat window open";
+    if (!chatWin) {
+        fprintf(stderr, "[wibwob_ask] ERROR: no TWibWobWindow found (%d views on desktop)\n", windowCount);
+        return "err no wibwob chat window open";
+    }
+    fprintf(stderr, "[wibwob_ask] found chat window, posting event\n");
     // Fire-and-forget: post a custom event so processUserInput runs on the
     // next event loop iteration, not blocking the IPC handler thread.
     // We stash the text in a static so the event handler can grab it.

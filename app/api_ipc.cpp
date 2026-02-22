@@ -404,7 +404,9 @@ void ApiIpcServer::poll() {
         if (it == kv.end() || it->second.empty()) {
             resp = "err missing name\n";
         } else {
+            fprintf(stderr, "[ipc] exec_command name=%s\n", it->second.c_str());
             resp = exec_registry_command(*app_, it->second, kv) + "\n";
+            fprintf(stderr, "[ipc] exec_command result: %.80s\n", resp.c_str());
         }
     } else if (cmd == "create_window") {
         const std::string& type = kv["type"];

@@ -71,7 +71,9 @@ def send_cmd(cmd: str, kv: Optional[Dict[str, str]] = None) -> str:
 
         # Parse response and show meaningful summary
         response = data.decode("utf-8", errors="ignore").strip()
-        if response == "ok":
+        if response.startswith("err"):
+            print(f"[IPC] ✗ {cmd} FAILED: {response}")
+        elif response == "ok":
             print(f"[IPC] ✓ {cmd} succeeded")
         elif response.startswith("{"):
             # JSON response - try to parse and show key info
@@ -90,7 +92,7 @@ def send_cmd(cmd: str, kv: Optional[Dict[str, str]] = None) -> str:
             except:
                 print(f"[IPC] ✓ {cmd} → {response[:60]}")
         else:
-            print(f"[IPC] ✓ {cmd} → {response[:60]}")
+            print(f"[IPC] ✓ {cmd} → {response[:80]}")
 
         return response
     except socket.timeout:
