@@ -145,6 +145,53 @@ void TTransparentTextView::draw()
     }
 }
 
+void TTransparentTextView::handleEvent(TEvent& event)
+{
+    TScroller::handleEvent(event);
+
+    if (event.what == evKeyDown)
+    {
+        int maxY = std::max(0, static_cast<int>(displayLines.size()) - size.y);
+        switch (event.keyDown.keyCode)
+        {
+            case kbUp:
+                scrollTo(delta.x, delta.y - 1);
+                clearEvent(event);
+                break;
+            case kbDown:
+                scrollTo(delta.x, delta.y + 1);
+                clearEvent(event);
+                break;
+            case kbPgUp:
+                scrollTo(delta.x, delta.y - size.y);
+                clearEvent(event);
+                break;
+            case kbPgDn:
+                scrollTo(delta.x, delta.y + size.y);
+                clearEvent(event);
+                break;
+            case kbHome:
+                scrollTo(delta.x, 0);
+                clearEvent(event);
+                break;
+            case kbEnd:
+                scrollTo(delta.x, maxY);
+                clearEvent(event);
+                break;
+            case kbLeft:
+                if (!wordWrap)
+                    scrollTo(delta.x - 1, delta.y);
+                clearEvent(event);
+                break;
+            case kbRight:
+                if (!wordWrap)
+                    scrollTo(delta.x + 1, delta.y);
+                clearEvent(event);
+                break;
+        }
+    }
+}
+
 void TTransparentTextView::setBackgroundColor(TColorRGB color)
 {
     bgColor = color;

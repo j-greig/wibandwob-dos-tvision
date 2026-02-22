@@ -39,6 +39,7 @@ public:
     virtual ~TTransparentTextView() {}
 
     virtual void draw() override;
+    virtual void handleEvent(TEvent& event) override;
     virtual void changeBounds(const TRect& bounds) override;
 
     // Background color control
