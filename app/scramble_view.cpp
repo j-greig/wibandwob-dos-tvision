@@ -12,6 +12,75 @@
 #include <cstdlib>
 #include <ctime>
 
+namespace {
+
+// Strip terminal control/ANSI escape sequences before rendering user/LLM text
+// into Turbo Vision buffers. Raw escapes can corrupt terminal state and make the
+// TUI appear frozen even though the event loop is still running.
+static std::string sanitizeScrambleDisplayText(const std::string& in)
+{
+    std::string out;
+    out.reserve(in.size());
+
+    for (size_t i = 0; i < in.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(in[i]);
+
+        if (c == '\x1B') {
+            if (i + 1 >= in.size())
+                continue;
+
+            unsigned char next = static_cast<unsigned char>(in[i + 1]);
+
+            // CSI: ESC [ ... final-byte (0x40-0x7E)
+            if (next == '[') {
+                i += 2;
+                while (i < in.size()) {
+                    unsigned char b = static_cast<unsigned char>(in[i]);
+                    if (b >= 0x40 && b <= 0x7E)
+                        break;
+                    ++i;
+                }
+                continue;
+            }
+
+            // OSC: ESC ] ... BEL or ST (ESC \)
+            if (next == ']') {
+                i += 2;
+                while (i < in.size()) {
+                    unsigned char b = static_cast<unsigned char>(in[i]);
+                    if (b == '\a')
+                        break;
+                    if (b == '\x1B' && i + 1 < in.size() && in[i + 1] == '\\') {
+                        ++i;
+                        break;
+                    }
+                    ++i;
+                }
+                continue;
+            }
+
+            // Drop other short ESC-prefixed sequences.
+            ++i;
+            continue;
+        }
+
+        if (c == '\r') {
+            out.push_back('\n');
+            continue;
+        }
+
+        // Drop ASCII C0 controls (except newline/tab) and DEL.
+        if ((c < 0x20 && c != '\n' && c != '\t') || c == 0x7F)
+            continue;
+
+        out.push_back(c == '\t' ? ' ' : static_cast<char>(c));
+    }
+
+    return out;
+}
+
+} // namespace
+
 /*---------------------------------------------------------*/
 /* Cat Art - static string art per pose                    */
 /*---------------------------------------------------------*/
@@ -120,7 +189,7 @@ void TScrambleView::resetIdleTimer()
 
 void TScrambleView::say(const std::string& text)
 {
-    bubbleText = text;
+    bubbleText = sanitizeScrambleDisplayText(text);
     if (bubbleEnabled) {
         bubbleVisible = true;
         bubbleFadeTicks = kBubbleFadeMs / kTimerPeriodMs; // convert ms to ticks
@@ -393,7 +462,7 @@ void TScrambleMessageView::addMessage(const std::string& sender, const std::stri
 {
     ScrambleMessage msg;
     msg.sender = sender;
-    msg.text = text;
+    msg.text = sanitizeScrambleDisplayText(text);
     messages.push_back(msg);
     rebuildWrappedLines();
     drawView();
