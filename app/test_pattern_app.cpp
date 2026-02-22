@@ -125,7 +125,7 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 
 // Find first existing primer directory across module paths.
 // Checks modules-private/*/primers/ then modules/*/primers/ then legacy app/primers/.
-static std::string findPrimerDir() {
+std::string findPrimerDir() {
     const char* moduleDirs[] = { "modules-private", "modules" };
     for (const char* base : moduleDirs) {
         DIR* dir = opendir(base);
@@ -867,6 +867,8 @@ private:
     friend void api_spawn_rogue(TTestPatternApp&, const TRect* bounds);
     friend void api_spawn_deep_signal(TTestPatternApp&, const TRect* bounds);
     friend void api_spawn_app_launcher(TTestPatternApp&, const TRect* bounds);
+    friend void api_spawn_gallery(TTestPatternApp&, const TRect* bounds);
+    friend std::string api_gallery_list(TTestPatternApp&, const std::string& tab);
     friend void api_spawn_terminal(TTestPatternApp&, const TRect* bounds);
     friend void api_spawn_wibwob(TTestPatternApp&, const TRect* bounds);
     friend std::string api_terminal_write(TTestPatternApp&, const std::string& text, const std::string& window_id);
@@ -3781,6 +3783,70 @@ void api_spawn_app_launcher(TTestPatternApp& app, const TRect* bounds) {
     TWindow* w = createAppLauncherWindow(r);
     app.deskTop->insert(w);
     app.registerWindow(w);
+}
+
+void api_spawn_gallery(TTestPatternApp& app, const TRect* bounds) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 80, 30);
+    TWindow* w = createAsciiGalleryWindow(r);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
+}
+
+std::string api_gallery_list(TTestPatternApp& app, const std::string& tab) {
+    (void)app;
+    // Find primer dir
+    std::string primerDir = findPrimerDir();
+    DIR* dir = opendir(primerDir.c_str());
+    if (!dir) return "{\"error\":\"no primer directory\"}";
+
+    // Resolve tab filter before scanning
+    int tabIdx = -1;
+    if (!tab.empty()) {
+        if (tab == "#-C" || tab == "1") tabIdx = 0;
+        else if (tab == "D-L" || tab == "2") tabIdx = 1;
+        else if (tab == "M" || tab == "3") tabIdx = 2;
+        else if (tab == "N-S" || tab == "4") tabIdx = 3;
+        else if (tab == "T-Z" || tab == "5") tabIdx = 4;
+        else {
+            closedir(dir);
+            return "{\"error\":\"unknown tab filter: " + TTestPatternApp::jsonEscape(tab) + "\"}";
+        }
+    }
+
+    std::vector<std::string> files;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_name[0] == '.') continue;
+        std::string name = entry->d_name;
+        if (name.size() < 5 || name.substr(name.size() - 4) != ".txt") continue;
+
+        // Apply tab filter
+        if (tabIdx >= 0 && !name.empty()) {
+            char c = (char)std::tolower((unsigned char)name[0]);
+            bool match = false;
+            switch (tabIdx) {
+                case 0: match = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'c'); break;
+                case 1: match = c >= 'd' && c <= 'l'; break;
+                case 2: match = c == 'm'; break;
+                case 3: match = c >= 'n' && c <= 's'; break;
+                case 4: match = c >= 't' && c <= 'z'; break;
+            }
+            if (!match) continue;
+        }
+        files.push_back(name);
+    }
+    closedir(dir);
+
+    std::sort(files.begin(), files.end());
+
+    std::ostringstream os;
+    os << "{\"count\":" << files.size() << ",\"files\":[";
+    for (size_t i = 0; i < files.size(); i++) {
+        if (i > 0) os << ",";
+        os << "\"" << TTestPatternApp::jsonEscape(files[i]) << "\"";
+    }
+    os << "]}";
+    return os.str();
 }
 
 void api_spawn_wibwob(TTestPatternApp& app, const TRect* bounds) {

@@ -3,6 +3,7 @@
 #include "api_ipc.h"
 
 #include <cstdint>
+#include <sys/stat.h>
 
 #include <sstream>
 
@@ -30,6 +31,9 @@ extern void api_spawn_snake(TTestPatternApp& app, const TRect* bounds);
 extern void api_spawn_rogue(TTestPatternApp& app, const TRect* bounds);
 extern void api_spawn_deep_signal(TTestPatternApp& app, const TRect* bounds);
 extern void api_spawn_app_launcher(TTestPatternApp& app, const TRect* bounds);
+extern void api_spawn_gallery(TTestPatternApp& app, const TRect* bounds);
+extern void api_open_animation_path(TTestPatternApp& app, const std::string& path);
+extern std::string api_gallery_list(TTestPatternApp& app, const std::string& tab);
 extern void api_spawn_terminal(TTestPatternApp& app, const TRect* bounds);
 extern std::string api_terminal_write(TTestPatternApp& app, const std::string& text, const std::string& window_id);
 extern std::string api_terminal_read(TTestPatternApp& app, const std::string& window_id);
@@ -65,6 +69,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},
+        {"open_gallery", "Open the ASCII Art Gallery browser with tabbed primer explorer", false},
+        {"gallery_list", "List available primer filenames (optional tab param: 1/#-C, 2/D-L, 3/M, 4/N-S, 5/T-Z)", false},
+        {"open_primer", "Open a primer file by name in a viewer window (requires path param, e.g. 'wibwob-faces.txt')", true},
         {"open_terminal", "Open a terminal emulator window", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
@@ -208,6 +215,33 @@ std::string exec_registry_command(
     }
     if (name == "open_apps") {
         api_spawn_app_launcher(app, nullptr);
+        return "ok";
+    }
+    if (name == "open_gallery") {
+        api_spawn_gallery(app, nullptr);
+        return "ok";
+    }
+    if (name == "gallery_list") {
+        auto it = kv.find("tab");
+        std::string tab = (it != kv.end()) ? it->second : "";
+        return api_gallery_list(app, tab);
+    }
+    if (name == "open_primer") {
+        auto it = kv.find("path");
+        if (it == kv.end() || it->second.empty())
+            return "err missing path";
+        // Resolve relative names against primer directory
+        std::string path = it->second;
+        if (path.find('/') == std::string::npos && path.find('\\') == std::string::npos) {
+            // Bare filename — prepend primer dir
+            extern std::string findPrimerDir();  // defined in test_pattern_app.cpp
+            path = findPrimerDir() + "/" + path;
+        }
+        // Validate file exists
+        struct stat st;
+        if (stat(path.c_str(), &st) != 0)
+            return "err file not found: " + path;
+        api_open_animation_path(app, path);
         return "ok";
     }
     if (name == "open_terminal") {

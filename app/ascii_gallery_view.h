@@ -87,6 +87,7 @@ private:
     TScrollBar* listScrollBar;
 
     std::string primerDir;
+    std::string openPath;               // temp storage for path pointer lifetime
     std::vector<std::string> allFiles;  // all filenames (basename)
     std::vector<std::string> allPaths;  // all full paths
 
