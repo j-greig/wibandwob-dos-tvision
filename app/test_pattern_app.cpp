@@ -1168,9 +1168,11 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 break;
             }
             case cmOpenTerminal: {
+                fprintf(stderr, "[terminal] creating terminal window...\n");
                 TRect r = deskTop->getExtent();
                 r.grow(-2, -1);
                 TWindow* w = createTerminalWindow(r);
+                fprintf(stderr, "[terminal] createTerminalWindow returned %p\n", (void*)w);
                 if (w) {
                     deskTop->insert(w);
                     registerWindow(w);
