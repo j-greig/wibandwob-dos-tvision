@@ -22,7 +22,7 @@
 
 ScrambleHaikuClient::ScrambleHaikuClient()
     : endpoint("https://api.anthropic.com/v1/messages"),
-      model("claude-haiku-4-5-20251001"),
+      model("claude-haiku-4-6-20250711"),
       maxTokens(200),
       lastCallTime(0)
 {
