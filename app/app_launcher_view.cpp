@@ -370,6 +370,7 @@ static const ushort cmQuadra           = 215;
 static const ushort cmSnake            = 216;
 static const ushort cmRogue            = 217;
 static const ushort cmDeepSignal       = 219;
+static const ushort cmAsciiGallery     = 234;
 
 TAppLauncherWindow::TAppLauncherWindow(const TRect& bounds)
     : TWindowInit(&TAppLauncherWindow::initFrame),
@@ -417,6 +418,7 @@ void TAppLauncherWindow::populateApps()
     apps.push_back({"open_editor",     "Text Editor",    "\xE2\x9C\x8E", "tools",    "Edit text files",  cmTextEditor});
     apps.push_back({"open_browser",    "Browser",        "\xE2\x8C\x90", "tools",    "Web browser",      cmBrowser});
     apps.push_back({"open_terminal",   "Terminal",       "\x3E\x5F",     "tools",    "Shell terminal",   cmOpenTerminal});
+    apps.push_back({"open_gallery",    "ASCII Gallery",  "\xE2\x96\xA3", "tools",    "Browse primers",   cmAsciiGallery});
 
     // ── Creative ──
     apps.push_back({"open_paint",      "Paint Canvas",   "\xE2\x99\xA5", "creative", "Draw & paint",     cmNewPaintCanvas});
