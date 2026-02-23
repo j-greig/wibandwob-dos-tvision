@@ -98,6 +98,8 @@
 #include "deep_signal_view.h"
 // Terminal emulator window (tvterm)
 #include "tvterm_view.h"
+// Desktop texture & gallery mode
+#include "wibwob_background.h"
 // App launcher (E011)
 #include "app_launcher_view.h"
 #include "ascii_gallery_view.h"
@@ -903,6 +905,13 @@ private:
                                      const std::string&, const std::string&);
     friend std::string api_send_figlet(TTestPatternApp&, const std::string&, const std::string&, 
                                        const std::string&, int, const std::string&);
+    // Desktop texture & gallery mode
+    friend std::string api_desktop_preset(TTestPatternApp&, const std::string&);
+    friend std::string api_desktop_texture(TTestPatternApp&, const std::string&);
+    friend std::string api_desktop_color(TTestPatternApp&, int, int);
+    friend std::string api_desktop_gallery(TTestPatternApp&, bool);
+    friend std::string api_desktop_get(TTestPatternApp&);
+    bool galleryMode_ = false;
 };
 
 // Static member definition
@@ -2438,8 +2447,19 @@ TDeskTop* TTestPatternApp::initDeskTop(TRect r)
 {
     r.a.y = 1;
     r.b.y--;
-    // Create desktop with standard constructor (plain background)
     TDeskTop* desktop = new TDeskTop(r);
+
+    // Replace default TBackground with TWibWobBackground (colour-controllable)
+    if (desktop->background) {
+        TRect bgBounds = desktop->background->getBounds();
+        desktop->remove(desktop->background);
+        destroy(desktop->background);
+        auto* bg = new TWibWobBackground(bgBounds, '\xB1', 7, 1);
+        bg->growMode = gfGrowHiX | gfGrowHiY;
+        desktop->background = bg;
+        desktop->insertBefore(bg, desktop->first());
+    }
+
     return desktop;
 }
 
@@ -3157,6 +3177,32 @@ bool TTestPatternApp::loadWorkspaceFromFile(const std::string& path)
         }
     }
 
+    // Restore desktop state (texture, colour, gallery mode)
+    size_t deskPos = data.find("\"desktop\"");
+    if (deskPos != std::string::npos) {
+        size_t pos = data.find('{', deskPos);
+        if (pos != std::string::npos) {
+            std::string preset;
+            if (parseKeyedString(data, pos+1, "preset", preset)) {
+                api_desktop_preset(*this, preset);
+            } else {
+                // Fall back to individual fields
+                std::string ch;
+                int fg = -1, bg = -1;
+                if (parseKeyedString(data, pos+1, "char", ch) && !ch.empty()) {
+                    api_desktop_texture(*this, ch);
+                }
+                if (parseKeyedNumber(data, pos+1, "fg", fg) && parseKeyedNumber(data, pos+1, "bg", bg)) {
+                    api_desktop_color(*this, fg, bg);
+                }
+            }
+            bool gallery = false;
+            if (parseKeyedBool(data, pos+1, "gallery", gallery) && gallery) {
+                api_desktop_gallery(*this, true);
+            }
+        }
+    }
+
     // Locate windows array and extract each object substring
     size_t winKey = data.find("\"windows\"");
     if (winKey == std::string::npos) {
@@ -3435,6 +3481,26 @@ std::string TTestPatternApp::buildWorkspaceJson()
     json += std::string("  \"timestamp\": \"") + ts + "\",\n";
     json += "  \"screen\": { \"width\": " + std::to_string(sw) + ", \"height\": " + std::to_string(sh) + " },\n";
     json += std::string("  \"globals\": { \"patternMode\": \"") + (USE_CONTINUOUS_PATTERN ? "continuous" : "tiled") + "\" },\n";
+
+    // Desktop state
+    {
+        auto* bg = dynamic_cast<TWibWobBackground*>(deskTop->background);
+        if (bg) {
+            json += "  \"desktop\": { ";
+            json += "\"char\": \"";
+            char ch = bg->getPattern();
+            if (ch == '"') json += "\\\"";
+            else if (ch == '\\') json += "\\\\";
+            else json += ch;
+            json += "\", ";
+            json += "\"fg\": " + std::to_string((int)bg->getFg()) + ", ";
+            json += "\"bg\": " + std::to_string((int)bg->getBg()) + ", ";
+            json += std::string("\"gallery\": ") + (galleryMode_ ? "true" : "false") + ", ";
+            json += "\"preset\": \"" + bg->getPresetName() + "\"";
+            json += " },\n";
+        }
+    }
+
     json += "  \"windows\": [\n";
 
     // Collect windows in current z-order (child list is circular)
@@ -4060,6 +4126,79 @@ std::string api_set_theme_variant(TTestPatternApp& app, const std::string& varia
 std::string api_reset_theme(TTestPatternApp& app) {
     (void)app;
     return "ok";
+}
+
+// --- Desktop texture, colour & gallery mode ---
+
+static TWibWobBackground* getWibWobBg(TTestPatternApp& app) {
+    return dynamic_cast<TWibWobBackground*>(app.deskTop->background);
+}
+
+std::string api_desktop_preset(TTestPatternApp& app, const std::string& preset) {
+    auto* bg = getWibWobBg(app);
+    if (!bg) return "err no TWibWobBackground";
+    // Validate preset name
+    for (auto& p : getDesktopPresets()) {
+        if (preset == p.name) {
+            bg->setPreset(preset);
+            return "ok";
+        }
+    }
+    return "err unknown preset";
+}
+
+std::string api_desktop_texture(TTestPatternApp& app, const std::string& ch) {
+    auto* bg = getWibWobBg(app);
+    if (!bg) return "err no TWibWobBackground";
+    if (ch.empty()) return "err empty char";
+    bg->setTexture(ch[0]);
+    return "ok";
+}
+
+std::string api_desktop_color(TTestPatternApp& app, int fg, int bg_color) {
+    auto* bg = getWibWobBg(app);
+    if (!bg) return "err no TWibWobBackground";
+    if (fg < 0 || fg > 15 || bg_color < 0 || bg_color > 15) return "err color out of range 0-15";
+    bg->setColor(static_cast<uchar>(fg), static_cast<uchar>(bg_color));
+    return "ok";
+}
+
+std::string api_desktop_gallery(TTestPatternApp& app, bool on) {
+    if (!app.menuBar || !app.statusLine) return "err no chrome views";
+
+    app.galleryMode_ = on;
+    app.menuBar->setState(sfVisible, !on);
+    app.statusLine->setState(sfVisible, !on);
+
+    // Recalculate desktop bounds to fill freed/restored rows
+    TRect r = app.getExtent();
+    if (!on) {
+        r.a.y = 1;       // leave room for menu bar
+        r.b.y--;          // leave room for status line
+    }
+    // else: full extent (row 0 to bottom)
+    app.deskTop->changeBounds(r);
+    app.deskTop->drawView();
+
+    return "ok";
+}
+
+std::string api_desktop_get(TTestPatternApp& app) {
+    auto* bg = getWibWobBg(app);
+    if (!bg) return "{}";
+    std::string json = "{";
+    json += "\"char\":\"";
+    char ch = bg->getPattern();
+    if (ch == '"') json += "\\\"";
+    else if (ch == '\\') json += "\\\\";
+    else json += ch;
+    json += "\",";
+    json += "\"fg\":" + std::to_string((int)bg->getFg()) + ",";
+    json += "\"bg\":" + std::to_string((int)bg->getBg()) + ",";
+    json += "\"gallery\":" + std::string(app.galleryMode_ ? "true" : "false") + ",";
+    json += "\"preset\":\"" + bg->getPresetName() + "\"";
+    json += "}";
+    return json;
 }
 
 void api_spawn_paint(TTestPatternApp& app, const TRect* bounds) {
