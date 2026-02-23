@@ -65,6 +65,26 @@ Evidence from `workspaces/last_workspace_260223_0849.json`:
 - Workspace restore: `app/test_pattern_app.cpp` (search `openWorkspace`)
 - Related: E011 (desktop shell), spk-auth-unification (window spawn DRY refactor)
 
+### Feature F06 — Command Surface Parity Audit & Enforcement
+The core problem: we add things (window types, menu commands, app launcher entries) piecemeal and they don't propagate to all the surfaces they need to exist on. A new window type needs to be in: window type registry, menu/app launcher, C++ command registry, API server routes, MCP tools (now auto-derived from registry, but still needs the command registered), agent prompt files, and workspace save/restore. We routinely miss 2-3 of these.
+
+- [ ] AC-13: Full audit matrix — every menu command, every window type, every app launcher entry cross-referenced against: C++ command registry, API `/commands` endpoint, MCP tool availability (via `tui_list_commands`), workspace save/restore support, agent prompt documentation
+  - Test: script that fetches `/commands`, scrapes menu items from source, scrapes app launcher entries, scrapes window type registry, and reports gaps as failures
+- [ ] AC-14: Agent prompt files include `tui_list_commands` and `tui_menu_command` as the primary discovery/execution tools, with no stale hardcoded tool lists
+  - Test: grep prompt files for hardcoded `tui_open_*` / `tui_create_*` references that bypass the generic pair
+- [ ] AC-15: Checklist-as-code — a runnable script (or `ctest` target) that validates surface parity after any change. Intended to be run by developers (human or AI) after adding a new window type, menu command, or app launcher entry. Checks:
+  1. Window type has a registered slug in `window_type_registry`
+  2. Window type has `getProps()`/`setProps()` for workspace round-trip
+  3. Menu/app launcher command exists in C++ command registry (`get_command_capabilities()`)
+  4. Command is reachable via API (`/commands` lists it)
+  5. Command is reachable via MCP (`tui_list_commands` returns it)
+  6. Agent prompt files don't hardcode tool names that should go through `tui_menu_command`
+  - Test: the script itself exits 0 on a clean repo, exits non-zero on a repo with a known-missing registration (synthetic test)
+- [ ] AC-16: CONTRIBUTING.md or CLAUDE.md section documenting the "add a new window/command" checklist for both human and AI developers
+  - Test: section exists and references the parity check script
+
 ## Effort Estimate
 
-Medium-Large. Touches every view class, the type registry, save/restore paths, and needs new contract tests. Recommend slicing F01+F02 first (serialisation), then F03 (restore), then F04 (round-trip test).
+Large. Two distinct work streams:
+1. **Serialisation parity** (F01–F05): touches every view class, type registry, save/restore paths. Medium effort. Slice F01+F02 first, then F03, then F04+F05.
+2. **Surface parity audit & enforcement** (F06): builds the audit tooling and checklist-as-code that prevents future drift. Medium effort but high leverage — pays back every time we add a feature. Slice AC-13 (audit) first to size the gap, then AC-15 (script), then AC-14+AC-16 (docs).
