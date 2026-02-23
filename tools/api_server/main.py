@@ -122,6 +122,24 @@ def make_app() -> FastAPI:
             properties=dict(caps.get("properties", {})),
         )
 
+    @app.get("/commands",
+             summary="List all available commands with descriptions and parameter hints",
+             description="Returns the full command registry from the C++ TUI app. "
+                         "Each command has a name, description, and whether it requires parameters. "
+                         "Use POST /menu/command to execute any command by name.")
+    async def list_commands() -> Dict[str, Any]:
+        """Agent-friendly command discovery endpoint.
+
+        Returns the full command manifest so agents can discover what
+        actions are available without hardcoding command names."""
+        registry = await ctl.get_registry_capabilities()
+        commands = registry.get("commands", [])
+        return {
+            "count": len(commands),
+            "commands": commands,
+            "execute_via": "POST /menu/command {command: '<name>', args: {key: value}}",
+        }
+
     @app.get("/state", response_model=AppStateModel)
     async def state() -> AppStateModel:
         st = await ctl.get_state()
