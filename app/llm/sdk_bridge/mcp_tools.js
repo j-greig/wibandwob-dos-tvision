@@ -1,11 +1,19 @@
 /**
- * MCP Tools for TUI Application Control
- * 
- * Provides custom tools for Claude Code SDK that interface
- * with the TUI application's API server for programmatic control.
- * 
- * Tools here should match the Python MCP surface in tools/api_server/mcp_tools.py.
- * Window types are NOT hardcoded — use z.string() and let the C++ registry validate.
+ * MCP Tools for TUI Application Control (SDK Bridge)
+ *
+ * This file defines tools passed to the Claude Agent SDK for Wib&Wob Chat.
+ * The SDK takes tool definitions inline (not via HTTP), so this is a separate
+ * surface from the FastAPI auto-generated MCP tools.
+ *
+ * ARCHITECTURE:
+ *   - "Special" tools that need custom REST calls (create_window, move_window,
+ *     get_state, close_window, send_text/figlet, paint_*, terminal_*) are
+ *     defined here with typed schemas.
+ *   - ALL other commands (open_gallery, cascade, tile, scramble_say, etc.)
+ *     are accessed via tui_list_commands + tui_menu_command — the generic
+ *     discovery+execute pair that delegates to the C++ command registry.
+ *   - This means new C++ commands are instantly available without touching
+ *     this file.
  */
 
 const { createSdkMcpServer, tool } = require('@anthropic-ai/claude-agent-sdk');
@@ -19,9 +27,7 @@ const API_BASE_URL = 'http://127.0.0.1:8089';
 const apiClient = axios.create({
     baseURL: API_BASE_URL,
     timeout: 5000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
+    headers: { 'Content-Type': 'application/json' }
 });
 
 apiClient.interceptors.response.use(
@@ -34,16 +40,6 @@ apiClient.interceptors.response.use(
     }
 );
 
-// Helper: run a menu command via the API
-async function execCommand(command, args = {}) {
-    const payload = { command };
-    if (Object.keys(args).length > 0) {
-        payload.args = args;
-    }
-    const response = await apiClient.post('/menu/command', payload);
-    return response.data;
-}
-
 // Helper: standard success/error response wrapper
 function mcpResult(text) {
     return { content: [{ type: "text", text }] };
@@ -54,25 +50,99 @@ function mcpError(text) {
 
 /**
  * Create MCP server with TUI control tools.
- * Matches Python MCP surface in tools/api_server/mcp_tools.py.
+ * Only "special" tools that need custom REST endpoints are defined here.
+ * Everything else is accessed via tui_list_commands + tui_menu_command.
  */
 function createTuiMcpServer() {
     return createSdkMcpServer({
         name: "tui-control",
-        version: "1.0.0",
+        version: "2.0.0",
         description: "Tools for controlling TUI application windows and layout",
-        
+
         tools: [
-            // ── Window Management ──────────────────────────────────────
+            // ── Dynamic Command Discovery & Execution ──────────────────
+            // PRIMARY INTERFACE: discover what's available, then execute.
+
+            tool(
+                "tui_list_commands",
+                "Discover ALL available TUI commands with descriptions and parameter hints. Call this FIRST to see what you can do (open_gallery, cascade, tile, scramble_say, open_terminal, etc.), then use tui_menu_command to execute any command by name.",
+                {},
+                async () => {
+                    try {
+                        const response = await apiClient.get('/commands');
+                        return mcpResult(JSON.stringify(response.data, null, 2));
+                    } catch (error) {
+                        return mcpError(`Error listing commands: ${error.message}`);
+                    }
+                }
+            ),
+
+            tool(
+                "tui_menu_command",
+                "Execute any TUI command by name. Use tui_list_commands first to discover available commands. Works for ALL commands: open_gallery, cascade, tile, open_terminal, scramble_say, open_primer, gallery_list, etc.",
+                {
+                    command: z.string().describe("Command name from tui_list_commands"),
+                    args: z.record(z.string()).optional().describe("Command arguments as key-value pairs")
+                },
+                async (params) => {
+                    try {
+                        const payload = { command: params.command };
+                        if (params.args && Object.keys(params.args).length > 0) {
+                            payload.args = params.args;
+                        }
+                        const response = await apiClient.post('/menu/command', payload);
+                        return mcpResult(JSON.stringify(response.data, null, 2));
+                    } catch (error) {
+                        const detail = error.response?.data?.detail || error.message;
+                        return mcpError(`Command '${params.command}' failed: ${detail}`);
+                    }
+                }
+            ),
+
+            // ── State & Screenshot (custom REST endpoints) ─────────────
+
+            tool(
+                "tui_get_state",
+                "Get current state of TUI application including all windows, canvas size, and pattern mode",
+                {},
+                async () => {
+                    try {
+                        const response = await apiClient.get('/state');
+                        const state = response.data;
+                        const windowList = state.windows.map(w =>
+                            `- ${w.id}: ${w.type} "${w.title}" at (${w.rect.x},${w.rect.y}) ${w.rect.w}x${w.rect.h}${w.focused ? ' [FOCUSED]' : ''}`
+                        ).join('\n');
+                        return mcpResult(`TUI State:\nCanvas: ${state.canvas.width}x${state.canvas.height} (${state.canvas.cols}x${state.canvas.rows})\nPattern Mode: ${state.pattern_mode}\nUptime: ${Math.floor(state.uptime_sec)}s\n\nWindows (${state.windows.length}):\n${windowList || '(no windows)'}`);
+                    } catch (error) {
+                        return mcpError(`Error getting state: ${error.message}`);
+                    }
+                }
+            ),
+
+            tool(
+                "tui_screenshot",
+                "Take a screenshot of the TUI canvas and return the text capture",
+                {},
+                async () => {
+                    try {
+                        const response = await apiClient.post('/screenshot');
+                        return mcpResult(JSON.stringify(response.data, null, 2));
+                    } catch (error) {
+                        return mcpError(`Error: ${error.message}`);
+                    }
+                }
+            ),
+
+            // ── Window Management (custom REST endpoints) ──────────────
 
             tool(
                 "tui_create_window",
-                "Create a new window in the TUI application. Use /capabilities to see all available types.",
+                "Create a new window. Use tui_list_commands to see available window types.",
                 {
-                    type: z.string().describe("Window type slug (e.g. test_pattern, gradient, verse, terminal, browser, paint, text_editor, orbit, life, blocks, etc.)"),
+                    type: z.string().describe("Window type slug (e.g. test_pattern, gradient, verse, terminal, browser, paint, text_editor, orbit, life, blocks)"),
                     title: z.string().optional().describe("Window title"),
                     x: z.number().int().optional().describe("X position"),
-                    y: z.number().int().optional().describe("Y position"), 
+                    y: z.number().int().optional().describe("Y position"),
                     width: z.number().int().optional().describe("Window width"),
                     height: z.number().int().optional().describe("Window height"),
                     props: z.record(z.any()).optional().describe("Additional window properties")
@@ -88,7 +158,6 @@ function createTuiMcpServer() {
                             props: args.props || {}
                         };
                         const response = await apiClient.post('/windows', payload);
-                        console.error(`MCP TOOL: tui_create_window - created ${args.type} window ${response.data.id}`);
                         return mcpResult(`Created ${args.type} window: ${response.data.id}\nTitle: ${response.data.title}\nPosition: (${response.data.rect.x}, ${response.data.rect.y})\nSize: ${response.data.rect.w}x${response.data.rect.h}`);
                     } catch (error) {
                         return mcpError(`Error creating window: ${error.message}`);
@@ -97,10 +166,10 @@ function createTuiMcpServer() {
             ),
 
             tool(
-                "tui_move_window", 
-                "Move and resize a window",
+                "tui_move_window",
+                "Move and/or resize a window by ID",
                 {
-                    windowId: z.string().describe("ID of the window to move"),
+                    windowId: z.string().describe("Window ID"),
                     x: z.number().int().optional().describe("New X position"),
                     y: z.number().int().optional().describe("New Y position"),
                     width: z.number().int().optional().describe("New width"),
@@ -114,158 +183,81 @@ function createTuiMcpServer() {
                         if (args.width !== undefined) payload.w = args.width;
                         if (args.height !== undefined) payload.h = args.height;
                         const response = await apiClient.post(`/windows/${args.windowId}/move`, payload);
-                        console.error(`MCP TOOL: tui_move_window - moved ${args.windowId}`);
-                        return mcpResult(`Moved window ${args.windowId} to (${response.data.rect.x}, ${response.data.rect.y}), size ${response.data.rect.w}x${response.data.rect.h}`);
+                        return mcpResult(`Moved window ${args.windowId}`);
                     } catch (error) {
-                        return mcpError(`Error moving window: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_get_state",
-                "Get current state of TUI application including all windows and canvas size",
-                {},
-                async () => {
-                    try {
-                        const response = await apiClient.get('/state');
-                        const state = response.data;
-                        console.error(`MCP TOOL: tui_get_state - ${state.windows.length} windows`);
-                        const windowList = state.windows.map(w => 
-                            `- ${w.id}: ${w.type} "${w.title}" at (${w.rect.x},${w.rect.y}) ${w.rect.w}x${w.rect.h}${w.focused ? ' [FOCUSED]' : ''}`
-                        ).join('\n');
-                        return mcpResult(`TUI State:\nCanvas: ${state.canvas.width}x${state.canvas.height} (${state.canvas.cols}x${state.canvas.rows})\nPattern Mode: ${state.pattern_mode}\nUptime: ${Math.floor(state.uptime_sec)}s\n\nWindows (${state.windows.length}):\n${windowList || '(no windows)'}`);
-                    } catch (error) {
-                        return mcpError(`Error getting state: ${error.message}`);
+                        return mcpError(`Error: ${error.message}`);
                     }
                 }
             ),
 
             tool(
                 "tui_close_window",
-                "Close a specific window",
-                { windowId: z.string().describe("ID of the window to close") },
+                "Close a specific window by ID",
+                { windowId: z.string().describe("Window ID") },
                 async (args) => {
                     try {
                         await apiClient.post(`/windows/${args.windowId}/close`);
                         return mcpResult(`Closed window ${args.windowId}`);
                     } catch (error) {
-                        return mcpError(`Error closing window: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Layout Commands ────────────────────────────────────────
-
-            tool(
-                "tui_cascade_windows",
-                "Arrange all windows in cascade layout", 
-                {},
-                async () => {
-                    try {
-                        await execCommand("cascade");
-                        return mcpResult("Windows cascaded");
-                    } catch (error) {
                         return mcpError(`Error: ${error.message}`);
                     }
                 }
             ),
 
-            tool(
-                "tui_tile_windows", 
-                "Arrange all windows in tiled layout",
-                {},
-                async () => {
-                    try {
-                        await execCommand("tile");
-                        return mcpResult("Windows tiled");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_close_all_windows",
-                "Close all windows",
-                {},
-                async () => {
-                    try {
-                        await execCommand("close_all");
-                        return mcpResult("All windows closed");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Text Editor ────────────────────────────────────────────
+            // ── Text Editor (custom REST endpoints) ────────────────────
 
             tool(
                 "tui_send_text",
-                "Send text to a text editor window",
+                "Send text to a text editor window (auto-creates one if needed)",
                 {
-                    windowId: z.string().optional().describe("ID of text editor window"),
+                    windowId: z.string().optional().describe("Text editor window ID (omit to auto-create)"),
                     content: z.string().describe("Text content to send"),
-                    mode: z.enum(["append", "replace", "insert"]).default("append").describe("How to insert the text")
+                    mode: z.enum(["append", "replace", "insert"]).default("append").describe("Insert mode")
                 },
                 async (args) => {
                     try {
-                        const endpoint = args.windowId ? 
+                        const endpoint = args.windowId ?
                             `/windows/${args.windowId}/send_text` : '/text_editor/send_text';
                         await apiClient.post(endpoint, { content: args.content, mode: args.mode });
-                        return mcpResult(`Text sent to ${args.windowId || 'auto-created'} editor (${args.mode} mode)`);
+                        return mcpResult(`Text sent (${args.mode} mode)`);
                     } catch (error) {
-                        return mcpError(`Error sending text: ${error.message}`);
+                        return mcpError(`Error: ${error.message}`);
                     }
                 }
             ),
 
             tool(
                 "tui_send_figlet",
-                "Send ASCII art text using figlet to a text editor window",
+                "Send FIGlet ASCII art text to a text editor window",
                 {
                     text: z.string().describe("Text to convert to ASCII art"),
                     font: z.string().default("standard").describe("Figlet font name"),
-                    windowId: z.string().optional().describe("ID of text editor window")
+                    windowId: z.string().optional().describe("Text editor window ID (omit to auto-create)")
                 },
                 async (args) => {
                     try {
                         const endpoint = args.windowId ?
                             `/windows/${args.windowId}/send_figlet` : '/text_editor/send_figlet';
                         await apiClient.post(endpoint, { text: args.text, font: args.font });
-                        return mcpResult(`Figlet "${args.text}" (${args.font}) sent to editor`);
-                    } catch (error) {
-                        return mcpError(`Error sending figlet: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Terminal ───────────────────────────────────────────────
-
-            tool(
-                "tui_open_terminal",
-                "Open a new terminal emulator window",
-                {},
-                async () => {
-                    try {
-                        await execCommand("open_terminal");
-                        return mcpResult("Terminal opened");
+                        return mcpResult(`Figlet "${args.text}" (${args.font}) sent`);
                     } catch (error) {
                         return mcpError(`Error: ${error.message}`);
                     }
                 }
             ),
 
+            // ── Terminal (custom processing needed) ────────────────────
+
             tool(
                 "tui_terminal_write",
-                "Write text/commands to the terminal window. Use a real newline character (not literal backslash-n) to press Enter.",
-                { text: z.string().describe("Text to write to terminal. Include a newline to press Enter.") },
+                "Write text/commands to the terminal window. Include a real newline to press Enter.",
+                { text: z.string().describe("Text to write (include newline to press Enter)") },
                 async (args) => {
                     try {
                         // Unescape literal \n and \r that the LLM may produce
                         const text = args.text.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
-                        await execCommand("terminal_write", { text });
+                        const payload = { command: "terminal_write", args: { text } };
+                        await apiClient.post('/menu/command', payload);
                         return mcpResult(`Wrote to terminal: ${args.text.substring(0, 60)}`);
                     } catch (error) {
                         return mcpError(`Error: ${error.message}`);
@@ -279,9 +271,9 @@ function createTuiMcpServer() {
                 {},
                 async () => {
                     try {
-                        const result = await execCommand("terminal_read");
-                        const output = result.result || '';
-                        // Strip null bytes from terminal buffer
+                        const payload = { command: "terminal_read" };
+                        const response = await apiClient.post('/menu/command', payload);
+                        const output = response.data.result || '';
                         const clean = output.replace(/\0/g, '').trim();
                         return mcpResult(`Terminal output:\n${clean.substring(0, 2000)}`);
                     } catch (error) {
@@ -290,159 +282,11 @@ function createTuiMcpServer() {
                 }
             ),
 
-            // ── Screenshot ─────────────────────────────────────────────
-
-            tool(
-                "tui_screenshot",
-                "Take a screenshot of the TUI canvas",
-                {},
-                async () => {
-                    try {
-                        await execCommand("screenshot");
-                        return mcpResult("Screenshot taken");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Theme ──────────────────────────────────────────────────
-
-            tool(
-                "tui_set_theme_mode",
-                "Set the TUI theme mode",
-                { mode: z.enum(["light", "dark"]).describe("Theme mode") },
-                async (args) => {
-                    try {
-                        await execCommand("set_theme_mode", { mode: args.mode });
-                        return mcpResult(`Theme set to ${args.mode}`);
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_set_theme_variant",
-                "Set the TUI theme colour variant",
-                { variant: z.string().describe("Theme variant name (e.g. monochrome, dark_pastel, neon)") },
-                async (args) => {
-                    try {
-                        await execCommand("set_theme_variant", { variant: args.variant });
-                        return mcpResult(`Theme variant set to ${args.variant}`);
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_reset_theme",
-                "Reset theme to defaults",
-                {},
-                async () => {
-                    try {
-                        await execCommand("reset_theme");
-                        return mcpResult("Theme reset to defaults");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Pattern Mode ───────────────────────────────────────────
-
-            tool(
-                "tui_set_pattern_mode",
-                "Set background pattern animation mode",
-                { mode: z.string().optional().describe("Pattern mode (e.g. continuous, static)") },
-                async (args) => {
-                    try {
-                        await execCommand("pattern_mode", args.mode ? { mode: args.mode } : {});
-                        return mcpResult("Pattern mode updated");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Scramble (cat pet) ─────────────────────────────────────
-
-            tool(
-                "tui_open_scramble",
-                "Open the Scramble cat window",
-                {},
-                async () => {
-                    try {
-                        await execCommand("open_scramble");
-                        return mcpResult("Scramble opened");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_scramble_say",
-                "Make Scramble the cat say something",
-                { text: z.string().describe("Text for Scramble to say") },
-                async (args) => {
-                    try {
-                        await execCommand("scramble_say", { text: args.text });
-                        return mcpResult(`Scramble says: ${args.text}`);
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_scramble_pet",
-                "Pet Scramble the cat",
-                {},
-                async () => {
-                    try {
-                        const result = await execCommand("scramble_pet");
-                        return mcpResult(`Petted Scramble: ${result.result || 'purr'}`);
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_scramble_expand",
-                "Toggle Scramble window size",
-                {},
-                async () => {
-                    try {
-                        await execCommand("scramble_expand");
-                        return mcpResult("Scramble toggled");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Paint ──────────────────────────────────────────────────
-
-            tool(
-                "tui_new_paint_canvas",
-                "Open a new paint canvas window",
-                {},
-                async () => {
-                    try {
-                        await execCommand("new_paint_canvas");
-                        return mcpResult("Paint canvas opened");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
+            // ── Paint Canvas (custom arg formatting) ───────────────────
 
             tool(
                 "tui_paint_cell",
-                "Set a single cell on the paint canvas. Colours 0-15 (CGA): 0=black 1=dark blue 2=dark green 3=dark cyan 4=dark red 5=dark magenta 6=brown 7=light grey 8=dark grey 9=blue 10=green 11=cyan 12=red 13=magenta 14=yellow 15=white",
+                "Set a single cell on a paint canvas. Colours 0-15 (CGA): 0=black 1=dark blue 2=dark green 3=dark cyan 4=dark red 5=dark magenta 6=brown 7=light grey 8=dark grey 9=blue 10=green 11=cyan 12=red 13=magenta 14=yellow 15=white",
                 {
                     window_id: z.string().describe("Paint canvas window ID"),
                     x: z.number().describe("Column (0=left)"),
@@ -452,7 +296,8 @@ function createTuiMcpServer() {
                 },
                 async ({ window_id, x, y, fg, bg }) => {
                     try {
-                        await execCommand("paint_cell", { id: window_id, x: String(x), y: String(y), fg: String(fg ?? 15), bg: String(bg ?? 0) });
+                        const payload = { command: "paint_cell", args: { id: window_id, x: String(x), y: String(y), fg: String(fg ?? 15), bg: String(bg ?? 0) } };
+                        await apiClient.post('/menu/command', payload);
                         return mcpResult(`Cell set at (${x},${y})`);
                     } catch (error) {
                         return mcpError(`Error: ${error.message}`);
@@ -462,7 +307,7 @@ function createTuiMcpServer() {
 
             tool(
                 "tui_paint_text",
-                "Write text on the paint canvas at a given position",
+                "Write text on a paint canvas at a given position",
                 {
                     window_id: z.string().describe("Paint canvas window ID"),
                     x: z.number().describe("Starting column"),
@@ -473,7 +318,8 @@ function createTuiMcpServer() {
                 },
                 async ({ window_id, x, y, text, fg, bg }) => {
                     try {
-                        await execCommand("paint_text", { id: window_id, x: String(x), y: String(y), text, fg: String(fg ?? 15), bg: String(bg ?? 0) });
+                        const payload = { command: "paint_text", args: { id: window_id, x: String(x), y: String(y), text, fg: String(fg ?? 15), bg: String(bg ?? 0) } };
+                        await apiClient.post('/menu/command', payload);
                         return mcpResult(`Text drawn at (${x},${y})`);
                     } catch (error) {
                         return mcpError(`Error: ${error.message}`);
@@ -483,18 +329,19 @@ function createTuiMcpServer() {
 
             tool(
                 "tui_paint_line",
-                "Draw a line on the paint canvas between two points",
+                "Draw a line on a paint canvas between two points",
                 {
                     window_id: z.string().describe("Paint canvas window ID"),
                     x0: z.number().describe("Start column"),
                     y0: z.number().describe("Start row"),
                     x1: z.number().describe("End column"),
                     y1: z.number().describe("End row"),
-                    erase: z.boolean().optional().describe("Erase instead of draw (default false)"),
+                    erase: z.boolean().optional().describe("Erase instead of draw"),
                 },
                 async ({ window_id, x0, y0, x1, y1, erase }) => {
                     try {
-                        await execCommand("paint_line", { id: window_id, x0: String(x0), y0: String(y0), x1: String(x1), y1: String(y1), erase: erase ? "1" : "0" });
+                        const payload = { command: "paint_line", args: { id: window_id, x0: String(x0), y0: String(y0), x1: String(x1), y1: String(y1), erase: erase ? "1" : "0" } };
+                        await apiClient.post('/menu/command', payload);
                         return mcpResult(`Line drawn (${x0},${y0})->(${x1},${y1})`);
                     } catch (error) {
                         return mcpError(`Error: ${error.message}`);
@@ -504,18 +351,19 @@ function createTuiMcpServer() {
 
             tool(
                 "tui_paint_rect",
-                "Draw a rectangle outline on the paint canvas",
+                "Draw a rectangle outline on a paint canvas",
                 {
                     window_id: z.string().describe("Paint canvas window ID"),
                     x0: z.number().describe("Left column"),
                     y0: z.number().describe("Top row"),
                     x1: z.number().describe("Right column"),
                     y1: z.number().describe("Bottom row"),
-                    erase: z.boolean().optional().describe("Erase instead of draw (default false)"),
+                    erase: z.boolean().optional().describe("Erase instead of draw"),
                 },
                 async ({ window_id, x0, y0, x1, y1, erase }) => {
                     try {
-                        await execCommand("paint_rect", { id: window_id, x0: String(x0), y0: String(y0), x1: String(x1), y1: String(y1), erase: erase ? "1" : "0" });
+                        const payload = { command: "paint_rect", args: { id: window_id, x0: String(x0), y0: String(y0), x1: String(x1), y1: String(y1), erase: erase ? "1" : "0" } };
+                        await apiClient.post('/menu/command', payload);
                         return mcpResult(`Rectangle drawn (${x0},${y0})->(${x1},${y1})`);
                     } catch (error) {
                         return mcpError(`Error: ${error.message}`);
@@ -526,12 +374,11 @@ function createTuiMcpServer() {
             tool(
                 "tui_paint_clear",
                 "Clear the entire paint canvas",
-                {
-                    window_id: z.string().describe("Paint canvas window ID"),
-                },
+                { window_id: z.string().describe("Paint canvas window ID") },
                 async ({ window_id }) => {
                     try {
-                        await execCommand("paint_clear", { id: window_id });
+                        const payload = { command: "paint_clear", args: { id: window_id } };
+                        await apiClient.post('/menu/command', payload);
                         return mcpResult("Canvas cleared");
                     } catch (error) {
                         return mcpError(`Error: ${error.message}`);
@@ -541,210 +388,18 @@ function createTuiMcpServer() {
 
             tool(
                 "tui_paint_read",
-                "Read the paint canvas content as text. Use to see what has been drawn.",
-                {
-                    window_id: z.string().describe("Paint canvas window ID"),
-                },
+                "Read the paint canvas content as text",
+                { window_id: z.string().describe("Paint canvas window ID") },
                 async ({ window_id }) => {
                     try {
-                        const result = await execCommand("paint_export", { id: window_id });
-                        return mcpResult(result);
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Apps & Games ───────────────────────────────────────────
-
-            tool(
-                "tui_open_micropolis",
-                "Open Micropolis (SimCity) ASCII view",
-                {},
-                async () => {
-                    try {
-                        await execCommand("open_micropolis_ascii");
-                        return mcpResult("Micropolis opened");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_open_quadra",
-                "Open the Quadra game",
-                {},
-                async () => {
-                    try {
-                        await execCommand("open_quadra");
-                        return mcpResult("Quadra opened");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_open_snake",
-                "Open the Snake game",
-                {},
-                async () => {
-                    try {
-                        await execCommand("open_snake");
-                        return mcpResult("Snake opened");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_open_rogue",
-                "Open the Rogue-like game",
-                {},
-                async () => {
-                    try {
-                        await execCommand("open_rogue");
-                        return mcpResult("Rogue opened");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_open_deep_signal",
-                "Open the Deep Signal window",
-                {},
-                async () => {
-                    try {
-                        await execCommand("open_deep_signal");
-                        return mcpResult("Deep Signal opened");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_open_apps",
-                "Open the apps launcher",
-                {},
-                async () => {
-                    try {
-                        await execCommand("open_apps");
-                        return mcpResult("Apps launcher opened");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Chat ───────────────────────────────────────────────────
-
-            tool(
-                "tui_chat_receive",
-                "Send a message to the chat window from an external source",
-                {
-                    sender: z.string().describe("Sender name"),
-                    text: z.string().describe("Message text")
-                },
-                async (args) => {
-                    try {
-                        await execCommand("chat_receive", { sender: args.sender, text: args.text });
-                        return mcpResult(`Chat message sent from ${args.sender}`);
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_wibwob_ask",
-                "Send a user message to the Wib&Wob chat window, triggering an AI response. Use this to prompt yourself or relay information back into the chat.",
-                {
-                    text: z.string().describe("The message to inject as a user message")
-                },
-                async (args) => {
-                    try {
-                        await execCommand("wibwob_ask", { text: args.text });
-                        return mcpResult(`Message sent to Wib&Wob chat`);
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Workspace ──────────────────────────────────────────────
-
-            tool(
-                "tui_save_workspace",
-                "Save current window layout (note: may show a dialog in TUI)",
-                {},
-                async () => {
-                    try {
-                        await execCommand("save_workspace");
-                        return mcpResult("Workspace saved");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_open_workspace",
-                "Load a saved workspace layout",
-                { path: z.string().optional().describe("Path to workspace JSON file") },
-                async (args) => {
-                    try {
-                        await execCommand("open_workspace", args.path ? { path: args.path } : {});
-                        return mcpResult("Workspace loaded");
-                    } catch (error) {
-                        return mcpError(`Error: ${error.message}`);
-                    }
-                }
-            ),
-
-            // ── Dynamic Command Discovery & Execution ──────────────────
-            // These two tools make all C++ registry commands available
-            // without hardcoding each one in this file.
-
-            tool(
-                "tui_list_commands",
-                "Discover all available TUI commands with descriptions and parameter hints. Call this first to see what you can do, then use tui_menu_command to execute any command by name.",
-                {},
-                async () => {
-                    try {
-                        const response = await apiClient.get('/commands');
-                        return mcpResult(JSON.stringify(response.data, null, 2));
-                    } catch (error) {
-                        return mcpError(`Error listing commands: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_menu_command",
-                "Execute any TUI command by name. Use tui_list_commands first to discover available commands. Example: command='open_gallery', args={} or command='open_primer', args={path:'wibwob-faces.txt'}",
-                {
-                    command: z.string().describe("Command name from tui_list_commands (e.g. 'open_gallery', 'gallery_list', 'open_primer')"),
-                    args: z.record(z.string()).optional().describe("Command arguments as key-value pairs (e.g. {path: 'file.txt', tab: '3'})")
-                },
-                async (params) => {
-                    try {
-                        const payload = { command: params.command };
-                        if (params.args && Object.keys(params.args).length > 0) {
-                            payload.args = params.args;
-                        }
+                        const payload = { command: "paint_export", args: { id: window_id } };
                         const response = await apiClient.post('/menu/command', payload);
-                        return mcpResult(JSON.stringify(response.data, null, 2));
+                        return mcpResult(JSON.stringify(response.data));
                     } catch (error) {
-                        const detail = error.response?.data?.detail || error.message;
-                        return mcpError(`Command '${params.command}' failed: ${detail}`);
+                        return mcpError(`Error: ${error.message}`);
                     }
                 }
-            )
+            ),
         ]
     });
 }
