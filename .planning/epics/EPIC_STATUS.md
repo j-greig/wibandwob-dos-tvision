@@ -19,7 +19,7 @@
 
 ## Up next
 
-**E006** — Scramble TUI presence (in-progress, stalled). W&W need to feel alive before E011 desktop shell makes sense. E011 deferred until menus/apps/commands are refined.
+**E006** — Scramble TUI presence (in-progress, PR #89 open). F8 three-state cycle, jet-black visual polish, multi-line input wrapping, wider sidebar landed today. Remaining: F04 error/state reactions, F05 full scramble.* command surface + MCP parity.
 
 | Epic | Status | Effort |
 |---|---|---|
