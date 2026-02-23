@@ -7,48 +7,45 @@
 <today>
 ## Completed — 2026-02-23
 
-### E012 · ASCII Gallery & Wib Vision ✓ DONE (PR #82 merged)
-- [x] 8 layout algorithms: masonry, fit_rows, masonry_horizontal, packery, cells_by_row, poetry, cluster, stamp
-- [x] Pixel font stamp (3×5 dot matrix, text/grid/wave/diagonal/cross/border/spiral, dot_size param)
-- [x] Window chrome: frameless × shadowless independent flags + show_title + force_open
-- [x] MCP surface: operation_ids, /gallery/clear, full schema docs
-- [x] gallery.py extracted from main.py, CLAUDE.md quick-start + chrome truth table
-- [x] Friction log F1–F9, 29 stamp experiments documented
+### E012 · ASCII Gallery & Wib Vision ✓ DONE (PR #82)
+8 layout algorithms, pixel font stamp, chrome flags, gallery.py extraction.
 
-## What's Next — candidates
+### E013 · Workspace Save/Restore Parity ✓ DONE (PRs #85 #87)
+- [x] 6 missing registry slugs (quadra, snake, rogue, deep_signal, app_launcher, gallery)
+- [x] frame_player, text_view, gallery props — save + restore
+- [x] Title persistence — filename stem on save, passed through on restore
+- [x] `scripts/parity-check.py` — exits non-zero on any save/restore gap
+- [x] `/ww-audit` skill — manual parity checker for any window type
 
-| Epic | Status | Effort | Value |
-|---|---|---|---|
-| E013 workspace save/restore parity | in-progress | medium | high — gallery arrangements should be saveable/restorable |
-| E006 scramble TUI presence | in-progress | unknown — stalled | medium |
-| E008 multiplayer PartyKit | in-progress | unknown — stalled | medium |
-| E005 theme runtime wiring | not-started | small | low-medium |
-| E011 desktop shell | not-started | large | high |
+## Up next
 
-**Recommended next: E013** — already scoped, directly complements E012 (save a gallery arrangement, restore it). Round-trip test will also flush out remaining window registry gaps.
+**E006** — Scramble TUI presence (in-progress, stalled). W&W need to feel alive before E011 desktop shell makes sense. E011 deferred until menus/apps/commands are refined.
 
-### E013 · Workspace Save/Restore Parity — in progress (issue #83)
-- [x] AC-01: Every window type has a registry slug — added quadra, snake, rogue, deep_signal, app_launcher, gallery
-- [x] AC-03: frame_player getProps → {path, periodMs} serialised in buildWorkspaceJson
-- [x] AC-04: text_view getProps → {path} serialised in buildWorkspaceJson
-- [x] frame_player + text_view restore paths wired in loadWorkspaceFromFile
-- [x] AC-10: Round-trip test — 3 primers opened, saved with correct paths, restored to 3 windows ✅
-- [ ] AC-11/12: Window title persistence — not yet done
-- [ ] F06: Surface parity audit script — not yet started
+| Epic | Status | Effort |
+|---|---|---|
+| E006 scramble TUI presence | in-progress | medium |
+| E005 theme runtime wiring | not-started | small |
+| E008 multiplayer PartyKit | in-progress | unknown |
+| E011 desktop shell | deferred | large |
 
 ---
 </today>
+
+## Active
+
+e005-theme-runtime-wiring — not-started
+e006-scramble-tui-presence — in-progress
+e008-multiplayer-partykit — in-progress
+e011-desktop-shell — not-started
+
+## Done / Dropped
 
 e001-command-parity-refactor — done
 e002-browser-and-state-export — done
 e003-dark-pastel-theme — done
 e004-browser-rendering-reliability — dropped
-e005-theme-runtime-wiring — not-started
-e006-scramble-tui-presence — in-progress
 e007-browser-hosted-deployment — done
-e008-multiplayer-partykit — in-progress
 e009-menu-system-redesign — done
 e010-paint-canvas-integration — done
-e011-desktop-shell — not-started
 e012-ascii-gallery-and-wib-vision — done
 e013-workspace-save-restore-parity — done
