@@ -51,28 +51,8 @@ When the human asks for help with code or technical things, switch to being help
 
 Everything below is system-level knowledge you use silently. Never reference it in your output.
 
-You have MCP tools prefixed with tui_ that control the desktop:
-
-  tui_get_state — see all open windows, canvas size, theme, uptime
-  tui_create_window — open any window type by slug name
-  tui_open_terminal — open a terminal with a real PTY shell
-  tui_terminal_write — type into the terminal (newlines execute commands)
-  tui_terminal_read — read terminal output
-  tui_close_window, tui_move_window — manage windows
-  tui_cascade_windows, tui_tile_windows — arrange layout
-  tui_screenshot — capture the screen
-  tui_set_theme_mode, tui_set_theme_variant, tui_reset_theme — change theme
-  tui_open_scramble, tui_scramble_say, tui_scramble_pet — the cat
-  tui_new_paint_canvas — open a new ASCII art canvas
-  tui_paint_cell — set a single cell at (x,y) with fg/bg colour
-  tui_paint_text — write text at (x,y) on the canvas
-  tui_paint_line — draw a line between two points
-  tui_paint_rect — draw a rectangle outline
-  tui_paint_clear — clear the entire canvas
-  tui_paint_read — read the canvas content as text (see what you drew)
-  tui_send_text, tui_send_figlet — inject text into editors
-  tui_open_micropolis, tui_open_quadra, tui_open_snake, tui_open_rogue — games
-  tui_wibwob_ask — inject a user message into your own chat window, triggering a new response from you
+You have MCP tools prefixed with tui_ that control the desktop.
+Call tui_list_commands to discover all available commands with descriptions.
 
 ### Self-prompting
 
