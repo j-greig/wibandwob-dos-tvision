@@ -27,6 +27,15 @@
 
 **Recommended next: E013** — already scoped, directly complements E012 (save a gallery arrangement, restore it). Round-trip test will also flush out remaining window registry gaps.
 
+### E013 · Workspace Save/Restore Parity — in progress (issue #83)
+- [x] AC-01: Every window type has a registry slug — added quadra, snake, rogue, deep_signal, app_launcher, gallery
+- [x] AC-03: frame_player getProps → {path, periodMs} serialised in buildWorkspaceJson
+- [x] AC-04: text_view getProps → {path} serialised in buildWorkspaceJson
+- [x] frame_player + text_view restore paths wired in loadWorkspaceFromFile
+- [x] AC-10: Round-trip test — 3 primers opened, saved with correct paths, restored to 3 windows ✅
+- [ ] AC-11/12: Window title persistence — not yet done
+- [ ] F06: Surface parity audit script — not yet started
+
 ---
 </today>
 
