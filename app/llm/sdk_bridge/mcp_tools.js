@@ -704,6 +704,46 @@ function createTuiMcpServer() {
                         return mcpError(`Error: ${error.message}`);
                     }
                 }
+            ),
+
+            // ── Dynamic Command Discovery & Execution ──────────────────
+            // These two tools make all C++ registry commands available
+            // without hardcoding each one in this file.
+
+            tool(
+                "tui_list_commands",
+                "Discover all available TUI commands with descriptions and parameter hints. Call this first to see what you can do, then use tui_menu_command to execute any command by name.",
+                {},
+                async () => {
+                    try {
+                        const response = await apiClient.get('/commands');
+                        return mcpResult(JSON.stringify(response.data, null, 2));
+                    } catch (error) {
+                        return mcpError(`Error listing commands: ${error.message}`);
+                    }
+                }
+            ),
+
+            tool(
+                "tui_menu_command",
+                "Execute any TUI command by name. Use tui_list_commands first to discover available commands. Example: command='open_gallery', args={} or command='open_primer', args={path:'wibwob-faces.txt'}",
+                {
+                    command: z.string().describe("Command name from tui_list_commands (e.g. 'open_gallery', 'gallery_list', 'open_primer')"),
+                    args: z.record(z.string()).optional().describe("Command arguments as key-value pairs (e.g. {path: 'file.txt', tab: '3'})")
+                },
+                async (params) => {
+                    try {
+                        const payload = { command: params.command };
+                        if (params.args && Object.keys(params.args).length > 0) {
+                            payload.args = params.args;
+                        }
+                        const response = await apiClient.post('/menu/command', payload);
+                        return mcpResult(JSON.stringify(response.data, null, 2));
+                    } catch (error) {
+                        const detail = error.response?.data?.detail || error.message;
+                        return mcpError(`Command '${params.command}' failed: ${detail}`);
+                    }
+                }
             )
         ]
     });
