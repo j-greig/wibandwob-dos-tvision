@@ -265,25 +265,15 @@ void TScrambleView::draw()
 {
     TDrawBuffer b;
 
-    // Get desktop background for fake transparency
-    TColorAttr bgAttr;
+    TColorAttr bgAttr = TColorAttr(TColorRGB(0, 0, 0), TColorRGB(0, 0, 0));
     char bgChar = ' ';
-    if (TProgram::deskTop && TProgram::deskTop->background) {
-        TBackground* bg = TProgram::deskTop->background;
-        bgAttr = bg->getColor(0x01);
-        bgChar = bg->pattern;
-    } else {
-        TColorDesired defaultFg = {};
-        TColorDesired defaultBg = {};
-        bgAttr = TColorAttr(defaultFg, defaultBg);
-    }
 
-    // Cat uses desktop bg colour so it blends
-    TColorAttr catAttr = bgAttr;
+    // Cat uses bright white on black
+    TColorAttr catAttr = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 0, 0));
 
-    // Bubble colours: warm text on dark bg
-    TColorAttr bubbleTextAttr = TColorAttr(TColorRGB(240, 240, 200), TColorRGB(0, 0, 0));
-    TColorAttr bubbleBorderAttr = TColorAttr(TColorRGB(140, 140, 160), TColorRGB(0, 0, 0));
+    // Bubble colours: bright text on dark bg
+    TColorAttr bubbleTextAttr = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 0, 0));
+    TColorAttr bubbleBorderAttr = TColorAttr(TColorRGB(180, 180, 180), TColorRGB(0, 0, 0));
 
     // Word-wrap bubble text
     std::vector<std::string> bubbleLines;
@@ -309,7 +299,7 @@ void TScrambleView::draw()
     int bubbleStartRow = tailRow - bubbleHeight; // bubble above tail
 
     for (int row = 0; row < size.y; ++row) {
-        // Fill with desktop bg
+        // Fill with black
         b.moveChar(0, bgChar, bgAttr, size.x);
 
         if (bubbleVisible && row >= bubbleStartRow && row < bubbleStartRow + bubbleHeight) {
@@ -471,9 +461,9 @@ void TScrambleMessageView::draw()
     TDrawBuffer b;
 
     // Colours
-    TColorAttr bgAttr = TColorAttr(TColorRGB(160, 160, 170), TColorRGB(0, 0, 0));
-    TColorAttr senderAttr = TColorAttr(TColorRGB(200, 180, 120), TColorRGB(0, 0, 0));
-    TColorAttr textAttr = TColorAttr(TColorRGB(190, 190, 200), TColorRGB(0, 0, 0));
+    TColorAttr bgAttr = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 0, 0));
+    TColorAttr senderAttr = TColorAttr(TColorRGB(220, 200, 140), TColorRGB(0, 0, 0));
+    TColorAttr textAttr = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 0, 0));
 
     // Show last N lines that fit in the view
     int totalLines = static_cast<int>(wrappedLines.size());
@@ -560,12 +550,12 @@ void TScrambleInputView::draw()
     TDrawBuffer b;
 
     // Colours
-    TColorAttr promptAttr = TColorAttr(TColorRGB(200, 180, 120), TColorRGB(0, 0, 0));
-    TColorAttr inputAttr = TColorAttr(TColorRGB(220, 220, 230), TColorRGB(0, 0, 0));
+    TColorAttr promptAttr = TColorAttr(TColorRGB(220, 200, 140), TColorRGB(0, 0, 0));
+    TColorAttr inputAttr = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 0, 0));
     TColorAttr cursorAttr = TColorAttr(TColorRGB(25, 25, 35), TColorRGB(220, 220, 230));
 
     // Separator line on row 0
-    TColorAttr sepAttr = TColorAttr(TColorRGB(80, 80, 100), TColorRGB(0, 0, 0));
+    TColorAttr sepAttr = TColorAttr(TColorRGB(80, 80, 80), TColorRGB(0, 0, 0));
     b.moveChar(0, '\xC4', sepAttr, size.x);
     writeLine(0, 0, size.x, 1, b);
 
@@ -838,6 +828,17 @@ void TScrambleWindow::focusInput()
         // Then route focus to input view within this window
         inputView->select();
     }
+}
+
+void TScrambleWindow::draw()
+{
+    if (displayState == sdsSmol) {
+        TDrawBuffer b;
+        TColorAttr black = TColorAttr(TColorRGB(0, 0, 0), TColorRGB(0, 0, 0));
+        b.moveChar(0, ' ', black, size.x);
+        for (int i = 0; i < size.y; i++) writeLine(0, i, size.x, 1, b);
+    }
+    TWindow::draw();
 }
 
 void TScrambleWindow::handleEvent(TEvent& event)

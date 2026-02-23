@@ -219,7 +219,6 @@ const ushort cmBrowser = 170;      // Browser window
 const ushort cmApiKey = 171;       // API key entry dialog
 // cmScrambleToggle (180) defined in scramble_view.h
 const ushort cmScrambleCat = cmScrambleToggle;  // alias for menu/IPC
-const ushort cmScrambleExpand = 181;  // Scramble expand/shrink
 
 // Help menu commands
 const ushort cmAbout = 129;
@@ -744,8 +743,7 @@ private:
     ScrambleEngine scrambleEngine;
     std::string pendingScrambleReply;  // Queued async response for event-loop delivery
     ScrambleDisplayState scrambleState;
-    void toggleScramble();
-    void toggleScrambleExpand();
+    void cycleScramble();
     void wireScrambleInput();
     void deliverScrambleReply();
 
@@ -1065,11 +1063,11 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 clearEvent(event);
                 break;
             case cmScrambleCat:
-                toggleScramble();
+                cycleScramble();
                 clearEvent(event);
                 break;
             case cmScrambleExpand:
-                toggleScrambleExpand();
+                cycleScramble();
                 clearEvent(event);
                 break;
             case cmAsciiGridDemo: {
@@ -1506,8 +1504,7 @@ void TTestPatternApp::handleEvent(TEvent& event)
                     "F5       Repaint\n"
                     "F6       Next Window\n"
                     "Shift+F6 Previous Window\n"
-                    "F8       Scramble Cat\n"
-                    "Shift+F8 Scramble Expand\n"
+                    "F8       Scramble (cycle)\n"
                     "F12      Wib&Wob Chat\n"
                     "Alt+F3   Close Window\n"
                     "Alt+X    Exit",
@@ -1768,14 +1765,9 @@ void TTestPatternApp::wireScrambleInput()
     };
 }
 
-void TTestPatternApp::toggleScramble()
+void TTestPatternApp::cycleScramble()
 {
-    if (scrambleWindow) {
-        // Remove existing Scramble window
-        destroy(scrambleWindow);
-        scrambleWindow = nullptr;
-        scrambleState = sdsHidden;
-    } else {
+    if (!scrambleWindow || scrambleState == sdsHidden) {
         // Create at bottom-right corner of desktop in smol mode
         TRect desktop = deskTop->getExtent();
         int w = 28;
@@ -1794,29 +1786,6 @@ void TTestPatternApp::toggleScramble()
         if (deskTop->background) {
             scrambleWindow->putInFrontOf((TView*)deskTop->background);
         }
-    }
-}
-
-void TTestPatternApp::toggleScrambleExpand()
-{
-    if (!scrambleWindow) {
-        // Not visible — create in tall mode directly
-        TRect desktop = deskTop->getExtent();
-        int w = 30;
-        TRect r(desktop.b.x - w - 1, desktop.a.y,
-                desktop.b.x - 1,     desktop.b.y);
-        scrambleWindow = static_cast<TScrambleWindow*>(createScrambleWindow(r, sdsTall));
-        scrambleState = sdsTall;
-        if (scrambleWindow->getView()) {
-            scrambleWindow->getView()->setEngine(&scrambleEngine);
-        }
-        wireScrambleInput();
-        deskTop->insert(scrambleWindow);
-        scrambleWindow->focusInput();
-        // Welcome message in message history
-        if (scrambleWindow->getMessageView()) {
-            scrambleWindow->getMessageView()->addMessage("scramble", "mrrp! ask me anything (=^..^=)");
-        }
     } else if (scrambleState == sdsSmol) {
         // Expand: smol -> tall
         TRect desktop = deskTop->getExtent();
@@ -1833,19 +1802,10 @@ void TTestPatternApp::toggleScrambleExpand()
             scrambleWindow->getMessageView()->addMessage("scramble", "mrrp! ask me anything (=^..^=)");
         }
     } else if (scrambleState == sdsTall) {
-        // Shrink: tall -> smol
-        TRect desktop = deskTop->getExtent();
-        int w = 28;
-        int h = 14;
-        TRect r(desktop.b.x - w - 1, desktop.b.y - h,
-                desktop.b.x - 1,     desktop.b.y);
-        scrambleWindow->setDisplayState(sdsSmol);
-        scrambleWindow->changeBounds(r);
-        scrambleState = sdsSmol;
-        // Put behind other windows
-        if (deskTop->background) {
-            scrambleWindow->putInFrontOf((TView*)deskTop->background);
-        }
+        // Remove existing Scramble window
+        destroy(scrambleWindow);
+        scrambleWindow = nullptr;
+        scrambleState = sdsHidden;
     }
 }
 
@@ -2418,7 +2378,6 @@ TMenuBar* TTestPatternApp::initMenuBar(TRect r)
             *new TMenuItem("Pa~i~nt Canvas", cmNewPaintCanvas, kbNoKey) +
             newLine() +
             *new TMenuItem("Scra~m~ble Cat", cmScrambleCat, kbF8) +
-            *new TMenuItem("Scramble E~x~pand", cmScrambleExpand, kbShiftF8) +
         *new TSubMenu("~W~indow", kbAltW) +
             *new TMenuItem("~T~ext Editor", cmTextEditor, kbNoKey) +
             *new TMenuItem("~B~rowser", cmBrowser, kbCtrlB) +
@@ -2687,8 +2646,8 @@ void api_open_animation_path(TTestPatternApp& app, const std::string& path, cons
 }
 
 void api_cascade(TTestPatternApp& app) { app.cascade(); }
-void api_toggle_scramble(TTestPatternApp& app) { app.toggleScramble(); }
-void api_expand_scramble(TTestPatternApp& app) { app.toggleScrambleExpand(); }
+void api_toggle_scramble(TTestPatternApp& app) { app.cycleScramble(); }
+void api_expand_scramble(TTestPatternApp& app) { app.cycleScramble(); }
 
 std::string api_scramble_say(TTestPatternApp& app, const std::string& text) {
     if (!app.scrambleWindow) return "err scramble not open";

@@ -26,6 +26,7 @@
 
 // Command constants for Scramble subsystem
 const ushort cmScrambleToggle = 180;   // Toggle scramble visibility
+const ushort cmScrambleExpand = 181;   // Scramble expand/shrink
 
 // Forward declare — engine lives in scramble_engine.h (no tvision dependency)
 class ScrambleEngine;
@@ -191,6 +192,7 @@ public:
     void setDisplayState(ScrambleDisplayState state);
     void focusInput();
     virtual void changeBounds(const TRect& bounds) override;
+    virtual void draw() override;
     virtual void handleEvent(TEvent& event) override;
     virtual void setState(ushort aState, Boolean enable) override;
 
