@@ -1203,8 +1203,8 @@ void TTestPatternApp::handleEvent(TEvent& event)
             }
             case cmAsciiGallery: {
                 TRect desk = deskTop->getExtent();
-                int ww = std::min(80, desk.b.x - 4);
-                int hh = std::min(30, desk.b.y - 4);
+                int ww = desk.b.x * 9 / 10;
+                int hh = desk.b.y * 9 / 10;
                 int x = (desk.b.x - ww) / 2;
                 int y = (desk.b.y - hh) / 2;
                 TRect r(x, y, x + ww, y + hh);
@@ -3786,7 +3786,8 @@ void api_spawn_app_launcher(TTestPatternApp& app, const TRect* bounds) {
 }
 
 void api_spawn_gallery(TTestPatternApp& app, const TRect* bounds) {
-    TRect r = bounds ? *bounds : api_centered_bounds(app, 80, 30);
+    TRect desk = app.deskTop->getExtent();
+    TRect r = bounds ? *bounds : api_centered_bounds(app, desk.b.x * 9 / 10, desk.b.y * 9 / 10);
     TWindow* w = createAsciiGalleryWindow(r);
     app.deskTop->insert(w);
     app.registerWindow(w);
