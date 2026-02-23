@@ -731,3 +731,17 @@ Fix: documented in schema description and CLAUDE.md chrome table.
 
 ### Canvas note
 Session 4 canvas: **362×84** (Cinema Display, font size slightly larger than session 3).
+
+---
+
+## 17. Wrong build binary path — agent kept looking in `./build/test_pattern`
+
+**What happened**: Agent repeatedly tried `./build/test_pattern` (not found) instead of `./build/app/test_pattern`. Caused a full session of "command aborted" errors, broken TUI restarts, and wasted time before reading CLAUDE.md.
+
+**Fix**: It's right there in CLAUDE.md `## Build Commands`:
+```bash
+cmake --build ./build         # binary lands at ./build/app/test_pattern
+./build/app/test_pattern      # ← correct path, always
+```
+
+**Rule**: Before assuming the build is broken, run `find ./build -name test_pattern -type f`.

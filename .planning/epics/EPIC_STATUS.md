@@ -51,4 +51,4 @@ e009-menu-system-redesign — done
 e010-paint-canvas-integration — done
 e011-desktop-shell — not-started
 e012-ascii-gallery-and-wib-vision — done
-e013-workspace-save-restore-parity — in-progress
+e013-workspace-save-restore-parity — done
