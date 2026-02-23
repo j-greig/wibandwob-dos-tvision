@@ -551,39 +551,62 @@ void TScrambleInputView::draw()
 
     // Colours
     TColorAttr promptAttr = TColorAttr(TColorRGB(220, 200, 140), TColorRGB(0, 0, 0));
-    TColorAttr inputAttr = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 0, 0));
-    TColorAttr cursorAttr = TColorAttr(TColorRGB(25, 25, 35), TColorRGB(220, 220, 230));
+    TColorAttr inputAttr  = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 0, 0));
+    TColorAttr cursorAttr = TColorAttr(TColorRGB(25,  25,  35),  TColorRGB(220, 220, 230));
+    TColorAttr sepAttr    = TColorAttr(TColorRGB(80,  80,  80),  TColorRGB(0, 0, 0));
 
-    // Separator line on row 0
-    TColorAttr sepAttr = TColorAttr(TColorRGB(80, 80, 80), TColorRGB(0, 0, 0));
+    // Row 0: separator
     b.moveChar(0, '\xC4', sepAttr, size.x);
     writeLine(0, 0, size.x, 1, b);
 
-    // Input line on row 1
-    b.moveChar(0, ' ', inputAttr, size.x);
-    b.moveStr(0, "> ", promptAttr);
+    // Input area: rows 1..(size.y-1), each row holds (size.x - 2) chars
+    // ("> " prefix on row 0; "  " indent on continuation rows)
+    int textWidth = size.x - 2;
+    if (textWidth < 1) textWidth = 1;
+    int inputRows = size.y - 1; // number of text rows available
 
-    // Render input text
-    int maxTextWidth = size.x - 3; // "> " prefix + 1 for cursor
-    int displayStart = 0;
-    if (cursorPos > maxTextWidth)
-        displayStart = cursorPos - maxTextWidth;
-    std::string visible = currentInput.substr(displayStart,
-                                              maxTextWidth);
-    b.moveStr(2, visible.c_str(), inputAttr);
+    // Visual cursor position in the wrapped grid
+    int cursorRow = cursorPos / textWidth;
+    int cursorCol = cursorPos % textWidth;
 
-    // Draw cursor
-    if (cursorVisible && (state & sfFocused)) {
-        int cursorX = 2 + (cursorPos - displayStart);
-        if (cursorX < size.x) {
-            char cursorChar = (cursorPos < static_cast<int>(currentInput.size()))
-                ? currentInput[cursorPos] : ' ';
-            char buf[2] = { cursorChar, 0 };
-            b.moveStr(cursorX, buf, cursorAttr);
+    // Scroll so cursor row is always visible
+    int displayRowOffset = 0;
+    if (cursorRow >= inputRows)
+        displayRowOffset = cursorRow - inputRows + 1;
+
+    for (int row = 0; row < inputRows; ++row) {
+        b.moveChar(0, ' ', inputAttr, size.x);
+
+        // Prefix
+        if (row == 0)
+            b.moveStr(0, "> ", promptAttr);
+        else
+            b.moveStr(0, "  ", inputAttr);
+
+        // Text slice for this visual row
+        int textRow  = displayRowOffset + row;
+        int startIdx = textRow * textWidth;
+        if (startIdx < static_cast<int>(currentInput.size())) {
+            std::string slice = currentInput.substr(
+                startIdx,
+                std::min(textWidth, static_cast<int>(currentInput.size()) - startIdx));
+            b.moveStr(2, slice.c_str(), inputAttr);
         }
-    }
 
-    writeLine(0, 1, size.x, 1, b);
+        // Cursor (only on the row that contains cursorPos)
+        if (cursorVisible && (state & sfFocused) &&
+            (cursorRow - displayRowOffset) == row) {
+            int cx = 2 + cursorCol;
+            if (cx < size.x) {
+                char cursorChar = (cursorPos < static_cast<int>(currentInput.size()))
+                    ? currentInput[cursorPos] : ' ';
+                char buf[2] = { cursorChar, 0 };
+                b.moveStr(cx, buf, cursorAttr);
+            }
+        }
+
+        writeLine(0, 1 + row, size.x, 1, b);
+    }
 }
 
 void TScrambleInputView::handleEvent(TEvent& event)
@@ -662,8 +685,8 @@ void TScrambleInputView::handleEvent(TEvent& event)
 
 // Heights for cat view region (cat art + bubble space)
 static const int kCatViewHeight = 12;
-// Height for input view (separator + input line)
-static const int kInputViewHeight = 2;
+// Height for input view (separator + 4 wrapped text lines)
+static const int kInputViewHeight = 5;
 
 TScrambleWindow::TScrambleWindow(const TRect& bounds, ScrambleDisplayState initialState)
     : TWindow(bounds, "", wnNoNumber),

@@ -1770,7 +1770,7 @@ void TTestPatternApp::cycleScramble()
     if (!scrambleWindow || scrambleState == sdsHidden) {
         // Create at bottom-right corner of desktop in smol mode
         TRect desktop = deskTop->getExtent();
-        int w = 28;
+        int w = 38;
         int h = 14;
         TRect r(desktop.b.x - w - 1, desktop.b.y - h,
                 desktop.b.x - 1,     desktop.b.y);
@@ -1789,7 +1789,7 @@ void TTestPatternApp::cycleScramble()
     } else if (scrambleState == sdsSmol) {
         // Expand: smol -> tall
         TRect desktop = deskTop->getExtent();
-        int w = 30;
+        int w = 40;
         TRect r(desktop.b.x - w - 1, desktop.a.y,
                 desktop.b.x - 1,     desktop.b.y);
         scrambleWindow->changeBounds(r);
