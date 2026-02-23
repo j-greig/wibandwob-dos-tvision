@@ -386,11 +386,108 @@ class PrimerInfo(BaseModel):
     name: str
     path: str
     size_kb: float
-    
+    width: int = 0        # Intrinsic character width of first frame (0 = unmeasured)
+    height: int = 0       # Intrinsic line count of first frame (0 = unmeasured)
+    aspect_ratio: float = 0.0  # width / height (0.0 = unmeasured)
+
+
+class PrimerMetadata(BaseModel):
+    filename: str
+    width: int
+    height: int
+    aspect_ratio: float
+    line_count: int
+    max_line_width: int
+    size_kb: float
+
 
 class PrimersListResponse(BaseModel):
     primers: List[PrimerInfo]
     count: int
+
+
+class GalleryArrangement(BaseModel):
+    filename: str
+    x: int
+    y: int
+    width: int
+    height: int
+    window_id: Optional[str] = None
+
+
+class GalleryArrangeRequest(BaseModel):
+    filenames: List[str] = Field(..., description="List of primer filenames to arrange (just basenames, e.g. 'foo.txt')")
+    algorithm: str = Field("masonry", description=(
+        "Layout algorithm: "
+        "'masonry' (vertical columns, shortest-first) | "
+        "'fit_rows' (L→R rows, wrap on overflow) | "
+        "'masonry_horizontal' (horizontal masonry, shortest-row-first) | "
+        "'packery' (2D guillotine bin-pack, fills gaps) | "
+        "'cells_by_row' (uniform grid cells) | "
+        "'poetry' (packery + breathing room + wide/tall interleave) | "
+        "'cluster' (rectpack MaxRects → centred bbox, organic, no fixed rows/cols) | "
+        "'stamp' (repeat one primer as a stamp on a pattern — text/grid/wave/spiral/cross/border/diagonal)"
+    ))
+    padding: int = Field(2, description="Character gap between windows")
+    margin: int = Field(1, description=(
+        "Gap (chars) between the window shadow edge and the canvas edge on all sides. "
+        "Default 1 aligns left edge with the 'F' of the File menu. "
+        "0 = flush to canvas, 2 = spacious, etc. "
+        "Shadow offsets (TV fixed): right +2 cols, bottom +1 row — these are added automatically."
+    ))
+    canvas_width: int = Field(0, description="Override canvas width (0 = auto-query from TUI state)")
+    canvas_height: int = Field(0, description="Override canvas height (0 = auto-query from TUI state)")
+    preview: bool = Field(False, description="If true, return the plan without applying it")
+    show_title: bool = Field(False, description=(
+        "Show the primer filename (without .txt) in the window title bar. "
+        "Off by default — primers are often narrower than their filename. "
+        "No-op on frameless windows (no frame = nowhere to render the title)."
+    ))
+    force_open: bool = Field(False, description=(
+        "Always open a fresh window for every placement, even if a window with "
+        "that filename is already open. Required when calling gallery/arrange "
+        "multiple times to place the same primer with different display modes."
+    ))
+    frameless: bool = Field(False, description=(
+        "Open primers as ghost-frame windows — no visible border chrome. "
+        "Content fills the full window bounds. Automatically implies shadowless=true. "
+        "Best combined with tight padding (0-1) for a pure art-installation look."
+    ))
+    shadowless: bool = Field(False, description=(
+        "Remove the Turbo Vision drop shadow (2-col right, 1-row bottom). "
+        "Use with frameless=true for completely chromeless primers that tile "
+        "seamlessly edge-to-edge with no visual artefacts between windows."
+    ))
+    options: Dict[str, Any] = Field(default_factory=dict, description=(
+        "Per-algorithm options dict. Keys vary by algorithm:\n"
+        "  masonry / masonry_horizontal:\n"
+        "    clamp (bool, default false) — true: columns sized to median width, items cropped\n"
+        "    n_cols / n_rows (int) — override auto column/row count\n"
+        "  cluster:\n"
+        "    anchor (str) — canvas position: center|tl|tr|bl|br|top|bottom|left|right\n"
+        "    inner_algo (str) — maxrects_bssf|maxrects_bl|skyline_bl|guillotine\n"
+        "    margin (int) — breathing room around cluster (overrides top-level margin)\n"
+        "  stamp:\n"
+        "    pattern (str) — text|grid|wave|diagonal|cross|border|spiral\n"
+        "    text (str) — text to render in 3x5 pixel font, '|' for multi-line\n"
+        "    cols (int) — grid columns, or stamp count for wave/spiral\n"
+        "    rows (int) — grid rows\n"
+        "    turns (float) — spiral turns (default 3.0)\n"
+        "    anchor (str) — same 9-position system as cluster"
+    ))
+
+
+class GalleryArrangeResponse(BaseModel):
+    ok: bool
+    algorithm: str
+    arrangement: List[GalleryArrangement]
+    canvas_width: int
+    canvas_height: int
+    canvas_utilization: float
+    overlaps: int
+    out_of_bounds: int = 0
+    applied: bool
+    preview: bool
 
 
 # ----- Browser Models -----

@@ -37,6 +37,9 @@ from .schemas import (
     BrowserFetchRequest,
     CanvasInfo,
     Capabilities,
+    GalleryArrangeRequest,
+    GalleryArrangeResponse,
+    GalleryArrangement,
     MenuCommand,
     MonodrawLoadRequest,
     MonodrawParseRequest,
@@ -48,6 +51,7 @@ from .schemas import (
     ThemeMode,
     ThemeVariant,
     PrimerInfo,
+    PrimerMetadata,
     PrimersListResponse,
     RenderBundle,
     ScreenshotReq,
@@ -66,6 +70,18 @@ from .schemas import (
 )
 from .browser import BrowserSession, fetch_and_convert
 from pydantic import BaseModel
+
+
+# ─── Gallery layout engine ─────────────────────────────────────────────────
+from .gallery import (
+    SHADOW_W, SHADOW_H, CANVAS_BOTTOM_EXTRA, DEFAULT_MARGIN,
+    _get_primer_metadata, _usable, _prep_pieces,
+    _layout_masonry, _layout_fit_rows, _layout_masonry_horizontal,
+    _layout_packery, _layout_cells_by_row, _layout_poetry,
+    _layout_stamp, _layout_cluster,
+    _masonry_layout, _poetry_layout,
+    build_algo_map,
+)
 
 
 def make_app() -> FastAPI:
@@ -299,7 +315,8 @@ def make_app() -> FastAPI:
         await ctl.tile(cols)
         return {"ok": True}
 
-    @app.post("/windows/close_all")
+    @app.post("/windows/close_all", operation_id="canvas_clear",
+              summary="Close all open windows and clear the canvas")
     async def close_all() -> Dict[str, Any]:
         await ctl.close_all()
         return {"ok": True}
@@ -607,10 +624,14 @@ def make_app() -> FastAPI:
                         seen.add(basename)
                         stat = os.stat(primer_path)
                         name = basename.replace('.txt', '')
+                        meta = _get_primer_metadata(primer_path)
                         primers.append(PrimerInfo(
                             name=name,
                             path=primer_path,
-                            size_kb=round(stat.st_size / 1024, 1)
+                            size_kb=round(stat.st_size / 1024, 1),
+                            width=meta["width"],
+                            height=meta["height"],
+                            aspect_ratio=meta["aspect_ratio"],
                         ))
                     except Exception:
                         continue
@@ -627,15 +648,249 @@ def make_app() -> FastAPI:
                     seen.add(basename)
                     stat = os.stat(primer_path)
                     name = basename.replace('.txt', '')
+                    meta = _get_primer_metadata(primer_path)
                     primers.append(PrimerInfo(
                         name=name,
                         path=primer_path,
-                        size_kb=round(stat.st_size / 1024, 1)
+                        size_kb=round(stat.st_size / 1024, 1),
+                        width=meta["width"],
+                        height=meta["height"],
+                        aspect_ratio=meta["aspect_ratio"],
                     ))
                 except Exception:
                     continue
 
         return PrimersListResponse(primers=primers, count=len(primers))
+
+    @app.get("/primers/{filename}/metadata", response_model=PrimerMetadata,
+             summary="Get intrinsic dimensions of a single primer file",
+             description="Returns width (max line length), height (line count of first frame), "
+                         "and aspect_ratio. Cached after first read. Filename is the basename, e.g. 'foo.txt'.")
+    async def primer_metadata(filename: str) -> PrimerMetadata:
+        """Dimension lookup for a single primer — foundation for smart_gallery_arrange."""
+        import os, glob
+
+        # Find the primer across module dirs
+        found_path: str | None = None
+        for base in ["modules-private", "modules"]:
+            if not os.path.isdir(base):
+                continue
+            for module in sorted(os.listdir(base)):
+                candidate = os.path.join(base, module, "primers", filename)
+                if os.path.isfile(candidate):
+                    found_path = candidate
+                    break
+            if found_path:
+                break
+        if not found_path:
+            legacy = os.path.join("app", "primers", filename)
+            if os.path.isfile(legacy):
+                found_path = legacy
+        if not found_path:
+            raise HTTPException(status_code=404, detail=f"primer not found: {filename}")
+
+        meta = _get_primer_metadata(found_path)
+        size_kb = round(os.path.getsize(found_path) / 1024, 1)
+        return PrimerMetadata(
+            filename=filename,
+            width=meta["width"],
+            height=meta["height"],
+            aspect_ratio=meta["aspect_ratio"],
+            line_count=meta["line_count"],
+            max_line_width=meta["max_line_width"],
+            size_kb=size_kb,
+        )
+
+    @app.post("/gallery/arrange", response_model=GalleryArrangeResponse,
+              operation_id="gallery_arrange",
+              summary="Arrange primers on the canvas using a layout algorithm",
+              description=(
+                  "Opens primer files and positions them on the TUI canvas using one of 8 layout algorithms. "
+                  "Set frameless=true + shadowless=true for a pure art-installation look (no border, no shadow). "
+                  "Algorithms: masonry | fit_rows | masonry_horizontal | packery | cells_by_row | poetry | "
+                  "cluster (rectpack MaxRects, organic, use for gallery walls) | "
+                  "stamp (repeat one primer as text/grid/wave/spiral/cross/border/diagonal pattern). "
+                  "Pass preview=true to get placement plan without opening windows. "
+                  "Use options={} for per-algorithm params — see options field description for full reference."
+              ))
+    async def gallery_arrange(payload: GalleryArrangeRequest) -> GalleryArrangeResponse:
+        """Smart gallery arrangement — E012 core feature.
+
+        1. Resolve each filename to a full path and measure its dimensions.
+        2. Run the requested layout algorithm.
+        3. Apply via tui_move_window (unless preview=true).
+        4. Return the arrangement plan + utilisation stats.
+        """
+        import os
+
+        # 1. Resolve canvas dimensions
+        canvas_w = payload.canvas_width
+        canvas_h = payload.canvas_height
+        if canvas_w == 0 or canvas_h == 0:
+            state = await ctl.get_state()
+            canvas_w = canvas_w or state.canvas_width or 320
+            canvas_h = canvas_h or state.canvas_height or 78
+
+        # 2. Gather metadata for each requested filename
+        primers_meta: list[dict] = []
+        for filename in payload.filenames:
+            found: str | None = None
+            for base in ["modules-private", "modules"]:
+                if not os.path.isdir(base):
+                    continue
+                for module in sorted(os.listdir(base)):
+                    candidate = os.path.join(base, module, "primers", filename)
+                    if os.path.isfile(candidate):
+                        found = candidate
+                        break
+                if found:
+                    break
+            if not found:
+                legacy = os.path.join("app", "primers", filename)
+                if os.path.isfile(legacy):
+                    found = legacy
+            if found:
+                meta = _get_primer_metadata(found)
+                primers_meta.append({
+                    "filename": filename,
+                    "path": found,
+                    "width": meta["width"] or 80,
+                    "height": meta["height"] or 24,
+                })
+            # Silently skip missing primers (caller can check count vs input)
+
+        # 3. Run layout algorithm
+        algo    = payload.algorithm.lower()
+        padding = payload.padding
+        margin  = payload.margin
+
+        opts      = payload.options or {}
+        _algo_map = build_algo_map(primers_meta, canvas_w, canvas_h, padding, margin, opts)
+        if algo not in _algo_map:
+            algo = "masonry"
+        raw_placements = _algo_map[algo]()
+
+        # 4. Build arrangement objects + compute stats
+        arrangement = [GalleryArrangement(**p) for p in raw_placements]
+
+        total_area = sum(a.width * a.height for a in arrangement)
+        canvas_area = canvas_w * canvas_h
+        utilization = round(total_area / canvas_area, 3) if canvas_area > 0 else 0.0
+
+        # Overlap detection
+        overlaps = 0
+        rects = [(a.x, a.y, a.x + a.width, a.y + a.height) for a in arrangement]
+        for i in range(len(rects)):
+            for j in range(i + 1, len(rects)):
+                ax1, ay1, ax2, ay2 = rects[i]
+                bx1, by1, bx2, by2 = rects[j]
+                if ax1 < bx2 and ax2 > bx1 and ay1 < by2 and ay2 > by1:
+                    overlaps += 1
+
+        # Bounds check — window + shadow must stay within canvas
+        out_of_bounds = 0
+        for a in arrangement:
+            if (a.x < 0 or a.y < 0
+                    or a.x + a.width  + SHADOW_W > canvas_w
+                    or a.y + a.height + SHADOW_H + CANVAS_BOTTOM_EXTRA > canvas_h):
+                out_of_bounds += 1
+                import logging
+                logging.warning(
+                    "OOB %s: x=%d y=%d w=%d h=%d shadow_right=%d shadow_bottom=%d canvas=%dx%d",
+                    a.filename, a.x, a.y, a.width, a.height,
+                    a.x + a.width + SHADOW_W, a.y + a.height + SHADOW_H + CANVAS_BOTTOM_EXTRA,
+                    canvas_w, canvas_h,
+                )
+
+        # 5. Apply (unless preview)
+        applied = False
+        if not payload.preview:
+            # open-fresh when: duplicates in this call, OR caller explicitly wants fresh windows
+            all_fnames = [a.filename for a in arrangement]
+            has_dupes  = payload.force_open or len(all_fnames) != len(set(all_fnames))
+
+            # Build map: basename-without-ext → window id  (unique-filename mode only)
+            win_map: dict[str, str] = {}
+            if not has_dupes:
+                state = await ctl.get_state()
+                for w in state.windows:
+                    if w.props and "path" in w.props:
+                        basename = os.path.basename(w.props["path"]).replace(".txt", "").lower()
+                        win_map[basename] = w.id
+                    title_key = (w.title or "").lower().replace(".txt", "").split(" - ")[0].strip()
+                    if title_key and w.id not in win_map.values():
+                        win_map[title_key] = w.id
+
+            # Track used window IDs so duplicates don't reuse the same one
+            used_ids: set[str] = set()
+
+            for place in arrangement:
+                key     = place.filename.replace(".txt", "").lower()
+                win_id  = None
+
+                if not has_dupes:
+                    candidate = win_map.get(key)
+                    if candidate and candidate not in used_ids:
+                        win_id = candidate
+
+                if not win_id:
+                    # Open a fresh window for this placement
+                    primer_path = next(
+                        (p["path"] for p in primers_meta if p["filename"] == place.filename),
+                        None
+                    )
+                    if primer_path:
+                        open_args: dict = {
+                            "path": primer_path,
+                            "x": place.x, "y": place.y,
+                            "w": place.width, "h": place.height,
+                        }
+                        if payload.frameless:
+                            open_args["frameless"] = "true"
+                        if payload.shadowless:
+                            open_args["shadowless"] = "true"
+                        if payload.show_title:
+                            open_args["title"] = place.filename.removesuffix(".txt")
+                        res = await ctl.exec_command("open_primer", open_args, actor="gallery_arrange")
+                        if res.get("ok"):
+                            new_state = await ctl.get_state()
+                            for nw in new_state.windows:
+                                if nw.props and "path" in nw.props:
+                                    nb = os.path.basename(nw.props["path"]).replace(".txt", "").lower()
+                                    if nb == key and nw.id not in used_ids:
+                                        win_id = nw.id
+                                        place.window_id = nw.id
+                                        break
+
+                if win_id:
+                    try:
+                        await ctl.move_resize(win_id, x=place.x, y=place.y, w=place.width, h=place.height)
+                        place.window_id = win_id
+                        used_ids.add(win_id)
+                    except Exception:
+                        pass
+            applied = True
+
+        return GalleryArrangeResponse(
+            ok=True,
+            algorithm=algo,
+            arrangement=arrangement,
+            canvas_width=canvas_w,
+            canvas_height=canvas_h,
+            canvas_utilization=utilization,
+            overlaps=overlaps,
+            out_of_bounds=out_of_bounds,
+            applied=applied,
+            preview=payload.preview,
+        )
+
+    @app.post("/gallery/clear", operation_id="gallery_clear",
+              summary="Close all windows and clear the canvas",
+              description="Alias for /windows/close_all in the gallery namespace. "
+                          "Always call this before a new gallery/arrange run.")
+    async def gallery_clear() -> Dict[str, Any]:
+        await ctl.close_all()
+        return {"ok": True}
 
     @app.post("/timeline/cancel")
     async def timeline_cancel(body: Dict[str, Any]) -> Dict[str, Any]:
