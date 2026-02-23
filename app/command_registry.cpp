@@ -70,7 +70,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},
         {"open_gallery", "Open the ASCII Art Gallery browser with tabbed primer explorer", false},
-        {"gallery_list", "List available primer filenames (optional tab param: 1/#-C, 2/D-L, 3/M, 4/N-S, 5/T-Z)", false},
+        {"gallery_list", "List available primer filenames (optional tab param: 1/#-C, 2/D-L, 3/M, 4/N-S, 5/T-Z, 6/Find with search param)", false},
         {"open_primer", "Open a primer file by name in a viewer window (requires path param, e.g. 'wibwob-faces.txt')", true},
         {"open_terminal", "Open a terminal emulator window", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},

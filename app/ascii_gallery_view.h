@@ -9,6 +9,7 @@
 #define Uses_TWindow
 #define Uses_TView
 #define Uses_TScrollBar
+#define Uses_TInputLine
 #define Uses_TDrawBuffer
 #define Uses_TKeys
 #define Uses_TEvent
@@ -26,12 +27,13 @@ public:
     virtual void handleEvent(TEvent& event) override;
 
     int selected;  // 0..NUM_TABS-1
-    static const int NUM_TABS = 5;
+    static const int NUM_TABS = 6;
     static constexpr const char* tabLabels[NUM_TABS] = {
-        "#-C", "D-L", "M", "N-S", "T-Z"
+        "#-C", "D-L", "M", "N-S", "T-Z", "Find"
     };
 
     // Returns true if filename's first char belongs to this tab index
+    // (Not applicable for tab 5 = search)
     static bool matchesTab(int tabIndex, char firstChar);
 };
 
@@ -59,12 +61,12 @@ private:
     friend class TGalleryWindow;
 };
 
-// ── Preview pane (right side) ───────────────────────────
-// Renders the selected file content (static text preview)
+// ── Preview pane (right side, scrollable) ───────────────
 class TGalleryPreview : public TView {
 public:
-    TGalleryPreview(const TRect& bounds);
+    TGalleryPreview(const TRect& bounds, TScrollBar* aVScrollBar);
     virtual void draw() override;
+    virtual void handleEvent(TEvent& event) override;
 
     void loadFile(const std::string& path);
     void clear();
@@ -72,6 +74,11 @@ public:
 private:
     std::vector<std::string> lines;
     std::string currentPath;
+    int scrollOffset;
+    TScrollBar* vScrollBar;
+
+    void adjustScrollBar();
+    void ensureVisible(int line);
 };
 
 // ── Gallery window ──────────────────────────────────────
@@ -85,15 +92,21 @@ private:
     TGalleryFileList* fileList;
     TGalleryPreview* preview;
     TScrollBar* listScrollBar;
+    TScrollBar* previewScrollBar;
+    TInputLine* searchInput;
 
     std::string primerDir;
     std::string openPath;               // temp storage for path pointer lifetime
     std::vector<std::string> allFiles;  // all filenames (basename)
     std::vector<std::string> allPaths;  // all full paths
+    std::string lastSearchText;         // for live search change detection
 
     void scanFiles();
     void applyFilter();
+    void applySearch();
     void updatePreview();
+    void showSearchInput(bool show);
+    void cycleFocus(bool forward);
 };
 
 TWindow* createAsciiGalleryWindow(const TRect& bounds);

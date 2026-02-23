@@ -5,6 +5,7 @@
 #define Uses_TWindow
 #define Uses_TView
 #define Uses_TScrollBar
+#define Uses_TInputLine
 #define Uses_TDrawBuffer
 #define Uses_TKeys
 #define Uses_TEvent
@@ -25,6 +26,7 @@
 static const ushort cmGalleryTabChanged = 9910;
 static const ushort cmGalleryFileChanged = 9911;
 static const ushort cmGalleryOpenFile = 9912;
+static const ushort cmGallerySearchChanged = 9913;
 
 // ═══════════════════════════════════════════════════
 //  TGalleryTabBar
@@ -36,7 +38,7 @@ TGalleryTabBar::TGalleryTabBar(const TRect& bounds)
     : TView(bounds), selected(0)
 {
     // NOT selectable — we don't want the tab bar to steal keyboard focus.
-    // Tab/number-key switching is handled at the window level.
+    // Tab switching is handled at the window level via number keys.
     eventMask |= evMouseDown;
 }
 
@@ -49,6 +51,7 @@ bool TGalleryTabBar::matchesTab(int tabIndex, char firstChar)
         case 2: return c == 'm';
         case 3: return c >= 'n' && c <= 's';
         case 4: return c >= 't' && c <= 'z';
+        case 5: return true; // search — match all (filtered by search string)
         default: return false;
     }
 }
@@ -60,6 +63,7 @@ void TGalleryTabBar::draw()
     TColorAttr selectedAttr = {TColorRGB(0xFF, 0xFF, 0xFF), TColorRGB(0x00, 0x70, 0x70)};
     TColorAttr numAttr = {TColorRGB(0xFF, 0xFF, 0x00), TColorRGB(0x20, 0x20, 0x20)};
     TColorAttr numSelAttr = {TColorRGB(0xFF, 0xFF, 0x00), TColorRGB(0x00, 0x70, 0x70)};
+    TColorAttr findAttr = {TColorRGB(0xFF, 0xCC, 0x00), TColorRGB(0x00, 0x70, 0x70)};
 
     b.moveChar(0, ' ', normalAttr, size.x);
 
@@ -68,6 +72,8 @@ void TGalleryTabBar::draw()
         bool sel = (i == selected);
         TColorAttr attr = sel ? selectedAttr : normalAttr;
         TColorAttr nAttr = sel ? numSelAttr : numAttr;
+        // Find tab gets special highlight when selected
+        if (i == 5 && sel) attr = findAttr;
 
         // Draw " N:Label "
         if (x < size.x) b.moveChar(x, ' ', attr, 1); x++;
@@ -92,16 +98,14 @@ void TGalleryTabBar::draw()
 
 void TGalleryTabBar::handleEvent(TEvent& event)
 {
-    // Don't call TView::handleEvent — it would try to select this view
-    // on mouse click, stealing focus from the file list.
+    // Don't call TView::handleEvent — prevents focus stealing on click.
 
     if (event.what == evMouseDown) {
         TPoint local = makeLocal(event.mouse.where);
         int mx = local.x;
-        // Determine which tab was clicked by x position
         int x = 1;
         for (int i = 0; i < NUM_TABS; i++) {
-            int tabWidth = 4 + (int)strlen(tabLabels[i]); // " N:Label" (no trailing gap)
+            int tabWidth = 4 + (int)strlen(tabLabels[i]);
             if (mx >= x && mx < x + tabWidth) {
                 if (i != selected) {
                     selected = i;
@@ -111,7 +115,7 @@ void TGalleryTabBar::handleEvent(TEvent& event)
                 clearEvent(event);
                 return;
             }
-            x += tabWidth + 1; // +1 for gap
+            x += tabWidth + 1;
         }
     }
 }
@@ -166,7 +170,6 @@ void TGalleryFileList::draw()
         if (idx >= 0 && idx < (int)files.size()) {
             TColorAttr attr = (idx == focused) ? focusedAttr : normalAttr;
             b.moveChar(0, ' ', attr, size.x);
-            // Use moveStr for proper string rendering (ASCII filenames)
             const std::string& name = files[idx];
             int maxLen = size.x - 2;
             std::string display = (int)name.size() > maxLen ? name.substr(0, maxLen) : name;
@@ -183,7 +186,6 @@ void TGalleryFileList::handleEvent(TEvent& event)
     TView::handleEvent(event);
 
     if (event.what == evMouseDown) {
-        // Ensure we have focus when clicked
         select();
         TPoint local = makeLocal(event.mouse.where);
         int clickY = local.y;
@@ -193,7 +195,6 @@ void TGalleryFileList::handleEvent(TEvent& event)
             ensureFocusVisible();
             drawView();
             message(owner, evCommand, cmGalleryFileChanged, this);
-            // Double-click to open
             if (event.mouse.eventFlags & meDoubleClick) {
                 message(owner, evCommand, cmGalleryOpenFile, this);
             }
@@ -204,7 +205,6 @@ void TGalleryFileList::handleEvent(TEvent& event)
 
     if (event.what == evKeyDown) {
         if (files.empty()) {
-            // No files — only Enter does nothing, consume nav keys silently
             switch (event.keyDown.keyCode) {
                 case kbUp: case kbDown: case kbPgUp: case kbPgDn:
                 case kbHome: case kbEnd: case kbEnter:
@@ -247,7 +247,7 @@ void TGalleryFileList::handleEvent(TEvent& event)
                 clearEvent(event);
                 return;
             default:
-                return; // Don't consume — let window handle Tab/numbers
+                return;
         }
         if (focused != oldFocused) {
             ensureFocusVisible();
@@ -268,20 +268,41 @@ void TGalleryFileList::handleEvent(TEvent& event)
 }
 
 // ═══════════════════════════════════════════════════
-//  TGalleryPreview
+//  TGalleryPreview (scrollable)
 // ═══════════════════════════════════════════════════
 
-TGalleryPreview::TGalleryPreview(const TRect& bounds)
-    : TView(bounds)
+TGalleryPreview::TGalleryPreview(const TRect& bounds, TScrollBar* aVScrollBar)
+    : TView(bounds), scrollOffset(0), vScrollBar(aVScrollBar)
 {
+    options |= ofSelectable | ofFirstClick;
+    eventMask |= evKeyDown | evBroadcast | evMouseDown;
     growMode = gfGrowHiX | gfGrowHiY;
-    // Not selectable — preview is read-only, keyboard stays in file list
+}
+
+void TGalleryPreview::adjustScrollBar()
+{
+    if (vScrollBar) {
+        vScrollBar->setParams(scrollOffset, 0,
+            std::max(0, (int)lines.size() - size.y),
+            size.y - 1, 1);
+    }
+}
+
+void TGalleryPreview::ensureVisible(int line)
+{
+    if (line < scrollOffset)
+        scrollOffset = line;
+    else if (line >= scrollOffset + size.y)
+        scrollOffset = line - size.y + 1;
+    adjustScrollBar();
 }
 
 void TGalleryPreview::clear()
 {
     lines.clear();
     currentPath.clear();
+    scrollOffset = 0;
+    adjustScrollBar();
     drawView();
 }
 
@@ -290,19 +311,19 @@ void TGalleryPreview::loadFile(const std::string& path)
     if (path == currentPath) return;
     currentPath = path;
     lines.clear();
+    scrollOffset = 0;
 
     std::ifstream f(path);
     if (!f) {
         lines.push_back("(cannot open file)");
+        adjustScrollBar();
         drawView();
         return;
     }
 
     std::string line;
-    // Read up to first frame only (stop at "----" delimiter)
     int lineCount = 0;
-    while (std::getline(f, line) && lineCount < 500) {
-        // Strip CR
+    while (std::getline(f, line) && lineCount < 2000) {
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
         // Stop at frame delimiter — show only first frame
@@ -311,6 +332,7 @@ void TGalleryPreview::loadFile(const std::string& path)
         lines.push_back(std::move(line));
         lineCount++;
     }
+    adjustScrollBar();
     drawView();
 }
 
@@ -321,12 +343,11 @@ void TGalleryPreview::draw()
 
     for (int y = 0; y < size.y; y++) {
         TDrawBuffer b;
-        if (y < (int)lines.size()) {
+        int lineIdx = scrollOffset + y;
+        if (lineIdx >= 0 && lineIdx < (int)lines.size()) {
             b.moveChar(0, ' ', textAttr, size.x);
-            // Use moveStr for proper UTF-8 handling
-            b.moveStr(0, lines[y], textAttr);
+            b.moveStr(0, lines[lineIdx], textAttr);
         } else if (lines.empty() && y == size.y / 2) {
-            // Empty state message
             const char* msg = "Select a file to preview";
             b.moveChar(0, ' ', emptyAttr, size.x);
             int startX = std::max(0, (size.x - (int)strlen(msg)) / 2);
@@ -338,6 +359,75 @@ void TGalleryPreview::draw()
     }
 }
 
+void TGalleryPreview::handleEvent(TEvent& event)
+{
+    TView::handleEvent(event);
+
+    if (event.what == evMouseDown) {
+        select();
+        clearEvent(event);
+        return;
+    }
+
+    if (event.what == evKeyDown) {
+        if (lines.empty()) {
+            // Consume nav keys silently when empty
+            switch (event.keyDown.keyCode) {
+                case kbUp: case kbDown: case kbPgUp: case kbPgDn:
+                case kbHome: case kbEnd:
+                    clearEvent(event);
+                    return;
+                default:
+                    return;
+            }
+        }
+        int maxScroll = std::max(0, (int)lines.size() - size.y);
+        int oldOffset = scrollOffset;
+        switch (event.keyDown.keyCode) {
+            case kbUp:
+                if (scrollOffset > 0) scrollOffset--;
+                clearEvent(event);
+                break;
+            case kbDown:
+                if (scrollOffset < maxScroll) scrollOffset++;
+                clearEvent(event);
+                break;
+            case kbPgUp:
+                scrollOffset = std::max(0, scrollOffset - size.y);
+                clearEvent(event);
+                break;
+            case kbPgDn:
+                scrollOffset = std::min(maxScroll, scrollOffset + size.y);
+                clearEvent(event);
+                break;
+            case kbHome:
+                scrollOffset = 0;
+                clearEvent(event);
+                break;
+            case kbEnd:
+                scrollOffset = maxScroll;
+                clearEvent(event);
+                break;
+            default:
+                return;
+        }
+        if (scrollOffset != oldOffset) {
+            adjustScrollBar();
+            drawView();
+        }
+        return;
+    }
+
+    // Scroll bar changes
+    if (event.what == evBroadcast && event.message.command == cmScrollBarChanged) {
+        if (event.message.infoPtr == vScrollBar && vScrollBar) {
+            scrollOffset = vScrollBar->value;
+            drawView();
+            clearEvent(event);
+        }
+    }
+}
+
 // ═══════════════════════════════════════════════════
 //  TGalleryWindow
 // ═══════════════════════════════════════════════════
@@ -345,7 +435,8 @@ void TGalleryPreview::draw()
 TGalleryWindow::TGalleryWindow(const TRect& bounds, const std::string& aPrimerDir)
     : TWindowInit(&TWindow::initFrame),
       TWindow(bounds, "ASCII Gallery", wnNoNumber),
-      primerDir(aPrimerDir)
+      primerDir(aPrimerDir),
+      searchInput(nullptr)
 {
     options |= ofTileable;
 
@@ -357,22 +448,32 @@ TGalleryWindow::TGalleryWindow(const TRect& bounds, const std::string& aPrimerDi
     tabBar = new TGalleryTabBar(tabR);
     insert(tabBar);
 
-    // Split: file list on left (~30 cols), preview on right
+    // Search input (hidden by default, shown when Find tab active)
+    // Sits just below the tab bar, spans the file list width
     int listWidth = std::min(32, interior.b.x / 3);
+    TRect searchR(interior.a.x, interior.a.y + 1, interior.a.x + listWidth - 1, interior.a.y + 2);
+    searchInput = new TInputLine(searchR, 128);
+    searchInput->hide();
+    insert(searchInput);
 
     // Scroll bar for file list
     TRect sbR(interior.a.x + listWidth - 1, interior.a.y + 1, interior.a.x + listWidth, interior.b.y);
     listScrollBar = new TScrollBar(sbR);
     insert(listScrollBar);
 
-    // File list — the only selectable/focusable view
+    // File list — selectable/focusable
     TRect listR(interior.a.x, interior.a.y + 1, interior.a.x + listWidth - 1, interior.b.y);
     fileList = new TGalleryFileList(listR, listScrollBar);
     insert(fileList);
 
-    // Preview pane — not selectable
-    TRect prevR(interior.a.x + listWidth, interior.a.y + 1, interior.b.x, interior.b.y);
-    preview = new TGalleryPreview(prevR);
+    // Preview scroll bar (right edge of preview area)
+    TRect psbR(interior.b.x - 1, interior.a.y + 1, interior.b.x, interior.b.y);
+    previewScrollBar = new TScrollBar(psbR);
+    insert(previewScrollBar);
+
+    // Preview pane — now selectable for scroll focus
+    TRect prevR(interior.a.x + listWidth, interior.a.y + 1, interior.b.x - 1, interior.b.y);
+    preview = new TGalleryPreview(prevR, previewScrollBar);
     insert(preview);
 
     // Scan files and apply initial filter
@@ -395,7 +496,6 @@ void TGalleryWindow::scanFiles()
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_name[0] == '.') continue;
         std::string name = entry->d_name;
-        // Only .txt files
         if (name.size() < 5) continue;
         std::string ext = name.substr(name.size() - 4);
         if (ext != ".txt") continue;
@@ -405,7 +505,7 @@ void TGalleryWindow::scanFiles()
     }
     closedir(dir);
 
-    // Sort alphabetically via index array (keeps files/paths in sync)
+    // Sort alphabetically via index array
     std::vector<size_t> indices(allFiles.size());
     for (size_t i = 0; i < indices.size(); i++) indices[i] = i;
     std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
@@ -426,6 +526,13 @@ void TGalleryWindow::scanFiles()
 void TGalleryWindow::applyFilter()
 {
     int tabIdx = tabBar->selected;
+
+    // Search tab — delegate to applySearch()
+    if (tabIdx == 5) {
+        applySearch();
+        return;
+    }
+
     std::vector<std::string> filtered;
     std::vector<std::string> filteredPaths;
 
@@ -444,8 +551,54 @@ void TGalleryWindow::applyFilter()
     fileList->adjustScrollBar();
     fileList->drawView();
 
-    // Re-focus file list after tab change
     fileList->select();
+    updatePreview();
+}
+
+void TGalleryWindow::applySearch()
+{
+    // Get current search text
+    char buf[130] = {};
+    if (searchInput) {
+        // TInputLine stores data in its internal buffer
+        const char* data = searchInput->data;
+        if (data) strncpy(buf, data, sizeof(buf) - 1);
+    }
+    std::string query(buf);
+
+    // Lowercase for case-insensitive match
+    std::string lowerQuery;
+    lowerQuery.reserve(query.size());
+    for (char c : query)
+        lowerQuery += (char)std::tolower((unsigned char)c);
+
+    std::vector<std::string> filtered;
+    std::vector<std::string> filteredPaths;
+
+    for (size_t i = 0; i < allFiles.size(); i++) {
+        if (lowerQuery.empty()) {
+            // Empty query = show all
+            filtered.push_back(allFiles[i]);
+            filteredPaths.push_back(allPaths[i]);
+        } else {
+            // Case-insensitive substring match
+            std::string lowerName;
+            lowerName.reserve(allFiles[i].size());
+            for (char c : allFiles[i])
+                lowerName += (char)std::tolower((unsigned char)c);
+            if (lowerName.find(lowerQuery) != std::string::npos) {
+                filtered.push_back(allFiles[i]);
+                filteredPaths.push_back(allPaths[i]);
+            }
+        }
+    }
+
+    fileList->files = filtered;
+    fileList->fullPaths = filteredPaths;
+    fileList->focused = 0;
+    fileList->scrollOffset = 0;
+    fileList->adjustScrollBar();
+    fileList->drawView();
 
     updatePreview();
 }
@@ -459,15 +612,96 @@ void TGalleryWindow::updatePreview()
         preview->loadFile(path);
 }
 
+void TGalleryWindow::showSearchInput(bool show)
+{
+    if (!searchInput) return;
+
+    TRect interior = getExtent();
+    interior.grow(-1, -1);
+    int listWidth = std::min(32, interior.b.x / 3);
+
+    if (show) {
+        searchInput->show();
+        // Shrink file list top by 1 row to make room for search input
+        TRect listR(interior.a.x, interior.a.y + 2, interior.a.x + listWidth - 1, interior.b.y);
+        fileList->changeBounds(listR);
+        // Move list scrollbar too
+        TRect sbR(interior.a.x + listWidth - 1, interior.a.y + 2, interior.a.x + listWidth, interior.b.y);
+        listScrollBar->changeBounds(sbR);
+    } else {
+        searchInput->hide();
+        // Restore file list to full height
+        TRect listR(interior.a.x, interior.a.y + 1, interior.a.x + listWidth - 1, interior.b.y);
+        fileList->changeBounds(listR);
+        TRect sbR(interior.a.x + listWidth - 1, interior.a.y + 1, interior.a.x + listWidth, interior.b.y);
+        listScrollBar->changeBounds(sbR);
+    }
+    fileList->adjustScrollBar();
+    fileList->drawView();
+}
+
+void TGalleryWindow::cycleFocus(bool forward)
+{
+    bool searchVisible = (tabBar->selected == 5);
+
+    // Build focus order: fileList → preview → [searchInput]
+    TView* focusOrder[3];
+    int count = 0;
+    focusOrder[count++] = fileList;
+    focusOrder[count++] = preview;
+    if (searchVisible && searchInput)
+        focusOrder[count++] = searchInput;
+
+    // Find current focused view
+    TView* current = this->current; // TGroup::current = focused subview
+    int currentIdx = -1;
+    for (int i = 0; i < count; i++) {
+        if (focusOrder[i] == current) {
+            currentIdx = i;
+            break;
+        }
+    }
+
+    int nextIdx;
+    if (currentIdx < 0) {
+        nextIdx = 0; // default to file list
+    } else if (forward) {
+        nextIdx = (currentIdx + 1) % count;
+    } else {
+        nextIdx = (currentIdx + count - 1) % count;
+    }
+
+    focusOrder[nextIdx]->select();
+}
+
 void TGalleryWindow::handleEvent(TEvent& event)
 {
-    // Let TWindow dispatch to focused subview (fileList) first
+    // Intercept Tab/Shift-Tab BEFORE TWindow processes them
+    // (TWindow would try to do its own focus cycling otherwise)
+    if (event.what == evKeyDown) {
+        if (event.keyDown.keyCode == kbTab) {
+            cycleFocus(true);
+            clearEvent(event);
+            return;
+        } else if (event.keyDown.keyCode == kbShiftTab) {
+            cycleFocus(false);
+            clearEvent(event);
+            return;
+        }
+    }
+
+    // Let TWindow dispatch to focused subview first
     TWindow::handleEvent(event);
 
     if (event.what == evCommand) {
         switch (event.message.command) {
             case cmGalleryTabChanged:
+                showSearchInput(tabBar->selected == 5);
                 applyFilter();
+                // If search tab, focus the input
+                if (tabBar->selected == 5 && searchInput) {
+                    searchInput->select();
+                }
                 clearEvent(event);
                 break;
             case cmGalleryFileChanged:
@@ -475,11 +709,8 @@ void TGalleryWindow::handleEvent(TEvent& event)
                 clearEvent(event);
                 break;
             case cmGalleryOpenFile: {
-                // Open the focused file in a proper viewer window
                 const std::string& path = fileList->focusedFile();
                 if (!path.empty()) {
-                    // Send to app to open in a full viewer window
-                    // Store path in a member string so pointer remains valid
                     openPath = path;
                     message(TProgram::application, evCommand, 109 /* cmOpenAnimation */,
                             (void*)openPath.c_str());
@@ -490,28 +721,47 @@ void TGalleryWindow::handleEvent(TEvent& event)
         }
     }
 
-    // Window-level key shortcuts (Tab/number keys for tab switching)
-    // These fire only if the file list didn't consume the event
+    // Window-level number key shortcuts for tab switching
     if (event.what == evKeyDown) {
         char ch = event.keyDown.charScan.charCode;
         if (ch >= '1' && ch <= '0' + TGalleryTabBar::NUM_TABS) {
-            int newTab = ch - '1';
-            if (newTab != tabBar->selected) {
-                tabBar->selected = newTab;
-                tabBar->drawView();
-                applyFilter();
+            // Only intercept number keys if NOT in the search input
+            // (let user type numbers into search field)
+            if (tabBar->selected != 5 || this->current != searchInput) {
+                int newTab = ch - '1';
+                if (newTab != tabBar->selected) {
+                    tabBar->selected = newTab;
+                    tabBar->drawView();
+                    showSearchInput(newTab == 5);
+                    applyFilter();
+                    if (newTab == 5 && searchInput) {
+                        searchInput->select();
+                    }
+                }
+                clearEvent(event);
             }
+        }
+        // Escape in search input → back to file list
+        else if (event.keyDown.keyCode == kbEsc && tabBar->selected == 5
+                 && this->current == searchInput) {
+            fileList->select();
             clearEvent(event);
-        } else if (event.keyDown.keyCode == kbTab) {
-            tabBar->selected = (tabBar->selected + 1) % TGalleryTabBar::NUM_TABS;
-            tabBar->drawView();
-            applyFilter();
+        }
+        // Enter in search input → focus file list to navigate results
+        else if (event.keyDown.keyCode == kbEnter && tabBar->selected == 5
+                 && this->current == searchInput) {
+            fileList->select();
             clearEvent(event);
-        } else if (event.keyDown.keyCode == kbShiftTab) {
-            tabBar->selected = (tabBar->selected + TGalleryTabBar::NUM_TABS - 1) % TGalleryTabBar::NUM_TABS;
-            tabBar->drawView();
-            applyFilter();
-            clearEvent(event);
+        }
+    }
+
+    // Live search: after every event, check if search text changed
+    if (tabBar->selected == 5 && searchInput) {
+        const char* data = searchInput->data;
+        std::string cur(data ? data : "");
+        if (cur != lastSearchText) {
+            lastSearchText = cur;
+            applySearch();
         }
     }
 }
@@ -520,7 +770,6 @@ void TGalleryWindow::handleEvent(TEvent& event)
 //  Factory
 // ═══════════════════════════════════════════════════
 
-// Find primer directory (same logic as test_pattern_app.cpp)
 static std::string galleryFindPrimerDir()
 {
     const char* moduleDirs[] = { "modules-private", "modules" };
