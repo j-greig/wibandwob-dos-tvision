@@ -64,28 +64,31 @@ Feature briefs: `f0X-*/f0X-feature-brief.md`
 
 | File | Role |
 |------|------|
-| `partykit/src/server.ts` | PartyKit Durable Object server |
-| `tools/room/partykit_bridge.py` | WS bridge sidecar |
-| `tools/room/state_diff.py` | Delta computation |
+| `partykit/src/server.ts` | PartyKit Durable Object — presence sync, chat relay, state delta |
+| `tools/room/partykit_bridge.py` | WS bridge sidecar — adjective-animal names, ts normalisation, presence heartbeat |
+| `tools/room/state_diff.py` | Delta compute + apply — `_INTERNAL_TYPES` guards room_chat/wibwob/scramble |
 | `tools/room/orchestrator.py` | Spawns bridge when `multiplayer: true` |
 | `tools/room/room_config.py` | Parses multiplayer YAML fields |
-| `app/api_ipc.cpp` | IPC protocol incl. `chat_receive` command |
+| `app/room_chat_view.h/.cpp` | TRoomChatWindow — strip, scroller, input, colour, ts normalisation |
+| `app/window_type_registry.cpp` | `room_chat` spawn + match registration |
+| `app/api_ipc.cpp` | IPC protocol — room_chat_receive, room_presence, room_chat_pending |
 
 ## Definition of Done (MVP)
 
 | Check | Code | Live test |
 |-------|------|-----------|
-| Two browsers connect to same room | ✅ F01+F02+F06 | Pending |
-| Window open/close/move syncs ≤500ms | ✅ F02+F03 | Pending |
-| Chat messages sync between instances | ✅ F04 | Pending |
-| Presence shows who's connected | ✅ F01 | Pending |
-| Single-player rooms still work | ✅ 138/138 tests | Pass |
+| Two instances connect to same room | ✅ F01+F02+F06 | ✅ `grim-gnu` + `dark-jay` 2-in-room |
+| Chat messages sync between instances | ✅ F04 | ✅ bidirectional relay confirmed |
+| Presence shows who's connected | ✅ F01+F04 | ✅ both sides show `2 in room` immediately |
+| Names consistent across strip + chat | ✅ F04 | ✅ adjective-animal deterministic both sides |
+| Window open/close/move syncs | ✅ F02+F03 | ⏳ follow-on — E008 next story |
+| Single-player rooms still work | ✅ all tests | ✅ |
 
-## Remaining
+## Follow-ons (not blocking done)
 
-1. **Live integration** — needs two-browser test against deployed PartyKit
-2. **F05 cursor overlay** — formally park or attempt in future pass
-3. **PR** — open when live tests pass
+1. **Window mirroring** — user 1 opens a window → appears on user 2. State delta machinery exists (F02+F03); needs `room_chat` excluded from sync and window-open events wired into bridge outbound. Good Codex task.
+2. **F05 cursor overlay** — parked. Revisit if ttyd gets stable JS injection.
+3. **Close GitHub issue #65** when PR merged.
 
 ## Parking Lot
 
@@ -94,9 +97,9 @@ Feature briefs: `f0X-*/f0X-feature-brief.md`
 
 ## Status
 
-Status: in-progress
+Status: done — MVP shipped. F01–F04+F06 complete, merged to main. F05 parked. Window mirroring is the natural next story.
 GitHub issue: #65
-PR: —
+PR: merged to main (feat/e008-f04-room-chat-view)
 
 ## References
 

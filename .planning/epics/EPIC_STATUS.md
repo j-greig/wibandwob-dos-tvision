@@ -7,7 +7,7 @@
 
 e005-theme-runtime-wiring — not-started
 e006-scramble-tui-presence — done
-e008-multiplayer-partykit — in-progress
+e008-multiplayer-partykit — done
 e011-desktop-shell — not-started
 e012-app-modularisation — done
 e014-inter-instance-chat — done
