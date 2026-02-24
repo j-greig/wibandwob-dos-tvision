@@ -28,6 +28,17 @@ extern void api_set_pattern_mode(TTestPatternApp& app, const std::string& mode);
 extern std::string api_set_theme_mode(TTestPatternApp& app, const std::string& mode);
 extern std::string api_set_theme_variant(TTestPatternApp& app, const std::string& variant);
 extern std::string api_reset_theme(TTestPatternApp& app);
+extern std::string api_window_shadow(TTestPatternApp& app, const std::string& id, bool on);
+extern std::string api_window_title(TTestPatternApp& app, const std::string& id, const std::string& title);
+extern std::string api_desktop_preset(TTestPatternApp& app, const std::string& preset);
+extern std::string api_desktop_texture(TTestPatternApp& app, const std::string& ch);
+extern std::string api_desktop_color(TTestPatternApp& app, int fg, int bg);
+extern std::string api_desktop_gallery(TTestPatternApp& app, bool on);
+extern std::string api_desktop_get(TTestPatternApp& app);
+extern std::string api_figlet_set_text(TTestPatternApp& app, const std::string& id, const std::string& text);
+extern std::string api_figlet_set_font(TTestPatternApp& app, const std::string& id, const std::string& font);
+extern std::string api_figlet_set_color(TTestPatternApp& app, const std::string& id, const std::string& fg, const std::string& bg);
+extern std::string api_figlet_list_fonts();
 extern void api_open_animation_path(TTestPatternApp& app, const std::string& path, const TRect* bounds, bool frameless, bool shadowless, const std::string& title);
 extern void api_spawn_paint(TTestPatternApp& app, const TRect* bounds);
 extern void api_spawn_micropolis_ascii(TTestPatternApp& app, const TRect* bounds);
@@ -89,6 +100,17 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
+        {"window_shadow", "Toggle window shadow (id, on params)", true},
+        {"window_title", "Set window title (id, title params — empty string removes title)", true},
+        {"desktop_preset", "Set desktop to a named preset (preset param)", true},
+        {"desktop_texture", "Set desktop fill character (char param)", true},
+        {"desktop_color", "Set desktop fg/bg colour 0-15 (fg, bg params)", true},
+        {"desktop_gallery", "Toggle gallery mode — hide menu/status bar (on param: true/false)", true},
+        {"desktop_get", "Get current desktop state (texture, colour, gallery, preset)", false},
+        {"figlet_set_text", "Change text in a figlet window (id, text params)", true},
+        {"figlet_set_font", "Change font in a figlet window (id, font params)", true},
+        {"figlet_set_color", "Set figlet window colours (id, fg, bg params — hex RGB e.g. #FF00FF)", true},
+        {"figlet_list_fonts", "List available figlet font names", false},
     };
     return capabilities;
 }
@@ -351,6 +373,71 @@ std::string exec_registry_command(
         auto id_it = kv.find("id");
         if (id_it == kv.end()) return "err missing id";
         return api_paint_export(app, id_it->second);
+    }
+    if (name == "window_shadow") {
+        auto id_it = kv.find("id");
+        auto on_it = kv.find("on");
+        if (id_it == kv.end() || on_it == kv.end()) return "err missing id or on";
+        bool on = (on_it->second == "true" || on_it->second == "1");
+        return api_window_shadow(app, id_it->second, on);
+    }
+    if (name == "window_title") {
+        auto id_it = kv.find("id");
+        auto title_it = kv.find("title");
+        if (id_it == kv.end()) return "err missing id";
+        std::string title = (title_it != kv.end()) ? title_it->second : "";
+        return api_window_title(app, id_it->second, title);
+    }
+    if (name == "desktop_preset") {
+        auto it = kv.find("preset");
+        if (it == kv.end()) return "err missing preset";
+        return api_desktop_preset(app, it->second);
+    }
+    if (name == "desktop_texture") {
+        auto it = kv.find("char");
+        if (it == kv.end()) return "err missing char";
+        return api_desktop_texture(app, it->second);
+    }
+    if (name == "desktop_color") {
+        auto fg_it = kv.find("fg");
+        auto bg_it = kv.find("bg");
+        if (fg_it == kv.end() || bg_it == kv.end()) return "err missing fg or bg";
+        return api_desktop_color(app, std::stoi(fg_it->second), std::stoi(bg_it->second));
+    }
+    if (name == "desktop_gallery") {
+        auto it = kv.find("on");
+        if (it == kv.end()) return "err missing on param";
+        bool on = (it->second == "true" || it->second == "1");
+        return api_desktop_gallery(app, on);
+    }
+    if (name == "desktop_get") {
+        return api_desktop_get(app);
+    }
+    if (name == "figlet_set_text") {
+        auto id_it = kv.find("id");
+        auto text_it = kv.find("text");
+        if (id_it == kv.end()) return "err missing id";
+        if (text_it == kv.end()) return "err missing text";
+        return api_figlet_set_text(app, id_it->second, text_it->second);
+    }
+    if (name == "figlet_set_font") {
+        auto id_it = kv.find("id");
+        auto font_it = kv.find("font");
+        if (id_it == kv.end()) return "err missing id";
+        if (font_it == kv.end()) return "err missing font";
+        return api_figlet_set_font(app, id_it->second, font_it->second);
+    }
+    if (name == "figlet_set_color") {
+        auto id_it = kv.find("id");
+        auto fg_it = kv.find("fg");
+        auto bg_it = kv.find("bg");
+        if (id_it == kv.end()) return "err missing id";
+        return api_figlet_set_color(app, id_it->second,
+            (fg_it != kv.end()) ? fg_it->second : "",
+            (bg_it != kv.end()) ? bg_it->second : "");
+    }
+    if (name == "figlet_list_fonts") {
+        return api_figlet_list_fonts();
     }
     return "err unknown command";
 }

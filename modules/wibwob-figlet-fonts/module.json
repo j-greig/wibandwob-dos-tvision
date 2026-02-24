@@ -1,0 +1,9 @@
+{
+  "name": "wibwob-figlet-fonts",
+  "version": "1.0.0",
+  "description": "Categorised FIGlet font catalogue for ASCII art typography",
+  "type": "data",
+  "provides": {
+    "fonts": "fonts.json"
+  }
+}

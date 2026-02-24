@@ -32,6 +32,7 @@
 #include "paint/paint_window.h"
 #include "micropolis_ascii_view.h"
 #include "tvterm_view.h"
+#include "figlet_text_view.h"
 
 // tvision for TRect
 #define Uses_TRect
@@ -73,6 +74,9 @@ extern void api_spawn_rogue(TTestPatternApp&, const TRect*);
 extern void api_spawn_deep_signal(TTestPatternApp&, const TRect*);
 extern void api_spawn_app_launcher(TTestPatternApp&, const TRect*);
 extern void api_spawn_gallery(TTestPatternApp&, const TRect*);
+extern void api_spawn_figlet_text(TTestPatternApp&, const TRect*,
+    const std::string& text, const std::string& font,
+    bool frameless, bool shadowless);
 
 // ── Bounds helper ─────────────────────────────────────────────────────────────
 
@@ -224,6 +228,19 @@ static const char* spawn_app_launcher(TTestPatternApp& app, const std::map<std::
     TRect r; api_spawn_app_launcher(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_gallery(TTestPatternApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_gallery(app, opt_bounds(kv, r)); return nullptr; }
+static const char* spawn_figlet_text(TTestPatternApp& app, const std::map<std::string,std::string>& kv) {
+    auto ti = kv.find("text");
+    if (ti == kv.end() || ti->second.empty()) return "err missing text param";
+    auto fi = kv.find("font");
+    std::string font = (fi != kv.end()) ? fi->second : "standard";
+    auto fli = kv.find("frameless");
+    auto si = kv.find("shadowless");
+    bool frameless  = (fli != kv.end() && (fli->second == "1" || fli->second == "true"));
+    bool shadowless = (si != kv.end() && (si->second == "1" || si->second == "true"));
+    TRect r;
+    api_spawn_figlet_text(app, opt_bounds(kv, r), ti->second, font, frameless, shadowless);
+    return nullptr;
+}
 
 template <typename ViewType>
 static bool has_child_view(TWindow* w) {
@@ -273,6 +290,7 @@ static bool match_rogue(TWindow* w)       { return has_child_view<TRogueView>(w)
 static bool match_deep_signal(TWindow* w) { return has_child_view<TDeepSignalView>(w); }
 static bool match_app_launcher(TWindow* w){ return dynamic_cast<TAppLauncherWindow*>(w) != nullptr; }
 static bool match_gallery(TWindow* w)     { return dynamic_cast<TGalleryWindow*>(w) != nullptr; }
+static bool match_figlet_text(TWindow* w) { return dynamic_cast<TFigletTextWindow*>(w) != nullptr; }
 
 // ── Registry table ────────────────────────────────────────────────────────────
 // Add new window types here — nowhere else.
@@ -311,6 +329,7 @@ static const WindowTypeSpec k_specs[] = {
     { "deep_signal",       spawn_deep_signal,      match_deep_signal        },
     { "app_launcher",      spawn_app_launcher,     match_app_launcher       },
     { "gallery",           spawn_gallery,          match_gallery            },
+    { "figlet_text",       spawn_figlet_text,      match_figlet_text        },
 };
 
 // ── Lookup implementations ────────────────────────────────────────────────────

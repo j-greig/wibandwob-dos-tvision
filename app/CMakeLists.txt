@@ -12,6 +12,7 @@ set(TV_COMMON_SOURCES
     frame_capture.cpp
     api_ipc.cpp
     command_registry.cpp
+    wibwob_background.cpp
     window_type_registry.cpp
     theme_manager.cpp
     wibwob_view.cpp
@@ -69,6 +70,8 @@ add_executable(test_pattern
     micropolis_ascii_view.cpp
     micropolis_tool_palette.cpp
     tvterm_view.cpp
+    figlet_utils.cpp
+    figlet_text_view.cpp
 )
 target_include_directories(test_pattern PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_pattern PRIVATE tvision tvterm-core)

@@ -1,5 +1,5 @@
 ---
-title: "Spike — Desktop Texture & Colour Options"
+title: "Spike — Desktop Texture, Colour & Gallery Mode"
 status: not-started
 created: 2026-02-23
 related_epic: e005-theme-runtime-wiring
@@ -7,210 +7,122 @@ github_issue: "—"
 PR: "—"
 ---
 
-# TL;DR
+# Desktop Texture, Colour & Gallery Mode
 
-WibWobDOS desktop is currently a single solid fill character (▒ or similar) in one fixed colour. This spike scopes what it would take to let the user (or Wib&Wob) cycle or set the desktop **texture** (fill character) and **colour** (fg/bg) at runtime — including a CGA palette and the full ASCII shade-block spectrum.
-
----
+Three things: pick the background fill character, pick its colours, and toggle "gallery mode" that hides the menu bar + status line for a clean wall.
 
 ## Background
 
-The desktop background in Turbo Vision is a `TBackground` view — a dead-simple `TView` subclass with two properties:
+`TBackground` fills the desktop with one repeated char in one colour. Currently `▒` in blue/grey. To change at runtime: mutate pattern + colour, call `drawView()`. Done.
 
-```cpp
-char pattern;          // fill character, e.g. ' ', '░', '▒', '▓', '█'
-getColor(0x01);        // one palette byte = fg nibble | bg nibble << 4
-```
+Gallery mode hides `TCustomMenuBar` (row 0) and `TCustomStatusLine` (bottom row), then grows the desktop to fill the freed space. Result: a clean canvas — art gallery wall, no chrome.
 
-`draw()` just floods the canvas with `pattern` in whatever colour palette entry 0x01 resolves to. There is no animation, no gradient, no tiling — just one char repeated.
+## What to Build
 
-To change texture or colour at runtime you only need to:
-1. Mutate `background->pattern` (or `fg`/`bg` colour fields in a subclass), then
-2. Call `background->drawView()` (forces a repaint).
-
-The colour resolution path: `getColor(0x01)` → app palette → `TColorAttr` (supports both classic 4-bit and TrueColor RGB in modern tvision). Classic palette byte is `(bg << 4) | fg`, both 0–15.
-
----
-
-## Option Set
-
-### A. Texture — Fill Characters
-
-| Label | Char | Description |
-|---|---|---|
-| `empty` | ` ` (space) | Solid background colour, no texture |
-| `shade1` | `░` (U+2591) | Light shade block |
-| `shade2` | `▒` (U+2592) | Medium shade block — **current default** |
-| `shade3` | `▓` (U+2593) | Dark shade block |
-| `solid` | `█` (U+2588) | Full block — no texture, looks like solid colour |
-| `dot` | `·` | Subtle dot grid |
-| `cross` | `+` | Grid/crosshatch feel |
-| `wave` | `~` | Wavy texture |
-| `noise` | `%` | Noisy/grungy feel |
-
-These are a good starting MVP — 9 named presets. Could later extend to arbitrary char input.
-
-### B. Colour — CGA Palette (Classic DOS)
-
-The original IBM CGA palette — 16 colours, still the soul of any DOS aesthetic:
-
-| Index | Name | HTML approx |
-|---|---|---|
-| 0 | Black | #000000 |
-| 1 | Blue | #0000AA |
-| 2 | Green | #00AA00 |
-| 3 | Cyan | #00AAAA |
-| 4 | Red | #AA0000 |
-| 5 | Magenta | #AA00AA |
-| 6 | Brown | #AA5500 |
-| 7 | Light Grey | #AAAAAA |
-| 8 | Dark Grey | #555555 |
-| 9 | Bright Blue | #5555FF |
-| 10 | Bright Green | #55FF55 |
-| 11 | Bright Cyan | #55FFFF |
-| 12 | Bright Red | #FF5555 |
-| 13 | Bright Magenta | #FF55FF |
-| 14 | Yellow | #FFFF55 |
-| 15 | White | #FFFFFF |
-
-For desktop background (`TBackground`), **bg colour** is the dominant choice. Fg matters only for shade chars (░▒▓) where the fg+bg pair creates the visual density.
-
-MVP scope: **pick bg colour from CGA 16**. Stretch: pick fg independently. Further stretch: TrueColor RGB via `TColorRGB`.
-
----
-
-## Implementation Plan
-
-### Phase 1 — Runtime C++ API (1–2h)
-
-**Subclass `TBackground`** into `TWibWobBackground` (in `app/wibwob_background.h/.cpp`):
+### 1. `TWibWobBackground` (C++ subclass)
 
 ```cpp
 class TWibWobBackground : public TBackground {
+    uchar fgColor, bgColor;
 public:
-    TWibWobBackground(const TRect& bounds, char pattern, uchar fg, uchar bg) noexcept;
     void setTexture(char ch);
     void setColor(uchar fg, uchar bg);
-    void draw() override;
-private:
-    uchar fgColor, bgColor;
+    void draw() override; // explicit TColorAttr, bypasses palette
 };
 ```
 
-`draw()` override builds `TDrawBuffer` with an explicit `TColorAttr` from `fgColor`/`bgColor` rather than relying on the palette lookup — this means it works regardless of the app palette state.
+Wire via `initDeskTop()` or replace-after-init.
 
-**Wire into `initDeskTop()`** — return a `TDeskTop` that uses `TWibWobBackground` instead of the default `TBackground`:
+### 2. Gallery Mode (hide chrome)
 
 ```cpp
-TDeskTop* TTestPatternApp::initDeskTop(TRect r) {
-    // ... (existing bounds trim) ...
-    TDeskTop* desk = new TDeskTop(r, &TWibWobBackground::init);
-    return desk;
+void TTestPatternApp::setGalleryMode(bool on) {
+    menuBar->setState(sfVisible, !on);
+    statusLine->setState(sfVisible, !on);
+    // Recalc desktop bounds to fill freed rows
+    TRect r = getExtent();
+    r.a.y = on ? 0 : 1;
+    r.b.y = on ? r.b.y : r.b.y - 1;
+    deskTop->changeBounds(r);
 }
 ```
 
-Or simpler: after init, cast `deskTop->background` and replace it:
-```cpp
-// In TTestPatternApp constructor after base init:
-auto bg = dynamic_cast<TBackground*>(deskTop->background);
-// Remove old, insert new TWibWobBackground with same bounds
-```
+Toggle: keyboard shortcut (e.g. `Alt+G` or `F11`) + IPC command + API endpoint.  
+Re-show on any menu-access key (`F10`, `Alt+letter`) as safety escape.
 
-The replace-after-init path is messier (insertion order); subclassing via `TDeskInit` is cleaner.
+### 3. IPC / API / MCP
 
-**App-level setter**:
+| Endpoint | Body | Effect |
+|----------|------|--------|
+| `POST /desktop/preset` | `{"preset": "jet_black"}` | Apply named preset |
+| `POST /desktop/texture` | `{"char": "░"}` | Set fill character |
+| `POST /desktop/color` | `{"fg": 7, "bg": 1}` | Set fg/bg (CGA 0–15) |
+| `POST /desktop/gallery` | `{"on": true}` | Toggle gallery mode |
+| `GET /desktop` | — | Current state |
 
-```cpp
-void TTestPatternApp::setDesktopTexture(char ch);
-void TTestPatternApp::setDesktopColor(uchar fg, uchar bg);
-void TTestPatternApp::setDesktopPreset(const std::string& preset);
-// preset = "black", "cga_blue", "cga_cyan", "shade1"…"shade3", etc.
-```
+IPC commands: `cmDesktopTexture`, `cmDesktopColor`, `cmDesktopPreset`, `cmDesktopGallery`.
 
-### Phase 2 — API + MCP endpoints (30m)
+### 4. Menu UI
 
-In `tools/api_server/main.py`:
+Under `View` menu:
 
 ```
-POST /desktop/texture   body: { "char": "░" }
-POST /desktop/color     body: { "fg": 7, "bg": 1 }
-POST /desktop/preset    body: { "preset": "cga_blue_shade2" }
-GET  /desktop           returns: { "char": "▒", "fg": 7, "bg": 1, "preset": "cga_blue_shade2" }
+Desktop ▶  Texture ▶  ░ Light | ▒ Medium | ▓ Dark | █ Solid | (space) Empty
+           Colour  ▶  Black | Blue | Cyan | Green | ...
+           Gallery Mode  (Alt+G)
 ```
 
-IPC command → new `cmDesktopTexture`, `cmDesktopColor`, `cmDesktopPreset` in `command_registry.cpp`.
+### 5. Workspace Persistence
 
-MCP tool: `set_desktop` with `preset` param (easy to call from Claude.ai).
+Add to `buildWorkspaceJson()` / `restoreWorkspace()`:
 
-### Phase 3 — Menu UI (30m, optional for spike)
-
-Under `~V~iew` or `~D~esktop` submenu:
-
-```
-Desktop ▶  Texture ▶  [ ] Light (░)
-                       [ ] Medium (▒)  ✓ 
-                       [ ] Dark (▓)
-                       [ ] Solid (█)
-                       [ ] Empty ( )
-           Colour  ▶  [ ] Black
-                       [ ] Blue    ✓ 
-                       [ ] Cyan
-                       ...
+```json
+{ "desktop": { "char": "▒", "fg": 7, "bg": 1, "gallery": false, "preset": "default" } }
 ```
 
-Or a single dialog picker (later).
+## Presets
 
-### Phase 4 — Workspace persistence (free, via E013 pattern)
-
-Add `desktop_texture` and `desktop_color` to workspace save/restore JSON. Hook into existing `buildWorkspaceJson()` / `restoreWorkspace()`. The parity-check script will catch it if missed.
-
----
-
-## Named Presets (MVP shortlist)
-
-These cover the most aesthetically interesting combos:
-
-| Preset name | Texture | BG | FG | Feel |
-|---|---|---|---|---|
-| `default` | ▒ | Blue (1) | Light Grey (7) | Classic TV default |
-| `jet_black` | ` ` | Black (0) | Black (0) | Void / modern |
-| `terminal` | ░ | Black (0) | Dark Grey (8) | CRT terminal |
+| Name | Char | BG | FG | Notes |
+|------|------|----|----|-------|
+| `default` | ▒ | Blue (1) | Light Grey (7) | Classic TV |
+| `jet_black` | ` ` | Black (0) | Black (0) | Void |
+| `terminal` | ░ | Black (0) | Dark Grey (8) | CRT |
 | `cga_cyan` | ▒ | Cyan (3) | White (15) | Retro bright |
-| `cga_green` | ░ | Black (0) | Bright Green (10) | Phosphor green |
+| `cga_green` | ░ | Black (0) | Bright Green (10) | Phosphor |
 | `noise` | % | Black (0) | Dark Grey (8) | Grungy |
 | `white_paper` | ` ` | White (15) | White (15) | Blank canvas |
-| `wibwob` | ▒ | Black (0) | Dark Grey (8) | W&W default vibe |
+| `gallery_wall` | ` ` | Black (0) | Black (0) | Gallery mode default — void + no chrome |
 
----
+## Acceptance Criteria
+
+- **AC-1:** `POST /desktop/preset {"preset": "jet_black"}` changes desktop immediately.
+  - Test: API call → screenshot comparison (bg changed).
+- **AC-2:** `GET /desktop` returns current char, fg, bg, gallery, preset.
+  - Test: GET after SET, assert JSON fields match.
+- **AC-3:** Gallery mode hides menu bar + status line, desktop fills full terminal height.
+  - Test: toggle on → `menuBar->getState(sfVisible) == false`, desktop bounds == full extent.
+- **AC-4:** Gallery mode re-shows chrome on `F10` / `Alt+letter` / `Escape` as safety escape.
+  - Test: gallery on → send F10 → menu bar visible again.
+- **AC-5:** At least 8 named presets available.
+  - Test: iterate preset list, apply each, verify no crash.
+- **AC-6:** Desktop state persists across workspace save/restore.
+  - Test: set preset → save workspace → restart → restore → GET matches.
+- **AC-7:** Parity check script passes after adding new workspace props.
+  - Test: run parity script, zero failures.
+
+## Effort
+
+| Phase | Est |
+|-------|-----|
+| TWibWobBackground + app setter | 2h |
+| Gallery mode (hide/show/resize) | 1h |
+| API + IPC + MCP | 1h |
+| Menu UI | 30m |
+| Workspace persistence | 30m |
+| **Total** | **~5h** |
 
 ## Open Questions
 
-- **TrueColor stretch goal**: tvision supports `TColorRGB` — is it worth exposing RGB hex input for bg? Probably yes for E005 theme wiring, but out of scope for this spike.
-- **Per-session vs persisted preset**: Should the MCP tool change just the live session or also update a config file? Live-only is simpler for MVP.
-- **Animation**: Could slowly cycle textures (░→▒→▓→░) on an idle timer — fun but definitely stretch.
-- **Wib&Wob agency**: Should Scramble be able to call `set_desktop` unprompted (mood-driven)? Relates to E006 heartbeat/agency discussion — note for later.
-
----
-
-## Acceptance Criteria (when this becomes a story)
-
-- AC-1: `POST /desktop/preset` with `"preset": "jet_black"` changes desktop immediately in running TUI.
-- AC-2: `GET /desktop` returns current texture char, fg, bg, and preset name.
-- AC-3: At least 8 named presets available and tested.
-- AC-4: Setting persists across workspace save/restore.
-- AC-5: Menu submenu exposes at least texture and colour picks.
-- AC-6: Parity check script passes after adding new workspace props.
-
----
-
-## Effort Estimate
-
-| Phase | Est |
-|---|---|
-| Phase 1 (C++ subclass + app setter) | 2h |
-| Phase 2 (API + MCP) | 1h |
-| Phase 3 (menu UI) | 1h |
-| Phase 4 (workspace persistence) | 30m |
-| **Total** | **~4.5h** |
-
-Suitable for a single focused story under E005 (theme runtime wiring) or as a standalone mini-epic.
+- **Safety escape in gallery mode**: `F10` is natural (TV menu key). But should `Escape` also restore? Could conflict with dialog dismissal.
+- **TrueColor**: tvision supports `TColorRGB` — expose hex input? Out of scope here, note for E005.
+- **Wib agency**: Should Scramble be able to call `set_desktop` unprompted? Note for E006.

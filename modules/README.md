@@ -1,92 +1,72 @@
-# WibWob-DOS Modules
+# WibWobDOS Modules
 
-Modules are content packs, prompts, views, or tools that extend WibWob-DOS.
-
-## Directory Structure
+## Directory layout
 
 ```
-modules/              # Public modules (shipped with repo or community-contributed)
-modules-private/      # Private modules (gitignored, never published)
+modules/              ← public modules (tracked in this repo)
+modules-private/      ← your private modules (git submodule → your own private repo)
 ```
 
-Both directories are scanned at startup. Private modules take priority over public ones with the same filename.
+## Public modules
 
-## module.json
+Add modules directly under `modules/`. They're tracked in the main repo and
+visible to everyone.
 
-Every module needs a `module.json` manifest:
+## Private modules
 
-```json
-{
-  "name": "my-module",
-  "version": "1.0.0",
-  "description": "What this module provides",
-  "type": "content",
-  "provides": {
-    "primers": "primers/*.txt"
-  }
-}
+`modules-private/` is a **git submodule** — it points to a separate private
+repo that only you (or your team) can access. Use it for:
+
+- **Your own art / primers** you don't want to publish
+- **Custom prompts / personalities**
+- **Client work / proprietary content**
+- **Anything you want to keep out of the public repo**
+
+The WibWob-DOS default ships with this pointing to our private content, but
+**you should replace it with your own repo**:
+
+```bash
+# Remove the default submodule
+git submodule deinit modules-private
+git rm modules-private
+rm -rf .git/modules/modules-private
+
+# Add your own private repo
+git submodule add https://github.com/YOU/your-private-modules.git modules-private
+git commit -m "chore: use my own private modules"
 ```
 
-### Module Types
+Or just delete `modules-private/` entirely if you don't need it — the app
+builds fine without it.
 
-| Type | Purpose | Location |
-|---|---|---|
-| `content` | Primers, ASCII art packs, text assets | `primers/*.txt` |
-| `prompt` | System prompts, personality files | `*.prompt.md` |
-| `view` | New TView subclass (C++ source) | `*.cpp`, `*.h` |
-| `tool` | MCP tool extension (Python) | `*.py` |
+### Editing workflow
 
-## Creating a Primer Module
+**⚠️ Do NOT edit files directly in `modules-private/` from this repo.**
+Changes won't be committed to the private repo and will get overwritten on
+the next `git submodule update`.
 
-1. Create a directory under `modules/` (public) or `modules-private/` (private):
-   ```
-   modules/my-art-pack/
-   ├── module.json
-   └── primers/
-       ├── cool-thing.txt
-       └── another-thing.txt
-   ```
+```bash
+# 1. Work in the standalone private repo
+cd ~/Repos/your-private-modules
+# ... edit, add, commit, push ...
 
-2. Write `module.json`:
-   ```json
-   {
-     "name": "my-art-pack",
-     "version": "1.0.0",
-     "description": "Cool ASCII art",
-     "type": "content",
-     "provides": {
-       "primers": "primers/*.txt"
-     }
-   }
-   ```
-
-3. Add `.txt` files to `primers/`. Each file becomes a loadable primer in the TUI.
-
-### Primer Format
-
-Plain text files. Optional animation support with frame delimiters:
-
-```
-FPS=8
-----
-Frame 1 content here
-----
-Frame 2 content here
-----
+# 2. Update the submodule ref in wibandwob-dos
+cd ~/Repos/wibandwob-dos
+git submodule update --remote modules-private
+git add modules-private
+git commit -m "chore: bump modules-private"
 ```
 
-Without `----` delimiters, the file is displayed as static text.
+### First-time clone
 
-## Creating a Prompt Module
-
-```
-modules-private/my-prompts/
-├── module.json
-└── my-personality.prompt.md
+```bash
+git clone --recurse-submodules https://github.com/j-greig/wibandwob-dos.git
 ```
 
-The app searches for `wibandwob.prompt.md` in module directories. To override the default personality, place your version in a private module.
+Or after a regular clone:
+```bash
+git submodule update --init --recursive
+```
 
-## Examples
-
-See `modules/example-primers/` for a working primer module with 5 demo files.
+Note: if you don't have access to the private repo, the submodule will be
+empty. The public app still builds and runs fine without it.

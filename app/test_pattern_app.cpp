@@ -13,6 +13,7 @@
 #define Uses_TStaticText
 #define Uses_TButton
 #define Uses_TMenuBar
+#define Uses_TMenuBox
 #define Uses_TSubMenu
 #define Uses_TMenuItem
 #define Uses_TMenu
@@ -98,9 +99,13 @@
 #include "deep_signal_view.h"
 // Terminal emulator window (tvterm)
 #include "tvterm_view.h"
+// Desktop texture & gallery mode
+#include "wibwob_background.h"
 // App launcher (E011)
 #include "app_launcher_view.h"
 #include "ascii_gallery_view.h"
+#include "figlet_text_view.h"
+#include "figlet_utils.h"
 // Factory for ASCII grid demo window (implemented in ascii_grid_view.cpp).
 class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 // #include "mech_window.h" // deferred feature; header not present yet
@@ -118,6 +123,7 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 #include <map>
 #include <deque>
 #include <dirent.h>
+#include <algorithm>
 // Local API IPC bridge (Unix domain socket)
 #include "api_ipc.h"
 #include "command_registry.h"
@@ -166,9 +172,11 @@ const ushort cmOpenAnimation = 109;
 const ushort cmSaveWorkspace = 110;
 const ushort cmNewMechs = 111;
 const ushort cmOpenWorkspace = 115;
+const ushort cmRecentWorkspace = 275;  // 275..279
 // Future File commands
 const ushort cmOpenAnsiArt = 112;
 const ushort cmNewPaintCanvas = 113;
+const ushort cmNewFigletText = 119;
 const ushort cmOpenImageFile = 114;
 
 // Window menu commands
@@ -247,6 +255,112 @@ const ushort cmGlitchDiagonalScatter = 144;
 const ushort cmCaptureGlitchedFrame = 145;
 const ushort cmResetGlitchParams = 146;
 const ushort cmGlitchSettings = 147;
+
+// Right-click context menu commands
+const ushort cmCtxToggleShadow = 250;
+const ushort cmCtxClearTitle = 251;
+const ushort cmCtxToggleFrame = 252;
+const ushort cmCtxGalleryToggle = 253;
+
+// Desktop right-click preset commands
+const ushort cmDeskPresetBase = 260;  // 260..268 for up to 9 presets
+const ushort cmDeskGallery = 270;
+static const int kMaxRecentWorkspaces = 5;
+
+struct RecentWorkspaceInfo {
+    std::string path;
+    std::string fileName;
+    time_t mtime;
+};
+
+static std::vector<std::string> scanRecentWorkspacePaths(const char* dirPath, int maxCount)
+{
+    std::vector<RecentWorkspaceInfo> entries;
+    DIR* dir = opendir(dirPath);
+    if (!dir)
+        return {};
+
+    struct dirent* ent;
+    while ((ent = readdir(dir)) != nullptr) {
+        const char* name = ent->d_name;
+        if (!name || name[0] == '.')
+            continue;
+        size_t len = std::strlen(name);
+        if (len < 6 || std::strcmp(name + len - 5, ".json") != 0)
+            continue;
+
+        std::string path = std::string(dirPath) + "/" + name;
+        struct stat st;
+        if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+            continue;
+
+        entries.push_back({path, name, st.st_mtime});
+    }
+    closedir(dir);
+
+    std::sort(entries.begin(), entries.end(),
+              [](const RecentWorkspaceInfo& a, const RecentWorkspaceInfo& b) {
+                  if (a.mtime != b.mtime)
+                      return a.mtime > b.mtime;
+                  return a.fileName < b.fileName;
+              });
+
+    if ((int)entries.size() > maxCount)
+        entries.resize(maxCount);
+
+    std::vector<std::string> out;
+    out.reserve(entries.size());
+    for (const auto& e : entries)
+        out.push_back(e.path);
+    return out;
+}
+
+static int countWindowsInWorkspace(const std::string& path)
+{
+    FILE* f = fopen(path.c_str(), "r");
+    if (!f) return -1;
+    // Quick count: find "windows" array, count occurrences of "\"type\""
+    std::string content;
+    char buf[4096];
+    while (size_t n = fread(buf, 1, sizeof(buf), f))
+        content.append(buf, n);
+    fclose(f);
+    int count = 0;
+    size_t pos = content.find("\"windows\"");
+    if (pos == std::string::npos) return 0;
+    while ((pos = content.find("\"type\"", pos + 1)) != std::string::npos)
+        ++count;
+    return count;
+}
+
+static std::string recentWorkspaceLabel(const std::string& path)
+{
+    size_t slash = path.find_last_of("/\\");
+    std::string name = (slash == std::string::npos) ? path : path.substr(slash + 1);
+    int n = countWindowsInWorkspace(path);
+    if (n > 0)
+        name += " (" + std::to_string(n) + ")";
+    return name;
+}
+
+static TMenuItem* buildRecentWorkspacesSubmenuItem()
+{
+    std::vector<std::string> recents = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
+    TMenuItem* items = nullptr;
+    if (recents.empty()) {
+        items = new TMenuItem("(none)", 0, kbNoKey);
+    } else {
+        for (int i = (int)recents.size() - 1; i >= 0; --i) {
+            std::string label = recentWorkspaceLabel(recents[i]);
+            char* labelStr = new char[label.size() + 1];
+            std::strcpy(labelStr, label.c_str());
+            items = new TMenuItem(labelStr,
+                                  cmRecentWorkspace + i,
+                                  kbNoKey, hcNoContext, nullptr, items);
+        }
+    }
+    return new TMenuItem("~R~ecent >", kbNoKey, new TMenu(*items), hcNoContext, nullptr);
+}
 
 // Forward declarations
 class TTestPatternView;
@@ -668,9 +782,84 @@ public:
     const std::string& getFilePath() const { return filePath_; }
     bool isFrameless() const { return frameless_; }
 
+    virtual void handleEvent(TEvent& event) override
+    {
+        if (event.what == evMouseDown && event.mouse.buttons == mbRightButton) {
+            bool hasShadow = (state & sfShadow) != 0;
+            TMenu* popup = new TMenu(
+                *new TMenuItem(hasShadow ? "Shadow ~O~ff" : "Shadow ~O~n",
+                    cmCtxToggleShadow, kbNoKey, hcNoContext, nullptr,
+                new TMenuItem((title && title[0]) ? "Clear ~T~itle" : "Restore ~T~itle",
+                    cmCtxClearTitle, kbNoKey, hcNoContext, nullptr,
+                new TMenuItem(frameless_ ? "Show ~F~rame" : "Hide ~F~rame",
+                    cmCtxToggleFrame, kbNoKey, hcNoContext, nullptr,
+                new TMenuItem("~G~allery Mode",
+                    cmCtxGalleryToggle, kbNoKey, hcNoContext, nullptr
+                )))));
+
+            // event.mouse.where is in owner's (desktop) coordinate space
+            TRect deskExt = owner->getExtent();
+            TRect r(event.mouse.where.x, event.mouse.where.y,
+                    deskExt.b.x, deskExt.b.y);
+
+            TMenuBox* box = new TMenuBox(r, popup, nullptr);
+            ushort cmd = owner->execView(box);
+            destroy(box);
+
+            switch (cmd) {
+                case cmCtxToggleShadow:
+                    setState(sfShadow, !hasShadow);
+                    if (owner) owner->drawView();
+                    break;
+                case cmCtxClearTitle: {
+                    if (title && title[0]) {
+                        savedTitle_ = title;
+                        delete[] (char*)title;
+                        title = nullptr;
+                    } else if (!savedTitle_.empty()) {
+                        delete[] (char*)title;
+                        title = newStr(savedTitle_);
+                    }
+                    if (frame) frame->drawView();
+                    break;
+                }
+                case cmCtxToggleFrame: {
+                    if (!frame) break;
+                    TRect fBounds = frame->getBounds();
+                    remove(frame);
+                    destroy(frame);
+                    if (frameless_) {
+                        frame = initFrame(fBounds);
+                        frameless_ = false;
+                    } else {
+                        frame = initFrameless(fBounds);
+                        frameless_ = true;
+                    }
+                    // Keep the frame as the last child (topmost), matching TWindow ctor order.
+                    insertBefore(frame, nullptr);
+                    // Force full repaint (owner redraws all children, clearing ghost artifacts)
+                    if (owner) owner->drawView();
+                    else drawView();
+                    break;
+                }
+                case cmCtxGalleryToggle: {
+                    TEvent galEvt = {};
+                    galEvt.what = evCommand;
+                    galEvt.message.command = cmCtxGalleryToggle;
+                    putEvent(galEvt);
+                    break;
+                }
+            }
+            clearEvent(event);
+            return;
+        }
+        TWindow::handleEvent(event);
+    }
+
 private:
     std::string filePath_;
     bool frameless_ {false};
+    std::string savedTitle_;
 };
 
 /*---------------------------------------------------------*/
@@ -749,6 +938,7 @@ private:
 
     // Runtime API key (shared across all chat windows)
     static std::string runtimeApiKey;
+    std::vector<std::string> recentWorkspaces_;
     friend std::string getAppRuntimeApiKey();
 
     // Kaomoji mood helper
@@ -891,6 +1081,12 @@ private:
     friend void api_spawn_deep_signal(TTestPatternApp&, const TRect* bounds);
     friend void api_spawn_app_launcher(TTestPatternApp&, const TRect* bounds);
     friend void api_spawn_gallery(TTestPatternApp&, const TRect* bounds);
+    friend void api_spawn_figlet_text(TTestPatternApp&, const TRect*,
+        const std::string& text, const std::string& font,
+        bool frameless, bool shadowless);
+    friend std::string api_figlet_set_text(TTestPatternApp&, const std::string& id, const std::string& text);
+    friend std::string api_figlet_set_font(TTestPatternApp&, const std::string& id, const std::string& font);
+    friend std::string api_figlet_set_color(TTestPatternApp&, const std::string& id, const std::string& fg, const std::string& bg);
     friend std::string api_gallery_list(TTestPatternApp&, const std::string& tab);
     friend void api_spawn_terminal(TTestPatternApp&, const TRect* bounds);
     friend void api_spawn_wibwob(TTestPatternApp&, const TRect* bounds);
@@ -903,6 +1099,16 @@ private:
                                      const std::string&, const std::string&);
     friend std::string api_send_figlet(TTestPatternApp&, const std::string&, const std::string&, 
                                        const std::string&, int, const std::string&);
+    // Per-window toggles
+    friend std::string api_window_shadow(TTestPatternApp&, const std::string&, bool);
+    friend std::string api_window_title(TTestPatternApp&, const std::string&, const std::string&);
+    // Desktop texture & gallery mode
+    friend std::string api_desktop_preset(TTestPatternApp&, const std::string&);
+    friend std::string api_desktop_texture(TTestPatternApp&, const std::string&);
+    friend std::string api_desktop_color(TTestPatternApp&, int, int);
+    friend std::string api_desktop_gallery(TTestPatternApp&, bool);
+    friend std::string api_desktop_get(TTestPatternApp&);
+    bool galleryMode_ = false;
 };
 
 // Static member definition
@@ -921,6 +1127,8 @@ TTestPatternApp::TTestPatternApp() :
     scrambleWindow(nullptr),
     scrambleState(sdsHidden)
 {
+    recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
+
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
 
@@ -963,6 +1171,28 @@ void TTestPatternApp::handleEvent(TEvent& event)
     
     if (event.what == evCommand)
     {
+        // Handle font selection from Edit → FIGlet Font → Category submenus
+        // (range check before switch — can't use case for ranges)
+        ushort cmd = event.message.command;
+        if (cmd >= cmFigletCatFontBase && cmd < cmFigletCatFontBase + 200) {
+            TFigletTextWindow* fw = dynamic_cast<TFigletTextWindow*>(
+                deskTop->current);
+            if (fw && fw->getFigletView()) {
+                const std::string& fname = figlet::fontByIndex(cmd - cmFigletCatFontBase);
+                if (!fname.empty())
+                    fw->getFigletView()->setFont(fname);
+            }
+            clearEvent(event);
+            return;
+        }
+        if (cmd >= cmRecentWorkspace && cmd < cmRecentWorkspace + kMaxRecentWorkspaces) {
+            int idx = cmd - cmRecentWorkspace;
+            if (idx >= 0 && idx < (int)recentWorkspaces_.size())
+                loadWorkspaceFromFile(recentWorkspaces_[idx]);
+            clearEvent(event);
+            return;
+        }
+
         switch (event.message.command)
         {
             case cmNewWindow:
@@ -1221,6 +1451,12 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 TWindow* w = createAppLauncherWindow(r);
                 deskTop->insert(w);
                 registerWindow(w);
+                clearEvent(event);
+                break;
+            }
+            case cmCtxGalleryToggle:
+            case cmDeskGallery: {
+                api_desktop_gallery(*this, !galleryMode_);
                 clearEvent(event);
                 break;
             }
@@ -1556,6 +1792,28 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 TWindow* pw = createPaintWindow(r);
                 deskTop->insert(pw);
                 registerWindow(pw);
+                clearEvent(event);
+                break;
+            }
+            case cmNewFigletText: {
+                api_spawn_figlet_text(*this, nullptr, "Hello", "standard", false, false);
+                clearEvent(event);
+                break;
+            }
+            case cmFigletEditText: {
+                // Route to focused figlet window
+                TFigletTextWindow* fw = dynamic_cast<TFigletTextWindow*>(
+                    deskTop->current);
+                if (fw && fw->getFigletView())
+                    fw->getFigletView()->showEditTextDialog();
+                clearEvent(event);
+                break;
+            }
+            case cmFigletMoreFonts: {
+                TFigletTextWindow* fw = dynamic_cast<TFigletTextWindow*>(
+                    deskTop->current);
+                if (fw && fw->getFigletView())
+                    fw->getFigletView()->showFontListDialog();
                 clearEvent(event);
                 break;
             }
@@ -2314,9 +2572,40 @@ TPalette& TTestPatternApp::getPalette() const
     return palette;
 }
 
+// Build "FIGlet ~F~ont ▶ { categories... | More Fonts... }" submenu item
+// for the Edit menu bar. Returns a TSubMenu& that can be appended with +.
+static TMenuItem& buildFigletFontSubMenu() {
+    const auto& cat = figlet::catalogue();
+
+    // Build "More Fonts..." as the tail item
+    TMenuItem* tail = new TMenuItem("~M~ore Fonts...", cmFigletMoreFonts,
+                                     kbNoKey, hcNoContext, nullptr, nullptr);
+    TMenuItem* sep = &newLine();
+    sep->next = tail;
+
+    // Build category submenus in reverse order
+    TMenuItem* catChain = sep;
+    for (int c = (int)cat.categories.size() - 1; c >= 0; c--) {
+        TMenuItem* catItems = figlet::buildCategoryMenuItems(
+            cat.categories[c], cmFigletCatFontBase, "");
+        if (!catItems) continue;
+        TMenu* catSub = new TMenu(*catItems);
+        std::string label = cat.categories[c].name;
+        char* str = new char[label.size() + 1];
+        std::strcpy(str, label.c_str());
+        TMenuItem* item = new TMenuItem(str, kbNoKey, catSub, hcNoContext, catChain);
+        catChain = item;
+    }
+
+    // Wrap as "FIGlet Font ▶ ..." submenu
+    TMenu* fontMenu = new TMenu(*catChain);
+    return *new TMenuItem("FIGlet ~F~ont", kbNoKey, fontMenu, hcNoContext, nullptr);
+}
+
 TMenuBar* TTestPatternApp::initMenuBar(TRect r)
 {
     r.b.y = r.a.y + 1;
+    TMenuItem* recentSubmenu = buildRecentWorkspacesSubmenuItem();
     
     return new TCustomMenuBar(r,
         *new TSubMenu("~F~ile", kbAltF) +
@@ -2334,6 +2623,7 @@ TMenuBar* TTestPatternApp::initMenuBar(TRect r)
             newLine() +
             *new TMenuItem("~S~ave Workspace", cmSaveWorkspace, kbCtrlS) +
             *new TMenuItem("Open ~W~orkspace...", cmOpenWorkspace, kbNoKey) +
+            *recentSubmenu +
             newLine() +
             *new TMenuItem("E~x~it", cmQuit, cmQuit, hcNoContext, "Alt-X") +
         *new TSubMenu("~E~dit", kbAltE) +
@@ -2348,6 +2638,9 @@ TMenuBar* TTestPatternApp::initMenuBar(TRect r)
                     *new TMenuItem(!USE_CONTINUOUS_PATTERN ? "\x04 ~T~iled (Cropped)" : "  ~T~iled (Cropped)", 
                                   cmPatternTiled, kbNoKey)
             ) +
+            newLine() +
+            *new TMenuItem("FIGlet Edit ~T~ext...", cmFigletEditText, kbNoKey) +
+            (TMenuItem&) buildFigletFontSubMenu() +
         *new TSubMenu("~V~iew", kbAltV) +
             *new TMenuItem("ASCII ~G~rid Demo", cmAsciiGridDemo, kbNoKey) +
             *new TMenuItem("~A~nimated Blocks", cmAnimatedBlocks, kbNoKey) +
@@ -2376,6 +2669,7 @@ TMenuBar* TTestPatternApp::initMenuBar(TRect r)
             ) +
             newLine() +
             *new TMenuItem("Pa~i~nt Canvas", cmNewPaintCanvas, kbNoKey) +
+            *new TMenuItem("~F~IGlet Text", cmNewFigletText, kbNoKey) +
             newLine() +
             *new TMenuItem("Scra~m~ble Cat", cmScrambleCat, kbF8) +
         *new TSubMenu("~W~indow", kbAltW) +
@@ -2438,8 +2732,19 @@ TDeskTop* TTestPatternApp::initDeskTop(TRect r)
 {
     r.a.y = 1;
     r.b.y--;
-    // Create desktop with standard constructor (plain background)
     TDeskTop* desktop = new TDeskTop(r);
+
+    // Replace default TBackground with TWibWobBackground (colour-controllable)
+    if (desktop->background) {
+        TRect bgBounds = desktop->background->getBounds();
+        desktop->remove(desktop->background);
+        destroy(desktop->background);
+        auto* bg = new TWibWobBackground(bgBounds, '\xB1', 7, 1);
+        bg->growMode = gfGrowHiX | gfGrowHiY;
+        desktop->background = bg;
+        desktop->insertBefore(bg, desktop->first());
+    }
+
     return desktop;
 }
 
@@ -2953,6 +3258,23 @@ std::string api_close_window(TTestPatternApp& app, const std::string& id) {
     return "{\"success\":true}";
 }
 
+std::string api_window_shadow(TTestPatternApp& app, const std::string& id, bool on) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "err window not found";
+    w->setState(sfShadow, on);
+    w->owner->drawView();  // redraw desktop to clear/show shadow
+    return "ok";
+}
+
+std::string api_window_title(TTestPatternApp& app, const std::string& id, const std::string& title) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "err window not found";
+    delete[] (char*)w->title;
+    w->title = title.empty() ? nullptr : newStr(title);
+    w->frame->drawView();
+    return "ok";
+}
+
 // --- Minimal JSON parsing helpers (subset tailored to our schema) ---
 void TTestPatternApp::skipWs(const std::string &s, size_t &pos)
 {
@@ -3157,6 +3479,32 @@ bool TTestPatternApp::loadWorkspaceFromFile(const std::string& path)
         }
     }
 
+    // Restore desktop state (texture, colour, gallery mode)
+    size_t deskPos = data.find("\"desktop\"");
+    if (deskPos != std::string::npos) {
+        size_t pos = data.find('{', deskPos);
+        if (pos != std::string::npos) {
+            std::string preset;
+            if (parseKeyedString(data, pos+1, "preset", preset)) {
+                api_desktop_preset(*this, preset);
+            } else {
+                // Fall back to individual fields
+                std::string ch;
+                int fg = -1, bg = -1;
+                if (parseKeyedString(data, pos+1, "char", ch) && !ch.empty()) {
+                    api_desktop_texture(*this, ch);
+                }
+                if (parseKeyedNumber(data, pos+1, "fg", fg) && parseKeyedNumber(data, pos+1, "bg", bg)) {
+                    api_desktop_color(*this, fg, bg);
+                }
+            }
+            bool gallery = false;
+            if (parseKeyedBool(data, pos+1, "gallery", gallery) && gallery) {
+                api_desktop_gallery(*this, true);
+            }
+        }
+    }
+
     // Locate windows array and extract each object substring
     size_t winKey = data.find("\"windows\"");
     if (winKey == std::string::npos) {
@@ -3308,6 +3656,47 @@ bool TTestPatternApp::loadWorkspaceFromFile(const std::string& path)
             if (zoomed) win->zoom();
             created.push_back(win);
             continue;
+        } else if (type == "figlet_text") {
+            std::string ftText, ftFont = "standard", ftFg, ftBg;
+            bool ftFrameless = false, ftShadowless = false;
+            size_t propsPos = obj.find("\"props\"");
+            if (propsPos != std::string::npos) {
+                size_t brace = obj.find('{', propsPos);
+                if (brace != std::string::npos) {
+                    parseKeyedString(obj, brace+1, "text", ftText);
+                    parseKeyedString(obj, brace+1, "font", ftFont);
+                    parseKeyedString(obj, brace+1, "fg", ftFg);
+                    parseKeyedString(obj, brace+1, "bg", ftBg);
+                    parseKeyedBool(obj, brace+1, "frameless", ftFrameless);
+                    parseKeyedBool(obj, brace+1, "shadowless", ftShadowless);
+                }
+            }
+            if (ftText.empty()) ftText = "Hello";
+            TRect r(x, y, x + w, y + h);
+            api_spawn_figlet_text(*this, &r, ftText, ftFont, ftFrameless, ftShadowless);
+            // Find the newly spawned window
+            TView *vv = deskTop->first();
+            if (vv) {
+                TView *scan = vv;
+                do {
+                    if (auto *ftw = dynamic_cast<TFigletTextWindow*>(scan)) {
+                        if (auto *fv = ftw->getFigletView()) {
+                            if (fv->getText() == ftText) {
+                                win = ftw;
+                                // Apply colours if saved
+                                if (!ftFg.empty() || !ftBg.empty()) {
+                                    api_figlet_set_color(*this, "", ftFg, ftBg);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    scan = scan->next;
+                } while (scan != vv);
+            }
+            if (win && zoomed) win->zoom();
+            if (win) created.push_back(win);
+            continue;
         } else {
             const WindowTypeSpec* spec = find_window_type_by_name(type);
             if (!spec || !spec->spawn) continue;
@@ -3435,6 +3824,26 @@ std::string TTestPatternApp::buildWorkspaceJson()
     json += std::string("  \"timestamp\": \"") + ts + "\",\n";
     json += "  \"screen\": { \"width\": " + std::to_string(sw) + ", \"height\": " + std::to_string(sh) + " },\n";
     json += std::string("  \"globals\": { \"patternMode\": \"") + (USE_CONTINUOUS_PATTERN ? "continuous" : "tiled") + "\" },\n";
+
+    // Desktop state
+    {
+        auto* bg = dynamic_cast<TWibWobBackground*>(deskTop->background);
+        if (bg) {
+            json += "  \"desktop\": { ";
+            json += "\"char\": \"";
+            char ch = bg->getPattern();
+            if (ch == '"') json += "\\\"";
+            else if (ch == '\\') json += "\\\\";
+            else json += ch;
+            json += "\", ";
+            json += "\"fg\": " + std::to_string((int)bg->getFg()) + ", ";
+            json += "\"bg\": " + std::to_string((int)bg->getBg()) + ", ";
+            json += std::string("\"gallery\": ") + (galleryMode_ ? "true" : "false") + ", ";
+            json += "\"preset\": \"" + bg->getPresetName() + "\"";
+            json += " },\n";
+        }
+    }
+
     json += "  \"windows\": [\n";
 
     // Collect windows in current z-order (child list is circular)
@@ -3491,6 +3900,23 @@ std::string TTestPatternApp::buildWorkspaceJson()
                 props = std::string("{\"tab\": ") + std::to_string(gallery->getSelected());
                 const std::string& searchText = gallery->getSearchText();
                 props += std::string(", \"search\": \"") + jsonEscape(searchText) + "\"}";
+            }
+        } else if (type == "figlet_text") {
+            if (auto *ftw = dynamic_cast<TFigletTextWindow*>(w)) {
+                if (auto *fv = ftw->getFigletView()) {
+                    props = "{\"text\": \"" + jsonEscape(fv->getText()) + "\"";
+                    props += ", \"font\": \"" + jsonEscape(fv->getFont()) + "\"";
+                    uint32_t fg = fv->getFgColor();
+                    uint32_t bg = fv->getBgColor();
+                    char hex[16];
+                    snprintf(hex, sizeof(hex), "#%06X", fg);
+                    props += std::string(", \"fg\": \"") + hex + "\"";
+                    snprintf(hex, sizeof(hex), "#%06X", bg);
+                    props += std::string(", \"bg\": \"") + hex + "\"";
+                    props += std::string(", \"frameless\": ") + (ftw->isFrameless() ? "true" : "false");
+                    props += std::string(", \"shadowless\": ") + ((w->state & sfShadow) ? "false" : "true");
+                    props += "}";
+                }
             }
         }
 
@@ -3582,6 +4008,7 @@ void TTestPatternApp::saveWorkspace()
         snap.close();
     }
     std::string ok = std::string("Workspace saved to ") + path + "\nSnapshot: " + snapPath;
+    recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
     messageBox(ok.c_str(), mfInformation | mfOKButton);
 }
 
@@ -3603,6 +4030,8 @@ bool TTestPatternApp::saveWorkspacePath(const std::string& path)
 
     std::remove(path.c_str()); // ignore errors
     bool ok = (std::rename(tmpPath.c_str(), path.c_str()) == 0);
+    if (ok)
+        recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
     fprintf(stderr, "[workspace] save path=%s ok=%s\n", path.c_str(), ok ? "true" : "false");
     return ok;
 }
@@ -3901,6 +4330,81 @@ void api_spawn_gallery(TTestPatternApp& app, const TRect* bounds) {
     app.registerWindow(w);
 }
 
+// ── FIGlet text window spawn + control API ────────────────────────────────────
+
+void api_spawn_figlet_text(TTestPatternApp& app, const TRect* bounds,
+    const std::string& text, const std::string& font,
+    bool frameless, bool shadowless) {
+    TRect desk = app.deskTop->getExtent();
+    TRect r = bounds ? *bounds : TRect(
+        desk.b.x / 6, desk.b.y / 4,
+        desk.b.x * 5 / 6, desk.b.y * 3 / 4);
+    TFigletTextWindow* w = new TFigletTextWindow(r, text, font, frameless, shadowless);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
+}
+
+static TFigletTextWindow* findFigletWindow(TTestPatternApp& app, const std::string& id) {
+    TView* v = app.deskTop->first();
+    for (; v; v = v->nextView()) {
+        TFigletTextWindow* fw = dynamic_cast<TFigletTextWindow*>(v);
+        if (fw) {
+            if (id == "auto" || id.empty()) return fw;
+            const char* t = fw->getTitle(256);
+            if (t && id == t) return fw;
+        }
+    }
+    return nullptr;
+}
+
+std::string api_figlet_set_text(TTestPatternApp& app, const std::string& id, const std::string& text) {
+    TFigletTextWindow* w = findFigletWindow(app, id);
+    if (!w || !w->getFigletView()) return "err no figlet window found";
+    w->getFigletView()->setText(text);
+    return "ok";
+}
+
+std::string api_figlet_set_font(TTestPatternApp& app, const std::string& id, const std::string& font) {
+    TFigletTextWindow* w = findFigletWindow(app, id);
+    if (!w || !w->getFigletView()) return "err no figlet window found";
+    w->getFigletView()->setFont(font);
+    return "ok";
+}
+
+static uint32_t parseHexColor(const std::string& s) {
+    std::string hex = s;
+    if (!hex.empty() && hex[0] == '#') hex = hex.substr(1);
+    if (hex.size() != 6) return 0;
+    return (uint32_t)strtoul(hex.c_str(), nullptr, 16);
+}
+
+std::string api_figlet_set_color(TTestPatternApp& app, const std::string& id,
+                                 const std::string& fg, const std::string& bg) {
+    TFigletTextWindow* w = findFigletWindow(app, id);
+    if (!w || !w->getFigletView()) return "err no figlet window found";
+    TFigletTextView* v = w->getFigletView();
+    if (!fg.empty()) {
+        uint32_t c = parseHexColor(fg);
+        v->setFgColor(TColorRGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
+    }
+    if (!bg.empty()) {
+        uint32_t c = parseHexColor(bg);
+        v->setBgColor(TColorRGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
+    }
+    return "ok";
+}
+
+std::string api_figlet_list_fonts() {
+    auto fonts = figlet::listFonts();
+    std::string json = "{\"fonts\":[";
+    for (size_t i = 0; i < fonts.size(); i++) {
+        if (i > 0) json += ",";
+        json += "\"" + fonts[i] + "\"";
+    }
+    json += "]}";
+    return json;
+}
+
 std::string api_gallery_list(TTestPatternApp& app, const std::string& tab) {
     (void)app;
     // Find primer dir
@@ -4060,6 +4564,79 @@ std::string api_set_theme_variant(TTestPatternApp& app, const std::string& varia
 std::string api_reset_theme(TTestPatternApp& app) {
     (void)app;
     return "ok";
+}
+
+// --- Desktop texture, colour & gallery mode ---
+
+static TWibWobBackground* getWibWobBg(TTestPatternApp& app) {
+    return dynamic_cast<TWibWobBackground*>(app.deskTop->background);
+}
+
+std::string api_desktop_preset(TTestPatternApp& app, const std::string& preset) {
+    auto* bg = getWibWobBg(app);
+    if (!bg) return "err no TWibWobBackground";
+    // Validate preset name
+    for (auto& p : getDesktopPresets()) {
+        if (preset == p.name) {
+            bg->setPreset(preset);
+            return "ok";
+        }
+    }
+    return "err unknown preset";
+}
+
+std::string api_desktop_texture(TTestPatternApp& app, const std::string& ch) {
+    auto* bg = getWibWobBg(app);
+    if (!bg) return "err no TWibWobBackground";
+    if (ch.empty()) return "err empty char";
+    bg->setTexture(ch[0]);
+    return "ok";
+}
+
+std::string api_desktop_color(TTestPatternApp& app, int fg, int bg_color) {
+    auto* bg = getWibWobBg(app);
+    if (!bg) return "err no TWibWobBackground";
+    if (fg < 0 || fg > 15 || bg_color < 0 || bg_color > 15) return "err color out of range 0-15";
+    bg->setColor(static_cast<uchar>(fg), static_cast<uchar>(bg_color));
+    return "ok";
+}
+
+std::string api_desktop_gallery(TTestPatternApp& app, bool on) {
+    if (!app.menuBar || !app.statusLine) return "err no chrome views";
+
+    app.galleryMode_ = on;
+    app.menuBar->setState(sfVisible, !on);
+    app.statusLine->setState(sfVisible, !on);
+
+    // Recalculate desktop bounds to fill freed/restored rows
+    TRect r = app.getExtent();
+    if (!on) {
+        r.a.y = 1;       // leave room for menu bar
+        r.b.y--;          // leave room for status line
+    }
+    // else: full extent (row 0 to bottom)
+    app.deskTop->changeBounds(r);
+    app.deskTop->drawView();
+
+    return "ok";
+}
+
+std::string api_desktop_get(TTestPatternApp& app) {
+    auto* bg = getWibWobBg(app);
+    if (!bg) return "{}";
+    std::string json = "{";
+    json += "\"char\":\"";
+    char ch = bg->getPattern();
+    if (ch == '"') json += "\\\"";
+    else if (ch == '\\') json += "\\\\";
+    else json += ch;
+    json += "\",";
+    json += "\"fg\":" + std::to_string((int)bg->getFg()) + ",";
+    json += "\"bg\":" + std::to_string((int)bg->getBg()) + ",";
+    json += "\"gallery\":" + std::string(app.galleryMode_ ? "true" : "false") + ",";
+    json += "\"preset\":\"" + bg->getPresetName() + "\"";
+    json += "}";
+    return json;
 }
 
 void api_spawn_paint(TTestPatternApp& app, const TRect* bounds) {
