@@ -156,6 +156,7 @@ class PartyKitBridge:
         if self._ws is None:
             return
         msg = json.dumps({"type": "chat_msg", "sender": sender, "text": text,
+                          "ts": time.strftime("%H:%M"),
                           "instance": self.instance_id})
         try:
             await self._ws.send(msg)
@@ -350,10 +351,17 @@ class PartyKitBridge:
                 count      = msg.get("count", 0)
                 self.log(f"presence: {event_name} id={conn_id} count={count}")
                 if not self.legacy_scramble_chat:
-                    # Build a minimal participant list from what we know
-                    # (PartyKit only sends the joining/leaving id, not full list;
-                    #  track locally and push the full snapshot)
-                    self._update_presence(event_name, conn_id)
+                    if event_name == "sync":
+                        connections = msg.get("connections", [])
+                        if isinstance(connections, list):
+                            self._participants = [str(p) for p in connections]
+                        else:
+                            self._participants = []
+                    else:
+                        # Build a minimal participant list from what we know
+                        # (PartyKit join/leave events only include the changed id;
+                        # track locally and push the full snapshot)
+                        self._update_presence(event_name, conn_id)
                     participants_json = json.dumps(
                         [{"id": p} for p in self._participants]
                     )
