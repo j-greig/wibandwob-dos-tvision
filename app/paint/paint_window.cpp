@@ -24,6 +24,9 @@
 #define Uses_MsgBox
 #include <tvision/tv.h>
 
+#include "../figlet_utils.h"
+#include "figlet_stamp_dialog.h"
+
 #include <algorithm>
 #include <fstream>
 #include <sstream>
@@ -44,6 +47,7 @@ static const ushort cmPaintModeHalfY  = 621;
 static const ushort cmPaintModeHalfX  = 622;
 static const ushort cmPaintModeQuarter = 623;
 static const ushort cmPaintModeText   = 624;
+static const ushort cmPaintStampFiglet = 630;
 
 TPaintWindow::TPaintWindow(const TRect &bounds)
     : TWindow(bounds, "Paint", wnNoNumber), TWindowInit(&TPaintWindow::initFrame)
@@ -91,6 +95,8 @@ void TPaintWindow::buildLayout()
         *new TSubMenu("~E~dit", kbAltE) +
             *new TMenuItem("C~l~ear Canvas", cmPaintClear, kbNoKey) +
             *new TMenuItem("~C~opy as Text", cmPaintCopyText, kbCtrlIns) +
+            newLine() +
+            *new TMenuItem("Stamp ~F~IGlet...", cmPaintStampFiglet, kbNoKey) +
         *new TSubMenu("~M~ode", kbAltM) +
             *new TMenuItem("~F~ull Block", cmPaintModeFull, kbNoKey) +
             *new TMenuItem("Half ~Y~", cmPaintModeHalfY, kbNoKey) +
@@ -216,6 +222,10 @@ void TPaintWindow::handleEvent(TEvent &event)
                 break;
             case cmPaintModeText:
                 if (canvas) { canvas->setPixelMode(PixelMode::Text); canvas->drawView(); }
+                clearEvent(event);
+                break;
+            case cmPaintStampFiglet:
+                doStampFiglet();
                 clearEvent(event);
                 break;
         }
@@ -373,17 +383,14 @@ void TPaintWindow::doOpen()
         return;
 
     std::string pathStr(fileName);
-    fprintf(stderr, "[paint] doOpen path='%s'\n", pathStr.c_str());
     if (pathStr.empty()) return;
 
     std::ifstream in(pathStr);
     if (!in) {
-        fprintf(stderr, "[paint] doOpen FAILED to open '%s' errno=%d\n", pathStr.c_str(), errno);
         std::string msg = std::string("Cannot open: ") + pathStr;
         messageBox(msg.c_str(), mfError | mfOKButton);
         return;
     }
-    fprintf(stderr, "[paint] doOpen SUCCESS reading '%s'\n", pathStr.c_str());
     std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
     int fileCols = parseIntAfter(data, 0, "cols");
@@ -515,6 +522,60 @@ void TPaintWindow::doExportAnsi()
     out.close();
     std::string msg = "Exported to " + path;
     messageBox(msg.c_str(), mfInformation | mfOKButton);
+}
+
+// ── Stamp FIGlet ──────────────────────────────────────────────────────────────
+
+void TPaintWindow::doStampFiglet()
+{
+    auto* canvas = getCanvas();
+    if (!canvas) return;
+
+    auto* dlg = new TFigletStampDialog(figletText_, figletFont_);
+    ushort cmd = TProgram::application->execView(dlg);
+    FigletStampResult r;
+    if (cmd == cmOK) {
+        r = dlg->getResult();
+    }
+    TObject::destroy(dlg);
+    if (cmd != cmOK) return;
+
+    if (r.text.empty()) return;
+
+    // Render
+    int cols = canvas->getCols();
+    auto lines = figlet::renderLines(r.text, r.font, cols);
+    if (lines.empty()) {
+        messageBox("FIGlet render failed (bad font name?).", mfError | mfOKButton);
+        return;
+    }
+
+    // Stamp at cursor — transparent spaces (skip space chars)
+    int ox = canvas->getX();
+    int oy = canvas->getY();
+    uint8_t fg = canvas->getFg();
+    uint8_t bg = canvas->getBg();
+
+    for (int row = 0; row < (int)lines.size(); row++) {
+        int cy = oy + row;
+        if (cy < 0 || cy >= canvas->getRows()) continue;
+        const std::string& line = lines[row];
+        for (int col = 0; col < (int)line.size(); col++) {
+            char ch = line[col];
+            if (ch == ' ' || ch == '\0') continue;  // transparent
+            int cx = ox + col;
+            if (cx < 0 || cx >= canvas->getCols()) continue;
+            PaintCell& cell = canvas->cellAt(cx, cy);
+            cell.textChar = ch;
+            cell.textFg = fg;
+            cell.textBg = bg;
+        }
+    }
+
+    figletText_ = r.text;
+    figletFont_ = r.font;
+    dirty_ = true;
+    canvas->drawView();
 }
 
 TWindow* createPaintWindow(const TRect &bounds)

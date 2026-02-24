@@ -51,6 +51,10 @@ private:
     TMenuBar *menuBar = nullptr;
     std::string filePath_;
     bool dirty_ = false;
+    std::string figletFont_ = "standard";
+    std::string figletText_;
+
+    void doStampFiglet();
 };
 
 TWindow* createPaintWindow(const TRect &bounds);

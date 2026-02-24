@@ -1802,10 +1802,12 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 
             case cmNewPaintCanvas: {
                 TRect d = deskTop->getExtent();
-                int w = std::min(82, d.b.x - d.a.x);
-                int h = std::min(26, d.b.y - d.a.y);
-                int left = d.a.x + (d.b.x - d.a.x - w) / 2;
-                int top  = d.a.y + (d.b.y - d.a.y - h) / 2;
+                int dw = d.b.x - d.a.x;
+                int dh = d.b.y - d.a.y;
+                int w = (int)(dw * 0.9);
+                int h = (int)(dh * 0.9);
+                int left = d.a.x + (dw - w) / 2;
+                int top  = d.a.y + (dh - h) / 2;
                 TRect r(left, top, left + w, top + h);
                 TWindow* pw = createPaintWindow(r);
                 deskTop->insert(pw);
@@ -5064,8 +5066,8 @@ void api_spawn_paint(TTestPatternApp& app, const TRect* bounds) {
         // Fall back to safe defaults if desktop reports invalid size.
         if (dw <= 0) dw = 80;
         if (dh <= 0) dh = 24;
-        int w = std::min(82, dw);
-        int h = std::min(26, dh);
+        int w = std::min((int)(dw * 0.9), dw);
+        int h = std::min((int)(dh * 0.9), dh);
         int left = d.a.x + (dw - w) / 2;
         int top  = d.a.y + (dh - h) / 2;
         r = TRect(left, top, left + w, top + h);
@@ -5320,4 +5322,61 @@ std::string api_paint_load(TTestPatternApp& app, const std::string& id, const st
 
     canvas->drawView();
     return "ok loaded " + std::to_string(loaded) + " cells from " + path;
+}
+
+std::string api_paint_stamp_figlet(TTestPatternApp& app, const std::string& id,
+    const std::string& text, const std::string& font,
+    int x, int y, uint8_t fg, uint8_t bg)
+{
+    auto *canvas = api_find_paint_canvas(app, id);
+    if (!canvas) return "err paint window not found";
+    if (text.empty()) return "err text required";
+
+    std::string f = font.empty() ? "standard" : font;
+    auto lines = figlet::renderLines(text, f, canvas->getCols());
+    if (lines.empty()) return "err figlet render failed";
+
+    int stamped = 0;
+    for (int row = 0; row < (int)lines.size(); row++) {
+        int cy = y + row;
+        if (cy < 0 || cy >= canvas->getRows()) continue;
+        const std::string& line = lines[row];
+        for (int col = 0; col < (int)line.size(); col++) {
+            char ch = line[col];
+            if (ch == ' ' || ch == '\0') continue;
+            int cx = x + col;
+            if (cx < 0 || cx >= canvas->getCols()) continue;
+            PaintCell& cell = canvas->cellAt(cx, cy);
+            cell.textChar = ch;
+            cell.textFg = fg;
+            cell.textBg = bg;
+            stamped++;
+        }
+    }
+    canvas->drawView();
+    return "ok stamped " + std::to_string(stamped) + " chars (" + std::to_string(lines.size()) + " lines)";
+}
+
+std::string api_list_figlet_fonts() {
+    const auto& fonts = figlet::allFontsSorted();
+    std::ostringstream os;
+    os << "[";
+    for (size_t i = 0; i < fonts.size(); i++) {
+        if (i > 0) os << ",";
+        os << "\"" << fonts[i] << "\"";
+    }
+    os << "]";
+    return os.str();
+}
+
+std::string api_preview_figlet(const std::string& text, const std::string& font, int width) {
+    if (width <= 0) width = 80;
+    auto lines = figlet::renderLines(text, font, width);
+    if (lines.empty()) return "err render failed (bad font?)";
+    std::string result;
+    for (size_t i = 0; i < lines.size(); i++) {
+        if (i > 0) result += '\n';
+        result += lines[i];
+    }
+    return result;
 }
