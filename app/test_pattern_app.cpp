@@ -80,6 +80,8 @@
 // Scramble cat presence
 #include "scramble_view.h"
 #include "scramble_engine.h"
+// Multi-user PartyKit room chat
+#include "room_chat_view.h"
 // Factory for ASCII grid demo window (implemented in ascii_grid_view.cpp).
 class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 // #include "mech_window.h" // deferred feature; header not present yet
@@ -566,6 +568,7 @@ private:
     void newWibWobTestWindowA();
     void newWibWobTestWindowB();
     void newWibWobTestWindowC();
+    void newRoomChatWindow();
     void openAnimationFile();
     void openAnimationFilePath(const std::string& path);
     void openAnimationFilePath(const std::string& path, const TRect& bounds);
@@ -690,6 +693,9 @@ private:
     friend std::string api_get_canvas_size(TTestPatternApp&);
     friend void api_spawn_text_editor(TTestPatternApp&, const TRect* bounds);
     friend void api_spawn_browser(TTestPatternApp&, const TRect* bounds);
+    friend void api_spawn_room_chat(TTestPatternApp&, const TRect* bounds);
+    friend std::string api_room_chat_receive(TTestPatternApp&, const std::string& sender, const std::string& text, const std::string& ts);
+    friend std::string api_room_presence(TTestPatternApp&, const std::string& participants_json);
     friend std::string api_browser_fetch(TTestPatternApp&, const std::string& url);
     friend std::string api_send_text(TTestPatternApp&, const std::string&, const std::string&, 
                                      const std::string&, const std::string&);
@@ -1035,6 +1041,10 @@ void TTestPatternApp::handleEvent(TEvent& event)
             // Tools menu commands
             case cmWibWobChat:
                 newWibWobWindow();
+                clearEvent(event);
+                break;
+            case cmRoomChat:
+                newRoomChatWindow();
                 clearEvent(event);
                 break;
             case cmWibWobTestA:
@@ -1617,6 +1627,26 @@ void TTestPatternApp::newWibWobWindow()
     window->select();
 }
 
+void TTestPatternApp::newRoomChatWindow()
+{
+    windowNumber++;
+    int offset = (windowNumber - 1) % 8;
+    TRect bounds(
+        4 + offset * 2,
+        2 + offset,
+        100 + offset * 2,
+        28 + offset
+    );
+    TWindow* window = createRoomChatWindow(bounds);
+    if (!window) {
+        messageBox("Failed to create Room Chat window.", mfError | mfOKButton);
+        return;
+    }
+    deskTop->insert(window);
+    registerWindow(window);
+    window->select();
+}
+
 void TTestPatternApp::newWibWobTestWindowA()
 {
     // Test window A: standardScrollBar() fix (minimal change approach)
@@ -2033,6 +2063,7 @@ TMenuBar* TTestPatternApp::initMenuBar(TRect r)
             *new TMenuItem("Background ~C~olor...", cmWindowBgColor, kbNoKey) +
         *new TSubMenu("~T~ools", kbAltT) +
             *new TMenuItem("~W~ib&Wob Chat", cmWibWobChat, kbF12) +
+            *new TMenuItem("~R~oom Chat", cmRoomChat, kbNoKey) +
             *new TMenuItem("  Test A (stdScrollBar)", cmWibWobTestA, kbNoKey) +
             *new TMenuItem("  Test B (TScroller)", cmWibWobTestB, kbNoKey) +
             *new TMenuItem("  Test C (Split Arch)", cmWibWobTestC, kbNoKey) +
@@ -3062,6 +3093,88 @@ void api_spawn_browser(TTestPatternApp& app, const TRect* bounds) {
     } else {
         app.newBrowserWindow();
     }
+}
+
+// ── Room Chat API functions ────────────────────────────────────────────────
+
+void api_spawn_room_chat(TTestPatternApp& app, const TRect* bounds) {
+    TRect r;
+    if (bounds) {
+        r = *bounds;
+    } else {
+        r = TProgram::deskTop->getBounds();
+        r.grow(-4, -3);
+    }
+    TWindow* window = createRoomChatWindow(r);
+    TProgram::deskTop->insert(window);
+}
+
+std::string api_room_chat_receive(TTestPatternApp& /*app*/,
+                                   const std::string& sender,
+                                   const std::string& text,
+                                   const std::string& ts) {
+    TRoomChatWindow* win = getRoomChatWindow();
+    if (!win) return "err no room_chat window open";
+
+    RoomChatMessage msg;
+    msg.sender = sender;
+    msg.text   = text;
+    msg.ts     = ts.empty() ? "??:??" : ts;
+
+    // Post via event so it's handled on the TV main thread
+    TEvent ev;
+    ev.what            = evCommand;
+    ev.message.command = cmRoomChatReceive;
+    ev.message.infoPtr = new RoomChatMessage(msg);
+    TProgram::application->putEvent(ev);
+    return "ok";
+}
+
+std::string api_room_presence(TTestPatternApp& /*app*/,
+                               const std::string& participants_json) {
+    TRoomChatWindow* win = getRoomChatWindow();
+    if (!win) return "err no room_chat window open";
+
+    // Parse simple JSON array: [{"id":"human:1"},{"id":"human:2"}]
+    // Minimal hand-rolled parser — no deps.
+    auto* participants = new std::vector<RoomParticipant>();
+    std::string json = participants_json;
+    size_t pos = 0;
+    while ((pos = json.find("\"id\"", pos)) != std::string::npos) {
+        pos = json.find(':', pos);
+        if (pos == std::string::npos) break;
+        pos = json.find('"', pos);
+        if (pos == std::string::npos) break;
+        size_t start = pos + 1;
+        size_t end   = json.find('"', start);
+        if (end == std::string::npos) break;
+        RoomParticipant p;
+        p.id   = json.substr(start, end - start);
+        p.name = p.id;
+        // Optional "name" field
+        size_t nameField = json.find("\"name\"", end);
+        size_t nextEntry = json.find('{', end);
+        if (nameField != std::string::npos &&
+            (nextEntry == std::string::npos || nameField < nextEntry)) {
+            size_t npos2 = json.find(':', nameField);
+            npos2 = json.find('"', npos2);
+            if (npos2 != std::string::npos) {
+                size_t nstart = npos2 + 1;
+                size_t nend   = json.find('"', nstart);
+                if (nend != std::string::npos)
+                    p.name = json.substr(nstart, nend - nstart);
+            }
+        }
+        participants->push_back(p);
+        pos = end + 1;
+    }
+
+    TEvent ev;
+    ev.what            = evCommand;
+    ev.message.command = cmRoomPresence;
+    ev.message.infoPtr = participants;
+    TProgram::application->putEvent(ev);
+    return "ok";
 }
 
 std::string api_browser_fetch(TTestPatternApp& app, const std::string& url) {

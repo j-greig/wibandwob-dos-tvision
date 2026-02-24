@@ -15,6 +15,7 @@ set(TV_COMMON_SOURCES
     theme_manager.cpp
     wibwob_view.cpp
     wibwob_engine.cpp
+    room_chat_view.cpp
     llm/base/llm_config.cpp
     llm/base/llm_provider_factory.cpp
     llm/base/tool_executor.cpp

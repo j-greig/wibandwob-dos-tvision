@@ -200,6 +200,8 @@ class Controller:
                     send_cmd("create_window", cmd_params)
             elif wtype == WindowType.text_editor:
                 send_cmd("create_window", cmd_params)
+            elif wtype == WindowType.room_chat:
+                send_cmd("create_window", cmd_params)
         except Exception:
             pass
         async with self._lock:

@@ -15,6 +15,7 @@ class WindowType(str, enum.Enum):
     text_editor = "text_editor"
     browser = "browser"
     wallpaper = "wallpaper"
+    room_chat = "room_chat"
 
 
 @dataclass

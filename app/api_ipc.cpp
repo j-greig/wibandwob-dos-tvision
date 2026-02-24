@@ -123,6 +123,9 @@ extern std::string api_close_window(TTestPatternApp& app, const std::string& id)
 extern std::string api_get_canvas_size(TTestPatternApp& app);
 extern void api_spawn_text_editor(TTestPatternApp& app, const TRect* bounds);
 extern void api_spawn_browser(TTestPatternApp& app, const TRect* bounds);
+extern void api_spawn_room_chat(TTestPatternApp& app, const TRect* bounds);
+extern std::string api_room_chat_receive(TTestPatternApp& app, const std::string& sender, const std::string& text, const std::string& ts);
+extern std::string api_room_presence(TTestPatternApp& app, const std::string& participants_json);
 extern std::string api_browser_fetch(TTestPatternApp& app, const std::string& url);
 extern std::string api_send_text(TTestPatternApp& app, const std::string& id, 
                                  const std::string& content, const std::string& mode, 
@@ -407,6 +410,8 @@ void ApiIpcServer::poll() {
             api_spawn_text_editor(*app_, bounds);
         } else if (type == "browser") {
             api_spawn_browser(*app_, bounds);
+        } else if (type == "room_chat") {
+            api_spawn_room_chat(*app_, bounds);
         } else {
             resp = "err unknown type\n";
         }
@@ -576,6 +581,18 @@ void ApiIpcServer::poll() {
                 }
             }
         }
+    } else if (cmd == "room_chat_receive") {
+        std::string sender = kv.count("sender") ? kv.at("sender") : "remote";
+        std::string text   = kv.count("text")   ? kv.at("text")   : "";
+        std::string ts     = kv.count("ts")      ? kv.at("ts")     : "";
+        if (text.empty()) {
+            resp = "err missing text\n";
+        } else {
+            resp = api_room_chat_receive(*app_, sender, text, ts) + "\n";
+        }
+    } else if (cmd == "room_presence") {
+        std::string participants = kv.count("participants") ? kv.at("participants") : "[]";
+        resp = api_room_presence(*app_, participants) + "\n";
     } else if (cmd == "browser_fetch") {
         auto url_it = kv.find("url");
         if (url_it != kv.end()) {
