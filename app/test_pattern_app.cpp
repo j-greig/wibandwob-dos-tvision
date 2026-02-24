@@ -40,7 +40,9 @@
 #include <tvision/tv.h>
 
 #include "test_pattern.h"
+#include "core/json_utils.h"
 #include "gradient.h"
+#include "ui/ui_helpers.h"
 #include "glitch_engine.h"
 #include "frame_capture.h"
 #include "frame_file_player_view.h"
@@ -80,6 +82,7 @@
 #include "wibwob_scroll_test.h"
 // Custom frame for windows without titles
 #include "notitle_frame.h"
+#include "windows/frame_animation_window.h"
 // Transparent background text view
 #include "transparent_text_view.h"
 // TUI Browser window
@@ -89,6 +92,7 @@
 #include "scramble_engine.h"
 // Paint canvas window
 #include "paint/paint_window.h"
+#include "paint/paint_wwp_codec.h"
 // Micropolis ASCII MVP window
 #include "micropolis_ascii_view.h"
 // Quadra falling blocks game
@@ -370,7 +374,6 @@ static TMenuItem* buildRecentWorkspacesSubmenuItem()
 class TTestPatternView;
 class TTestPatternWindow;
 class TGradientWindow;
-class TFrameAnimationWindow;
 class TTestPatternApp;
 class TCustomMenuBar;
 class TCustomStatusLine;
@@ -707,166 +710,6 @@ public:
 };
 
 /*---------------------------------------------------------*/
-/* TFrameAnimationWindow - Window containing animation    */
-/*---------------------------------------------------------*/
-//
-// Window chrome has three independent axes — mix freely:
-//
-//   frameless=false, shadowless=false  → normal framed window with shadow (default)
-//   frameless=true,  shadowless=false  → TGhostFrame (invisible border, shadow still visible)
-//   frameless=false, shadowless=true   → normal frame, no drop shadow
-//   frameless=true,  shadowless=true   → fully chromeless: no border, no shadow (gallery/art mode)
-//
-//   show_title (aTitle != "")          → primer stem shown in top border.
-//                                        No-op on frameless windows: TGhostFrame has no title bar.
-//
-// TGhostFrame uses the full bounds for content (no 1-char inset).
-// Standard frame shrinks content by 1 char on every side.
-//
-class TFrameAnimationWindow : public TWindow
-{
-public:
-    TFrameAnimationWindow(const TRect& bounds, const char* aTitle,
-                          const std::string& filePath,
-                          bool frameless = false, bool shadowless = false) :
-        TWindow(bounds, aTitle, wnNoNumber),
-        TWindowInit(frameless ? &TFrameAnimationWindow::initFrameless
-                              : &TFrameAnimationWindow::initFrame),
-        filePath_(filePath),
-        frameless_(frameless)
-    {
-        options |= ofTileable;  // Enable cascade/tile functionality
-
-        // shadowless is independent of frameless — clear sfShadow only when explicitly requested
-        if (shadowless)
-            state &= ~sfShadow;
-
-        // Frameless: content occupies full window bounds (no 1-char frame inset).
-        // Framed: content shrinks 1 char on each side for the border.
-        TRect interior = getExtent();
-        if (!frameless) interior.grow(-1, -1);
-
-        // Check if file has frame delimiters to decide which view to use
-        if (hasFrameDelimiters(filePath)) {
-            // Animation file - use frame player
-            FrameFilePlayerView* animView = new FrameFilePlayerView(interior, filePath);
-            insert(animView);
-        } else {
-            // Regular text file - use scrollable text viewer
-            TTextFileView* textView = new TTextFileView(interior, filePath);
-            insert(textView);
-        }
-    }
-
-    // Override changeBounds to fix tile redraw issue
-    virtual void changeBounds(const TRect& bounds) override
-    {
-        TWindow::changeBounds(bounds);
-
-        // Force complete redraw after window is resized/moved (e.g., by tile operations)
-        setState(sfExposed, True);
-
-        // Ensure child views are properly notified of resize for text content redraw
-        forEach([](TView* view, void*) {
-            if (auto* textView = dynamic_cast<TTextFileView*>(view)) {
-                // Force text view to redraw its content
-                textView->drawView();
-            }
-        }, nullptr);
-
-        redraw();
-    }
-
-    // Standard frame (no title, but visible 1-char border)
-    static TFrame* initFrame(TRect r)    { return new TNoTitleFrame(r); }
-
-    // Ghost frame for frameless gallery mode — border is invisible
-    static TFrame* initFrameless(TRect r) { return new TGhostFrame(r); }
-
-    const std::string& getFilePath() const { return filePath_; }
-    bool isFrameless() const { return frameless_; }
-
-    virtual void handleEvent(TEvent& event) override
-    {
-        if (event.what == evMouseDown && event.mouse.buttons == mbRightButton) {
-            bool hasShadow = (state & sfShadow) != 0;
-            TMenu* popup = new TMenu(
-                *new TMenuItem(hasShadow ? "Shadow ~O~ff" : "Shadow ~O~n",
-                    cmCtxToggleShadow, kbNoKey, hcNoContext, nullptr,
-                new TMenuItem((title && title[0]) ? "Clear ~T~itle" : "Restore ~T~itle",
-                    cmCtxClearTitle, kbNoKey, hcNoContext, nullptr,
-                new TMenuItem(frameless_ ? "Show ~F~rame" : "Hide ~F~rame",
-                    cmCtxToggleFrame, kbNoKey, hcNoContext, nullptr,
-                new TMenuItem("~G~allery Mode",
-                    cmCtxGalleryToggle, kbNoKey, hcNoContext, nullptr
-                )))));
-
-            // event.mouse.where is in owner's (desktop) coordinate space
-            TRect deskExt = owner->getExtent();
-            TRect r(event.mouse.where.x, event.mouse.where.y,
-                    deskExt.b.x, deskExt.b.y);
-
-            TMenuBox* box = new TMenuBox(r, popup, nullptr);
-            ushort cmd = owner->execView(box);
-            destroy(box);
-
-            switch (cmd) {
-                case cmCtxToggleShadow:
-                    setState(sfShadow, !hasShadow);
-                    if (owner) owner->drawView();
-                    break;
-                case cmCtxClearTitle: {
-                    if (title && title[0]) {
-                        savedTitle_ = title;
-                        delete[] (char*)title;
-                        title = nullptr;
-                    } else if (!savedTitle_.empty()) {
-                        delete[] (char*)title;
-                        title = newStr(savedTitle_);
-                    }
-                    if (frame) frame->drawView();
-                    break;
-                }
-                case cmCtxToggleFrame: {
-                    if (!frame) break;
-                    TRect fBounds = frame->getBounds();
-                    remove(frame);
-                    destroy(frame);
-                    if (frameless_) {
-                        frame = initFrame(fBounds);
-                        frameless_ = false;
-                    } else {
-                        frame = initFrameless(fBounds);
-                        frameless_ = true;
-                    }
-                    // Keep the frame as the last child (topmost), matching TWindow ctor order.
-                    insertBefore(frame, nullptr);
-                    // Force full repaint (owner redraws all children, clearing ghost artifacts)
-                    if (owner) owner->drawView();
-                    else drawView();
-                    break;
-                }
-                case cmCtxGalleryToggle: {
-                    TEvent galEvt = {};
-                    galEvt.what = evCommand;
-                    galEvt.message.command = cmCtxGalleryToggle;
-                    putEvent(galEvt);
-                    break;
-                }
-            }
-            clearEvent(event);
-            return;
-        }
-        TWindow::handleEvent(event);
-    }
-
-private:
-    std::string filePath_;
-    bool frameless_ {false};
-    std::string savedTitle_;
-};
-
-/*---------------------------------------------------------*/
 /* TTestPatternApp - Main application class               */
 /*---------------------------------------------------------*/
 class TTestPatternApp : public TApplication
@@ -918,7 +761,6 @@ private:
     bool saveWorkspacePath(const std::string& path);
     TRect calculateWindowBounds(const std::string& filePath);
     std::string buildWorkspaceJson();
-    static std::string jsonEscape(const std::string& s);
     bool loadWorkspaceFromFile(const std::string& path);
 public:
     // JSON parse helpers (public for workspace preview + free functions)
@@ -3176,10 +3018,10 @@ std::string api_get_state(TTestPatternApp& app) {
         // Emit path for file-backed window types (needed for remote create_window)
         if (auto* ttw = dynamic_cast<TTransparentTextWindow*>(w)) {
             const std::string& p = ttw->getFilePath();
-            if (!p.empty()) json << ",\"path\":\"" << TTestPatternApp::jsonEscape(p) << "\"";
+            if (!p.empty()) json << ",\"path\":\"" << json_escape(p) << "\"";
         } else if (auto* faw = dynamic_cast<TFrameAnimationWindow*>(w)) {
             const std::string& p = faw->getFilePath();
-            if (!p.empty()) json << ",\"path\":\"" << TTestPatternApp::jsonEscape(p) << "\"";
+            if (!p.empty()) json << ",\"path\":\"" << json_escape(p) << "\"";
         }
         json << "}";
         first = false;
@@ -3193,8 +3035,8 @@ std::string api_get_state(TTestPatternApp& app) {
     for (const auto& entry : app.chatLog_) {
         if (!firstChat) json << ",";
         json << "{\"seq\":" << entry.seq
-             << ",\"sender\":\"" << TTestPatternApp::jsonEscape(entry.sender) << "\""
-             << ",\"text\":\"" << TTestPatternApp::jsonEscape(entry.text) << "\"}";
+             << ",\"sender\":\"" << json_escape(entry.sender) << "\""
+             << ",\"text\":\"" << json_escape(entry.text) << "\"}";
         firstChat = false;
     }
     json << "]}";
@@ -3804,29 +3646,6 @@ bool TTestPatternApp::openWorkspacePath(const std::string& path)
     return ok;
 }
 
-// Minimal JSON helpers
-std::string TTestPatternApp::jsonEscape(const std::string& s)
-{
-    std::string out;
-    out.reserve(s.size() + 8);
-    for (unsigned char c : s) {
-        switch (c) {
-            case '"': out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default:
-                if (c < 0x20) {
-                    char buf[7];
-                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
-                    out += buf;
-                } else out += char(c);
-        }
-    }
-    return out;
-}
-
 std::string TTestPatternApp::buildWorkspaceJson()
 {
     // Screen size
@@ -3892,7 +3711,7 @@ std::string TTestPatternApp::buildWorkspaceJson()
             if (auto *faw = dynamic_cast<TFrameAnimationWindow*>(w)) {
                 const std::string& fp = faw->getFilePath();
                 if (!fp.empty())
-                    props = "{\"path\": \"" + jsonEscape(fp) + "\"}";
+                    props = "{\"path\": \"" + json_escape(fp) + "\"}";
             }
         } else if (type == "gradient") {
             // Keep concrete gradient subtype in props for backward compatibility.
@@ -3916,19 +3735,19 @@ std::string TTestPatternApp::buildWorkspaceJson()
             if (auto *ttw = dynamic_cast<TTransparentTextWindow*>(w)) {
                 const std::string& fp = ttw->getFilePath();
                 if (!fp.empty())
-                    props = "{\"path\": \"" + jsonEscape(fp) + "\"}";
+                    props = "{\"path\": \"" + json_escape(fp) + "\"}";
             }
         } else if (type == "gallery") {
             if (auto *gallery = dynamic_cast<TGalleryWindow*>(w)) {
                 props = std::string("{\"tab\": ") + std::to_string(gallery->getSelected());
                 const std::string& searchText = gallery->getSearchText();
-                props += std::string(", \"search\": \"") + jsonEscape(searchText) + "\"}";
+                props += std::string(", \"search\": \"") + json_escape(searchText) + "\"}";
             }
         } else if (type == "figlet_text") {
             if (auto *ftw = dynamic_cast<TFigletTextWindow*>(w)) {
                 if (auto *fv = ftw->getFigletView()) {
-                    props = "{\"text\": \"" + jsonEscape(fv->getText()) + "\"";
-                    props += ", \"font\": \"" + jsonEscape(fv->getFont()) + "\"";
+                    props = "{\"text\": \"" + json_escape(fv->getText()) + "\"";
+                    props += ", \"font\": \"" + json_escape(fv->getFont()) + "\"";
                     uint32_t fg = fv->getFgColor();
                     uint32_t bg = fv->getBgColor();
                     char hex[16];
@@ -3978,7 +3797,7 @@ std::string TTestPatternApp::buildWorkspaceJson()
                 }
             }
         }
-        std::string safeTitle = jsonEscape(titleValue);
+        std::string safeTitle = json_escape(titleValue);
         json += "      \"title\": \"" + safeTitle + "\",\n";
         json += "      \"bounds\": { \"x\": " + std::to_string(x) + ", \"y\": " + std::to_string(y) + ", \"w\": " + std::to_string(ww) + ", \"h\": " + std::to_string(hh) + " },\n";
         json += std::string("      \"zoomed\": ") + (zoomed ? "true" : "false") + ",\n";
@@ -4271,8 +4090,7 @@ public:
 
     void rebuildList(int focusIdx = 0) {
         if (!listBox) return;
-        TStringCollection* col = new TStringCollection((short)labels.size(), 1);
-        for (const auto& l : labels) col->insert(newStr(l.c_str()));
+        TStringCollection* col = makeStringCollection(labels);
         listBox->newList(col);
         if (focusIdx >= (int)labels.size()) focusIdx = (int)labels.size() - 1;
         if (focusIdx < 0) focusIdx = 0;
@@ -4837,7 +4655,7 @@ std::string api_gallery_list(TTestPatternApp& app, const std::string& tab) {
         else if (tab == "T-Z" || tab == "5") tabIdx = 4;
         else {
             closedir(dir);
-            return "{\"error\":\"unknown tab filter: " + TTestPatternApp::jsonEscape(tab) + "\"}";
+            return "{\"error\":\"unknown tab filter: " + json_escape(tab) + "\"}";
         }
     }
 
@@ -4871,7 +4689,7 @@ std::string api_gallery_list(TTestPatternApp& app, const std::string& tab) {
     os << "{\"count\":" << files.size() << ",\"files\":[";
     for (size_t i = 0; i < files.size(); i++) {
         if (i > 0) os << ",";
-        os << "\"" << TTestPatternApp::jsonEscape(files[i]) << "\"";
+        os << "\"" << json_escape(files[i]) << "\"";
     }
     os << "]}";
     return os.str();
@@ -5093,56 +4911,8 @@ void api_spawn_paint_with_file(TTestPatternApp& app, const std::string& path) {
             if (!in) return;
             std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
-            auto parseIntAfter = [](const std::string& s, size_t pos, const char* key) -> int {
-                std::string needle = std::string("\"") + key + "\":";
-                size_t k = s.find(needle, pos);
-                if (k == std::string::npos) { needle = std::string("\"") + key + "\" :"; k = s.find(needle, pos); }
-                if (k == std::string::npos) return -1;
-                size_t vStart = s.find_first_of("-0123456789", k + needle.size());
-                if (vStart == std::string::npos) return -1;
-                return std::atoi(s.c_str() + vStart);
-            };
-            auto parseBoolAfter = [](const std::string& s, size_t pos, const char* key) -> bool {
-                std::string needle = std::string("\"") + key + "\":";
-                size_t k = s.find(needle, pos);
-                if (k == std::string::npos) { needle = std::string("\"") + key + "\" :"; k = s.find(needle, pos); }
-                if (k == std::string::npos) return false;
-                size_t vStart = k + needle.size();
-                while (vStart < s.size() && s[vStart] == ' ') vStart++;
-                return (vStart < s.size() && s[vStart] == 't');
-            };
-
             auto* canvas = pw->getCanvas();
-            canvas->clear();
-
-            size_t cellsArr = data.find("\"cells\"");
-            if (cellsArr == std::string::npos) return;
-            size_t pos2 = data.find('[', cellsArr);
-            size_t arrEnd = data.find(']', pos2);
-            if (pos2 == std::string::npos || arrEnd == std::string::npos) return;
-
-            while (pos2 < arrEnd) {
-                size_t objStart = data.find('{', pos2);
-                if (objStart == std::string::npos || objStart >= arrEnd) break;
-                size_t objEnd = data.find('}', objStart);
-                if (objEnd == std::string::npos) break;
-                int cx = parseIntAfter(data, objStart, "x");
-                int cy = parseIntAfter(data, objStart, "y");
-                if (cx >= 0 && cy >= 0 && cx < canvas->getCols() && cy < canvas->getRows()) {
-                    PaintCell& cell = canvas->cellAt(cx, cy);
-                    cell.uOn = parseBoolAfter(data, objStart, "uOn");
-                    cell.lOn = parseBoolAfter(data, objStart, "lOn");
-                    int v;
-                    v = parseIntAfter(data, objStart, "uFg");  if (v >= 0) cell.uFg = (uint8_t)v;
-                    v = parseIntAfter(data, objStart, "lFg");  if (v >= 0) cell.lFg = (uint8_t)v;
-                    v = parseIntAfter(data, objStart, "qMask"); if (v >= 0) cell.qMask = (uint8_t)v;
-                    v = parseIntAfter(data, objStart, "qFg");  if (v >= 0) cell.qFg = (uint8_t)v;
-                    v = parseIntAfter(data, objStart, "textChar"); if (v >= 0) cell.textChar = (char)v;
-                    v = parseIntAfter(data, objStart, "textFg"); if (v >= 0) cell.textFg = (uint8_t)v;
-                    v = parseIntAfter(data, objStart, "textBg"); if (v >= 0) cell.textBg = (uint8_t)v;
-                }
-                pos2 = objEnd + 1;
-            }
+            if (!loadWwpFromString(data, canvas)) return;
             pw->setFilePath(path);
             canvas->drawView();
             return;
@@ -5221,35 +4991,9 @@ std::string api_paint_save(TTestPatternApp& app, const std::string& id, const st
     if (!canvas) return "err paint window not found";
     if (path.empty()) return "err path required";
 
-    int cols = canvas->getCols(), rows = canvas->getRows();
-    std::ostringstream os;
-    os << "{\n  \"version\": 1,\n  \"cols\": " << cols << ",\n  \"rows\": " << rows << ",\n  \"cells\": [\n";
-    bool first = true;
-    for (int y = 0; y < rows; ++y) {
-        for (int x = 0; x < cols; ++x) {
-            const auto& c = canvas->cellAt(x, y);
-            if (!c.uOn && !c.lOn && c.qMask == 0 && c.textChar == 0) continue;
-            if (!first) os << ",\n";
-            first = false;
-            os << "    { \"x\": " << x << ", \"y\": " << y;
-            if (c.uOn)  os << ", \"uOn\": true, \"uFg\": " << (int)c.uFg;
-            if (c.lOn)  os << ", \"lOn\": true, \"lFg\": " << (int)c.lFg;
-            if (c.qMask) os << ", \"qMask\": " << (int)c.qMask << ", \"qFg\": " << (int)c.qFg;
-            if (c.textChar) os << ", \"textChar\": " << (int)(unsigned char)c.textChar
-                              << ", \"textFg\": " << (int)c.textFg << ", \"textBg\": " << (int)c.textBg;
-            os << " }";
-        }
-    }
-    os << "\n  ]\n}\n";
-
-    std::string tmp = path + ".tmp";
-    std::ofstream out(tmp, std::ios::out | std::ios::trunc);
-    if (!out) return "err cannot write file";
-    out << os.str();
-    out.close();
-    if (!out.good()) { std::remove(tmp.c_str()); return "err write failed"; }
-    std::remove(path.c_str());
-    std::rename(tmp.c_str(), path.c_str());
+    std::string json = buildWwpJson(canvas);
+    if (!saveWwpFile(path, json))
+        return "err cannot write file";
     return "ok saved " + path;
 }
 
@@ -5262,66 +5006,13 @@ std::string api_paint_load(TTestPatternApp& app, const std::string& id, const st
     if (!in) return "err cannot open " + path;
     std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
-    // Parse cols/rows
-    auto parseIntAfter = [](const std::string& s, size_t pos, const char* key) -> int {
-        std::string needle = std::string("\"") + key + "\":";
-        size_t k = s.find(needle, pos);
-        if (k == std::string::npos) { needle = std::string("\"") + key + "\" :"; k = s.find(needle, pos); }
-        if (k == std::string::npos) return -1;
-        size_t vStart = s.find_first_of("-0123456789", k + needle.size());
-        if (vStart == std::string::npos) return -1;
-        return std::atoi(s.c_str() + vStart);
-    };
-    auto parseBoolAfter = [](const std::string& s, size_t pos, const char* key) -> bool {
-        std::string needle = std::string("\"") + key + "\":";
-        size_t k = s.find(needle, pos);
-        if (k == std::string::npos) { needle = std::string("\"") + key + "\" :"; k = s.find(needle, pos); }
-        if (k == std::string::npos) return false;
-        size_t vStart = k + needle.size();
-        while (vStart < s.size() && s[vStart] == ' ') vStart++;
-        return (vStart < s.size() && s[vStart] == 't');
-    };
-
     int fileCols = parseIntAfter(data, 0, "cols");
     int fileRows = parseIntAfter(data, 0, "rows");
     if (fileCols <= 0 || fileRows <= 0) return "err invalid wwp (missing cols/rows)";
-
-    canvas->clear();
-
-    size_t cellsArr = data.find("\"cells\"");
-    if (cellsArr == std::string::npos) return "err invalid wwp (missing cells)";
-    size_t pos = data.find('[', cellsArr);
-    size_t arrEnd = data.find(']', pos);
-    if (pos == std::string::npos || arrEnd == std::string::npos) return "err invalid wwp (bad cells array)";
-
-    int loaded = 0;
-    while (pos < arrEnd) {
-        size_t objStart = data.find('{', pos);
-        if (objStart == std::string::npos || objStart >= arrEnd) break;
-        size_t objEnd = data.find('}', objStart);
-        if (objEnd == std::string::npos) break;
-
-        int cx = parseIntAfter(data, objStart, "x");
-        int cy = parseIntAfter(data, objStart, "y");
-        if (cx >= 0 && cy >= 0 && cx < canvas->getCols() && cy < canvas->getRows()) {
-            PaintCell& cell = canvas->cellAt(cx, cy);
-            cell.uOn = parseBoolAfter(data, objStart, "uOn");
-            cell.lOn = parseBoolAfter(data, objStart, "lOn");
-            int v;
-            v = parseIntAfter(data, objStart, "uFg");  if (v >= 0) cell.uFg = (uint8_t)v;
-            v = parseIntAfter(data, objStart, "lFg");  if (v >= 0) cell.lFg = (uint8_t)v;
-            v = parseIntAfter(data, objStart, "qMask"); if (v >= 0) cell.qMask = (uint8_t)v;
-            v = parseIntAfter(data, objStart, "qFg");  if (v >= 0) cell.qFg = (uint8_t)v;
-            v = parseIntAfter(data, objStart, "textChar"); if (v >= 0) cell.textChar = (char)v;
-            v = parseIntAfter(data, objStart, "textFg"); if (v >= 0) cell.textFg = (uint8_t)v;
-            v = parseIntAfter(data, objStart, "textBg"); if (v >= 0) cell.textBg = (uint8_t)v;
-            loaded++;
-        }
-        pos = objEnd + 1;
-    }
-
+    if (!loadWwpFromString(data, canvas))
+        return "err invalid wwp (missing cells)";
     canvas->drawView();
-    return "ok loaded " + std::to_string(loaded) + " cells from " + path;
+    return "ok loaded " + path;
 }
 
 std::string api_paint_stamp_figlet(TTestPatternApp& app, const std::string& id,

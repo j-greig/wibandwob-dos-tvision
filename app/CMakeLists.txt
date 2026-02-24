@@ -66,7 +66,9 @@ add_executable(test_pattern
     paint/paint_palette.cpp
     paint/paint_status.cpp
     paint/paint_tools.cpp
+    paint/paint_wwp_codec.cpp
     paint/paint_window.cpp
+    windows/frame_animation_window.cpp
     paint/figlet_stamp_dialog.cpp
     micropolis_ascii_view.cpp
     micropolis_tool_palette.cpp
@@ -112,6 +114,7 @@ add_executable(paint_tui
     paint/paint_palette.cpp
     paint/paint_status.cpp
     paint/paint_tools.cpp
+    paint/paint_wwp_codec.cpp
     paint/paint_window.cpp
     paint/figlet_stamp_dialog.cpp
 )
