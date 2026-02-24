@@ -306,6 +306,12 @@ TRoomChatWindow::TRoomChatWindow(const TRect& bounds, const char* title, int num
     msgView_->addMessage(welcome);
 }
 
+std::vector<std::string> TRoomChatWindow::drainPending() {
+    std::vector<std::string> out;
+    std::swap(out, pendingOutbound);
+    return out;
+}
+
 TRoomChatWindow::~TRoomChatWindow() {
     if (g_roomChatWindow == this) g_roomChatWindow = nullptr;
 }

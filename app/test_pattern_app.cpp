@@ -696,6 +696,7 @@ private:
     friend void api_spawn_room_chat(TTestPatternApp&, const TRect* bounds);
     friend std::string api_room_chat_receive(TTestPatternApp&, const std::string& sender, const std::string& text, const std::string& ts);
     friend std::string api_room_presence(TTestPatternApp&, const std::string& participants_json);
+    friend std::string api_get_room_chat_pending(TTestPatternApp&);
     friend std::string api_browser_fetch(TTestPatternApp&, const std::string& url);
     friend std::string api_send_text(TTestPatternApp&, const std::string&, const std::string&, 
                                      const std::string&, const std::string&);
@@ -3175,6 +3176,26 @@ std::string api_room_presence(TTestPatternApp& /*app*/,
     ev.message.infoPtr = participants;
     TProgram::application->putEvent(ev);
     return "ok";
+}
+
+std::string api_get_room_chat_pending(TTestPatternApp& /*app*/) {
+    TRoomChatWindow* win = getRoomChatWindow();
+    if (!win) return "[]";
+    auto msgs = win->drainPending();
+    std::string json = "[";
+    for (size_t i = 0; i < msgs.size(); ++i) {
+        if (i) json += ",";
+        json += "\"";
+        for (char c : msgs[i]) {
+            if (c == '"')  json += "\\\"";
+            else if (c == '\\') json += "\\\\";
+            else if (c == '\n') json += "\\n";
+            else json += c;
+        }
+        json += "\"";
+    }
+    json += "]";
+    return json;
 }
 
 std::string api_browser_fetch(TTestPatternApp& app, const std::string& url) {

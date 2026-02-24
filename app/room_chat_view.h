@@ -107,8 +107,9 @@ public:
     void receiveMessage(const RoomChatMessage& msg);
     void updatePresence(const std::vector<RoomParticipant>& participants);
 
-    // Pending outbound messages (bridge polls this via IPC get_state or event)
+    // Pending outbound messages — bridge polls via room_chat_pending IPC
     std::vector<std::string> pendingOutbound;
+    std::vector<std::string> drainPending();  // returns + clears queue
 
 private:
     TRoomParticipantStrip* strip_ = nullptr;

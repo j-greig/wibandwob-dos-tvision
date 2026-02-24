@@ -126,6 +126,7 @@ extern void api_spawn_browser(TTestPatternApp& app, const TRect* bounds);
 extern void api_spawn_room_chat(TTestPatternApp& app, const TRect* bounds);
 extern std::string api_room_chat_receive(TTestPatternApp& app, const std::string& sender, const std::string& text, const std::string& ts);
 extern std::string api_room_presence(TTestPatternApp& app, const std::string& participants_json);
+extern std::string api_get_room_chat_pending(TTestPatternApp& app);
 extern std::string api_browser_fetch(TTestPatternApp& app, const std::string& url);
 extern std::string api_send_text(TTestPatternApp& app, const std::string& id, 
                                  const std::string& content, const std::string& mode, 
@@ -593,6 +594,8 @@ void ApiIpcServer::poll() {
     } else if (cmd == "room_presence") {
         std::string participants = kv.count("participants") ? kv.at("participants") : "[]";
         resp = api_room_presence(*app_, participants) + "\n";
+    } else if (cmd == "room_chat_pending") {
+        resp = api_get_room_chat_pending(*app_) + "\n";
     } else if (cmd == "browser_fetch") {
         auto url_it = kv.find("url");
         if (url_it != kv.end()) {

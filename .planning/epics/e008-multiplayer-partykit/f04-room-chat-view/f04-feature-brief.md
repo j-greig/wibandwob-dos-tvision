@@ -129,8 +129,8 @@ Add capabilities:
 
 | # | Title | Status |
 |---|---|---|
-| S01 | C++ RoomChatView skeleton (window, panels, draw) | [ ] |
-| S02 | IPC: room_chat_receive + room_presence | [ ] |
+| S01 | C++ RoomChatView skeleton (window, panels, draw) | [x] |
+| S02 | IPC: room_chat_receive + room_presence | [x] |
 | S03 | Bridge: route chat_msg + presence to RoomChatView | [ ] |
 | S04 | Input → outbound relay via bridge | [ ] |
 | S05 | Integration test + update e008-demo.md | [ ] |
