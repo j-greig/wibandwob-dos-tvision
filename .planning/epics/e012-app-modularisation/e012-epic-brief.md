@@ -3,7 +3,7 @@ id: E012
 title: App Modularisation — God-Object Refactor, DRY Fixes & Module Structure
 status: in-progress
 issue: 90
-pr: ~
+pr: 93
 depends_on: []
 branch: epic/e012-app-modularisation
 ---
@@ -160,4 +160,4 @@ These gates must pass before E012 PR is opened.
 - [-] **ctests pass** — all 4 test targets fail to build (`tvision/tv.h` not found in test
   target link). Pre-existing in main repo — not caused by E012. Separate issue.
 
-- [ ] **PR opened** — update `pr:` field in this brief frontmatter once PR is raised
+- [x] **PR opened** — https://github.com/j-greig/wibandwob-dos/pull/93
