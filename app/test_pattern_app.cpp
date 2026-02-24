@@ -4285,6 +4285,19 @@ public:
 
         TDialog::handleEvent(event);
 
+        if (event.what == evCommand) {
+            switch (event.message.command) {
+                case cmWsLoad:
+                case cmWsRename:
+                case cmWsDelete:
+                    if ((state & sfModal) != 0) {
+                        endModal(event.message.command);
+                        clearEvent(event);
+                    }
+                    break;
+            }
+        }
+
         // After any event, check if list focus changed
         if (listBox && listBox->focused != beforeFocus) {
             updatePreview();
