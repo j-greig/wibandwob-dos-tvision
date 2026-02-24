@@ -21,6 +21,7 @@ Environment:
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -85,6 +86,29 @@ def ipc_sock_path(instance_id: str) -> str:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+_ADJECTIVES = [
+    "amber", "bold", "calm", "dark", "eerie", "fast", "grim", "hazy",
+    "iron", "jade", "keen", "lone", "mute", "neon", "odd", "pale",
+    "quick", "rust", "sage", "teal", "wild", "zany",
+]
+_ANIMALS = [
+    "bat", "crow", "deer", "elk", "fox", "gnu", "hawk", "ibis",
+    "jay", "kite", "lynx", "moth", "newt", "owl", "pike", "quail",
+    "rook", "swift", "tern", "vole", "wasp", "yak",
+]
+
+def _name_for_conn(conn_id: str) -> str:
+    """Map a connection ID deterministically to an adjective-animal name.
+
+    Both bridge instances use the same hash so they agree on names.
+    Max length: 'quick-swift' = 11 chars, fits comfortably in the strip.
+    """
+    h = int(hashlib.md5(conn_id.encode()).hexdigest(), 16)
+    adj    = _ADJECTIVES[h % len(_ADJECTIVES)]
+    animal = _ANIMALS[(h >> 8) % len(_ANIMALS)]
+    return f"{adj}-{animal}"
+
 
 def _normalise_ts(ts: str | int | float) -> str:
     """Return HH:MM from ts, handling epoch-ms integers/strings or pre-formatted strings."""
@@ -250,7 +274,7 @@ class PartyKitBridge:
                 # after the initial join event.
                 if self._participants:
                     participants_json = json.dumps(
-                        [{"id": p} for p in self._participants]
+                        [{"id": _name_for_conn(p)} for p in self._participants]
                     )
                     await asyncio.to_thread(
                         ipc_command, self.sock_path, "room_presence",
@@ -363,7 +387,7 @@ class PartyKitBridge:
                         # track locally and push the full snapshot)
                         self._update_presence(event_name, conn_id)
                     participants_json = json.dumps(
-                        [{"id": p} for p in self._participants]
+                        [{"id": _name_for_conn(p)} for p in self._participants]
                     )
                     await asyncio.to_thread(
                         ipc_command, self.sock_path, "room_presence",

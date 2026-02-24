@@ -291,8 +291,8 @@ TRoomChatWindow::TRoomChatWindow(const TRect& bounds, const char* title, int num
     TRect inner = getClipRect();
     inner.grow(-1, -1);  // inside frame
 
-    // Strip is left 16 cols
-    int stripW = 16;
+    // Strip is left 18 cols — wide enough for "• quick-swift" (13 chars) + margin
+    int stripW = 18;
     TRect stripBounds(inner.a.x, inner.a.y,
                       inner.a.x + stripW, inner.b.y - 1);
 
