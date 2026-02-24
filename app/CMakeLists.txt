@@ -67,6 +67,7 @@ add_executable(test_pattern
     paint/paint_status.cpp
     paint/paint_tools.cpp
     paint/paint_window.cpp
+    paint/figlet_stamp_dialog.cpp
     micropolis_ascii_view.cpp
     micropolis_tool_palette.cpp
     tvterm_view.cpp
@@ -112,6 +113,7 @@ add_executable(paint_tui
     paint/paint_status.cpp
     paint/paint_tools.cpp
     paint/paint_window.cpp
+    paint/figlet_stamp_dialog.cpp
 )
 target_include_directories(paint_tui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(paint_tui PRIVATE tvision)

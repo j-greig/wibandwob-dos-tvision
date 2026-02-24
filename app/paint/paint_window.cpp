@@ -25,6 +25,7 @@
 #include <tvision/tv.h>
 
 #include "../figlet_utils.h"
+#include "figlet_stamp_dialog.h"
 
 #include <algorithm>
 #include <fstream>
@@ -533,26 +534,20 @@ void TPaintWindow::doStampFiglet()
     auto* canvas = getCanvas();
     if (!canvas) return;
 
-    // Text input (pre-filled with last text)
-    char textBuf[256] = {};
-    if (!figletText_.empty())
-        std::strncpy(textBuf, figletText_.c_str(), sizeof(textBuf) - 1);
-    if (inputBox("FIGlet Text", "~T~ext:", textBuf, sizeof(textBuf) - 1) != cmOK)
+    auto* dlg = new TFigletStampDialog(figletText_, figletFont_);
+    ushort cmd = TProgram::application->execView(dlg);
+    if (cmd != cmOK) {
+        TObject::destroy(dlg);
         return;
-    std::string text(textBuf);
-    if (text.empty()) return;
+    }
+    FigletStampResult r = dlg->getResult();
+    TObject::destroy(dlg);
 
-    // Font input (pre-filled with last font)
-    char fontBuf[128] = {};
-    std::strncpy(fontBuf, figletFont_.c_str(), sizeof(fontBuf) - 1);
-    if (inputBox("FIGlet Font", "~F~ont:", fontBuf, sizeof(fontBuf) - 1) != cmOK)
-        return;
-    std::string font(fontBuf);
-    if (font.empty()) font = "standard";
+    if (r.text.empty()) return;
 
     // Render
     int cols = canvas->getCols();
-    auto lines = figlet::renderLines(text, font, cols);
+    auto lines = figlet::renderLines(r.text, r.font, cols);
     if (lines.empty()) {
         messageBox("FIGlet render failed (bad font name?).", mfError | mfOKButton);
         return;
@@ -580,8 +575,8 @@ void TPaintWindow::doStampFiglet()
         }
     }
 
-    figletText_ = text;
-    figletFont_ = font;
+    figletText_ = r.text;
+    figletFont_ = r.font;
     dirty_ = true;
     canvas->drawView();
 }

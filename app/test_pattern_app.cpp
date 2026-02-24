@@ -5354,3 +5354,27 @@ std::string api_paint_stamp_figlet(TTestPatternApp& app, const std::string& id,
     canvas->drawView();
     return "ok stamped " + std::to_string(stamped) + " chars (" + std::to_string(lines.size()) + " lines)";
 }
+
+std::string api_list_figlet_fonts() {
+    const auto& fonts = figlet::allFontsSorted();
+    std::ostringstream os;
+    os << "[";
+    for (size_t i = 0; i < fonts.size(); i++) {
+        if (i > 0) os << ",";
+        os << "\"" << fonts[i] << "\"";
+    }
+    os << "]";
+    return os.str();
+}
+
+std::string api_preview_figlet(const std::string& text, const std::string& font, int width) {
+    if (width <= 0) width = 80;
+    auto lines = figlet::renderLines(text, font, width);
+    if (lines.empty()) return "err render failed (bad font?)";
+    std::string result;
+    for (size_t i = 0; i < lines.size(); i++) {
+        if (i > 0) result += '\n';
+        result += lines[i];
+    }
+    return result;
+}
