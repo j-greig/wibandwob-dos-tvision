@@ -245,6 +245,16 @@ class PartyKitBridge:
                             await self.push_chat(sender, text)
                     except Exception:
                         pass
+                # Re-push presence so strip stays current if window opened
+                # after the initial join event.
+                if self._participants:
+                    participants_json = json.dumps(
+                        [{"id": p} for p in self._participants]
+                    )
+                    await asyncio.to_thread(
+                        ipc_command, self.sock_path, "room_presence",
+                        {"participants": participants_json},
+                    )
             await asyncio.sleep(POLL_INTERVAL)
 
     async def receive_loop(self, ws) -> None:

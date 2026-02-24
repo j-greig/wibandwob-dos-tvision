@@ -1048,6 +1048,28 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 newRoomChatWindow();
                 clearEvent(event);
                 break;
+            case cmRoomPresence: {
+                auto* participants =
+                    static_cast<std::vector<RoomParticipant>*>(event.message.infoPtr);
+                if (participants) {
+                    if (TRoomChatWindow* win = getRoomChatWindow())
+                        win->updatePresence(*participants);
+                    delete participants;
+                }
+                clearEvent(event);
+                break;
+            }
+            case cmRoomChatReceive: {
+                // Guard: deliver even when RoomChatWindow is not the focused target
+                auto* msg = static_cast<RoomChatMessage*>(event.message.infoPtr);
+                if (msg) {
+                    if (TRoomChatWindow* win = getRoomChatWindow())
+                        win->receiveMessage(*msg);
+                    delete msg;
+                }
+                clearEvent(event);
+                break;
+            }
             case cmWibWobTestA:
                 newWibWobTestWindowA();
                 clearEvent(event);

@@ -69,6 +69,29 @@ static std::string nowHHMM() {
     return o.str();
 }
 
+std::string normaliseMsgTs(const std::string& ts) {
+    if (ts.empty()) return "";
+
+    const bool allDigits = std::all_of(ts.begin(), ts.end(), [](unsigned char c) {
+        return c >= '0' && c <= '9';
+    });
+    if (!allDigits || ts.size() < 10) return ts;
+
+    char* end = nullptr;
+    unsigned long long raw = std::strtoull(ts.c_str(), &end, 10);
+    if (end == nullptr || *end != '\0') return ts;
+
+    if (raw > 1000000000000ULL) raw /= 1000ULL;
+
+    std::time_t t = static_cast<std::time_t>(raw);
+    std::tm* tm = std::localtime(&t);
+    if (!tm) return ts;
+
+    char buf[6] = {0};
+    if (std::strftime(buf, sizeof(buf), "%H:%M", tm) == 0) return ts;
+    return std::string(buf);
+}
+
 // ── TRoomParticipantStrip ──────────────────────────────────────────────────
 
 TRoomParticipantStrip::TRoomParticipantStrip(const TRect& bounds)

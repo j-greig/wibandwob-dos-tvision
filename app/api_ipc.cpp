@@ -1,5 +1,6 @@
 #include "api_ipc.h"
 #include "command_registry.h"
+#include "room_chat_view.h"
 
 #ifndef _WIN32
 #include <sys/socket.h>
@@ -586,6 +587,7 @@ void ApiIpcServer::poll() {
         std::string sender = kv.count("sender") ? kv.at("sender") : "remote";
         std::string text   = kv.count("text")   ? kv.at("text")   : "";
         std::string ts     = kv.count("ts")      ? kv.at("ts")     : "";
+        ts = normaliseMsgTs(ts);
         if (text.empty()) {
             resp = "err missing text\n";
         } else {

@@ -125,6 +125,9 @@ private:
 // ── Factory ────────────────────────────────────────────────────────────────
 TWindow* createRoomChatWindow(const TRect& bounds);
 
+// ── Timestamp helpers ──────────────────────────────────────────────────────
+std::string normaliseMsgTs(const std::string& ts);
+
 // ── Global accessor ────────────────────────────────────────────────────────
 // Returns the most-recently-created live TRoomChatWindow, or nullptr.
 // Cleared automatically when the window is destroyed.
