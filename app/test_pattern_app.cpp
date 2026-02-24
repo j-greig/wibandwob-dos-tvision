@@ -5321,3 +5321,36 @@ std::string api_paint_load(TTestPatternApp& app, const std::string& id, const st
     canvas->drawView();
     return "ok loaded " + std::to_string(loaded) + " cells from " + path;
 }
+
+std::string api_paint_stamp_figlet(TTestPatternApp& app, const std::string& id,
+    const std::string& text, const std::string& font,
+    int x, int y, uint8_t fg, uint8_t bg)
+{
+    auto *canvas = api_find_paint_canvas(app, id);
+    if (!canvas) return "err paint window not found";
+    if (text.empty()) return "err text required";
+
+    std::string f = font.empty() ? "standard" : font;
+    auto lines = figlet::renderLines(text, f, canvas->getCols());
+    if (lines.empty()) return "err figlet render failed";
+
+    int stamped = 0;
+    for (int row = 0; row < (int)lines.size(); row++) {
+        int cy = y + row;
+        if (cy < 0 || cy >= canvas->getRows()) continue;
+        const std::string& line = lines[row];
+        for (int col = 0; col < (int)line.size(); col++) {
+            char ch = line[col];
+            if (ch == ' ' || ch == '\0') continue;
+            int cx = x + col;
+            if (cx < 0 || cx >= canvas->getCols()) continue;
+            PaintCell& cell = canvas->cellAt(cx, cy);
+            cell.textChar = ch;
+            cell.textFg = fg;
+            cell.textBg = bg;
+            stamped++;
+        }
+    }
+    canvas->drawView();
+    return "ok stamped " + std::to_string(stamped) + " chars (" + std::to_string(lines.size()) + " lines)";
+}

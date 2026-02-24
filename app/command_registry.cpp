@@ -65,6 +65,9 @@ extern std::string api_paint_export(TTestPatternApp& app, const std::string& id)
 extern std::string api_paint_save(TTestPatternApp& app, const std::string& id, const std::string& path);
 extern std::string api_paint_load(TTestPatternApp& app, const std::string& id, const std::string& path);
 extern void api_spawn_paint_with_file(TTestPatternApp& app, const std::string& path);
+extern std::string api_paint_stamp_figlet(TTestPatternApp& app, const std::string& id,
+    const std::string& text, const std::string& font,
+    int x, int y, uint8_t fg, uint8_t bg);
 
 const std::vector<CommandCapability>& get_command_capabilities() {
     static const std::vector<CommandCapability> capabilities = {
@@ -106,6 +109,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"paint_save", "Save paint canvas to .wwp file (id, path params)", true},
         {"paint_load", "Load paint canvas from .wwp file (id, path params)", true},
         {"open_paint_file", "Open a new paint window with a .wwp file loaded (path param)", true},
+        {"paint_stamp_figlet", "Stamp FIGlet text onto canvas (id,text,font,x,y,fg,bg)", true},
         {"window_shadow", "Toggle window shadow (id, on params)", true},
         {"window_title", "Set window title (id, title params — empty string removes title)", true},
         {"desktop_preset", "Set desktop to a named preset (preset param)", true},
@@ -399,6 +403,18 @@ std::string exec_registry_command(
         if (path_it == kv.end()) return "err missing path";
         api_spawn_paint_with_file(app, path_it->second);
         return "ok";
+    }
+    if (name == "paint_stamp_figlet") {
+        auto id_it = kv.find("id");
+        auto text_it = kv.find("text");
+        if (id_it == kv.end()) return "err missing id";
+        if (text_it == kv.end()) return "err missing text";
+        std::string font = kv.count("font") ? kv.at("font") : "standard";
+        int x = kv.count("x") ? std::atoi(kv.at("x").c_str()) : 0;
+        int y = kv.count("y") ? std::atoi(kv.at("y").c_str()) : 0;
+        uint8_t fg = kv.count("fg") ? (uint8_t)std::atoi(kv.at("fg").c_str()) : 15;
+        uint8_t bg = kv.count("bg") ? (uint8_t)std::atoi(kv.at("bg").c_str()) : 0;
+        return api_paint_stamp_figlet(app, id_it->second, text_it->second, font, x, y, fg, bg);
     }
     if (name == "window_shadow") {
         auto id_it = kv.find("id");

@@ -24,6 +24,8 @@
 #define Uses_MsgBox
 #include <tvision/tv.h>
 
+#include "../figlet_utils.h"
+
 #include <algorithm>
 #include <fstream>
 #include <sstream>
@@ -44,6 +46,7 @@ static const ushort cmPaintModeHalfY  = 621;
 static const ushort cmPaintModeHalfX  = 622;
 static const ushort cmPaintModeQuarter = 623;
 static const ushort cmPaintModeText   = 624;
+static const ushort cmPaintStampFiglet = 630;
 
 TPaintWindow::TPaintWindow(const TRect &bounds)
     : TWindow(bounds, "Paint", wnNoNumber), TWindowInit(&TPaintWindow::initFrame)
@@ -91,6 +94,8 @@ void TPaintWindow::buildLayout()
         *new TSubMenu("~E~dit", kbAltE) +
             *new TMenuItem("C~l~ear Canvas", cmPaintClear, kbNoKey) +
             *new TMenuItem("~C~opy as Text", cmPaintCopyText, kbCtrlIns) +
+            newLine() +
+            *new TMenuItem("Stamp ~F~IGlet...", cmPaintStampFiglet, kbNoKey) +
         *new TSubMenu("~M~ode", kbAltM) +
             *new TMenuItem("~F~ull Block", cmPaintModeFull, kbNoKey) +
             *new TMenuItem("Half ~Y~", cmPaintModeHalfY, kbNoKey) +
@@ -216,6 +221,10 @@ void TPaintWindow::handleEvent(TEvent &event)
                 break;
             case cmPaintModeText:
                 if (canvas) { canvas->setPixelMode(PixelMode::Text); canvas->drawView(); }
+                clearEvent(event);
+                break;
+            case cmPaintStampFiglet:
+                doStampFiglet();
                 clearEvent(event);
                 break;
         }
@@ -515,6 +524,66 @@ void TPaintWindow::doExportAnsi()
     out.close();
     std::string msg = "Exported to " + path;
     messageBox(msg.c_str(), mfInformation | mfOKButton);
+}
+
+// ── Stamp FIGlet ──────────────────────────────────────────────────────────────
+
+void TPaintWindow::doStampFiglet()
+{
+    auto* canvas = getCanvas();
+    if (!canvas) return;
+
+    // Text input (pre-filled with last text)
+    char textBuf[256] = {};
+    if (!figletText_.empty())
+        std::strncpy(textBuf, figletText_.c_str(), sizeof(textBuf) - 1);
+    if (inputBox("FIGlet Text", "~T~ext:", textBuf, sizeof(textBuf) - 1) != cmOK)
+        return;
+    std::string text(textBuf);
+    if (text.empty()) return;
+
+    // Font input (pre-filled with last font)
+    char fontBuf[128] = {};
+    std::strncpy(fontBuf, figletFont_.c_str(), sizeof(fontBuf) - 1);
+    if (inputBox("FIGlet Font", "~F~ont:", fontBuf, sizeof(fontBuf) - 1) != cmOK)
+        return;
+    std::string font(fontBuf);
+    if (font.empty()) font = "standard";
+
+    // Render
+    int cols = canvas->getCols();
+    auto lines = figlet::renderLines(text, font, cols);
+    if (lines.empty()) {
+        messageBox("FIGlet render failed (bad font name?).", mfError | mfOKButton);
+        return;
+    }
+
+    // Stamp at cursor — transparent spaces (skip space chars)
+    int ox = canvas->getX();
+    int oy = canvas->getY();
+    uint8_t fg = canvas->getFg();
+    uint8_t bg = canvas->getBg();
+
+    for (int row = 0; row < (int)lines.size(); row++) {
+        int cy = oy + row;
+        if (cy < 0 || cy >= canvas->getRows()) continue;
+        const std::string& line = lines[row];
+        for (int col = 0; col < (int)line.size(); col++) {
+            char ch = line[col];
+            if (ch == ' ' || ch == '\0') continue;  // transparent
+            int cx = ox + col;
+            if (cx < 0 || cx >= canvas->getCols()) continue;
+            PaintCell& cell = canvas->cellAt(cx, cy);
+            cell.textChar = ch;
+            cell.textFg = fg;
+            cell.textBg = bg;
+        }
+    }
+
+    figletText_ = text;
+    figletFont_ = font;
+    dirty_ = true;
+    canvas->drawView();
 }
 
 TWindow* createPaintWindow(const TRect &bounds)
