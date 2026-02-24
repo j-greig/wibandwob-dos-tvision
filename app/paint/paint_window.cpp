@@ -20,6 +20,8 @@
 #define Uses_TProgram
 #define Uses_MsgBox
 #define Uses_TClipboard
+#define Uses_TFileDialog
+#define Uses_MsgBox
 #include <tvision/tv.h>
 
 #include <algorithm>
@@ -299,33 +301,28 @@ void TPaintWindow::doSave()
 void TPaintWindow::doSaveAs()
 {
     if (!canvas) return;
-    char name[256] = {};
-    if (!filePath_.empty()) {
-        size_t slash = filePath_.find_last_of("/\\");
-        std::string fn = (slash == std::string::npos) ? filePath_ : filePath_.substr(slash + 1);
-        // Strip .wwp
-        if (fn.size() > 4 && fn.substr(fn.size() - 4) == ".wwp")
-            fn = fn.substr(0, fn.size() - 4);
-        std::strncpy(name, fn.c_str(), sizeof(name) - 1);
-    }
-    if (inputBox("Save Paint As", "~N~ame:", name, sizeof(name) - 1) != cmOK)
-        return;
-    std::string nameStr(name);
-    if (nameStr.empty()) return;
-    // Sanitise
-    for (char& c : nameStr)
-        if (!std::isalnum((unsigned char)c) && c != '-' && c != '_' && c != '.') c = '_';
-
     mkdir("paintings", 0755);
-    std::string path = "paintings/" + nameStr + ".wwp";
 
-    // Overwrite check
-    struct stat st;
-    if (stat(path.c_str(), &st) == 0) {
-        std::string msg = nameStr + ".wwp already exists. Overwrite?";
-        if (messageBox(msg.c_str(), mfConfirmation | mfYesButton | mfNoButton) != cmYes)
-            return;
+    char fileName[MAXPATH];
+    if (!filePath_.empty())
+        std::strncpy(fileName, filePath_.c_str(), sizeof(fileName) - 1);
+    else
+        std::strcpy(fileName, "paintings/*.wwp");
+
+    TFileDialog* dlg = new TFileDialog("paintings/*.wwp", "Save Paint As", "~N~ame", fdOKButton, 100);
+    if (TProgram::application->execView(dlg) == cmCancel) {
+        TObject::destroy(dlg);
+        return;
     }
+    dlg->getFileName(fileName);
+    TObject::destroy(dlg);
+
+    std::string path(fileName);
+    if (path.empty()) return;
+
+    // Ensure .wwp extension
+    if (path.size() < 4 || path.substr(path.size() - 4) != ".wwp")
+        path += ".wwp";
 
     std::string json = buildWwpJson(canvas);
     if (saveWwpFile(path, json)) {
@@ -371,10 +368,19 @@ static bool parseBoolAfter(const std::string& s, size_t pos, const char* key)
 
 void TPaintWindow::doOpen()
 {
-    char path[512] = {};
-    if (inputBox("Open Paint File", "~P~ath (.wwp):", path, sizeof(path) - 1) != cmOK)
+    mkdir("paintings", 0755);
+    char fileName[MAXPATH];
+    std::strcpy(fileName, "paintings/*.wwp");
+
+    TFileDialog* dlg = new TFileDialog("paintings/*.wwp", "Open Paint File", "~N~ame", fdOpenButton, 100);
+    if (TProgram::application->execView(dlg) == cmCancel) {
+        TObject::destroy(dlg);
         return;
-    std::string pathStr(path);
+    }
+    dlg->getFileName(fileName);
+    TObject::destroy(dlg);
+
+    std::string pathStr(fileName);
     if (pathStr.empty()) return;
 
     std::ifstream in(pathStr);
@@ -454,23 +460,31 @@ void TPaintWindow::doOpen()
 void TPaintWindow::doExportAnsi()
 {
     if (!canvas) return;
-    char name[256] = {};
-    if (!filePath_.empty()) {
-        size_t slash = filePath_.find_last_of("/\\");
-        std::string fn = (slash == std::string::npos) ? filePath_ : filePath_.substr(slash + 1);
-        if (fn.size() > 4 && fn.substr(fn.size() - 4) == ".wwp")
-            fn = fn.substr(0, fn.size() - 4);
-        std::strncpy(name, fn.c_str(), sizeof(name) - 1);
-    }
-    if (inputBox("Export ANSI", "~N~ame:", name, sizeof(name) - 1) != cmOK)
-        return;
-    std::string nameStr(name);
-    if (nameStr.empty()) return;
-    for (char& c : nameStr)
-        if (!std::isalnum((unsigned char)c) && c != '-' && c != '_' && c != '.') c = '_';
-
     mkdir("paintings", 0755);
-    std::string path = "paintings/" + nameStr + ".ans";
+
+    char fileName[MAXPATH];
+    if (!filePath_.empty()) {
+        // Pre-fill with current name but .ans extension
+        std::string def = filePath_;
+        if (def.size() > 4 && def.substr(def.size() - 4) == ".wwp")
+            def = def.substr(0, def.size() - 4) + ".ans";
+        std::strncpy(fileName, def.c_str(), sizeof(fileName) - 1);
+    } else {
+        std::strcpy(fileName, "paintings/*.ans");
+    }
+
+    TFileDialog* dlg = new TFileDialog("paintings/*.ans", "Export ANSI", "~N~ame", fdOKButton, 100);
+    if (TProgram::application->execView(dlg) == cmCancel) {
+        TObject::destroy(dlg);
+        return;
+    }
+    dlg->getFileName(fileName);
+    TObject::destroy(dlg);
+
+    std::string path(fileName);
+    if (path.empty()) return;
+    if (path.size() < 4 || path.substr(path.size() - 4) != ".ans")
+        path += ".ans";
 
     // Map CGA index to SGR 38;5;N
     auto sgrFg = [](uint8_t c) -> std::string { return "\x1b[38;5;" + std::to_string(c) + "m"; };
