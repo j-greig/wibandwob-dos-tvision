@@ -30,22 +30,39 @@ static TRoomChatWindow* g_roomChatWindow = nullptr;
 TRoomChatWindow* getRoomChatWindow() { return g_roomChatWindow; }
 
 // ── Colours ────────────────────────────────────────────────────────────────
-// Six distinct sender colours. Hashed by sender string → index 0-5.
+// Sender colours — hashed by name so strip and chat always agree.
+// "me" and any name tagged " (me)" share a fixed self-colour so both
+// views stay consistent regardless of the local user's animal name.
+
+static const TColorRGB kSelfColor(120, 220, 140);  // soft green — always self
+static const TColorRGB kBgColor(20, 20, 30);
+static const std::string kMeSuffix(" (me)");
 
 static TColorAttr senderColor(const std::string& sender) {
-    // Simple hash
+    // Self: "me" label in chat, or strip entry tagged with " (me)"
+    if (sender == "me") return TColorAttr(kSelfColor, kBgColor);
+    if (sender.size() >= kMeSuffix.size() &&
+        sender.compare(sender.size() - kMeSuffix.size(),
+                       kMeSuffix.size(), kMeSuffix) == 0)
+        return TColorAttr(kSelfColor, kBgColor);
+
+    // Others: strip " (me)" if present, then hash the base name
+    std::string key = sender;
+    if (key.size() >= kMeSuffix.size() &&
+        key.compare(key.size() - kMeSuffix.size(),
+                    kMeSuffix.size(), kMeSuffix) == 0)
+        key.erase(key.size() - kMeSuffix.size());
+
     int h = 7;
-    for (unsigned char c : sender) h = h * 31 + c;
-    static const TColorRGB palette[6] = {
-        TColorRGB(100, 180, 255),  // soft blue   — human:1
-        TColorRGB(120, 220, 140),  // soft green  — human:2
-        TColorRGB(255, 180,  80),  // amber       — wib
-        TColorRGB(220, 110, 220),  // lavender    — wob
+    for (unsigned char c : key) h = h * 31 + c;
+    static const TColorRGB palette[5] = {
+        TColorRGB(100, 180, 255),  // soft blue
+        TColorRGB(255, 180,  80),  // amber
+        TColorRGB(220, 110, 220),  // lavender
         TColorRGB(100, 220, 210),  // teal
         TColorRGB(255, 140, 120),  // coral
     };
-    TColorRGB bg(20, 20, 30);
-    return TColorAttr(palette[std::abs(h) % 6], bg);
+    return TColorAttr(palette[std::abs(h) % 5], kBgColor);
 }
 
 static TColorAttr textColor() {
