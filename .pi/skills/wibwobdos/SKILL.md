@@ -46,6 +46,58 @@ If there are errors, fix them before proceeding. Most common issues:
 - Frame Z-order: `insertBefore(frame, nullptr)` = append as last/top child (matches TWindow ctor). `insert(frame)` = front = wrong.
 - Frameless windows: if a child view covers 100% of the window, it must include parent chrome commands (Show Frame, Shadow, etc.) in its own right-click menu — otherwise those commands become unreachable.
 
+## Turbo Vision responsive layout
+
+### growMode flags (from tvision/views.h)
+
+| Flag | Meaning |
+|------|---------|
+| `gfGrowLoX` | left edge tracks owner's right (moves right on grow) |
+| `gfGrowHiX` | right edge tracks owner's right |
+| `gfGrowLoY` | top edge tracks owner's bottom (moves down on grow) |
+| `gfGrowHiY` | bottom edge tracks owner's bottom |
+| `gfGrowAll` | all four — full stretch both axes |
+| `gfGrowRel` | proportional rather than absolute delta |
+
+Additive delta model: each flag adds `delta.x`/`delta.y` to the corresponding edge. No flag = edge stays fixed relative to owner's top-left.
+
+### Common layout: 3-col + status bar
+
+| Panel | growMode | Rationale |
+|-------|----------|-----------|
+| tools (left, fixed-width) | `gfGrowHiY` | fixed left/width, stretches down |
+| canvas (centre, stretchy) | `gfGrowHiX \| gfGrowHiY` | left edge fixed, right/bottom track owner |
+| palette (right, fixed-width) | `gfGrowLoX \| gfGrowHiX \| gfGrowHiY` | right-anchored fixed width, stretches down |
+| status (bottom, full-width) | `gfGrowHiX \| gfGrowLoY \| gfGrowHiY` | full width, bottom-anchored, fixed height |
+
+`gfGrowLoX | gfGrowHiX` = both edges track owner's right → constant width, slides right. Correct for right-anchored fixed-width panels.
+
+### Gotcha: partial draw garbage
+
+When `size.y` increases on resize, `draw()` must cover ALL rows up to `size.y`. If you only write fixed rows, garbage from previous content persists below. Fix: always blank-fill remaining rows.
+
+### Better approach: changeBounds() override
+
+For complex layouts, override `changeBounds()` in TWindow and manually compute child bounds:
+
+```cpp
+void MyWindow::changeBounds(const TRect& bounds) {
+    TWindow::changeBounds(bounds);
+    TRect client = getExtent();
+    client.grow(-1, -1);
+    int toolsW = 16, palW = 20;
+    toolPanel->changeBounds(TRect(client.a.x, client.a.y,
+        std::min(client.a.x + toolsW, client.b.x), client.b.y - 1));
+    // ... etc for each child
+}
+```
+
+Requires keeping pointers to child views. More code, guaranteed correct. Use when growMode flags aren't enough.
+
+### Canvas buffer vs view size
+
+Canvas buffer is allocated at construction. On resize, `size` grows but buffer stays fixed. `draw()` must handle `size > buffer` with fill. For true resize, reallocate buffer in `changeBounds()` and copy existing cells.
+
 ## References
 
 - [Cross-platform C++ build guide](references/cross-platform-cpp.md) — Linux deps, transitive include gotchas, CMake linking
