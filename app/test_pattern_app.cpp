@@ -1802,10 +1802,12 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 
             case cmNewPaintCanvas: {
                 TRect d = deskTop->getExtent();
-                int w = std::min(82, d.b.x - d.a.x);
-                int h = std::min(26, d.b.y - d.a.y);
-                int left = d.a.x + (d.b.x - d.a.x - w) / 2;
-                int top  = d.a.y + (d.b.y - d.a.y - h) / 2;
+                int dw = d.b.x - d.a.x;
+                int dh = d.b.y - d.a.y;
+                int w = (int)(dw * 0.9);
+                int h = (int)(dh * 0.9);
+                int left = d.a.x + (dw - w) / 2;
+                int top  = d.a.y + (dh - h) / 2;
                 TRect r(left, top, left + w, top + h);
                 TWindow* pw = createPaintWindow(r);
                 deskTop->insert(pw);
@@ -5064,8 +5066,8 @@ void api_spawn_paint(TTestPatternApp& app, const TRect* bounds) {
         // Fall back to safe defaults if desktop reports invalid size.
         if (dw <= 0) dw = 80;
         if (dh <= 0) dh = 24;
-        int w = std::min(82, dw);
-        int h = std::min(26, dh);
+        int w = std::min((int)(dw * 0.9), dw);
+        int h = std::min((int)(dh * 0.9), dh);
         int left = d.a.x + (dw - w) / 2;
         int top  = d.a.y + (dh - h) / 2;
         r = TRect(left, top, left + w, top + h);
