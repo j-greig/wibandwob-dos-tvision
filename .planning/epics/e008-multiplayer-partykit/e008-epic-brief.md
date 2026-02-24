@@ -1,7 +1,7 @@
 ---
 id: E008
 title: Multiplayer Teleport Rooms (PartyKit)
-status: in-progress
+status: done
 issue: 65
 pr: ~
 depends_on: [E007]
@@ -51,11 +51,11 @@ Two users share a WibWob-DOS room via PartyKit. Side-by-side TUI instances with 
 
 | # | Title | Status | Detail |
 |---|-------|--------|--------|
-| F01 | PartyKit Server | ✅ done | TS Durable Object on `wibwob-rooms.j-greig.partykit.dev`. 12 tests. |
-| F02 | WebSocket Bridge | ✅ done | Python sidecar (`partykit_bridge.py`). Polls IPC 500ms, diffs, pushes/receives deltas. |
-| F03 | State Diffing | ✅ done | `state_diff.py` — `compute_delta`/`apply_delta`, add/remove/update buckets. 26 tests. |
-| F04 | Chat Relay | ✅ done | Bidirectional Scramble ↔ PartyKit. Seq-based dedup. `chat_receive` IPC command. 11 tests. |
-| F05 | Cursor Overlay | ⬜ stretch | Inject JS into ttyd for ghost cursors. Parked — ttyd page structure not stable. |
+| F01 | PartyKit Server | ✅ done | TS Durable Object on `wibwob-rooms.j-greig.partykit.dev`. `onConnect` sends joiner `presence:sync` with full connection list + `self` ID. |
+| F02 | WebSocket Bridge | ✅ done | Python sidecar (`partykit_bridge.py`). Adjective-animal names, ts normalisation, `_INTERNAL_TYPES` guard, poll-heartbeat presence re-push. |
+| F03 | State Diffing | ✅ done | `state_diff.py` — `compute_delta`/`apply_delta`. `room_chat` in `_INTERNAL_TYPES` so it never syncs as a layout window. |
+| F04 | RoomChatView | ✅ done | Dedicated TUI chat widget (`TRoomChatWindow`). 18-col participant strip with adjective-animal names + `(me)` label. Bidirectional relay. Consistent self-colour. #99 |
+| F05 | Cursor Overlay | ⬜ parked | Inject JS into ttyd for ghost cursors. ttyd page structure not stable. |
 | F06 | Room Config | ✅ done | `multiplayer: true` YAML fields. Orchestrator passes env vars. Validation. |
 
 Feature briefs: `f0X-*/f0X-feature-brief.md`
