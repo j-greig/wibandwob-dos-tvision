@@ -1,6 +1,6 @@
 ---
 title: "Spike — FIGlet ASCII Art Text Window"
-status: in-progress
+status: done
 created: 2026-02-23
 related_epic: e011-desktop-shell
 github_issue: "—"
