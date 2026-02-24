@@ -8,3 +8,4 @@
 e005-theme-runtime-wiring — not-started
 e008-multiplayer-partykit — in-progress
 e011-desktop-shell — not-started
+e012-app-modularisation — in-progress
