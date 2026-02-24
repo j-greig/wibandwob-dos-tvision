@@ -1,5 +1,6 @@
 #include "api_ipc.h"
 #include "command_registry.h"
+#include "core/json_utils.h"
 #include "window_type_registry.h"
 
 #ifndef _WIN32
@@ -722,14 +723,7 @@ void ApiIpcServer::poll() {
                     }
                 } else {
                     // Return inline as JSON
-                    std::string escaped;
-                    for (char ch : text) {
-                        if (ch == '\\') escaped += "\\\\";
-                        else if (ch == '"') escaped += "\\\"";
-                        else if (ch == '\n') escaped += "\\n";
-                        else escaped += ch;
-                    }
-                    resp = "{\"text\":\"" + escaped + "\"}\n";
+                    resp = "{\"text\":\"" + json_escape(text) + "\"}\n";
                 }
             }
         }
