@@ -15,6 +15,7 @@ PR: —
 - `task` — `capabilities` response returns bare command names with no descriptions; agents must guess from name alone — add description field to capabilities JSON
 
 ## Completed Items
+- [x] `spike` #100 — rename test_pattern binary/class to wwdos + DRY docs pass (merged 2026-02-24)
 - [x] `fix` #94 — scramble jet-black bg + tall→smol resize fix (merged 2026-02-24)
 - [x] `epic` E014 #92 — inter-instance group chat: `get_chat_history`, broker, TTS voice fallback, 4-pane monitor (merged 2026-02-24)
 - [x] `epic` E012 #93 — app modularisation phase 1: json_utils, ui_helpers, frame_animation_window, paint_wwp_codec extracted (merged 2026-02-24)

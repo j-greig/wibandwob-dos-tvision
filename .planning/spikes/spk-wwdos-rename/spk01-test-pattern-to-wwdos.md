@@ -4,9 +4,8 @@
 
 **status**: done
 **severity**: housekeeping (no functional change intended)
-**depends_on**: E009 (still recommended first; `app/test_pattern_app.cpp` remains a merge hotspot)
-
-> Phase 0 note (2026-02-24): `gh pr list` / `gh issue list` could not be queried from this environment (`error connecting to api.github.com`), so in-flight PR conflict checks could not be confirmed from GitHub during this pass.
+**depends_on**: —
+**PR**: #100 (merged 2026-02-24)
 
 ---
 
