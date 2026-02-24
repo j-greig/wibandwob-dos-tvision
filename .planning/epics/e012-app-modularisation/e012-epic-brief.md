@@ -44,20 +44,20 @@ app/views/      — all view types
 
 ### F01 — Quick Wins
 
-- [ ] S01: Remove duplicate `api_open_animation_path` extern in `command_registry.cpp`
+- [x] S01: Remove duplicate `api_open_animation_path` extern in `command_registry.cpp`
   Test: `grep -c 'api_open_animation_path' app/command_registry.cpp` == 1
-- [ ] S02: Register `inject_command` in capabilities list
+- [x] S02: Register `inject_command` in capabilities list
   Test: `GET /api/capabilities` includes `inject_command`
-- [ ] S03: Centralise `json_escape` — single helper used by all three call sites
+- [x] S03: Centralise `json_escape` — single helper used by all three call sites
   Test: one definition, no `jsonEscape` or inline escape loops remaining
-- [ ] S04: `makeStringCollection()` helper replaces three duplicate vector→TStringCollection sites
+- [x] S04: `makeStringCollection()` helper replaces three duplicate vector→TStringCollection sites
   Test: helper exists; `figlet_text_view`, `figlet_stamp_dialog`, workspace manager all use it
 
 ### F02 — Medium Refactors
 
-- [ ] S05: Extract `TFrameAnimationWindow` → `app/windows/frame_animation_window.cpp/h`
+- [x] S05: Extract `TFrameAnimationWindow` → `app/windows/frame_animation_window.cpp/h`
   Test: compiles, all ctests pass
-- [ ] S06: Extract `.wwp` codec → `app/paint/paint_wwp_codec.cpp/h` (shared by UI + API)
+- [x] S06: Extract `.wwp` codec → `app/paint/paint_wwp_codec.cpp/h` (shared by UI + API)
   Test: paint save/load round-trip passes; `buildWwpJson` / `parseWwp` no longer duplicated
 - [ ] S07: Binary rename — CMake target + launcher scripts (`test_pattern` → `wwdos`)
   Test: `cmake --build build` produces `build/wwdos`; `scripts/dev-start.sh` launches correctly
@@ -127,3 +127,37 @@ are deferred to E013 — blast radius (445 hits) is smaller after E012 slims the
 
 All Phase 1/2 extractions are additive moves — original logic unchanged, just relocated.
 Revert any story commit to restore prior state.
+
+## Running Notes
+
+- [S01] `command_registry.cpp` had one exact duplicate extern for the 6-arg `api_open_animation_path`; removed it and left both distinct overload declarations intact.
+- [S02] `inject_command` existed in the registry executor but was missing from the capabilities vector; added it with `requires_path=true` per `cmd` param usage.
+- [S03] Shared JSON escaping now lives in `app/core/json_utils.h` and is used by `command_registry`, `api_ipc`, and `test_pattern_app` (member `jsonEscape` removed).
+- [S04] Added `app/ui/ui_helpers.h::makeStringCollection()` and replaced the three duplicate list-population sites (dialog, view picker, workspace manager).
+- [S05] Extracted the embedded `TFrameAnimationWindow` into `app/windows/` and kept the context-menu command IDs local to preserve behavior without adding shared globals.
+- [S06] Pulled `.wwp` JSON serialise/parse helpers into `app/paint/paint_wwp_codec.*` and replaced all three duplicate implementations (paint window save/open + API load/spawn path).
+- [build] `test_pattern` target builds clean on macOS. `paint_tui` linker failure (missing figlet symbols) is pre-existing, not caused by E012.
+- [worktree] vendor/tvision, vendor/tvterm, vendor/MicropolisCore symlinked from main worktree for build — do not commit symlinks; document in PR.
+
+## Closeout Checklist (Pi to run after all stories land)
+
+These gates must pass before E012 PR is opened.
+
+- [ ] **Skill update** — update `.pi/skills/wibwobdos/SKILL.md` to reflect new module layout:
+  `app/core/`, `app/ui/`, `app/windows/`, `app/paint/paint_wwp_codec.*`
+  Any skill references to embedded `TFrameAnimationWindow` or inline `.wwp` codec must be corrected.
+
+- [ ] **Live smoke test** — start the app in this worktree (via `ww-build-test` skill or Docker),
+  run a representative sweep of IPC commands covering every changed surface:
+  - `GET /api/capabilities` — verify `inject_command` present
+  - `POST open_animation_path` — verify `TFrameAnimationWindow` spawns correctly
+  - `POST paint_save` + `POST paint_load` — verify `.wwp` round-trip via new codec
+  - `POST paint_stamp_figlet`, `POST figlet_set_font` — verify `makeStringCollection` sites work
+
+- [ ] **TUI screenshot** — capture a text snapshot of the running TUI to confirm visual parity:
+  Use `screenshot` skill or `POST /api/screenshot` → save output to
+  `.planning/epics/e012-app-modularisation/e012-screenshot-evidence.txt`
+
+- [ ] **ctests pass** — `ctest --test-dir build --output-on-failure`
+
+- [ ] **PR opened** — update `pr:` field in this brief frontmatter once PR is raised
