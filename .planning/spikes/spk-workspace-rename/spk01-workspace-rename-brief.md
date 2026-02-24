@@ -1,6 +1,6 @@
 # SPK01 — Workspace Rename / Save-As
 
-Status: in-progress  
+Status: done  
 GitHub issue: —  
 PR: —
 
