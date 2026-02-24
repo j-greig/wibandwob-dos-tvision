@@ -59,19 +59,34 @@ app/views/      — all view types
   Test: compiles, all ctests pass
 - [ ] S06: Extract `.wwp` codec → `app/paint/paint_wwp_codec.cpp/h` (shared by UI + API)
   Test: paint save/load round-trip passes; `buildWwpJson` / `parseWwp` no longer duplicated
-- [ ] S07: Split workspace code (lines 274–369, 3301–4464) → `app/workspace/`
+- [ ] S07: Binary rename — CMake target + launcher scripts (`test_pattern` → `wwdos`)
+  Test: `cmake --build build` produces `build/wwdos`; `scripts/dev-start.sh` launches correctly
+- [ ] S08: Socket path rename (`/tmp/test_pattern_app.sock` → `/tmp/wwdos.sock`) with legacy fallback
+  Test: IPC connects on new path; old path still accepted for one transition cycle
+- [ ] S09: Split workspace code (lines 274–369, 3301–4464) → `app/workspace/`
   Test: workspace save/load/manage works end-to-end; ctests pass
-- [ ] S08: Route `api_ipc` paint handlers through registry — remove dual-dispatch
+- [ ] S10: Route `api_ipc` paint handlers through registry — remove dual-dispatch
   Test: paint commands work via both IPC and registry; no duplicate handler code
-- [ ] S09: Extract window chrome context menu → shared `ChromeContextMenu` helper
+- [ ] S11: Extract window chrome context menu → shared `ChromeContextMenu` helper
   Test: `TFrameAnimationWindow` + `TFigletTextWindow` use shared helper; visual parity
 
 ### F03 — Major Refactors (later phase)
 
-- [ ] S10: Slim `TTestPatternApp` to orchestration-only
-- [ ] S11: Unify IPC protocol (JSON req/resp, single dispatch path)
-- [ ] S12: Registry-driven workspace serialisation (each window type registers save/restore)
-- [ ] S13: Restructure `app/` into subdirs + CMake internal libraries
+- [ ] S12: Slim `TTestPatternApp` to orchestration-only
+- [ ] S13: Unify IPC protocol (JSON req/resp, single dispatch path)
+- [ ] S14: Registry-driven workspace serialisation (each window type registers save/restore)
+- [ ] S15: Restructure `app/` into subdirs + CMake internal libraries
+
+### E013 — Rename (post-E012, separate epic)
+
+Phases 3–5 of the rename spike are deferred. See spike for full blast-radius analysis.
+Spike: `.planning/spikes/spk-wwdos-rename/spk01-test-pattern-to-wwdos.md`
+
+- [ ] Class rename `TTestPatternApp` → `TWwdosApp` (445 hits across 15 files)
+- [ ] Source file rename `test_pattern_app.cpp` → `wwdos_app.cpp` (30 refs / 18 files)
+- [ ] Docs/skills/planning sweep (24 files)
+
+Trigger: open E013 issue immediately after E012 merges to main.
 
 ## Acceptance Criteria
 
@@ -83,8 +98,10 @@ app/views/      — all view types
 | AC-4 | `makeStringCollection()` helper used everywhere | Three old sites removed |
 | AC-5 | `TFrameAnimationWindow` in `app/windows/` | Compiles + ctests pass |
 | AC-6 | `.wwp` codec in `app/paint/paint_wwp_codec.*` | Round-trip test passes |
-| AC-7 | Workspace code in `app/workspace/` | Save/load/manage works |
-| AC-8 | Dual-dispatch eliminated from `api_ipc` | No paint handler duplication |
+| AC-7 | Binary renamed to `wwdos` | `build/wwdos` exists; launchers updated |
+| AC-8 | Socket path updated to `/tmp/wwdos.sock` | IPC connects; legacy fallback present |
+| AC-9 | Workspace code in `app/workspace/` | Save/load/manage works |
+| AC-10 | Dual-dispatch eliminated from `api_ipc` | No paint handler duplication |
 
 ## Risks
 
@@ -93,12 +110,18 @@ app/views/      — all view types
 | 70 friend declarations make extraction hard | Extract incrementally; keep friends until class is slim enough to remove them |
 | CMakeLists.txt breakage mid-refactor | Each extraction commits in isolation with passing build |
 | Workspace codec regression | Keep old code until new codec is verified by round-trip test |
+| S07/S08 rename breaks launchers/IPC | Legacy socket fallback required; verify all launcher scripts in same commit |
 
 ## Sequencing
 
 Phase 1 (Quick Wins — F01): S01→S02→S03→S04 — independent, each a single commit
-Phase 2 (Medium — F02): S05→S06→S07→S08→S09 — one story per PR slice
-Phase 3 (Major — F03): S10→S11→S12→S13 — after Phase 2 is done
+Phase 2 (Medium — F02): S05→S06→S07→S08→S09→S10→S11 — one story per PR slice
+  S07/S08 are rename spike Phases 1–2 (binary + socket); safe here as CMakeLists.txt and
+  api_ipc.cpp are already touched by S05/S06. See spike: `.planning/spikes/spk-wwdos-rename/spk01-test-pattern-to-wwdos.md`
+Phase 3 (Major — F03): S12→S13→S14→S15 (renumbered) — after Phase 2 is done
+
+Note: rename spike Phases 3–5 (class rename TTestPatternApp→TWwdosApp, file rename, docs sweep)
+are deferred to E013 — blast radius (445 hits) is smaller after E012 slims the god-object.
 
 ## Rollback
 
