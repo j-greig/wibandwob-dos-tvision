@@ -172,6 +172,7 @@ const ushort cmOpenAnimation = 109;
 const ushort cmSaveWorkspace = 110;
 const ushort cmNewMechs = 111;
 const ushort cmOpenWorkspace = 115;
+const ushort cmSaveWorkspaceAs = 120;
 const ushort cmRecentWorkspace = 275;  // 275..279
 // Future File commands
 const ushort cmOpenAnsiArt = 112;
@@ -909,6 +910,7 @@ private:
     void setPatternMode(bool continuous);
     void showApiKeyDialog();
     void saveWorkspace();
+    void saveWorkspaceAs();
     bool saveWorkspacePath(const std::string& path);
     TRect calculateWindowBounds(const std::string& filePath);
     std::string buildWorkspaceJson();
@@ -939,6 +941,7 @@ private:
     // Runtime API key (shared across all chat windows)
     static std::string runtimeApiKey;
     std::vector<std::string> recentWorkspaces_;
+    std::string currentWorkspacePath_;  // path of last loaded/saved workspace
     friend std::string getAppRuntimeApiKey();
 
     // Kaomoji mood helper
@@ -1242,6 +1245,10 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 break;
             case cmSaveWorkspace:
                 saveWorkspace();
+                clearEvent(event);
+                break;
+            case cmSaveWorkspaceAs:
+                saveWorkspaceAs();
                 clearEvent(event);
                 break;
             case cmPatternContinuous:
@@ -2622,6 +2629,7 @@ TMenuBar* TTestPatternApp::initMenuBar(TRect r)
             *new TMenuItem("Open Mo~n~odraw...", cmOpenMonodraw, kbNoKey) +
             newLine() +
             *new TMenuItem("~S~ave Workspace", cmSaveWorkspace, kbCtrlS) +
+            *new TMenuItem("Save Workspace ~A~s...", cmSaveWorkspaceAs, kbNoKey) +
             *new TMenuItem("Open ~W~orkspace...", cmOpenWorkspace, kbNoKey) +
             *recentSubmenu +
             newLine() +
@@ -3739,6 +3747,7 @@ bool TTestPatternApp::loadWorkspaceFromFile(const std::string& path)
     if (fpos != std::string::npos) { size_t pos = data.find(':', fpos); if (pos != std::string::npos) { ++pos; parseNumber(data, pos, focusedIdx); } }
     if (focusedIdx >= 0 && focusedIdx < (int)created.size()) created[focusedIdx]->select();
 
+    currentWorkspacePath_ = path;
     return true;
 }
 
@@ -4009,7 +4018,56 @@ void TTestPatternApp::saveWorkspace()
     }
     std::string ok = std::string("Workspace saved to ") + path + "\nSnapshot: " + snapPath;
     recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
+    currentWorkspacePath_ = path;
     messageBox(ok.c_str(), mfInformation | mfOKButton);
+}
+
+void TTestPatternApp::saveWorkspaceAs()
+{
+    // Pre-fill with current workspace name (filename without path/extension)
+    std::string defaultName;
+    if (!currentWorkspacePath_.empty()) {
+        size_t slash = currentWorkspacePath_.find_last_of("/\\");
+        defaultName = (slash == std::string::npos) ? currentWorkspacePath_
+                                                    : currentWorkspacePath_.substr(slash + 1);
+        // Strip .json extension
+        if (defaultName.size() > 5 && defaultName.substr(defaultName.size() - 5) == ".json")
+            defaultName = defaultName.substr(0, defaultName.size() - 5);
+    }
+
+    char name[256] = {};
+    if (!defaultName.empty())
+        std::strncpy(name, defaultName.c_str(), sizeof(name) - 1);
+
+    if (inputBox("Save Workspace As", "~N~ame:", name, sizeof(name) - 1) != cmOK)
+        return;
+
+    std::string nameStr(name);
+    if (nameStr.empty()) return;
+
+    // Sanitise: replace non-alphanumeric (except - _ .) with _
+    for (char& c : nameStr) {
+        if (!std::isalnum(c) && c != '-' && c != '_' && c != '.')
+            c = '_';
+    }
+
+    mkdir("workspaces", 0755);
+    std::string savePath = "workspaces/" + nameStr + ".json";
+
+    // Check for overwrite
+    struct stat st;
+    if (stat(savePath.c_str(), &st) == 0) {
+        std::string msg = nameStr + ".json already exists. Overwrite?";
+        if (messageBox(msg.c_str(), mfConfirmation | mfYesButton | mfNoButton) != cmYes)
+            return;
+    }
+
+    if (saveWorkspacePath(savePath)) {
+        currentWorkspacePath_ = savePath;
+        recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
+        std::string ok = "Workspace saved as: " + nameStr;
+        messageBox(ok.c_str(), mfInformation | mfOKButton);
+    }
 }
 
 bool TTestPatternApp::saveWorkspacePath(const std::string& path)
