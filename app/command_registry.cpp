@@ -35,6 +35,10 @@ extern std::string api_desktop_texture(TTestPatternApp& app, const std::string& 
 extern std::string api_desktop_color(TTestPatternApp& app, int fg, int bg);
 extern std::string api_desktop_gallery(TTestPatternApp& app, bool on);
 extern std::string api_desktop_get(TTestPatternApp& app);
+extern std::string api_figlet_set_text(TTestPatternApp& app, const std::string& id, const std::string& text);
+extern std::string api_figlet_set_font(TTestPatternApp& app, const std::string& id, const std::string& font);
+extern std::string api_figlet_set_color(TTestPatternApp& app, const std::string& id, const std::string& fg, const std::string& bg);
+extern std::string api_figlet_list_fonts();
 extern void api_open_animation_path(TTestPatternApp& app, const std::string& path, const TRect* bounds, bool frameless, bool shadowless, const std::string& title);
 extern void api_spawn_paint(TTestPatternApp& app, const TRect* bounds);
 extern void api_spawn_micropolis_ascii(TTestPatternApp& app, const TRect* bounds);
@@ -103,6 +107,10 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"desktop_color", "Set desktop fg/bg colour 0-15 (fg, bg params)", true},
         {"desktop_gallery", "Toggle gallery mode — hide menu/status bar (on param: true/false)", true},
         {"desktop_get", "Get current desktop state (texture, colour, gallery, preset)", false},
+        {"figlet_set_text", "Change text in a figlet window (id, text params)", true},
+        {"figlet_set_font", "Change font in a figlet window (id, font params)", true},
+        {"figlet_set_color", "Set figlet window colours (id, fg, bg params — hex RGB e.g. #FF00FF)", true},
+        {"figlet_list_fonts", "List available figlet font names", false},
     };
     return capabilities;
 }
@@ -404,6 +412,32 @@ std::string exec_registry_command(
     }
     if (name == "desktop_get") {
         return api_desktop_get(app);
+    }
+    if (name == "figlet_set_text") {
+        auto id_it = kv.find("id");
+        auto text_it = kv.find("text");
+        if (id_it == kv.end()) return "err missing id";
+        if (text_it == kv.end()) return "err missing text";
+        return api_figlet_set_text(app, id_it->second, text_it->second);
+    }
+    if (name == "figlet_set_font") {
+        auto id_it = kv.find("id");
+        auto font_it = kv.find("font");
+        if (id_it == kv.end()) return "err missing id";
+        if (font_it == kv.end()) return "err missing font";
+        return api_figlet_set_font(app, id_it->second, font_it->second);
+    }
+    if (name == "figlet_set_color") {
+        auto id_it = kv.find("id");
+        auto fg_it = kv.find("fg");
+        auto bg_it = kv.find("bg");
+        if (id_it == kv.end()) return "err missing id";
+        return api_figlet_set_color(app, id_it->second,
+            (fg_it != kv.end()) ? fg_it->second : "",
+            (bg_it != kv.end()) ? bg_it->second : "");
+    }
+    if (name == "figlet_list_fonts") {
+        return api_figlet_list_fonts();
     }
     return "err unknown command";
 }

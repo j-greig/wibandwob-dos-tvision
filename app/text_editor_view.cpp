@@ -9,6 +9,7 @@
 
 #include "text_editor_view.h"
 #include "text_wrap.h"
+#include "figlet_utils.h"
 
 #define Uses_TWindow
 #define Uses_TFrame
@@ -482,28 +483,7 @@ void TTextEditorView::changeBounds(const TRect& b)
 
 std::string TTextEditorView::runFiglet(const std::string& text, const std::string& font, int width)
 {
-    std::string escapedText = text;
-    size_t pos = 0;
-    while ((pos = escapedText.find("\"", pos)) != std::string::npos) {
-        escapedText.replace(pos, 1, "\\\"");
-        pos += 2;
-    }
-
-    std::string fontDir = "/usr/local/Cellar/figlet/2.2.5/share/figlet/fonts";
-    std::string cmd = "figlet -d \"" + fontDir + "\" -f \"" + font + "\"";
-    if (width > 0)
-        cmd += " -w " + std::to_string(width);
-    cmd += " \"" + escapedText + "\" </dev/null 2>/dev/null";
-
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return {};
-
-    std::string output;
-    char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe))
-        output += buffer;
-    pclose(pipe);
-    return output;
+    return figlet::render(text, font, width);
 }
 
 void TTextEditorView::sendFigletText(const std::string& text, const std::string& font, int width, const std::string& mode)

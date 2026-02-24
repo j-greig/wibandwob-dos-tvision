@@ -123,6 +123,7 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 #include <map>
 #include <deque>
 #include <dirent.h>
+#include <algorithm>
 // Local API IPC bridge (Unix domain socket)
 #include "api_ipc.h"
 #include "command_registry.h"
@@ -171,6 +172,7 @@ const ushort cmOpenAnimation = 109;
 const ushort cmSaveWorkspace = 110;
 const ushort cmNewMechs = 111;
 const ushort cmOpenWorkspace = 115;
+const ushort cmRecentWorkspace = 275;  // 275..279
 // Future File commands
 const ushort cmOpenAnsiArt = 112;
 const ushort cmNewPaintCanvas = 113;
@@ -263,6 +265,102 @@ const ushort cmCtxGalleryToggle = 253;
 // Desktop right-click preset commands
 const ushort cmDeskPresetBase = 260;  // 260..268 for up to 9 presets
 const ushort cmDeskGallery = 270;
+static const int kMaxRecentWorkspaces = 5;
+
+struct RecentWorkspaceInfo {
+    std::string path;
+    std::string fileName;
+    time_t mtime;
+};
+
+static std::vector<std::string> scanRecentWorkspacePaths(const char* dirPath, int maxCount)
+{
+    std::vector<RecentWorkspaceInfo> entries;
+    DIR* dir = opendir(dirPath);
+    if (!dir)
+        return {};
+
+    struct dirent* ent;
+    while ((ent = readdir(dir)) != nullptr) {
+        const char* name = ent->d_name;
+        if (!name || name[0] == '.')
+            continue;
+        size_t len = std::strlen(name);
+        if (len < 6 || std::strcmp(name + len - 5, ".json") != 0)
+            continue;
+
+        std::string path = std::string(dirPath) + "/" + name;
+        struct stat st;
+        if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+            continue;
+
+        entries.push_back({path, name, st.st_mtime});
+    }
+    closedir(dir);
+
+    std::sort(entries.begin(), entries.end(),
+              [](const RecentWorkspaceInfo& a, const RecentWorkspaceInfo& b) {
+                  if (a.mtime != b.mtime)
+                      return a.mtime > b.mtime;
+                  return a.fileName < b.fileName;
+              });
+
+    if ((int)entries.size() > maxCount)
+        entries.resize(maxCount);
+
+    std::vector<std::string> out;
+    out.reserve(entries.size());
+    for (const auto& e : entries)
+        out.push_back(e.path);
+    return out;
+}
+
+static int countWindowsInWorkspace(const std::string& path)
+{
+    FILE* f = fopen(path.c_str(), "r");
+    if (!f) return -1;
+    // Quick count: find "windows" array, count occurrences of "\"type\""
+    std::string content;
+    char buf[4096];
+    while (size_t n = fread(buf, 1, sizeof(buf), f))
+        content.append(buf, n);
+    fclose(f);
+    int count = 0;
+    size_t pos = content.find("\"windows\"");
+    if (pos == std::string::npos) return 0;
+    while ((pos = content.find("\"type\"", pos + 1)) != std::string::npos)
+        ++count;
+    return count;
+}
+
+static std::string recentWorkspaceLabel(const std::string& path)
+{
+    size_t slash = path.find_last_of("/\\");
+    std::string name = (slash == std::string::npos) ? path : path.substr(slash + 1);
+    int n = countWindowsInWorkspace(path);
+    if (n > 0)
+        name += " (" + std::to_string(n) + ")";
+    return name;
+}
+
+static TMenuItem* buildRecentWorkspacesSubmenuItem()
+{
+    std::vector<std::string> recents = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
+    TMenuItem* items = nullptr;
+    if (recents.empty()) {
+        items = new TMenuItem("(none)", 0, kbNoKey);
+    } else {
+        for (int i = (int)recents.size() - 1; i >= 0; --i) {
+            std::string label = recentWorkspaceLabel(recents[i]);
+            char* labelStr = new char[label.size() + 1];
+            std::strcpy(labelStr, label.c_str());
+            items = new TMenuItem(labelStr,
+                                  cmRecentWorkspace + i,
+                                  kbNoKey, hcNoContext, nullptr, items);
+        }
+    }
+    return new TMenuItem("~R~ecent >", kbNoKey, new TMenu(*items), hcNoContext, nullptr);
+}
 
 // Forward declarations
 class TTestPatternView;
@@ -838,6 +936,7 @@ private:
 
     // Runtime API key (shared across all chat windows)
     static std::string runtimeApiKey;
+    std::vector<std::string> recentWorkspaces_;
     friend std::string getAppRuntimeApiKey();
 
     // Kaomoji mood helper
@@ -1026,6 +1125,8 @@ TTestPatternApp::TTestPatternApp() :
     scrambleWindow(nullptr),
     scrambleState(sdsHidden)
 {
+    recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
+
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
 
@@ -1079,6 +1180,13 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 if (!fname.empty())
                     fw->getFigletView()->setFont(fname);
             }
+            clearEvent(event);
+            return;
+        }
+        if (cmd >= cmRecentWorkspace && cmd < cmRecentWorkspace + kMaxRecentWorkspaces) {
+            int idx = cmd - cmRecentWorkspace;
+            if (idx >= 0 && idx < (int)recentWorkspaces_.size())
+                loadWorkspaceFromFile(recentWorkspaces_[idx]);
             clearEvent(event);
             return;
         }
@@ -2495,6 +2603,7 @@ static TMenuItem& buildFigletFontSubMenu() {
 TMenuBar* TTestPatternApp::initMenuBar(TRect r)
 {
     r.b.y = r.a.y + 1;
+    TMenuItem* recentSubmenu = buildRecentWorkspacesSubmenuItem();
     
     return new TCustomMenuBar(r,
         *new TSubMenu("~F~ile", kbAltF) +
@@ -2512,6 +2621,7 @@ TMenuBar* TTestPatternApp::initMenuBar(TRect r)
             newLine() +
             *new TMenuItem("~S~ave Workspace", cmSaveWorkspace, kbCtrlS) +
             *new TMenuItem("Open ~W~orkspace...", cmOpenWorkspace, kbNoKey) +
+            *recentSubmenu +
             newLine() +
             *new TMenuItem("E~x~it", cmQuit, cmQuit, hcNoContext, "Alt-X") +
         *new TSubMenu("~E~dit", kbAltE) +
@@ -3896,6 +4006,7 @@ void TTestPatternApp::saveWorkspace()
         snap.close();
     }
     std::string ok = std::string("Workspace saved to ") + path + "\nSnapshot: " + snapPath;
+    recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
     messageBox(ok.c_str(), mfInformation | mfOKButton);
 }
 
@@ -3917,6 +4028,8 @@ bool TTestPatternApp::saveWorkspacePath(const std::string& path)
 
     std::remove(path.c_str()); // ignore errors
     bool ok = (std::rename(tmpPath.c_str(), path.c_str()) == 0);
+    if (ok)
+        recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
     fprintf(stderr, "[workspace] save path=%s ok=%s\n", path.c_str(), ok ? "true" : "false");
     return ok;
 }

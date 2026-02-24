@@ -21,11 +21,11 @@ inline const std::vector<DesktopPreset>& getDesktopPresets() {
     static const std::vector<DesktopPreset> presets = {
         {"default",       '\xB1', 7,  1,  false, 0, 0},            // ▒ light grey on blue (classic TV)
         {"jet_black",     ' ',    0,  0,  true,  0x000000, 0x000000}, // true black RGB
-        {"dark_grey",     ' ',    8,  0,  false, 0, 0},             // CGA dark grey on black
-        {"terminal",      '\xB0', 8,  0,  false, 0, 0},            // ░ dark grey on black (CRT)
-        {"cga_cyan",      '\xB1', 15, 3,  false, 0, 0},            // ▒ white on cyan
-        {"cga_green",     '\xB0', 10, 0,  false, 0, 0},            // ░ bright green on black (phosphor)
-        {"noise",         '%',    8,  0,  false, 0, 0},             // grungy
+        {"dark_grey",     ' ',    8,  0,  true,  0x555555, 0x333333}, // dark grey
+        {"terminal",      '\xB0', 8,  0,  true,  0x555555, 0x000000}, // ░ dark grey on black (CRT)
+        {"cga_cyan",      '\xB1', 15, 3,  true,  0xFFFFFF, 0x00AAAA}, // ▒ white on CGA cyan
+        {"cga_green",     '\xB0', 10, 0,  true,  0x55FF55, 0x000000}, // ░ CGA bright green on black
+        {"noise",         '%',    8,  0,  true,  0x555555, 0x000000}, // grungy
         {"white_paper",   ' ',    15, 15, true,  0xFFFFFF, 0xFFFFFF}, // true white RGB
         {"gallery_wall",  ' ',    0,  0,  true,  0x000000, 0x000000}, // true black — gallery mode
     };
@@ -43,6 +43,7 @@ public:
     std::string getPresetName() const;
 
     virtual void draw() override;
+    virtual void handleEvent(TEvent& event) override;
 
     uchar getFg() const { return fgColor; }
     uchar getBg() const { return bgColor; }
