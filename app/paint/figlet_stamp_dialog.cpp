@@ -4,6 +4,7 @@
 
 #include "figlet_stamp_dialog.h"
 #include "../figlet_utils.h"
+#include "../ui/ui_helpers.h"
 
 #define Uses_TEvent
 #define Uses_TKeys
@@ -102,9 +103,7 @@ TFigletStampDialog::TFigletStampDialog(const std::string& initialText,
 
     // Populate font list
     const auto& fonts = figlet::allFontsSorted();
-    fontNames_ = new TStringCollection((short)fonts.size(), 1);
-    for (size_t i = 0; i < fonts.size(); i++)
-        fontNames_->insert(newStr(fonts[i].c_str()));
+    fontNames_ = makeStringCollection(fonts);
     fontList_->newList(fontNames_);
 
     // Select initial font

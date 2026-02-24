@@ -1,5 +1,6 @@
 #include "figlet_text_view.h"
 #include "figlet_utils.h"
+#include "ui/ui_helpers.h"
 
 #define Uses_TProgram
 #define Uses_TDeskTop
@@ -267,9 +268,7 @@ void TFigletTextView::showFontListDialog() {
     dlg->insert(lb);
 
     // Populate with a string collection
-    TStringCollection* col = new TStringCollection((short)fonts.size(), 1);
-    for (const auto& f : fonts)
-        col->insert(newStr(f.c_str()));
+    TStringCollection* col = makeStringCollection(fonts);
     lb->newList(col);
     lb->focusItem(currentIdx);
 

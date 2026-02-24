@@ -59,6 +59,22 @@ docker compose exec substrate bash -c 'curl -sf $WIBWOBDOS_URL/health'
 docker compose logs wibwobdos         # startup log
 ```
 
+## Module layout (post-E012)
+
+`test_pattern_app.cpp` is being progressively extracted. New shared modules — include these
+instead of adding code back into the god-object:
+
+| Path | Contents |
+|---|---|
+| `app/core/json_utils.h` | `inline json_escape(s)` — use everywhere, do not re-implement |
+| `app/ui/ui_helpers.h` | `makeStringCollection(vector<string>)` — builds `TStringCollection*` |
+| `app/windows/frame_animation_window.h/.cpp` | `TFrameAnimationWindow` — extracted from `test_pattern_app.cpp` |
+| `app/paint/paint_wwp_codec.h/.cpp` | `.wwp` JSON codec: `buildWwpJson`, `saveWwpFile`, `loadWwpFromString` |
+| `app/paint/` | Paint canvas, tools, palette, status — already well-organised |
+
+**Known pre-existing build issue:** `paint_tui` target fails to link (missing figlet symbols).
+This predates E012. Build `test_pattern` target only — it is the main binary.
+
 ## C++ edit rules
 
 **Always build after editing C++ files.** Do not report success without a clean build.
@@ -68,6 +84,16 @@ cmake --build ./build --target test_pattern 2>&1 | tail -5
 ```
 
 If there are errors, fix them before proceeding. Most common issues:
+- **`Uses_*` macros in new headers** — any new `.h` that includes `<tvision/tv.h>` MUST define
+  the relevant `Uses_T*` macros immediately before that include, e.g.:
+  ```cpp
+  #define Uses_TWindow
+  #define Uses_TRect
+  #define Uses_TStringCollection
+  #include <tvision/tv.h>
+  ```
+  Forgetting these causes "unknown type name" / "out-of-line definition does not match" errors.
+  `Uses_TWindowInit` is not a valid macro — it comes for free with `Uses_TWindow`.
 - Wrong `TMenuItem` constructor overload (submenu vs command)
 - `TGroup::current` is a member, not a method
 - Never forward-declare tvision types inside your own namespace
