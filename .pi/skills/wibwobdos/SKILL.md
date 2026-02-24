@@ -31,6 +31,21 @@ docker compose exec substrate bash -c 'curl -sf $WIBWOBDOS_URL/health'
 docker compose logs wibwobdos         # startup log
 ```
 
+## C++ edit rules
+
+**Always build after editing C++ files.** Do not report success without a clean build.
+
+```bash
+cmake --build ./build --target test_pattern 2>&1 | tail -5
+```
+
+If there are errors, fix them before proceeding. Most common issues:
+- Wrong `TMenuItem` constructor overload (submenu vs command)
+- `TGroup::current` is a member, not a method
+- Never forward-declare tvision types inside your own namespace
+- Frame Z-order: `insertBefore(frame, nullptr)` = append as last/top child (matches TWindow ctor). `insert(frame)` = front = wrong.
+- Frameless windows: if a child view covers 100% of the window, it must include parent chrome commands (Show Frame, Shadow, etc.) in its own right-click menu — otherwise those commands become unreachable.
+
 ## References
 
 - [Cross-platform C++ build guide](references/cross-platform-cpp.md) — Linux deps, transitive include gotchas, CMake linking
