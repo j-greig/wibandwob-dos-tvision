@@ -1,7 +1,7 @@
 ---
 id: E008-F04
 title: RoomChatView — multi-user room chat
-status: in-progress
+status: done
 github_issue: 99
 pr: —
 parent_epic: E008
@@ -9,119 +9,61 @@ parent_epic: E008
 
 # E008 F04: RoomChatView
 
-## What this is
+## TL;DR
 
-A dedicated chat widget inside WibWob-DOS for people sharing a PartyKit room.
-
-Two humans teleport into the same WibWob-DOS instance via a browser URL.
-They can see each other's windows open and move in real time.
-They need a place to talk. That's this.
-
-Later: one or two AI agents (Wib, Wob) can join the same chat as named participants.
-No special code needed for that — agents just send messages with a different sender label.
+Two humans share a PartyKit room via a WibWob-DOS bridge and can chat in a
+dedicated TUI widget. Participants get memorable adjective-animal names.
+AI agents can join as named participants with zero extra code.
 
 ---
 
-## What it looks like
+## What shipped
 
-```
-┌─ Room: wibwob-shared ──────────────────────────────────────────┐
-│ ● human:1      │ [14:12] human:1  hello                       │
-│ ● human:2      │ [14:12] human:2  hi! can you see my windows? │
-│                │ [14:13] human:1  yes — paint window appeared  │
-│ 2 in room      ├────────────────────────────────────────────── │
-│                │ > _                                           │
-└────────────────┴──────────────────────────────────────────────┘
-```
+### C++ (`app/room_chat_view.h` / `.cpp`)
+- `TRoomParticipantStrip` — 18-col left panel, shows `• eerie-gnu (me)` / `• fast-tern`, count
+- `TRoomMessageView` — TScroller right panel, colour-coded sender headers
+- `TRoomInputLine` — bottom input, Enter to send
+- `TRoomChatWindow` — owns all three, static global `g_roomChatWindow`
+- `normaliseMsgTs()` — converts epoch-ms ts to `HH:MM` at the IPC boundary
+- `senderColor()` — `"me"` and `"name (me)"` → fixed soft-green; others → hash palette
 
-- **Left strip** (~16 cols): who's in the room, presence dot, count
-- **Right body**: scrolling message log, newest at bottom
-- **Bottom input**: single line, Enter to send
-- **Sender colours**: each participant gets a consistent colour (hash of sender string → TV palette index 1–6)
+### IPC / API
+- Commands: `cmRoomChat=182`, `cmRoomChatReceive=183`, `cmRoomChatSend=184`, `cmRoomPresence=185`
+- `TTestPatternApp::handleEvent` catches `cmRoomPresence` + `cmRoomChatReceive` at app level
+  (delivers even when window is not the focused command target)
+- `api_get_state` emits `"type"` field via `dynamic_cast` so state diff can identify window types
 
----
+### State sync hardening (`tools/room/state_diff.py`)
+- `room_chat` added to `_INTERNAL_TYPES` — never synced as a layout window across instances
+- `apply_delta_to_ipc` skips create for internal types
+- Bridge `state_sync` handler uses `windows_from_state()` for filtering
 
-## Participants
+### Bridge (`tools/room/partykit_bridge.py`)
+- Routes `chat_msg` → `room_chat_receive` IPC, `presence` → `room_presence` IPC
+- `_normalise_ts()` converts epoch-ms ts to `HH:MM` before IPC delivery
+- `_name_for_conn()` maps PartyKit UUID → `adjective-animal` (deterministic MD5 hash)
+- `_display_name()` appends `" (me)"` for self entry in strip
+- `push_chat` sends `ts: HH:MM` so server doesn't need `Date.now()` fallback
+- `presence: sync` handler stores `_self_conn_id` + populates `_participants` from full list
+- Outbound sender = `_name_for_conn(_self_conn_id)` — matches strip label
+- Poll heartbeat re-pushes participants every 5s so strip catches up if window opened late
 
-| Sender string | Who |
-|---|---|
-| `human:1` | visitor on instance 1 |
-| `human:2` | visitor on instance 2 |
-| `wib` | Wib AI agent (future) |
-| `wob` | Wob AI agent (future) |
-| `system` | room join/leave notices |
-
-When agents join later: the bridge sends `chat_msg` with `sender: "wib"`.
-The view renders it in a different colour. No code change needed.
-
----
-
-## How it works
-
-```
-human types → RoomChatView input → IPC event → bridge → PartyKit chat_msg
-                                                              ↓
-                                                    broadcast to all others
-                                                              ↓
-                                              bridge on other instance
-                                                              ↓
-                                              IPC room_chat_receive → RoomChatView
-```
-
-The PartyKit server (`partykit/src/server.ts`) already handles `chat_msg` broadcast
-and `presence` join/leave events. No server changes needed.
-
----
-
-## What needs building
-
-### C++: `app/room_chat_view.h` + `app/room_chat_view.cpp`
-
-New TView window with three subviews:
-- `TRoomParticipantStrip` — draws participant list (left panel)
-- `TRoomMessageView` — scrolling message log (right panel, extends TScroller)
-- `TRoomInputLine` — single-line input at bottom
-
-Window class: `TRoomChatWindow`
-Factory function: `createRoomChatWindow(const TRect& bounds)`
-Command constant: `cmRoomChat = 182`
-
-IPC commands handled by the window:
-- `cmRoomChatReceive (183)` — append `{sender, text, ts}` to message log
-- `cmRoomPresence (185)` — update participant strip with `{participants: [...]}`
-
-### Bridge: `tools/room/partykit_bridge.py`
-
-Route incoming PartyKit messages:
-- `chat_msg` → IPC `room_chat_receive {sender, text, ts}`
-- `presence` → IPC `room_presence {participants}`
-
-Keep old routing behind `legacy_scramble_chat` flag (default False) so existing tests pass.
-
-### Python API: `tools/api_server/`
-
-- `models.py` — add `room_chat = "room_chat"` to `WindowType` enum
-- `schemas.py` — add `"room_chat"` to `WindowCreate` Literal
-- `controller.py` — add `room_chat` case in `create_window()`
-
-### C++ registry: `app/command_registry.cpp`
-
-Add capabilities:
-- `open_room_chat` — opens a RoomChatView window
-- `room_chat_receive` — delivers an incoming message `{sender, text, ts}`
-- `room_presence` — updates participant list `{participants}`
+### PartyKit server (`partykit/src/server.ts`) — deployed to `wibwob-rooms.j-greig.partykit.dev`
+- `onConnect`: sends joiner a `presence: sync` with `connections: [...]` + `self: conn.id`
+  so the joining bridge immediately knows all participants and its own ID
+- `chat_msg` relay: bridge now sends `ts` so server `Date.now()` fallback rarely fires
 
 ---
 
 ## Acceptance criteria
 
-| # | Check | Test |
+| # | Check | Result |
 |---|---|---|
-| AC-1 | `POST /windows {"type":"room_chat"}` opens window | curl → 200, screenshot shows window |
-| AC-2 | `room_chat_receive` IPC appends message with sender label + colour | send IPC directly, screenshot |
-| AC-3 | `room_presence` IPC updates participant strip | send IPC with 2 participants, screenshot |
-| AC-4 | Typing + Enter sends `chat_msg` via bridge to PartyKit | bridge log shows outbound message |
-| AC-5 | Message from instance 1 appears in instance 2's RoomChatView | live 2-instance test |
+| AC-1 | `POST /windows {"type":"room_chat"}` opens window | ✅ confirmed |
+| AC-2 | `room_chat_receive` IPC appends message with sender label + colour | ✅ confirmed |
+| AC-3 | `room_presence` IPC updates participant strip | ✅ `2 in room`, names shown |
+| AC-4 | Typing + Enter sends `chat_msg` via bridge to PartyKit | ✅ bridge log shows outbound |
+| AC-5 | Message from instance 1 appears in instance 2's RoomChatView | ✅ live 2-instance test |
 
 ---
 
@@ -131,15 +73,29 @@ Add capabilities:
 |---|---|---|
 | S01 | C++ RoomChatView skeleton (window, panels, draw) | [x] |
 | S02 | IPC: room_chat_receive + room_presence | [x] |
-| S03 | Bridge: route chat_msg + presence to RoomChatView | [ ] |
-| S04 | Input → outbound relay via bridge | [ ] |
-| S05 | Integration test + update e008-demo.md | [ ] |
+| S03 | Bridge: route chat_msg + presence to RoomChatView | [x] |
+| S04 | Input → outbound relay via bridge | [x] |
+| S05 | Integration test + 2-instance live demo | [x] |
 
 ---
 
-## Out of scope
+## What was harder than expected
 
-- AI response generation (agents just send messages like humans)
+- **State pollution**: `room_chat` not in `_INTERNAL_TYPES` → bridge applied remote
+  state_sync which closed the window and cleared `g_roomChatWindow`
+- **Presence timing**: PartyKit notifies existing connections of the join but NOT
+  the joiner — fixed by adding `presence: sync` + `self` field in server `onConnect`
+- **Event routing**: `cmRoomPresence` dropped when window not focused — fixed by
+  catching it at `TTestPatternApp::handleEvent` level
+- **Epoch-ms timestamps**: `push_chat` sent no ts → server filled `Date.now()` →
+  raw numbers rendered in TUI — fixed at bridge + IPC boundary
+
+---
+
+## Out of scope / follow-ons
+
+- AI agent join (agents just send `chat_msg` with different sender — zero extra code)
 - Cursor overlay / ghost cursors
-- Visitor identity / auth
+- Visitor identity / auth beyond animal name
 - Message persistence across disconnect
+- Widen word lists for more name variety

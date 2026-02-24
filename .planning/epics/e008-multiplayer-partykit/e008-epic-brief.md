@@ -1,7 +1,7 @@
 ---
 id: E008
 title: Multiplayer Teleport Rooms (PartyKit)
-status: not-started
+status: in-progress
 issue: ~
 pr: ~
 depends_on: [E007]
@@ -95,11 +95,11 @@ State flow:
 
 ## MVP Features
 
-- [ ] **F01: PartyKit Server** — room Durable Object, state store, delta broadcast, presence → `f01-partykit-server/`
-- [ ] **F02: C++ WebSocket Client** — connect to PartyKit, push state deltas, receive + apply remote deltas → `f02-cpp-websocket/`
-- [ ] **F03: State Diffing** — detect local mutations, compute minimal delta JSON, apply remote deltas to local state → `f03-state-diff/`
-- [ ] **F04: Chat Relay** — Scramble messages broadcast via PartyKit, remote messages appear in local Scramble → `f04-chat-relay/`
-- [ ] **F05: Cursor Overlay** — inject PartyKit JS client into ttyd page, render ghost cursor for remote user → `f05-cursor-overlay/`
+- [x] **F01: PartyKit Server** — room Durable Object, state store, delta broadcast, presence → `f01-partykit-server/` (deployed to `wibwob-rooms.j-greig.partykit.dev`)
+- [x] **F02: Python bridge** — `tools/room/partykit_bridge.py` connects to PartyKit, pushes state deltas, receives + applies remote deltas (Python sidecar, not C++ WebSocket)
+- [x] **F03: State Diffing** — `tools/room/state_diff.py` detects mutations, computes delta JSON, applies remote deltas → `f03-state-diff/`
+- [x] **F04: RoomChatView** — dedicated TUI chat widget; adjective-animal names; presence strip; bidirectional relay via PartyKit → `f04-room-chat-view/` (#99)
+- [ ] **F05: Cursor Overlay** — inject PartyKit JS client into ttyd page, render ghost cursor for remote user → `f05-cursor-overlay/` *(parked — stretch)*
 - [ ] **F06: Room Config Extension** — `multiplayer: true` flag in room YAML, orchestrator spawns PartyKit-connected instances → `f06-room-config-mp/`
 
 ## Feature Detail
@@ -213,7 +213,7 @@ _Items moved here were attempted but blocked progress. Each entry records what w
 
 ## Status
 
-Status: not-started
+Status: in-progress — F01–F04 done and live. F05 parked (stretch). F06 not started.
 GitHub issue: —
 PR: —
 
