@@ -27,10 +27,33 @@
 #include <chrono>
 #include <fstream>
 #include <random>
+#include <mutex>
+#include <vector>
 #include <sys/stat.h>
 #include <iterator>
 #include <thread>
-#include <thread>
+
+/*---------------------------------------------------------*/
+/*  JSON helpers (history export)                          */
+/*---------------------------------------------------------*/
+
+static std::string jsonEscapeStr(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if (c < 0x20) { char buf[7]; std::snprintf(buf,sizeof(buf),"\\u%04x",c); out+=buf; }
+                else out += char(c);
+        }
+    }
+    return out;
+}
 
 /*---------------------------------------------------------*/
 /*  TWibWobMessageView Implementation                      */
@@ -84,6 +107,7 @@ void TWibWobMessageView::addMessage(const std::string& sender, const std::string
     msg.timestamp = oss.str();
 
     messages.push_back(msg);
+    recordHistoryMessage(sender, content, is_error);
     rebuildWrappedLines();
     scrollToBottom();
     drawView();
@@ -92,6 +116,7 @@ void TWibWobMessageView::addMessage(const std::string& sender, const std::string
 void TWibWobMessageView::clear() {
     messages.clear();
     wrappedLines.clear();
+    chatHistory_.clear();
     scrollTo(0, 0);
     setLimit(size.x, 0);
     drawView();
@@ -153,6 +178,12 @@ void TWibWobMessageView::startStreamingMessage(const std::string& sender) {
     isReceivingStream = true;
     lastStreamUpdate = std::chrono::steady_clock::now();
 
+    // History: placeholder entry for the streaming assistant reply
+    HistoryEntry he;
+    he.role = mapSenderToRole(sender, false);
+    he.content = "";
+    chatHistory_.push_back(he);
+
     // Auto-scroll to show new message
     scrollToBottom();
 }
@@ -164,6 +195,9 @@ void TWibWobMessageView::appendToStreamingMessage(const std::string& content) {
 
     messages[streamingMessageIndex].content += content;
     lastStreamUpdate = std::chrono::steady_clock::now();
+
+    // Mirror to history placeholder
+    if (!chatHistory_.empty()) chatHistory_.back().content += content;
 
     // Trigger incremental redraw
     rebuildWrappedLines();
@@ -179,6 +213,10 @@ void TWibWobMessageView::finishStreamingMessage() {
     messages[streamingMessageIndex].is_streaming = false;
     messages[streamingMessageIndex].is_complete = true;
 
+    // Final sync: ensure history entry has the complete content
+    if (!chatHistory_.empty())
+        chatHistory_.back().content = messages[streamingMessageIndex].content;
+
     isReceivingStream = false;
     rebuildWrappedLines();
     drawView();
@@ -189,11 +227,44 @@ void TWibWobMessageView::cancelStreamingMessage() {
         return;
     }
 
-    // Remove the incomplete streaming message
+    // Remove the incomplete streaming message and its history placeholder
     messages.erase(messages.begin() + streamingMessageIndex);
+    if (!chatHistory_.empty()) chatHistory_.pop_back();
     isReceivingStream = false;
     rebuildWrappedLines();
     drawView();
+}
+
+// --- History methods ---
+
+std::string TWibWobMessageView::mapSenderToRole(const std::string& sender, bool is_error) {
+    if (is_error) return "system";
+    if (sender.empty()) return "assistant";
+    std::string s = sender;
+    for (auto& c : s) c = std::tolower((unsigned char)c);
+    if (s == "user") return "user";
+    if (s == "system") return "system";
+    if (s == "wib" || s == "wib&wob" || s == "wib and wob") return "assistant";
+    return "assistant";
+}
+
+void TWibWobMessageView::recordHistoryMessage(const std::string& sender, const std::string& content, bool is_error) {
+    HistoryEntry e;
+    e.role = mapSenderToRole(sender, is_error);
+    e.content = content;
+    chatHistory_.push_back(e);
+}
+
+std::string TWibWobMessageView::getHistoryJson() const {
+    std::string out = "[";
+    bool first = true;
+    for (const auto& e : chatHistory_) {
+        if (!first) out += ",";
+        out += "{\"role\":\"" + e.role + "\",\"content\":\"" + jsonEscapeStr(e.content) + "\"}";
+        first = false;
+    }
+    out += "]";
+    return out;
 }
 
 void TWibWobMessageView::rebuildWrappedLines() {
@@ -528,6 +599,9 @@ void TWibWobWindow::handleEvent(TEvent& event) {
         auto* text = static_cast<std::string*>(event.message.infoPtr);
         if (text && !text->empty()) {
             pendingAsk_ = *text;  // queue it, don't process immediately
+            // Ensure engine + poll timer are running so the pending ask is drained
+            // even in headless / API-only sessions where no human has typed yet.
+            ensureEngineInitialized();
             clearEvent(event);
         }
     }
@@ -913,8 +987,44 @@ std::string TWibWobWindow::getCurrentTime() const {
 namespace {
     const bool kTtsEnabled = true;
     const int kTtsRate = 205; // 0 = default rate
-    const char* kVoiceWib = "Sandy";
-    const char* kVoiceWob = "Grandpa";
+
+    // Voice preference lists — first available wins at runtime.
+    // Eloquence voices (Sandy, Grandpa) require Apple Silicon; Intel Macs fall back.
+    const std::vector<const char*> kVoicesWib = {"Sandy", "Daniel"};
+    const std::vector<const char*> kVoicesWob = {"Grandpa (English (UK))", "Fiona (Enhanced)"};
+
+    // Test whether a voice is actually installed by checking say's stderr output.
+    // Returns true if the voice works (no "Could not retrieve voice" error).
+    bool voiceWorks(const char* voice) {
+        std::string errFile = "/tmp/wibwob_voice_probe.err";
+        std::string cmd = std::string("say -v \"") + voice + "\" \"\" 2>" + errFile;
+        std::system(cmd.c_str());
+        std::ifstream f(errFile);
+        std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        return content.find("Could not retrieve voice") == std::string::npos;
+    }
+
+    // Resolve the best available voice from a preference list. Cached per session.
+    std::string resolveVoice(const std::vector<const char*>& candidates) {
+        for (const char* v : candidates) {
+            if (voiceWorks(v)) return v;
+        }
+        return candidates.back(); // last resort — may still fail, but we tried
+    }
+
+    // Resolved at first use via std::call_once — thread-safe.
+    static std::string sVoiceWib;
+    static std::string sVoiceWob;
+    static std::once_flag sVoiceOnce;
+
+    void ensureVoicesResolved() {
+        std::call_once(sVoiceOnce, []() {
+            sVoiceWib = resolveVoice(kVoicesWib);
+            sVoiceWob = resolveVoice(kVoicesWob);
+            fprintf(stderr, "[tts] Wib voice: %s  Wob voice: %s\n",
+                    sVoiceWib.c_str(), sVoiceWob.c_str());
+        });
+    }
 
     std::string escapeForShell(const std::string& text) {
         // Escape single quotes for sh: 'foo' -> 'foo'\''bar'
@@ -974,26 +1084,27 @@ void TWibWobWindow::speakResponse(const std::string& text) {
     std::string line;
     std::vector<std::pair<std::string, std::string>> segments;
 
-    std::string activeVoice = kVoiceWob;  // track which voice is "speaking"
+    ensureVoicesResolved();
+    std::string activeVoice = sVoiceWob;  // track which voice is "speaking"
     while (std::getline(iss, line)) {
         std::string content = line;
         // Detect voice from kaomoji tags or **Wib**/**Wob** markdown markers.
         // Once a voice is detected, it persists for subsequent lines until
         // the other voice is detected (handles multi-line paragraphs).
         if (line.find(wibTag) != std::string::npos) {
-            activeVoice = kVoiceWib;
+            activeVoice = sVoiceWib;
             auto pos = content.find(wibTag);
             if (pos != std::string::npos) content.erase(pos, wibTag.size());
         } else if (line.find(wobTag) != std::string::npos) {
-            activeVoice = kVoiceWob;
+            activeVoice = sVoiceWob;
             auto pos = content.find(wobTag);
             if (pos != std::string::npos) content.erase(pos, wobTag.size());
         } else if (line.find("**Wib**") != std::string::npos || line.find("*Wib*") != std::string::npos
                    || line.find("Wib:") != std::string::npos || line.find("[Wib]") != std::string::npos) {
-            activeVoice = kVoiceWib;
+            activeVoice = sVoiceWib;
         } else if (line.find("**Wob**") != std::string::npos || line.find("*Wob*") != std::string::npos
                    || line.find("Wob:") != std::string::npos || line.find("[Wob]") != std::string::npos) {
-            activeVoice = kVoiceWob;
+            activeVoice = sVoiceWob;
         }
         // Strip voice markers from spoken content — no need to read "Wib:" aloud
         for (const char* marker : {"**Wib**", "**Wob**", "*Wib*", "*Wob*",

@@ -24,6 +24,34 @@ make up                               # mock (default)
 make up-real && make provision && make deploy && make test   # full gate
 ```
 
+## ⚠️ API response envelope — always double-parse /menu/command
+
+`POST /menu/command` wraps the C++ IPC result in an outer Python envelope.
+The **inner** result is a JSON string nested inside `outer["result"]`.
+
+```
+POST /menu/command {"command":"get_chat_history"}
+→ {"ok":true, "result": "{\"messages\":[...]}" }   ← result is a STRING
+                           ↑ parse this too
+```
+
+**Correct pattern:**
+```python
+outer = json.loads(raw)
+inner = json.loads(outer["result"])   # double-parse
+msgs  = inner["messages"]             # ✅
+```
+
+**Wrong pattern (silent empty results):**
+```python
+obj  = json.loads(raw)
+msgs = obj.get("messages", [])        # ❌ always []
+```
+
+Applies to: `get_chat_history`, `frame_capture`, `paint_export`, any command
+returning structured JSON. Commands returning plain strings (`"ok"`, `"ok queued"`)
+don't need the inner parse — wrap in `try/except json.JSONDecodeError`.
+
 ## Quick health check
 
 ```bash
@@ -114,3 +142,78 @@ Canvas buffer is allocated at construction. On resize, `size` grows but buffer s
 | `Dockerfile.wibwobdos` | Real mode image |
 | `docker-compose.real.yml` | Real mode override |
 | `skills/wibwobdos-api/SKILL.md` | Symbient-facing API skill (separate) |
+
+## REST API cheat sheet
+
+Base URL: `http://127.0.0.1:8089`
+
+### ⚡ Start here — list everything the app can do
+
+```bash
+curl -s http://127.0.0.1:8089/capabilities | python3 -c "
+import sys,json
+caps=json.load(sys.stdin)
+print('window_types:', caps['window_types'])
+print('commands:', caps['commands'])
+print('properties:', list(caps['properties'].keys()))
+"
+```
+
+Returns:
+- **`window_types`** — every window you can open (`wibwob`, `scramble`, `paint`, `terminal`, …)
+- **`commands`** — every IPC command available (`wibwob_ask`, `get_chat_history`, `scramble_pet`, …)
+- **`properties`** — per-window-type configurable props (fps, variant, etc.)
+
+Full HTTP endpoint list: `curl -s $API/openapi.json | python3 -c "import sys,json; [print(m.upper(), p) for p,ms in json.load(sys.stdin)['paths'].items() for m in ms if m!='parameters']"`
+
+### Windows
+
+```bash
+# Current state of all windows (positions, sizes, types) — USE THIS not GET /windows
+curl -s $API/state | python3 -c "import sys,json; [print(w) for w in json.load(sys.stdin)['windows']]"
+
+# Open a window
+curl -s $API/windows -X POST -H "Content-Type: application/json" -d '{"type":"wibwob"}'
+
+# Move AND/OR resize a window  (all fields optional)
+curl -s $API/windows/w1/move -X POST -H "Content-Type: application/json" \
+  -d '{"x":2,"y":1,"w":70,"h":27}'
+
+# Focus, close, clone
+curl -s $API/windows/w1/focus -X POST
+curl -s $API/windows/w1/close -X POST
+curl -s $API/windows/close_all -X POST
+```
+
+### IPC commands (exec via /menu/command)
+
+```bash
+# List all available commands
+curl -s $API/capabilities | python3 -c "import sys,json; print('\n'.join(json.load(sys.stdin)['commands']))"
+
+# Send a command  ← result is DOUBLE-WRAPPED: json.loads(outer['result'])
+curl -s $API/menu/command -X POST -H "Content-Type: application/json" \
+  -d '{"command":"get_chat_history"}' \
+  | python3 -c "import sys,json; outer=json.load(sys.stdin); print(json.loads(outer['result']))"
+
+# Chat
+curl -s $API/menu/command -X POST -H "Content-Type: application/json" \
+  -d '{"command":"wibwob_ask","args":{"text":"hello"}}'
+```
+
+### Window IDs
+
+Windows are assigned IDs `w1`, `w2`, etc. in creation order per session.  
+Always read current IDs from `GET /state` — they reset on restart.
+
+## Related skills (`.agents/skills/`)
+
+> These are Claude Code / Codex agent skills, not pi skills — stored in `.agents/skills/` rather than `.pi/skills/`. Load them when the task matches.
+
+| Skill | Trigger | What it does |
+|---|---|---|
+| `ww-launch` | "launch wibwob", "start wibwobdos", "open monitor", "4-pane tmux monitor" | `dev-start.sh` + chat open + self-prompt + 4-pane tmux layout (TUI / chat log / debug log / command pane). **Start here for any live testing.** |
+| `ww-api-smoke` | "smoke test", "check API" | Quick pass/fail sweep of all API endpoints |
+| `ww-build-test` | "build and test", "verify build" | Compile C++ + ctests + API health + IPC smoke |
+| `screenshot` | "take a screenshot", "what does the TUI look like" | Capture TUI screen buffer as text + state JSON |
+| `ww-audit` | "parity audit", "did this work" | Post-implementation gap matrix across registry / API / workspace / screenshot |
