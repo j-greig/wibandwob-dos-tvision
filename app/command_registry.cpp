@@ -1,6 +1,7 @@
 #include "command_registry.h"
 
 #include "api_ipc.h"
+#include "core/json_utils.h"
 
 #include <cstdint>
 #include <sys/stat.h>
@@ -51,7 +52,6 @@ extern void api_spawn_deep_signal(TTestPatternApp& app, const TRect* bounds);
 extern void api_spawn_app_launcher(TTestPatternApp& app, const TRect* bounds);
 extern void api_spawn_gallery(TTestPatternApp& app, const TRect* bounds);
 extern void api_open_animation_path(TTestPatternApp& app, const std::string& path);
-extern void api_open_animation_path(TTestPatternApp& app, const std::string& path, const TRect* bounds, bool frameless, bool shadowless, const std::string& title);
 extern std::string api_gallery_list(TTestPatternApp& app, const std::string& tab);
 extern void api_spawn_terminal(TTestPatternApp& app, const TRect* bounds);
 extern std::string api_terminal_write(TTestPatternApp& app, const std::string& text, const std::string& window_id);
@@ -116,6 +116,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"paint_stamp_figlet", "Stamp FIGlet text onto canvas (id,text,font,x,y,fg,bg)", true},
         {"list_figlet_fonts", "List all available FIGlet font names (JSON array)", false},
         {"preview_figlet", "Render FIGlet text (text,font,width params) — returns rendered text", false},
+        {"inject_command", "Inject a raw IPC command string for internal testing", true},
         {"window_shadow", "Toggle window shadow (id, on params)", true},
         {"window_title", "Set window title (id, title params — empty string removes title)", true},
         {"desktop_preset", "Set desktop to a named preset (preset param)", true},
@@ -129,22 +130,6 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"figlet_list_fonts", "List available figlet font names", false},
     };
     return capabilities;
-}
-
-static std::string json_escape(const std::string& s) {
-    std::string out;
-    out.reserve(s.size() + 8);
-    for (char ch : s) {
-        switch (ch) {
-            case '\\': out += "\\\\"; break;
-            case '"': out += "\\\""; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default: out += ch; break;
-        }
-    }
-    return out;
 }
 
 std::string get_command_capabilities_json() {
