@@ -837,7 +837,9 @@ public:
                     }
                     // Keep the frame as the last child (topmost), matching TWindow ctor order.
                     insertBefore(frame, nullptr);
-                    drawView();
+                    // Force full repaint (owner redraws all children, clearing ghost artifacts)
+                    if (owner) owner->drawView();
+                    else drawView();
                     break;
                 }
                 case cmCtxGalleryToggle: {

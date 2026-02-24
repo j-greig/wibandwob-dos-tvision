@@ -100,6 +100,42 @@ void TFigletTextView::showEditTextDialog() {
     TObject::destroy(dlg);
 }
 
+void TFigletTextView::showCombinedMenu(TPoint where) {
+    // Combined menu: Edit Text + Font + chrome toggles (for frameless mode)
+    TFigletTextWindow* parentWin = dynamic_cast<TFigletTextWindow*>(owner);
+    bool hasShadow = parentWin ? (parentWin->getState(sfShadow) != 0) : false;
+
+    // Chrome items at the bottom
+    TMenuItem* chromeItems =
+        new TMenuItem("Show ~F~rame", cmCtxToggleFrame, kbNoKey, hcNoContext, nullptr,
+        new TMenuItem(hasShadow ? "Shadow ~O~ff" : "Shadow ~O~n",
+            cmCtxToggleShadow, kbNoKey, hcNoContext, nullptr,
+        new TMenuItem("~G~allery Mode",
+            cmCtxGalleryToggle, kbNoKey, hcNoContext, nullptr,
+        nullptr)));
+
+    TMenu* popup = new TMenu(
+        *new TMenuItem("Edit ~T~ext...", cmFigletEditText, kbNoKey, hcNoContext, nullptr,
+        chromeItems));
+
+    TRect ob = owner ? owner->getExtent() : getExtent();
+    TRect r(where.x, where.y, ob.b.x, ob.b.y);
+
+    TMenuBox* box = new TMenuBox(r, popup, nullptr);
+    ushort cmd = owner ? owner->execView(box) : 0;
+    destroy(box);
+
+    if (cmd == cmFigletEditText) {
+        showEditTextDialog();
+    } else if (cmd == cmCtxToggleFrame || cmd == cmCtxToggleShadow || cmd == cmCtxGalleryToggle) {
+        // Forward chrome commands to the parent window
+        TEvent fwd = {};
+        fwd.what = evCommand;
+        fwd.message.command = cmd;
+        if (parentWin) parentWin->handleEvent(fwd);
+    }
+}
+
 void TFigletTextView::handleEvent(TEvent& event) {
     TView::handleEvent(event);
 
@@ -112,7 +148,14 @@ void TFigletTextView::handleEvent(TEvent& event) {
     }
 
     if (event.what == evMouseDown && (event.mouse.buttons & mbRightButton)) {
-        showFontMenu(event.mouse.where);
+        // Check if parent window is frameless — if so, include chrome toggles
+        // since the window's own right-click handler can't fire (view covers all)
+        TFigletTextWindow* parentWin = dynamic_cast<TFigletTextWindow*>(owner);
+        if (parentWin && parentWin->isFrameless()) {
+            showCombinedMenu(event.mouse.where);
+        } else {
+            showFontMenu(event.mouse.where);
+        }
         clearEvent(event);
     }
 }
@@ -337,7 +380,9 @@ void TFigletTextWindow::handleEvent(TEvent& event) {
                         if (!frameless_) viewR.grow(-1, -1);
                         figletView_->changeBounds(viewR);
                     }
-                    drawView();
+                    // Force full repaint (owner redraws all children, clearing ghost artifacts)
+                    if (owner) owner->drawView();
+                    else drawView();
                     break;
                 }
                 case cmCtxGalleryToggle: {

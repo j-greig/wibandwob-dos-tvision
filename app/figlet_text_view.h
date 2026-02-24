@@ -55,6 +55,7 @@ public:
 
     void showFontMenu(TPoint where);
     void showEditTextDialog();
+    void showCombinedMenu(TPoint where);
     void showFontListDialog();
 
 private:
