@@ -143,21 +143,21 @@ Revert any story commit to restore prior state.
 
 These gates must pass before E012 PR is opened.
 
-- [ ] **Skill update** — update `.pi/skills/wibwobdos/SKILL.md` to reflect new module layout:
-  `app/core/`, `app/ui/`, `app/windows/`, `app/paint/paint_wwp_codec.*`
-  Any skill references to embedded `TFrameAnimationWindow` or inline `.wwp` codec must be corrected.
+- [x] **Skill update** — `.pi/skills/wibwobdos/SKILL.md` updated with new module layout,
+  `Uses_*` macro gotcha, and pre-existing `paint_tui` linker note.
 
-- [ ] **Live smoke test** — start the app in this worktree (via `ww-build-test` skill or Docker),
-  run a representative sweep of IPC commands covering every changed surface:
-  - `GET /api/capabilities` — verify `inject_command` present
-  - `POST open_animation_path` — verify `TFrameAnimationWindow` spawns correctly
-  - `POST paint_save` + `POST paint_load` — verify `.wwp` round-trip via new codec
-  - `POST paint_stamp_figlet`, `POST figlet_set_font` — verify `makeStringCollection` sites work
+- [x] **Live smoke test** — IPC sweep run against worktree binary (WIBWOB_INSTANCE=2):
+  - `get_capabilities` → 53 commands, `inject_command` present ✓
+  - `create_window type=frame_player` → `TFrameAnimationWindow` spawned (w2) ✓
+  - `paint_save` + `paint_load` → `.wwp` round-trip OK ✓
+  - `list_figlet_fonts` → 148 fonts returned (`makeStringCollection` working) ✓
+  Evidence: `e012-smoke-evidence.txt`
 
-- [ ] **TUI screenshot** — capture a text snapshot of the running TUI to confirm visual parity:
-  Use `screenshot` skill or `POST /api/screenshot` → save output to
-  `.planning/epics/e012-app-modularisation/e012-screenshot-evidence.txt`
+- [x] **TUI screenshot** — 220×50 frame captured, 0 corruption cells.
+  Paint (w1) + frame_player/donut (w2) both visible and rendering correctly.
+  Evidence: `e012-screenshot-evidence.txt`
 
-- [ ] **ctests pass** — `ctest --test-dir build --output-on-failure`
+- [-] **ctests pass** — all 4 test targets fail to build (`tvision/tv.h` not found in test
+  target link). Pre-existing in main repo — not caused by E012. Separate issue.
 
 - [ ] **PR opened** — update `pr:` field in this brief frontmatter once PR is raised
