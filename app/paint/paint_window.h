@@ -22,6 +22,7 @@
 #include <tvision/tv.h>
 
 #include "paint_canvas.h"
+#include <string>
 
 class TPaintCanvasView;
 class TMenuBar;
@@ -34,13 +35,22 @@ public:
     virtual void changeBounds(const TRect &bounds) override;
 
     TPaintCanvasView* getCanvas() const { return canvas; }
+    const std::string& getFilePath() const { return filePath_; }
+    void setFilePath(const std::string& p) { filePath_ = p; updateTitle(); }
 
 private:
     static TFrame *initFrame(TRect r) { return new TFrame(r); }
     void buildLayout();
+    void updateTitle();
+    void doSave();
+    void doSaveAs();
+    void doOpen();
+    void doExportAnsi();
     PaintContext ctx;
     TPaintCanvasView *canvas = nullptr;
     TMenuBar *menuBar = nullptr;
+    std::string filePath_;
+    bool dirty_ = false;
 };
 
 TWindow* createPaintWindow(const TRect &bounds);

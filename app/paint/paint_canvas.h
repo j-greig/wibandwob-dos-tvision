@@ -84,6 +84,8 @@ public:
     std::string exportText() const;
     int getCols() const { return cols; }
     int getRows() const { return rows; }
+    PaintCell& cellAt(int x, int y) { return cell(x, y); }
+    const PaintCell& cellAt(int x, int y) const { return buffer[y * cols + x]; }
 
 private:
     int cols, rows;

@@ -453,10 +453,17 @@ std::string TPaintCanvasView::exportText() const
             } else if (c.lOn) {
                 os << "\xe2\x96\x84"; // ▄ LOWER HALF BLOCK U+2584
             } else if (c.qMask != 0) {
-                // Quarter: approximate with block chars
-                if (c.qMask == 0x0F) os << "\xe2\x96\x88";      // █
-                else if (c.qMask & 0x03) os << "\xe2\x96\x80";  // ▀ (any top bits)
-                else os << "\xe2\x96\x84";                        // ▄ (any bottom bits)
+                // Map qMask to best Unicode block approximation
+                uint8_t m = c.qMask & 0x0F;
+                if (m == 0x0F)                     os << "\xe2\x96\x88"; // █ full
+                else if (m == 0x05)                os << "\xe2\x96\x8c"; // ▌ left half
+                else if (m == 0x0A)                os << "\xe2\x96\x90"; // ▐ right half
+                else if (m == 0x03)                os << "\xe2\x96\x80"; // ▀ upper half
+                else if (m == 0x0C)                os << "\xe2\x96\x84"; // ▄ lower half
+                else if (m & 0x05)                 os << "\xe2\x96\x8c"; // ▌ left-ish
+                else if (m & 0x0A)                 os << "\xe2\x96\x90"; // ▐ right-ish
+                else if (m & 0x03)                 os << "\xe2\x96\x80"; // ▀ upper-ish
+                else                               os << "\xe2\x96\x84"; // ▄ lower-ish
             } else {
                 os << ' ';
             }
