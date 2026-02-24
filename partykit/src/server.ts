@@ -139,6 +139,7 @@ export default class WibWobRoom implements Party.Server {
         event: "sync",
         connections: ids,
         count: ids.length,
+        self: conn.id,
       })
     );
 

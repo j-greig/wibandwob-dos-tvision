@@ -150,6 +150,7 @@ class PartyKitBridge:
         self.consecutive_failures: int = 0
         self._ws = None
         self._participants: list[str] = []   # tracked conn ids for presence strip
+        self._self_conn_id: str = ""          # own PartyKit connection ID (from presence sync)
         # Protects last_windows from concurrent coroutine updates.
         # asyncio is single-threaded but awaits between diff and baseline write
         # can allow another coroutine to interleave and overwrite with stale state.
@@ -265,7 +266,9 @@ class PartyKitBridge:
                     try:
                         pending = json.loads(raw)
                         for text in pending:
-                            sender = f"human:{self.instance_id}"
+                            sender = (_name_for_conn(self._self_conn_id)
+                                      if self._self_conn_id
+                                      else f"human:{self.instance_id}")
                             self.log(f"outbound: {text[:50]}")
                             await self.push_chat(sender, text)
                     except Exception:
@@ -381,6 +384,9 @@ class PartyKitBridge:
                             self._participants = [str(p) for p in connections]
                         else:
                             self._participants = []
+                        self_id = msg.get("self", "")
+                        if self_id:
+                            self._self_conn_id = str(self_id)
                     else:
                         # Build a minimal participant list from what we know
                         # (PartyKit join/leave events only include the changed id;
