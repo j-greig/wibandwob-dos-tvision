@@ -246,7 +246,10 @@ class PartyKitBridge:
                 windows = canonical.get("windows", {})
                 if windows and self._state_lock:
                     async with self._state_lock:
-                        new_windows = dict(windows)
+                        # Reuse shared extraction/normalisation so internal UI
+                        # singletons (room_chat/wibwob/scramble) are never
+                        # treated as syncable layout windows during full sync.
+                        new_windows = windows_from_state(canonical)
                         delta = compute_delta(self.last_windows, new_windows)
                         if delta:
                             self.log(f"applying state_sync delta")

@@ -2395,9 +2395,18 @@ std::string api_get_state(TTestPatternApp& app) {
             TWindow *w = dynamic_cast<TWindow*>(v);
             if (w) {
                 std::string id = app.registerWindow(w);
+                std::string type = "test_pattern";
+                if (dynamic_cast<TRoomChatWindow*>(w)) {
+                    type = "room_chat";
+                } else if (dynamic_cast<TWibWobWindow*>(w)) {
+                    type = "wibwob";
+                } else if (dynamic_cast<TScrambleWindow*>(w)) {
+                    type = "scramble";
+                }
                 
                 if (!first) json << ",";
                 json << "{\"id\":\"" << id << "\""
+                     << ",\"type\":\"" << type << "\""
                      << ",\"x\":" << w->origin.x
                      << ",\"y\":" << w->origin.y  
                      << ",\"width\":" << w->size.x
