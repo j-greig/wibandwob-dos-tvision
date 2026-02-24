@@ -383,17 +383,14 @@ void TPaintWindow::doOpen()
         return;
 
     std::string pathStr(fileName);
-    fprintf(stderr, "[paint] doOpen path='%s'\n", pathStr.c_str());
     if (pathStr.empty()) return;
 
     std::ifstream in(pathStr);
     if (!in) {
-        fprintf(stderr, "[paint] doOpen FAILED to open '%s' errno=%d\n", pathStr.c_str(), errno);
         std::string msg = std::string("Cannot open: ") + pathStr;
         messageBox(msg.c_str(), mfError | mfOKButton);
         return;
     }
-    fprintf(stderr, "[paint] doOpen SUCCESS reading '%s'\n", pathStr.c_str());
     std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
     int fileCols = parseIntAfter(data, 0, "cols");
@@ -536,12 +533,12 @@ void TPaintWindow::doStampFiglet()
 
     auto* dlg = new TFigletStampDialog(figletText_, figletFont_);
     ushort cmd = TProgram::application->execView(dlg);
-    if (cmd != cmOK) {
-        TObject::destroy(dlg);
-        return;
+    FigletStampResult r;
+    if (cmd == cmOK) {
+        r = dlg->getResult();
     }
-    FigletStampResult r = dlg->getResult();
     TObject::destroy(dlg);
+    if (cmd != cmOK) return;
 
     if (r.text.empty()) return;
 

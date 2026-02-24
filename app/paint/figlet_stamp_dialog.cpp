@@ -29,7 +29,7 @@ void TFigletPreview::setLines(const std::vector<std::string>& lines)
 
 void TFigletPreview::draw()
 {
-    TColorAttr attr = getColor(1);
+    TColorAttr attr{0x1F}; // white on blue — safe hardcoded
     TDrawBuffer b;
     for (int y = 0; y < size.y; y++) {
         b.moveChar(0, ' ', attr, size.x);
@@ -61,9 +61,10 @@ void TFigletPreview::draw()
 
 TFigletStampDialog::TFigletStampDialog(const std::string& initialText,
                                        const std::string& initialFont)
-    : TDialog(TRect(2, 1, 76, 22), "Stamp FIGlet Text"),
-      TWindowInit(&TFigletStampDialog::initFrame)
+    : TWindowInit(&TFigletStampDialog::initFrame),
+      TDialog(TRect(2, 1, 76, 22), "Stamp FIGlet Text")
 {
+
     // ── Text input ──
     textInput_ = new TInputLine(TRect(8, 1, 72, 2), 255);
     insert(textInput_);
@@ -80,20 +81,17 @@ TFigletStampDialog::TFigletStampDialog(const std::string& initialText,
     insert(fontList_);
     insert(new TLabel(TRect(2, 2, 10, 3), "~F~onts", fontList_));
 
-    // Populate font list
+    // Populate font list — use TStringCollection (sorted)
     const auto& fonts = figlet::allFontsSorted();
-    fontNames_ = new TStringCollection(fonts.size(), 10);
-    for (const auto& f : fonts)
-        fontNames_->insert(newStr(f));
+    fontNames_ = new TStringCollection((short)fonts.size(), 1);
+    for (size_t i = 0; i < fonts.size(); i++) {
+        fontNames_->insert(newStr(fonts[i].c_str()));
+    }
     fontList_->newList(fontNames_);
 
-    // Select initial font
+    // Select initial font in the sorted collection
     currentFont_ = initialFont.empty() ? "standard" : initialFont;
-    int idx = findFontIndex(currentFont_);
-    if (idx >= 0) {
-        fontList_->focusItem(idx);
-        lastFontIdx_ = idx;
-    }
+    lastFontIdx_ = 0;  // focusItem crashes during construction; start at 0
 
     // ── Preview (right) ──
     preview_ = new TFigletPreview(TRect(25, 3, 72, 13));
@@ -111,9 +109,11 @@ TFigletStampDialog::TFigletStampDialog(const std::string& initialText,
 
 int TFigletStampDialog::findFontIndex(const std::string& name)
 {
-    const auto& fonts = figlet::allFontsSorted();
-    for (int i = 0; i < (int)fonts.size(); i++)
-        if (fonts[i] == name) return i;
+    if (!fontNames_) return -1;
+    for (int i = 0; i < fontNames_->getCount(); i++) {
+        const char* s = (const char*)fontNames_->at(i);
+        if (s && name == s) return i;
+    }
     return -1;
 }
 
@@ -137,11 +137,11 @@ void TFigletStampDialog::handleEvent(TEvent& event)
 
     // Check if font selection changed
     int idx = fontList_->focused;
-    if (idx != lastFontIdx_ && idx >= 0) {
+    if (idx != lastFontIdx_ && idx >= 0 && idx < fontNames_->getCount()) {
         lastFontIdx_ = idx;
-        const auto& fonts = figlet::allFontsSorted();
-        if (idx < (int)fonts.size()) {
-            currentFont_ = fonts[idx];
+        const char* s = (const char*)fontNames_->at(idx);
+        if (s) {
+            currentFont_ = s;
             updatePreview();
         }
     }

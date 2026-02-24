@@ -10,6 +10,8 @@
 // TRect for window bounds
 #define Uses_TRect
 #define Uses_TPoint
+#define Uses_TEvent
+#define Uses_TProgram
 #include <tvision/tv.h>
 
 extern void api_cascade(TTestPatternApp& app);
@@ -429,6 +431,17 @@ std::string exec_registry_command(
         std::string font = kv.count("font") ? kv.at("font") : "standard";
         int width = kv.count("width") ? std::atoi(kv.at("width").c_str()) : 80;
         return api_preview_figlet(text_it->second, font, width);
+    }
+    if (name == "inject_command") {
+        auto id_it = kv.find("cmd_id");
+        if (id_it == kv.end()) return "err missing cmd_id";
+        int cmdId = std::atoi(id_it->second.c_str());
+        TEvent ev = {};
+        ev.what = evCommand;
+        ev.message.command = (ushort)cmdId;
+        ev.message.infoPtr = nullptr;
+        TProgram::application->putEvent(ev);
+        return "ok injected " + std::to_string(cmdId);
     }
     if (name == "window_shadow") {
         auto id_it = kv.find("id");
