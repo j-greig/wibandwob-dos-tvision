@@ -105,6 +105,8 @@ cat "$(ls -t logs/screenshots/tui_*.txt | head -1)"
 
 **Post-implementation parity audit**: use `/ww-audit` skill (`.claude/skills/ww-audit/`) to verify a window type has registry slug, props save/restore, and correct screen position — or run `/ww-audit` (no args) for a full gap matrix across all types.
 
+**C++ build & edit rules**: load `.pi/skills/wibwobdos/SKILL.md` before editing C++ files. Covers mandatory build-after-edit, tvision Z-order gotchas (frame insertion, `insertBefore` semantics), and frameless right-click coverage rule. Hard-won lessons — don't skip it.
+
 No C++ unit test framework is configured. C++ testing is manual via UI interaction or API calls.
 
 Primary automated regression coverage for multiplayer/IPC lives in `tests/room/` (Python, 160 tests). Run for all boundary/contract changes:
