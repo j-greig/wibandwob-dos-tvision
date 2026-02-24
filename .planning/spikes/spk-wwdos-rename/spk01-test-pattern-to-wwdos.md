@@ -2,9 +2,11 @@
 
 **tl;dr**: Rename the main binary from `test_pattern` to `wwdos` and the main app class from `TTestPatternApp` to `TWwdosApp`, without changing the `"test_pattern"` window-type protocol slug. A grep audit shows the class rename is much larger than originally estimated, and file-path/script/docs fallout is broader than the old spike suggested.
 
-**status**: not-started
+**status**: done
 **severity**: housekeeping (no functional change intended)
 **depends_on**: E009 (still recommended first; `app/test_pattern_app.cpp` remains a merge hotspot)
+
+> Phase 0 note (2026-02-24): `gh pr list` / `gh issue list` could not be queried from this environment (`error connecting to api.github.com`), so in-flight PR conflict checks could not be confirmed from GitHub during this pass.
 
 ---
 
@@ -26,11 +28,11 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 | Category | What | Spike claimed | Actual now (live/actionable scope) | Risk |
 |----------|------|---------------|------------------------------------|------|
 | A | Binary/executable name (`test_pattern` target/path/process refs) | `~11` | Core runtime/build refs: **11 matches / 4 files**, plus **1 launcher path-segment file** (`tools/room/orchestrator.py`), plus many docs/skills refs | Medium (larger docs/tooling sweep than implied) |
-| B | C++ class name (`TTestPatternApp`) | `~26+` | **445 matches / 15 files** (including tests + skill docs); **439 matches / 10 app files** in core code/test harness | High |
+| B | C++ class name (`TTestPatternApp`) | `~26+` | **465 matches / 15 files** (including tests + skill docs); **459 matches / 10 app files** in core code/test harness | High |
 | C | Window type string `"test_pattern"` | `~5` | **34 exact `"test_pattern"` literals** in `app/`, `tools/`, `tests/`, `scripts/` (DO NOT RENAME) | Critical if touched accidentally |
 | D | Socket path (`/tmp/test_pattern_app.sock`) | `~14` | **24 matches / 16 files** (excluding this spike file) | Medium |
 | E | Source filenames containing `test_pattern` | `~8` | **5 filenames** currently contain `test_pattern`; only **1 required code rename**, **2 keep**, **2 optional script renames** | Medium |
-| F | Docs/skills/planning references | `~12` | **24 docs/skills/planning files** mention rename-related tokens (18 operational + 5 historical/template + this spike) | Low/Medium |
+| F | Docs/skills/planning references | `~12` | **22 docs/skills/planning files** mention rename-related tokens (17 operational + 4 historical/template + this spike) | Low/Medium |
 
 ## Proposed Names
 
@@ -45,7 +47,7 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 
 ## Implementation Sequence
 
-### Phase 1: Binary + CMake (low code risk, high workflow visibility)
+### [x] Phase 1: Binary + CMake (low code risk, high workflow visibility)
 
 **Estimate**: 0.5 day
 
@@ -56,13 +58,13 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 - `scripts/dev-start.sh` (build target/path messaging)
 - `tools/scripts/launch_tmux.sh` (binary path)
 - `tools/room/orchestrator.py` (binary path segment `"test_pattern"`)
-- `app/run_test_pattern_logged.sh` (invokes `./build/test_pattern`; see also Phase 4 for script filename question)
+- `app/run_wwdos_logged.sh` (invokes `./build/test_pattern`; see also Phase 4 for script filename question)
 
 **Notes**
 - This phase is bigger than the original spike implied because launcher/orchestration paths exist outside the originally listed scripts.
 - `app/CMakeLists.txt` is also touched again in Phase 4 if `test_pattern_app.cpp` is renamed.
 
-### Phase 2: Socket path (medium risk; compatibility-sensitive)
+### [x] Phase 2: Socket path (medium risk; compatibility-sensitive)
 
 **Estimate**: 0.5 day (with fallback), 1 day (if changing instance naming convention too)
 
@@ -77,7 +79,7 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 - `tools/api_server/test_paint_ipc.py`
 - `tools/api_server/test_browser_ipc.py`
 - `tools/api_server/test_move.py`
-- `tools/api_server/move_test_pattern.py`
+- `tools/api_server/move_wwdos.py`
 - `tools/monitor/instance_monitor.py`
 - `tests/test_paint_ipc.py`
 - `start_api_server.sh`
@@ -90,19 +92,19 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 - Keep legacy fallback (`/tmp/test_pattern_app.sock`) for at least one transition cycle to avoid breaking existing scripts and stale local habits.
 - Decide whether `WIBWOB_INSTANCE` naming remains `/tmp/wibwob_N.sock` (recommended: keep) vs switching instance sockets to `/tmp/wwdos_N.sock` (higher blast radius).
 
-### Phase 3: Class rename (highest risk; signature-heavy)
+### [x] Phase 3: Class rename (highest risk; signature-heavy)
 
 **Estimate**: 1.0-1.5 days
 
-**Grep-verified count**: 445 matches across 15 files.
-- Core app/C++ + test harness: 439 matches across 10 `app/*` files
+**Grep-verified count**: 465 matches across 15 files.
+- Core app/C++ + test harness: 459 matches across 10 `app/*` files
 - External tests/skills/docs: 6 matches across 5 files
 
 **Why it is large (not just “26+”)**
-- `app/test_pattern_app.cpp`: 234 matches
+- `app/test_pattern_app.cpp`: 242 matches
 - `app/window_type_registry.cpp`: 61 matches
-- `app/command_registry.cpp`: 48 matches
-- `app/api_ipc.cpp`: 21 matches
+- `app/command_registry.cpp`: 55 matches
+- `app/api_ipc.cpp`: 24 matches
 - `app/command_registry_test.cpp`: 33 matches (stubbed symbols)
 - `app/scramble_engine_test.cpp`: 33 matches (stubbed symbols)
 - `app/test_pattern_app.cpp` includes ~70 `friend` declarations and ~71 `TTestPatternApp::` method definitions
@@ -128,18 +130,15 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 - Test stubs (`command_registry_test.cpp`, `scramble_engine_test.cpp`) are easy to miss and were not called out in the original spike.
 - A temporary alias (`using TTestPatternApp = TWwdosApp;`) can reduce churn but may complicate cleanup and grep validation. Prefer one-shot rename unless branch pressure is high.
 
-### Phase 4: Source file rename (medium risk; path/string fallout)
+### [x] Phase 4: Source file rename (medium risk; path/string fallout)
 
 **Estimate**: 0.5-1.0 day
 
 **Grep-verified facts**
-- Filenames containing `test_pattern` today: **5**
-  - `app/test_pattern_app.cpp` (required rename candidate)
+- Filenames containing `test_pattern` today: **2**
   - `app/test_pattern.cpp` (KEEP)
   - `app/test_pattern.h` (KEEP)
-  - `app/run_test_pattern_logged.sh` (optional rename/polish)
-  - `tools/api_server/move_test_pattern.py` (optional rename/polish)
-- Code/tests/scripts filename-token refs (`test_pattern_app.cpp`, `run_test_pattern_logged.sh`, `move_test_pattern.py`): **30 matches / 18 files**
+- Code/tests/scripts filename-token refs (`wwdos_app.cpp`, `run_wwdos_logged.sh`, `move_wwdos.py`): **31 matches / 19 files**
 
 **Manifest (required for `test_pattern_app.cpp -> wwdos_app.cpp`)**
 - `app/test_pattern_app.cpp` (rename to `app/wwdos_app.cpp`)
@@ -152,6 +151,7 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 - `app/wibwob_background.cpp`
 - `app/app_launcher_view.cpp`
 - `app/figlet_text_view.cpp`
+- `app/windows/frame_animation_window.cpp` (additional comment/path reference found during execution)
 - `scripts/parity-check.py`
 - `tests/room/test_menu_cleanup.py`
 - `tests/contract/test_browser_copy_ui_contract.py`
@@ -163,15 +163,15 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 
 **Optional sub-phase (script filename polish)**
 - `app/run_test_pattern_logged.sh` -> `app/run_wwdos_logged.sh`
-- `tools/api_server/move_test_pattern.py` -> `tools/api_server/move_wwdos.py` (or keep if script semantics remain “move test-pattern window”)
+- `tools/api_server/move_test_pattern.py` -> `tools/api_server/move_wwdos.py` (done; script semantics still target the `"test_pattern"` window type)
 
-### Phase 5: Documentation / Skills / Planning Sweep
+### [x] Phase 5: Documentation / Skills / Planning Sweep
 
 **Estimate**: 0.5-1.0 day (depending on historical docs scope)
 
-**Grep-verified count (docs/skills/planning union)**: 24 files with rename-related tokens
-- 18 operational docs/skills/planning files
-- 5 historical/template/session docs (optional to update)
+**Grep-verified count (docs/skills/planning union)**: 22 files with rename-related tokens
+- 17 operational docs/skills/planning files
+- 4 historical/template/session docs (optional to update)
 - 1 current spike file (this file)
 
 **Manifest (operational docs/skills/planning to update)**
@@ -187,10 +187,8 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 - `.pi/skills/wibwobdos/references/cross-platform-cpp.md`
 - `.pi/skills/wibwobdos/references/docker-ops.md`
 - `.pi/skills/wibwobdos/references/integrating-vendor-views.md`
-- `.planning/cross-platform-tvision-linux.md`
 - `.planning/epics/e005-theme-runtime-wiring/e005-epic-brief.md`
 - `.planning/epics/e008-multiplayer-partykit/f04-chat-relay/f04-feature-brief.md`
-- `.planning/spikes/spk-inter-instance-chat/spike-brief.md`
 - `docs/architecture/parity-drift-audit.md`
 - `docs/architecture/phase-zero-canon-alignment.md`
 
@@ -217,7 +215,7 @@ Grep counts below are for live/actionable files and exclude noise/artifacts:
 
 1. Is the socket migration limited to the legacy default (`/tmp/test_pattern_app.sock -> /tmp/wwdos.sock`) while keeping `WIBWOB_INSTANCE` sockets as `/tmp/wibwob_N.sock`? (recommended)
 2. Should Phase 3 + Phase 4 be one PR (class + file rename together) or two PRs to reduce review noise?
-3. Do we rename the two script filenames (`run_test_pattern_logged.sh`, `move_test_pattern.py`) in this spike, or leave them for a follow-up polish pass?
+3. Do we rename the two script filenames (`run_wwdos_logged.sh`, `move_wwdos.py`) in this spike, or leave them for a follow-up polish pass?
 4. Should historical/template docs (`HANDOVER.md`, retros, old retrospectives) be updated, or explicitly left as historical snapshots?
 
 ## References

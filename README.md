@@ -82,11 +82,10 @@ cmake . -B ./build -DCMAKE_BUILD_TYPE=Release
 cmake --build ./build
 
 # Run WibWob-DOS
-./build/app/test_pattern
-
-# With debug logging
-./build/app/test_pattern 2> /tmp/wibwob_debug.log
+./build/app/wwdos
 ```
+
+For agent/dev workflows (tmux headless launch, API hot-reload, screenshots, multi-instance socket rules), see `CLAUDE.md` and `.pi/skills/wibwobdos/SKILL.md`.
 
 ### Enable AI Chat
 
@@ -97,21 +96,24 @@ LLM auth is auto-detected at startup. Just run `claude /login` once — both Wib
 ./start_api_server.sh
 
 # Terminal 2: Run WibWob-DOS
-./build/app/test_pattern
+./build/app/wwdos
 # Then: Tools > Wib&Wob Chat (F12)
 ```
 
 ### Programmatic Control
 
-```bash
-# Spawn a window
-curl -X POST "http://127.0.0.1:8089/windows" \
-  -H "Content-Type: application/json" \
-  -d '{"type": "gradient", "title": "Eye", "rect": {"x": 25, "y": 8, "w": 12, "h": 8}, "props": {"gradient": "radial"}}'
+Minimal smoke check:
 
-# Get desktop state
+```bash
+curl http://127.0.0.1:8089/health
 curl "http://127.0.0.1:8089/state"
 ```
+
+More API examples and operational recipes: `tools/api_server/README.md` and `.pi/skills/wibwobdos/SKILL.md`.
+
+## Power User Operations
+
+Detailed multi-instance, tmux, and browser/PTTY workflows live in `CLAUDE.md` and `.pi/skills/wibwobdos/SKILL.md`.
 
 ### Multi-Instance (Power Users)
 
@@ -119,10 +121,10 @@ Run multiple isolated WibWob-DOS instances side by side, each with its own IPC s
 
 ```bash
 # Instance 1
-WIBWOB_INSTANCE=1 ./build/app/test_pattern 2>/tmp/wibwob_1.log
+WIBWOB_INSTANCE=1 ./build/app/wwdos 2>/tmp/wibwob_1.log
 
 # Instance 2
-WIBWOB_INSTANCE=2 ./build/app/test_pattern 2>/tmp/wibwob_2.log
+WIBWOB_INSTANCE=2 ./build/app/wwdos 2>/tmp/wibwob_2.log
 
 # Monitor dashboard (discovers all running instances)
 python3 tools/monitor/instance_monitor.py
@@ -138,7 +140,7 @@ Serve WibWob-DOS to a web browser via [ttyd](https://github.com/nicm/ttyd) PTY b
 ```bash
 brew install ttyd  # macOS
 ttyd --port 7681 --writable -t fontSize=14 -t 'theme={"background":"#000000"}' \
-  bash -c 'cd /path/to/repo && TERM=xterm-256color WIBWOB_INSTANCE=1 exec ./build/app/test_pattern'
+  bash -c 'cd /path/to/repo && TERM=xterm-256color WIBWOB_INSTANCE=1 exec ./build/app/wwdos'
 # Open http://localhost:7681 in browser
 ```
 
@@ -193,6 +195,8 @@ AI Agent ──> MCP / REST ──>  │   Turbo Vision TUI   │
 ```
 
 **Core stack**: C++14 / Turbo Vision / ncurses · Python / FastAPI / MCP · Claude Code SDK · Node.js bridge
+
+Detailed agent-facing architecture (command registry, IPC surfaces, auth/providers) is documented in `CLAUDE.md`.
 
 ### Repository Structure
 

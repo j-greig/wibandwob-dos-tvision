@@ -281,10 +281,10 @@ No pause state for turn-based games — the game is always "paused" between keyp
 
 Games can spawn other TUI windows. The pattern uses Turbo Vision's event system:
 
-**Step 1**: Declare command constant (in header or test_pattern_app.cpp):
+**Step 1**: Declare command constant (in header or wwdos_app.cpp):
 ```cpp
 extern const ushort cmRogueHackTerminal;  // in rogue_view.h
-const ushort cmRogueHackTerminal = 218;   // in test_pattern_app.cpp
+const ushort cmRogueHackTerminal = 218;   // in wwdos_app.cpp
 ```
 
 **Step 2**: Post event from game view:
@@ -297,7 +297,7 @@ termEvent.message.infoPtr = nullptr;
 putEvent(termEvent);
 ```
 
-**Step 3**: Handle in test_pattern_app.cpp:
+**Step 3**: Handle in wwdos_app.cpp:
 ```cpp
 case cmRogueHackTerminal: {
     TRect desk = deskTop->getExtent();
@@ -323,16 +323,16 @@ case cmRogueHackTerminal: {
 |---|------|-------------|
 | 1 | `app/game_view.h` | New header with `#define Uses_*`, class decl, factory prototype |
 | 2 | `app/game_view.cpp` | Implementation with `#define Uses_TWindow/TEvent/TKeys` |
-| 3 | `app/test_pattern_app.cpp` | **6 spots**: include, `cmConstant`, menu item `*new TMenuItem("~N~ame", cmFoo, kbNoKey) +`, handleEvent case, friend decl, `api_spawn_*` function |
+| 3 | `app/wwdos_app.cpp` | **6 spots**: include, `cmConstant`, menu item `*new TMenuItem("~N~ame", cmFoo, kbNoKey) +`, handleEvent case, friend decl, `api_spawn_*` function |
 | 4 | `app/command_registry.cpp` | **3 spots**: `extern void api_spawn_*(...)`, capability `{"open_*", "description", false}`, dispatch `if (name == "open_*") { api_spawn_*(app, boundsPtr); return "ok"; }` |
-| 5 | `app/CMakeLists.txt` | Add `game_view.cpp` to test_pattern sources list |
-| 6 | `app/command_registry_test.cpp` | Stub `void api_spawn_*(TTestPatternApp&, const TRect*) {}` AND test token `"\"name\":\"open_*\""` |
+| 5 | `app/CMakeLists.txt` | Add `game_view.cpp` to wwdos sources list |
+| 6 | `app/command_registry_test.cpp` | Stub `void api_spawn_*(TWwdosApp&, const TRect*) {}` AND test token `"\"name\":\"open_*\""` |
 | 7 | `app/scramble_engine_test.cpp` | Same stub (both test executables link command_registry.cpp) |
 | 8 | (Optional) `tools/api_server/models.py` | `WindowType` enum for REST/MCP parity |
 
 ### Finding the Next Command ID
 
-Scan for highest `const ushort cm* = NNN;` in `app/test_pattern_app.cpp` (around line 225). Use NNN+1. Current highest: `cmRogueHackTerminal = 218`.
+Scan for highest `const ushort cm* = NNN;` in `app/wwdos_app.cpp` (around line 225). Use NNN+1. Current highest: `cmRogueHackTerminal = 218`.
 
 ### Menu Item Syntax
 
@@ -364,7 +364,7 @@ This was the actual segfault that crashed the roguelike on first open. The BSP s
 | 3 | Linker error: undefined reference | Build fails at link stage | Missing stub in test .cpp files | Add stub in BOTH test files |
 | 4 | HUD not visible | Game renders but no stats shown | Width check `hudX + HUD_WIDTH <= W` too strict | Use actual minimum text width, not constant |
 | 5 | Timer keeps running when hidden | Game state drifts while minimized | No `setState(sfExposed)` override | Stop timer on `!enable`, start on `enable` |
-| 6 | Socket "already in use" | TUI won't start, no IPC | Stale socket from crashed session | `rm -f /tmp/test_pattern_app.sock*` |
+| 6 | Socket "already in use" | TUI won't start, no IPC | Stale socket from crashed session | `rm -f /tmp/wwdos.sock* /tmp/test_pattern_app.sock*` |
 | 7 | Game doesn't redraw | State changes but screen is stale | Missing `drawView()` call | Call after EVERY state change |
 | 8 | 180-degree death in Snake | Pressing opposite direction kills | No direction buffer | Use `nextDir` vs `dir` pattern |
 | 9 | `duplicate session: ww` | tmux won't create new session | Previous tmux session still alive | `tmux kill-server` before creating |
@@ -388,7 +388,7 @@ cd /path/to/repo/build && ctest --output-on-failure
 ```bash
 # MUST kill everything first — stale sockets and sessions cause failures
 tmux kill-server 2>/dev/null
-rm -f /tmp/test_pattern_app.sock /tmp/test_pattern_app.sock.lock
+rm -f /tmp/wwdos.sock /tmp/wwdos.sock.lock /tmp/test_pattern_app.sock /tmp/test_pattern_app.sock.lock
 sleep 2
 
 # MUST specify -x and -y — without them TUI gets 0x0 canvas
@@ -396,11 +396,11 @@ tmux new-session -d -s ww -x 120 -y 40
 sleep 0.5
 
 # MUST redirect stderr — IPC socket won't appear without it
-tmux send-keys -t ww "./build/app/test_pattern 2>/tmp/wibwob_debug.log" Enter
+tmux send-keys -t ww "./build/app/wwdos 2>/tmp/wibwob_debug.log" Enter
 sleep 5
 
 # Verify socket exists before proceeding
-ls /tmp/test_pattern_app.sock
+ls /tmp/wwdos.sock
 ```
 
 **Why stderr redirect?** The IPC listener logs to stderr. Without redirect, the TTY fights with Turbo Vision's screen buffer and the socket listener fails silently.
@@ -448,7 +448,7 @@ If the TUI segfaults (check with `tmux capture-pane` — look for shell prompt o
 ```bash
 pkill -f uvicorn 2>/dev/null
 tmux kill-server 2>/dev/null
-rm -f /tmp/test_pattern_app.sock*
+rm -f /tmp/wwdos.sock* /tmp/test_pattern_app.sock*
 # Check debug log for clues:
 tail -20 /tmp/wibwob_debug.log
 # Then restart from step 3

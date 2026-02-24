@@ -17,11 +17,11 @@ import time
 
 
 def discover_sockets():
-    """Find all /tmp/wibwob_*.sock files plus legacy path."""
+    """Find all /tmp/wibwob_*.sock files plus default and legacy paths."""
     socks = sorted(glob.glob("/tmp/wibwob_*.sock"))
-    legacy = "/tmp/test_pattern_app.sock"
-    if os.path.exists(legacy) and legacy not in socks:
-        socks.insert(0, legacy)
+    defaults = [p for p in ("/tmp/wwdos.sock", "/tmp/test_pattern_app.sock")
+                if os.path.exists(p) and p not in socks]
+    socks = defaults + socks
     return socks
 
 
