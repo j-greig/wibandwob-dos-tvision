@@ -16,3 +16,4 @@
 [submodule "modules-private"]
 	path = modules-private
 	url = https://github.com/j-greig/wibandwob-wwdos-modules-private.git
+	ignore = dirty
