@@ -135,23 +135,31 @@ void TPaintCanvasView::draw()
             }
             const auto &c = cell(x, by);
             const char* glyph; uint8_t fgc, bgc;
-            if (pixelMode == PixelMode::Text || c.textChar != 0) {
-                // Text mode: render character if present, else space
+            // Composite all layers: text wins, then pixel data
+            if (c.textChar != 0) {
+                // Text layer always visible when present
                 static char txtBuf[2];
-                if (c.textChar != 0) {
-                    txtBuf[0] = c.textChar; txtBuf[1] = '\0';
-                    glyph = txtBuf; fgc = c.textFg; bgc = c.textBg;
-                } else {
-                    glyph = " "; fgc = 7; bgc = bg;
-                }
-            } else if (pixelMode == PixelMode::Quarter) {
+                txtBuf[0] = c.textChar; txtBuf[1] = '\0';
+                glyph = txtBuf; fgc = c.textFg; bgc = c.textBg;
+            } else if (pixelMode == PixelMode::Text) {
+                // In text mode with no text char, show empty
+                glyph = " "; fgc = 7; bgc = bg;
+            } else if (c.qMask != 0 && (pixelMode == PixelMode::Quarter || pixelMode == PixelMode::HalfX)) {
+                // Quarter/HalfX data — use appropriate glyph mapper
+                if (pixelMode == PixelMode::Quarter)
+                    glyph = mapQuarterGlyph(c.qMask);
+                else
+                    glyph = mapHalfXGlyph(c.qMask);
+                fgc = c.qFg; bgc = bg;
+            } else if (c.uOn || c.lOn) {
+                // Half/Full block data — always show regardless of current mode
+                mapHalfCell(c, true, bg, glyph, fgc, bgc);
+            } else if (c.qMask != 0) {
+                // Quarter data visible even in Full/HalfY modes (fallback)
                 glyph = mapQuarterGlyph(c.qMask);
                 fgc = c.qFg; bgc = bg;
-            } else if (pixelMode == PixelMode::HalfX) {
-                glyph = mapHalfXGlyph(c.qMask);
-                fgc = c.qFg; bgc = bg;
             } else {
-                mapHalfCell(c, pixelMode == PixelMode::HalfY, bg, glyph, fgc, bgc);
+                glyph = " "; fgc = 7; bgc = bg;
             }
             uint8_t attr = (bgc << 4) | (fgc & 0x0F);
             TColorAttr a{attr};
@@ -439,13 +447,23 @@ std::string TPaintCanvasView::exportText() const
             if (c.textChar != 0) {
                 os << c.textChar;
             } else if (c.uOn && c.lOn) {
-                os << '#';
+                os << "\xe2\x96\x88"; // █ FULL BLOCK U+2588
             } else if (c.uOn) {
-                os << '^';
+                os << "\xe2\x96\x80"; // ▀ UPPER HALF BLOCK U+2580
             } else if (c.lOn) {
-                os << 'v';
+                os << "\xe2\x96\x84"; // ▄ LOWER HALF BLOCK U+2584
             } else if (c.qMask != 0) {
-                os << '.';
+                // Map qMask to best Unicode block approximation
+                uint8_t m = c.qMask & 0x0F;
+                if (m == 0x0F)                     os << "\xe2\x96\x88"; // █ full
+                else if (m == 0x05)                os << "\xe2\x96\x8c"; // ▌ left half
+                else if (m == 0x0A)                os << "\xe2\x96\x90"; // ▐ right half
+                else if (m == 0x03)                os << "\xe2\x96\x80"; // ▀ upper half
+                else if (m == 0x0C)                os << "\xe2\x96\x84"; // ▄ lower half
+                else if (m & 0x05)                 os << "\xe2\x96\x8c"; // ▌ left-ish
+                else if (m & 0x0A)                 os << "\xe2\x96\x90"; // ▐ right-ish
+                else if (m & 0x03)                 os << "\xe2\x96\x80"; // ▀ upper-ish
+                else                               os << "\xe2\x96\x84"; // ▄ lower-ish
             } else {
                 os << ' ';
             }
