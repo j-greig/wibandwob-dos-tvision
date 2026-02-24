@@ -4240,21 +4240,66 @@ private:
 
 // ── Manage Workspaces dialog ──────────────────────────────────────────────────
 
-// Custom commands for dialog buttons
 static const ushort cmWsLoad   = 281;
 static const ushort cmWsRename = 282;
 static const ushort cmWsDelete = 283;
 
+// Custom dialog that tracks list focus and updates preview live
+class TManageWorkspacesDialog : public TDialog {
+public:
+    TListBox* listBox;
+    TWorkspacePreview* preview;
+    std::vector<std::string> paths;
+    std::vector<std::string> labels;
+    int lastFocused = -1;
+
+    TManageWorkspacesDialog(const TRect& bounds, const char* title)
+        : TDialog(bounds, title), TWindowInit(&TDialog::initFrame),
+          listBox(nullptr), preview(nullptr) {}
+
+    void updatePreview() {
+        int sel = listBox ? listBox->focused : -1;
+        if (sel == lastFocused || sel < 0 || sel >= (int)paths.size()) return;
+        lastFocused = sel;
+        if (preview) {
+            auto wins = parseWorkspaceWindows(paths[sel]);
+            preview->setWindows(wins);
+        }
+    }
+
+    void rebuildList(int focusIdx = 0) {
+        if (!listBox) return;
+        TStringCollection* col = new TStringCollection((short)labels.size(), 1);
+        for (const auto& l : labels) col->insert(newStr(l.c_str()));
+        listBox->newList(col);
+        if (focusIdx >= (int)labels.size()) focusIdx = (int)labels.size() - 1;
+        if (focusIdx < 0) focusIdx = 0;
+        listBox->focusItem(focusIdx);
+        lastFocused = -1;  // force preview refresh
+        updatePreview();
+    }
+
+    virtual void handleEvent(TEvent& event) override {
+        // Before processing, snapshot focus to detect change after
+        int beforeFocus = listBox ? listBox->focused : -1;
+
+        TDialog::handleEvent(event);
+
+        // After any event, check if list focus changed
+        if (listBox && listBox->focused != beforeFocus) {
+            updatePreview();
+        }
+    }
+};
+
 void TTestPatternApp::manageWorkspaces()
 {
-    // Scan workspace files
     std::vector<std::string> paths = scanRecentWorkspacePaths("workspaces", 50);
     if (paths.empty()) {
         messageBox("No saved workspaces found.", mfInformation | mfOKButton);
         return;
     }
 
-    // Build labels
     std::vector<std::string> labels;
     for (const auto& p : paths) {
         std::string label = recentWorkspaceLabel(p);
@@ -4263,59 +4308,45 @@ void TTestPatternApp::manageWorkspaces()
         labels.push_back(label);
     }
 
-    // Dialog layout: list on left, preview on right
     int dlgW = 72, dlgH = 22;
-    TDialog* dlg = new TDialog(TRect(0, 0, dlgW, dlgH), "Manage Workspaces");
+    auto* dlg = new TManageWorkspacesDialog(TRect(0, 0, dlgW, dlgH), "Manage Workspaces");
     dlg->options |= ofCentered;
+    dlg->paths = paths;
+    dlg->labels = labels;
 
-    // List box with scrollbar (left half)
+    // List box (left)
     int listW = 32;
     TScrollBar* sb = new TScrollBar(TRect(listW - 1, 2, listW, dlgH - 4));
     dlg->insert(sb);
-
     TListBox* lb = new TListBox(TRect(2, 2, listW - 1, dlgH - 4), 1, sb);
     dlg->insert(lb);
+    dlg->listBox = lb;
 
-    TStringCollection* col = new TStringCollection((short)labels.size(), 1);
-    for (const auto& l : labels)
-        col->insert(newStr(l.c_str()));
-    lb->newList(col);
-    lb->focusItem(0);
-
-    // Preview area (right half)
-    TWorkspacePreview* preview = new TWorkspacePreview(TRect(listW + 1, 2, dlgW - 2, dlgH - 4));
+    // Preview (right)
+    auto* preview = new TWorkspacePreview(TRect(listW + 1, 2, dlgW - 2, dlgH - 4));
     dlg->insert(preview);
+    dlg->preview = preview;
 
-    // Show initial preview
-    if (!paths.empty()) {
-        auto wins = parseWorkspaceWindows(paths[0]);
-        preview->setWindows(wins);
-    }
+    // Populate and show initial preview
+    dlg->rebuildList(0);
 
-    // Buttons at bottom
+    // Buttons
     int btnY = dlgH - 3;
     dlg->insert(new TButton(TRect(2, btnY, 14, btnY + 2), "~L~oad", cmWsLoad, bfDefault));
     dlg->insert(new TButton(TRect(15, btnY, 29, btnY + 2), "~R~ename", cmWsRename, bfNormal));
     dlg->insert(new TButton(TRect(30, btnY, 44, btnY + 2), "~D~elete", cmWsDelete, bfNormal));
     dlg->insert(new TButton(TRect(45, btnY, 57, btnY + 2), "~C~lose", cmCancel, bfNormal));
 
-    // Dialog loop — we handle commands manually to stay in the dialog
+    // Dialog loop
     bool done = false;
     while (!done) {
-        // Update preview based on current selection
-        int sel = lb->focused;
-        if (sel >= 0 && sel < (int)paths.size()) {
-            auto wins = parseWorkspaceWindows(paths[sel]);
-            preview->setWindows(wins);
-        }
-
         ushort cmd = execView(dlg);
 
         switch (cmd) {
             case cmWsLoad: {
                 int sel = lb->focused;
-                if (sel >= 0 && sel < (int)paths.size()) {
-                    std::string loadPath = paths[sel];
+                if (sel >= 0 && sel < (int)dlg->paths.size()) {
+                    std::string loadPath = dlg->paths[sel];
                     destroy(dlg);
                     loadWorkspaceFromFile(loadPath);
                     return;
@@ -4324,12 +4355,10 @@ void TTestPatternApp::manageWorkspaces()
             }
             case cmWsRename: {
                 int sel = lb->focused;
-                if (sel < 0 || sel >= (int)paths.size()) break;
-                // Get current name
-                std::string oldName = recentWorkspaceLabel(paths[sel]);
+                if (sel < 0 || sel >= (int)dlg->paths.size()) break;
+                std::string oldName = recentWorkspaceLabel(dlg->paths[sel]);
                 if (oldName.size() > 5 && oldName.substr(oldName.size() - 5) == ".json")
                     oldName = oldName.substr(0, oldName.size() - 5);
-                // Strip window count suffix
                 size_t paren = oldName.find(" (");
                 if (paren != std::string::npos) oldName = oldName.substr(0, paren);
 
@@ -4340,49 +4369,37 @@ void TTestPatternApp::manageWorkspaces()
 
                 std::string newName(name);
                 if (newName.empty() || newName == oldName) break;
-
-                for (char& c : newName) {
-                    if (!std::isalnum(c) && c != '-' && c != '_' && c != '.')
-                        c = '_';
-                }
+                for (char& c : newName)
+                    if (!std::isalnum(c) && c != '-' && c != '_' && c != '.') c = '_';
 
                 std::string newPath = "workspaces/" + newName + ".json";
-                if (std::rename(paths[sel].c_str(), newPath.c_str()) == 0) {
-                    paths[sel] = newPath;
-                    // Update label
+                if (std::rename(dlg->paths[sel].c_str(), newPath.c_str()) == 0) {
+                    dlg->paths[sel] = newPath;
                     std::string newLabel = newName + ".json";
                     int n = countWindowsInWorkspace(newPath);
                     if (n > 0) newLabel += " (" + std::to_string(n) + ")";
-                    // Rebuild collection
-                    labels[sel] = newLabel;
-                    TStringCollection* nc = new TStringCollection((short)labels.size(), 1);
-                    for (const auto& l : labels) nc->insert(newStr(l.c_str()));
-                    lb->newList(nc);
-                    lb->focusItem(sel);
+                    dlg->labels[sel] = newLabel;
+                    dlg->rebuildList(sel);
                     recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
                 }
                 break;
             }
             case cmWsDelete: {
                 int sel = lb->focused;
-                if (sel < 0 || sel >= (int)paths.size()) break;
-                std::string fname = recentWorkspaceLabel(paths[sel]);
+                if (sel < 0 || sel >= (int)dlg->paths.size()) break;
+                std::string fname = recentWorkspaceLabel(dlg->paths[sel]);
                 std::string msg = "Delete " + fname + "?";
                 if (messageBox(msg.c_str(), mfConfirmation | mfYesButton | mfNoButton) != cmYes)
                     break;
-                std::remove(paths[sel].c_str());
-                paths.erase(paths.begin() + sel);
-                labels.erase(labels.begin() + sel);
-                if (paths.empty()) {
+                std::remove(dlg->paths[sel].c_str());
+                dlg->paths.erase(dlg->paths.begin() + sel);
+                dlg->labels.erase(dlg->labels.begin() + sel);
+                if (dlg->paths.empty()) {
                     destroy(dlg);
                     recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
                     return;
                 }
-                TStringCollection* nc = new TStringCollection((short)labels.size(), 1);
-                for (const auto& l : labels) nc->insert(newStr(l.c_str()));
-                lb->newList(nc);
-                if (sel >= (int)labels.size()) sel = (int)labels.size() - 1;
-                lb->focusItem(sel);
+                dlg->rebuildList(sel);
                 recentWorkspaces_ = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
                 break;
             }
@@ -4392,7 +4409,6 @@ void TTestPatternApp::manageWorkspaces()
                 break;
         }
     }
-
     destroy(dlg);
 }
 
