@@ -1,12 +1,34 @@
 # Spike: Paint Save / Load
 
-**tl;dr** — Add Save/Load to the paint window. Primary format: JSON cell buffer (`.wwp`). Secondary: ANSI export-only. Wire to paint window File menu + IPC commands + REST endpoints. Lossless round-trip is the goal.
+Status: not-started  
+GitHub issue: —  
+PR: —
+
+**tl;dr** — Add Save/Load to the paint window. Primary format: JSON cell buffer (`.wwp`). Secondary: ANSI export-only. Wire to paint window's own in-window File menu + IPC commands + REST endpoints. Lossless round-trip is the goal.
 
 ---
 
 ## Problem
 
 The paint canvas buffer is ephemeral — closing the window loses everything. No save, no load, no file persistence. The `exportText()` method exists but strips all colour.
+
+## P0: In-Window Menu Bar
+
+Before wiring save/load, the paint window needs its own menu bar inside the window frame. Turbo Vision supports this — `TMenuBar` is just a `TView` and can be inserted into any `TWindow`, not just `TApplication`.
+
+### Design
+- Insert a `TMenuBar` as first child view of `TPaintWindow`, positioned at row 0 inside the frame (1-pixel high, full width minus frame)
+- Menus: **File** (Save, Save As, Load, Export ANSI, Export Text, Close), **Edit** (Clear, Undo?), **Mode** (pixel mode toggles already in tool panel — mirror here for discoverability)
+- Canvas and tool panel shift down 1 row to make room
+- Menu commands are local to the paint window — handled in `TPaintWindow::handleEvent` before bubbling to app
+
+### AC
+- AC-M1: Paint window has a visible menu bar below the title bar
+  - Test: Open paint window, verify File/Edit/Mode menus visible
+- AC-M2: File > Close closes the paint window
+  - Test: File > Close, verify window gone
+- AC-M3: Menu bar resizes with window
+  - Test: Resize paint window, verify menu bar stretches
 
 ## Format Decision
 
@@ -97,14 +119,14 @@ cmd:paint_export_ansi id=w1 path=/Users/james/canvas.ans
 
 ## Implementation Order
 
+0. **P0: In-window menu bar** — `TMenuBar` inside `TPaintWindow` with File/Edit/Mode menus
 1. `saveToFile` + `loadFromFile` on `TPaintCanvasView` (C++, no UI yet)
-2. IPC handlers: `paint_save`, `paint_load`, `paint_export_ansi`
-3. REST endpoints
-4. AC tests (IPC round-trip: save → clear → load → export → compare)
-5. Keyboard shortcuts in `TPaintWindow::handleEvent` (Ctrl+S, Ctrl+O)
+2. Wire File menu items: Save, Save As, Load, Export ANSI, Export Text
+3. IPC handlers: `paint_save`, `paint_load`, `paint_export_ansi`
+4. REST endpoints
+5. AC tests (IPC round-trip: save → clear → load → export → compare)
 6. Title / dirty flag
 7. ANSI export
-8. Paint window File submenu (optional — shortcuts may be enough)
 
 ## Acceptance Criteria (draft)
 
