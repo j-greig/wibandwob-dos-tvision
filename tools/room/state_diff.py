@@ -22,8 +22,8 @@ IPC_TIMEOUT = 2.0
 # Shared HMAC secret — read once from env at import time.
 _AUTH_SECRET: str = os.environ.get("WIBWOB_AUTH_SECRET", "")
 
-# Window types that are singleton internal UI — never sync across instances.
-_INTERNAL_TYPES: frozenset[str] = frozenset({"wibwob", "scramble"})
+# Window types that are singleton/internal UI — never sync across instances.
+_INTERNAL_TYPES: frozenset[str] = frozenset({"wibwob", "scramble", "room_chat"})
 
 
 # ── IPC helpers ───────────────────────────────────────────────────────────────
@@ -282,6 +282,9 @@ def apply_delta_to_ipc(
 
     for win in delta.get("add", []):
         win_type = win.get("type", "test_pattern")
+        if win_type in _INTERNAL_TYPES:
+            applied.append(f"SKIP create_window internal type={win_type}")
+            continue
         rect = _rect(win)
         x = rect.get("x", 0)
         y = rect.get("y", 0)

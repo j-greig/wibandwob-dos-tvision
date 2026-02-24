@@ -21,6 +21,7 @@ Environment:
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -34,6 +35,7 @@ from state_diff import (
     apply_delta_to_ipc,
     ipc_get_state,
     ipc_command,
+    ipc_command_raw,
     _AUTH_SECRET,
 )
 
@@ -83,6 +85,49 @@ def ipc_sock_path(instance_id: str) -> str:
     return f"/tmp/wibwob_{instance_id}.sock"
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_ADJECTIVES = [
+    "amber", "bold", "calm", "dark", "eerie", "fast", "grim", "hazy",
+    "iron", "jade", "keen", "lone", "mute", "neon", "odd", "pale",
+    "quick", "rust", "sage", "teal", "wild", "zany",
+]
+_ANIMALS = [
+    "bat", "crow", "deer", "elk", "fox", "gnu", "hawk", "ibis",
+    "jay", "kite", "lynx", "moth", "newt", "owl", "pike", "quail",
+    "rook", "swift", "tern", "vole", "wasp", "yak",
+]
+
+def _display_name(conn_id: str, self_id: str) -> str:
+    """Return the display name for a connection, appending ' (me)' for self."""
+    name = _name_for_conn(conn_id)
+    return f"{name} (me)" if (self_id and conn_id == self_id) else name
+
+
+def _name_for_conn(conn_id: str) -> str:
+    """Map a connection ID deterministically to an adjective-animal name.
+
+    Both bridge instances use the same hash so they agree on names.
+    Max length: 'quick-swift' = 11 chars, fits comfortably in the strip.
+    """
+    h = int(hashlib.md5(conn_id.encode()).hexdigest(), 16)
+    adj    = _ADJECTIVES[h % len(_ADJECTIVES)]
+    animal = _ANIMALS[(h >> 8) % len(_ANIMALS)]
+    return f"{adj}-{animal}"
+
+
+def _normalise_ts(ts: str | int | float) -> str:
+    """Return HH:MM from ts, handling epoch-ms integers/strings or pre-formatted strings."""
+    try:
+        ms = int(ts)
+        # Epoch-ms: 13-digit numbers (year ~2001+); convert to local HH:MM
+        from datetime import datetime
+        return datetime.fromtimestamp(ms / 1000).strftime("%H:%M")
+    except (ValueError, TypeError, OSError):
+        # Already formatted (e.g. "15:04") or empty — use as-is or fall back
+        return str(ts) if ts else time.strftime("%H:%M")
+
+
 # ── Bridge ────────────────────────────────────────────────────────────────────
 
 def build_ws_url(partykit_url: str, room: str) -> str:
@@ -98,16 +143,20 @@ def build_ws_url(partykit_url: str, room: str) -> str:
 
 
 class PartyKitBridge:
-    def __init__(self, instance_id: str, partykit_url: str, room: str, ai_relay: bool = False):
+    def __init__(self, instance_id: str, partykit_url: str, room: str,
+                 ai_relay: bool = False, legacy_scramble_chat: bool = False):
         self.sock_path = ipc_sock_path(instance_id)
         self.ws_url = build_ws_url(partykit_url, room)
         self.instance_id = instance_id
-        self.ai_relay = ai_relay  # True = use wibwob_ask (AI responds); False = chat_receive (display only)
+        self.ai_relay = ai_relay  # legacy: True = wibwob_ask, False = chat_receive
+        self.legacy_scramble_chat = legacy_scramble_chat  # route to Scramble instead of RoomChatView
         self.last_windows: dict[str, dict] = {}
         self.last_chat_seq: int = 0
         self.id_map: dict[str, str] = {}  # remote window id -> local IPC id
         self.consecutive_failures: int = 0
         self._ws = None
+        self._participants: list[str] = []   # tracked conn ids for presence strip
+        self._self_conn_id: str = ""          # own PartyKit connection ID (from presence sync)
         # Protects last_windows from concurrent coroutine updates.
         # asyncio is single-threaded but awaits between diff and baseline write
         # can allow another coroutine to interleave and overwrite with stale state.
@@ -116,6 +165,13 @@ class PartyKitBridge:
     def log(self, msg: str) -> None:
         ts = time.strftime("%H:%M:%S")
         print(f"[{ts}] [bridge:{self.instance_id}] {msg}", flush=True)
+
+    def _update_presence(self, event: str, conn_id: str) -> None:
+        """Track participant list from join/leave events."""
+        if event == "join" and conn_id not in self._participants:
+            self._participants.append(conn_id)
+        elif event == "leave" and conn_id in self._participants:
+            self._participants.remove(conn_id)
 
     async def push_delta(self, delta: dict) -> None:
         if self._ws is None:
@@ -131,6 +187,7 @@ class PartyKitBridge:
         if self._ws is None:
             return
         msg = json.dumps({"type": "chat_msg", "sender": sender, "text": text,
+                          "ts": time.strftime("%H:%M"),
                           "instance": self.instance_id})
         try:
             await self._ws.send(msg)
@@ -201,20 +258,37 @@ class PartyKitBridge:
             await asyncio.sleep(EVENT_RETRY_DELAY)
 
     async def poll_loop(self) -> None:
-        """Slow heartbeat poll — catches anything missed by event subscription."""
+        """Slow heartbeat poll — catches anything missed by event subscription.
+        Also drains outbound messages typed in the TUI RoomChatView."""
         while True:
-            state = await self._sync_state_now("heartbeat")
-            if state:
-                # Forward new local chat messages to PartyKit
-                for entry in state.get("chat_log", []):
-                    seq = entry.get("seq", 0)
-                    if seq > self.last_chat_seq:
-                        sender = entry.get("sender", "you")
-                        text = entry.get("text", "")
-                        if text:
-                            self.log(f"forwarding chat seq={seq}: {text[:40]}")
+            await self._sync_state_now("heartbeat")
+            # Drain outbound messages from RoomChatView input
+            if not self.legacy_scramble_chat:
+                raw = await asyncio.to_thread(
+                    ipc_command_raw, self.sock_path, "room_chat_pending", {}
+                )
+                if raw:
+                    raw = raw.strip()
+                    try:
+                        pending = json.loads(raw)
+                        for text in pending:
+                            sender = (_name_for_conn(self._self_conn_id)
+                                      if self._self_conn_id
+                                      else f"human:{self.instance_id}")
+                            self.log(f"outbound: {text[:50]}")
                             await self.push_chat(sender, text)
-                        self.last_chat_seq = seq
+                    except Exception:
+                        pass
+                # Re-push presence so strip stays current if window opened
+                # after the initial join event.
+                if self._participants:
+                    participants_json = json.dumps(
+                        [{"id": _display_name(p, self._self_conn_id)} for p in self._participants]
+                    )
+                    await asyncio.to_thread(
+                        ipc_command, self.sock_path, "room_presence",
+                        {"participants": participants_json},
+                    )
             await asyncio.sleep(POLL_INTERVAL)
 
     async def receive_loop(self, ws) -> None:
@@ -230,7 +304,10 @@ class PartyKitBridge:
                 windows = canonical.get("windows", {})
                 if windows and self._state_lock:
                     async with self._state_lock:
-                        new_windows = dict(windows)
+                        # Reuse shared extraction/normalisation so internal UI
+                        # singletons (room_chat/wibwob/scramble) are never
+                        # treated as syncable layout windows during full sync.
+                        new_windows = windows_from_state(canonical)
                         delta = compute_delta(self.last_windows, new_windows)
                         if delta:
                             self.log(f"applying state_sync delta")
@@ -272,27 +349,62 @@ class PartyKitBridge:
             elif mtype == "chat_msg":
                 sender = msg.get("sender", "remote")
                 text = msg.get("text", "")
+                ts   = msg.get("ts", "")
                 origin_instance = msg.get("instance", "")
-                # Only apply messages from other instances (skip our own echo)
+                # Skip echo of our own messages
                 if text and origin_instance != self.instance_id:
                     self.log(f"chat from {sender}: {text[:60]}")
-                    if self.ai_relay:
-                        # ai_relay mode: inject as user prompt so W&W AI responds
-                        relay_text = f"[{sender} says]: {text}"
-                        await asyncio.to_thread(
-                            ipc_command,
-                            self.sock_path,
-                            "exec_command",
-                            {"name": "wibwob_ask", "text": relay_text},
-                        )
+                    if self.legacy_scramble_chat:
+                        # Legacy path: route to Scramble (old behaviour)
+                        if self.ai_relay:
+                            relay_text = f"[{sender} says]: {text}"
+                            await asyncio.to_thread(
+                                ipc_command, self.sock_path, "exec_command",
+                                {"name": "wibwob_ask", "text": relay_text},
+                            )
+                        else:
+                            await asyncio.to_thread(
+                                ipc_command, self.sock_path, "exec_command",
+                                {"name": "chat_receive", "sender": sender, "text": text},
+                            )
                     else:
-                        # Default: display-only (no AI response triggered)
+                        # Default: deliver to RoomChatView
+                        # Normalise ts: PartyKit may relay epoch-ms integers or
+                        # strings like "1771946285090".  Convert to HH:MM; fall
+                        # back to local time if ts is absent or unparseable.
+                        ts_str = _normalise_ts(ts)
                         await asyncio.to_thread(
-                            ipc_command,
-                            self.sock_path,
-                            "exec_command",
-                            {"name": "chat_receive", "sender": sender, "text": text},
+                            ipc_command, self.sock_path, "room_chat_receive",
+                            {"sender": sender, "text": text, "ts": ts_str},
                         )
+
+            elif mtype == "presence":
+                event_name = msg.get("event", "")
+                conn_id    = msg.get("id", "")
+                count      = msg.get("count", 0)
+                self.log(f"presence: {event_name} id={conn_id} count={count}")
+                if not self.legacy_scramble_chat:
+                    if event_name == "sync":
+                        connections = msg.get("connections", [])
+                        if isinstance(connections, list):
+                            self._participants = [str(p) for p in connections]
+                        else:
+                            self._participants = []
+                        self_id = msg.get("self", "")
+                        if self_id:
+                            self._self_conn_id = str(self_id)
+                    else:
+                        # Build a minimal participant list from what we know
+                        # (PartyKit join/leave events only include the changed id;
+                        # track locally and push the full snapshot)
+                        self._update_presence(event_name, conn_id)
+                    participants_json = json.dumps(
+                        [{"id": _display_name(p, self._self_conn_id)} for p in self._participants]
+                    )
+                    await asyncio.to_thread(
+                        ipc_command, self.sock_path, "room_presence",
+                        {"participants": participants_json},
+                    )
 
     async def _request_state_sync(self, ws, reason: str) -> None:
         if ws is None:
@@ -363,9 +475,15 @@ def main() -> int:
         return 1
 
     ai_relay = os.environ.get("WIBWOB_AI_RELAY", "").lower() in ("1", "true", "yes")
-    if ai_relay:
-        print("[bridge] ai_relay=ON — remote messages will trigger W&W AI response via wibwob_ask")
-    bridge = PartyKitBridge(instance_id, partykit_url, room, ai_relay=ai_relay)
+    legacy   = os.environ.get("WIBWOB_LEGACY_CHAT", "").lower() in ("1", "true", "yes")
+    if legacy:
+        print("[bridge] LEGACY_CHAT=ON — routing chat to Scramble (old behaviour)")
+    elif ai_relay:
+        print("[bridge] ai_relay=ON — remote messages trigger W&W AI (legacy)")
+    else:
+        print("[bridge] room_chat mode — routing chat to RoomChatView")
+    bridge = PartyKitBridge(instance_id, partykit_url, room,
+                            ai_relay=ai_relay, legacy_scramble_chat=legacy)
     try:
         asyncio.run(bridge.run())
     except KeyboardInterrupt:

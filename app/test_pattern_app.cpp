@@ -90,6 +90,8 @@
 // Scramble cat presence
 #include "scramble_view.h"
 #include "scramble_engine.h"
+// Multi-user PartyKit room chat
+#include "room_chat_view.h"
 // Paint canvas window
 #include "paint/paint_window.h"
 #include "paint/paint_wwp_codec.h"
@@ -742,6 +744,7 @@ private:
     void newWibWobTestWindowA();
     void newWibWobTestWindowB();
     void newWibWobTestWindowC();
+    void newRoomChatWindow();
     void openAnimationFile();
     void openAnimationFilePath(const std::string& path);
     void openAnimationFilePath(const std::string& path, const TRect& bounds, bool frameless = false, bool shadowless = false, const std::string& title = "");
@@ -912,6 +915,10 @@ private:
     friend std::string api_get_canvas_size(TTestPatternApp&);
     friend void api_spawn_text_editor(TTestPatternApp&, const TRect* bounds, const std::string& title);
     friend void api_spawn_browser(TTestPatternApp&, const TRect* bounds);
+    friend void api_spawn_room_chat(TTestPatternApp&, const TRect* bounds);
+    friend std::string api_room_chat_receive(TTestPatternApp&, const std::string& sender, const std::string& text, const std::string& ts);
+    friend std::string api_room_presence(TTestPatternApp&, const std::string& participants_json);
+    friend std::string api_get_room_chat_pending(TTestPatternApp&);
     friend std::string api_take_last_registered_window_id(TTestPatternApp&);
     friend void api_spawn_verse(TTestPatternApp&, const TRect* bounds);
     friend void api_spawn_mycelium(TTestPatternApp&, const TRect* bounds);
@@ -1565,6 +1572,31 @@ void TTestPatternApp::handleEvent(TEvent& event)
                 newWibWobWindow();
                 clearEvent(event);
                 break;
+            case cmRoomChat:
+                newRoomChatWindow();
+                clearEvent(event);
+                break;
+            case cmRoomPresence: {
+                auto* participants =
+                    static_cast<std::vector<RoomParticipant>*>(event.message.infoPtr);
+                if (participants) {
+                    if (TRoomChatWindow* win = getRoomChatWindow())
+                        win->updatePresence(*participants);
+                    delete participants;
+                }
+                clearEvent(event);
+                break;
+            }
+            case cmRoomChatReceive: {
+                auto* msg = static_cast<RoomChatMessage*>(event.message.infoPtr);
+                if (msg) {
+                    if (TRoomChatWindow* win = getRoomChatWindow())
+                        win->receiveMessage(*msg);
+                    delete msg;
+                }
+                clearEvent(event);
+                break;
+            }
             // REMOVED E009: cmWibWobTestA/B/C (dev-only, no menu items)
             case cmRepaint:
                 if (deskTop) {
@@ -2100,6 +2132,26 @@ void TTestPatternApp::newWibWobWindow()
     window->select();
 }
 
+void TTestPatternApp::newRoomChatWindow()
+{
+    windowNumber++;
+    int offset = (windowNumber - 1) % 8;
+    TRect bounds(
+        4 + offset * 2,
+        2 + offset,
+        100 + offset * 2,
+        28 + offset
+    );
+    TWindow* window = createRoomChatWindow(bounds);
+    if (!window) {
+        messageBox("Failed to create Room Chat window.", mfError | mfOKButton);
+        return;
+    }
+    deskTop->insert(window);
+    registerWindow(window);
+    window->select();
+}
+
 void TTestPatternApp::newWibWobTestWindowA()
 {
     // Test window A: standardScrollBar() fix (minimal change approach)
@@ -2555,6 +2607,7 @@ TMenuBar* TTestPatternApp::initMenuBar(TRect r)
             // REMOVED E009: Background Color... (retired for now)
         *new TSubMenu("~T~ools", kbAltT) +
             *new TMenuItem("~W~ib&Wob Chat", cmWibWobChat, kbF12) +
+            *new TMenuItem("~R~oom Chat", cmRoomChat, kbNoKey) +
             // REMOVED E009: Test A/B/C (dev-only, type fallback to test_pattern)
             // REMOVED E009: Glitch Effects submenu (entire submenu disabled)
             // REMOVED E009: ANSI Editor, Animation Studio (placeholders)
@@ -4435,6 +4488,109 @@ void api_spawn_browser(TTestPatternApp& app, const TRect* bounds) {
     } else {
         app.newBrowserWindow();
     }
+}
+
+void api_spawn_room_chat(TTestPatternApp& app, const TRect* bounds) {
+    TRect r;
+    if (bounds) {
+        r = *bounds;
+    } else {
+        TRect d = app.deskTop->getExtent();
+        int dw = d.b.x - d.a.x;
+        int dh = d.b.y - d.a.y;
+        int width = std::max(10, std::min(100, dw));
+        int height = std::max(6, std::min(28, dh));
+        int left = d.a.x + (dw - width) / 2;
+        int top = d.a.y + (dh - height) / 2;
+        r = TRect(left, top, left + width, top + height);
+    }
+    TWindow* window = createRoomChatWindow(r);
+    app.deskTop->insert(window);
+    app.registerWindow(window);
+}
+
+std::string api_room_chat_receive(TTestPatternApp& /*app*/,
+                                  const std::string& sender,
+                                  const std::string& text,
+                                  const std::string& ts) {
+    TRoomChatWindow* win = getRoomChatWindow();
+    if (!win) return "err no room_chat window open";
+
+    RoomChatMessage msg;
+    msg.sender = sender;
+    msg.text = text;
+    msg.ts = ts.empty() ? "??:??" : ts;
+
+    TEvent ev;
+    ev.what = evCommand;
+    ev.message.command = cmRoomChatReceive;
+    ev.message.infoPtr = new RoomChatMessage(msg);
+    TProgram::application->putEvent(ev);
+    return "ok";
+}
+
+std::string api_room_presence(TTestPatternApp& /*app*/,
+                              const std::string& participants_json) {
+    TRoomChatWindow* win = getRoomChatWindow();
+    if (!win) return "err no room_chat window open";
+
+    auto* participants = new std::vector<RoomParticipant>();
+    std::string json = participants_json;
+    size_t pos = 0;
+    while ((pos = json.find("\"id\"", pos)) != std::string::npos) {
+        pos = json.find(':', pos);
+        if (pos == std::string::npos) break;
+        pos = json.find('"', pos);
+        if (pos == std::string::npos) break;
+        size_t start = pos + 1;
+        size_t end = json.find('"', start);
+        if (end == std::string::npos) break;
+        RoomParticipant p;
+        p.id = json.substr(start, end - start);
+        p.name = p.id;
+        size_t nameField = json.find("\"name\"", end);
+        size_t nextEntry = json.find('{', end);
+        if (nameField != std::string::npos &&
+            (nextEntry == std::string::npos || nameField < nextEntry)) {
+            size_t npos2 = json.find(':', nameField);
+            npos2 = json.find('"', npos2);
+            if (npos2 != std::string::npos) {
+                size_t nstart = npos2 + 1;
+                size_t nend = json.find('"', nstart);
+                if (nend != std::string::npos)
+                    p.name = json.substr(nstart, nend - nstart);
+            }
+        }
+        participants->push_back(p);
+        pos = end + 1;
+    }
+
+    TEvent ev;
+    ev.what = evCommand;
+    ev.message.command = cmRoomPresence;
+    ev.message.infoPtr = participants;
+    TProgram::application->putEvent(ev);
+    return "ok";
+}
+
+std::string api_get_room_chat_pending(TTestPatternApp& /*app*/) {
+    TRoomChatWindow* win = getRoomChatWindow();
+    if (!win) return "[]";
+    auto msgs = win->drainPending();
+    std::string json = "[";
+    for (size_t i = 0; i < msgs.size(); ++i) {
+        if (i) json += ",";
+        json += "\"";
+        for (char c : msgs[i]) {
+            if (c == '"') json += "\\\"";
+            else if (c == '\\') json += "\\\\";
+            else if (c == '\n') json += "\\n";
+            else json += c;
+        }
+        json += "\"";
+    }
+    json += "]";
+    return json;
 }
 
 // Generative / animated art windows — spawnable via IPC create_window type=X

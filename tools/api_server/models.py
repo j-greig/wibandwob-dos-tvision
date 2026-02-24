@@ -35,6 +35,7 @@ class WindowType(str, enum.Enum):
     wibwob = "wibwob"
     scramble = "scramble"
     wallpaper = "wallpaper"
+    room_chat = "room_chat"
 
 
 @dataclass

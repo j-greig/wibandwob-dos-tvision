@@ -20,6 +20,9 @@ extern void api_toggle_scramble(TTestPatternApp& app);
 extern void api_expand_scramble(TTestPatternApp& app);
 extern std::string api_scramble_say(TTestPatternApp& app, const std::string& text);
 extern std::string api_scramble_pet(TTestPatternApp& app);
+extern void api_spawn_room_chat(TTestPatternApp& app, const TRect* bounds);
+extern std::string api_room_chat_receive(TTestPatternApp& app, const std::string& sender, const std::string& text, const std::string& ts);
+extern std::string api_room_presence(TTestPatternApp& app, const std::string& participants_json);
 extern std::string api_chat_receive(TTestPatternApp& app, const std::string& sender, const std::string& text);
 extern std::string api_wibwob_ask(TTestPatternApp& app, const std::string& text);
 extern std::string api_get_chat_history(TTestPatternApp& app);
@@ -90,6 +93,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"scramble_expand", "Toggle Scramble between smol and tall mode", false},
         {"scramble_say", "Send a message to Scramble chat (requires text param)", true},
         {"scramble_pet", "Pet the cat. She allows it.", false},
+        {"open_room_chat", "Open Room Chat window (multi-user PartyKit room)", false},
+        {"room_chat_receive", "Deliver incoming chat message to RoomChatView {sender, text, ts?}", true},
+        {"room_presence", "Update participant list in RoomChatView {participants: JSON array}", true},
         {"new_paint_canvas", "Open a new paint canvas window", false},
         {"open_micropolis_ascii", "Open Micropolis ASCII MVP window", false},
         {"open_quadra", "Open Quadra falling blocks game", false},
@@ -219,6 +225,22 @@ std::string exec_registry_command(
     }
     if (name == "scramble_pet") {
         return api_scramble_pet(app);
+    }
+    if (name == "open_room_chat") {
+        api_spawn_room_chat(app, nullptr);
+        return "ok";
+    }
+    if (name == "room_chat_receive") {
+        auto sender = kv.count("sender") ? kv.at("sender") : std::string("remote");
+        auto text = kv.count("text") ? kv.at("text") : std::string("");
+        auto ts = kv.count("ts") ? kv.at("ts") : std::string("");
+        if (text.empty())
+            return "err missing text";
+        return api_room_chat_receive(app, sender, text, ts);
+    }
+    if (name == "room_presence") {
+        auto participants = kv.count("participants") ? kv.at("participants") : std::string("[]");
+        return api_room_presence(app, participants);
     }
     if (name == "new_paint_canvas") {
         api_spawn_paint(app, nullptr);

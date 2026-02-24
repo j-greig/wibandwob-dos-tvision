@@ -29,6 +29,7 @@
 #include "app_launcher_view.h"
 #include "ascii_gallery_view.h"
 #include "scramble_view.h"
+#include "room_chat_view.h"
 #include "paint/paint_window.h"
 #include "micropolis_ascii_view.h"
 #include "tvterm_view.h"
@@ -68,6 +69,7 @@ extern void api_spawn_paint(TTestPatternApp&, const TRect*);
 extern void api_spawn_micropolis_ascii(TTestPatternApp&, const TRect*);
 extern void api_spawn_terminal(TTestPatternApp&, const TRect*);
 extern void api_spawn_wibwob(TTestPatternApp&, const TRect*);
+extern void api_spawn_room_chat(TTestPatternApp&, const TRect*);
 extern void api_spawn_quadra(TTestPatternApp&, const TRect*);
 extern void api_spawn_snake(TTestPatternApp&, const TRect*);
 extern void api_spawn_rogue(TTestPatternApp&, const TRect*);
@@ -216,6 +218,10 @@ static const char* spawn_terminal(TTestPatternApp& app,
                                    const std::map<std::string, std::string>& kv) {
     TRect r; api_spawn_terminal(app, opt_bounds(kv, r)); return nullptr;
 }
+static const char* spawn_room_chat(TTestPatternApp& app,
+                                   const std::map<std::string, std::string>& kv) {
+    TRect r; api_spawn_room_chat(app, opt_bounds(kv, r)); return nullptr;
+}
 static const char* spawn_quadra(TTestPatternApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_quadra(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_snake(TTestPatternApp& app, const std::map<std::string,std::string>& kv) {
@@ -283,6 +289,7 @@ static bool match_paint(TWindow* w) { return dynamic_cast<TPaintWindow*>(w) != n
 static bool match_micropolis_ascii(TWindow* w) { return has_child_view<TMicropolisAsciiView>(w); }
 static bool match_terminal(TWindow* w) { return dynamic_cast<TWibWobTerminalWindow*>(w) != nullptr; }
 static bool match_wibwob(TWindow* w) { return dynamic_cast<TWibWobWindow*>(w) != nullptr; }
+static bool match_room_chat(TWindow* w) { return dynamic_cast<TRoomChatWindow*>(w) != nullptr; }
 static bool match_scramble(TWindow* w)    { return dynamic_cast<TScrambleWindow*>(w) != nullptr; }
 static bool match_quadra(TWindow* w)      { return has_child_view<TQuadraView>(w); }
 static bool match_snake(TWindow* w)       { return has_child_view<TSnakeView>(w); }
@@ -318,6 +325,7 @@ static const WindowTypeSpec k_specs[] = {
     { "paint",             spawn_paint,             match_paint             },
     { "micropolis_ascii",  spawn_micropolis_ascii,  match_micropolis_ascii  },
     { "terminal",          spawn_terminal,          match_terminal          },
+    { "room_chat",         spawn_room_chat,         match_room_chat         },
     // Internal-only types — recognised but not spawnable via IPC
     { "wibwob",            [](TTestPatternApp& app, const std::map<std::string,std::string>& kv) -> const char* {
                                TRect r; api_spawn_wibwob(app, opt_bounds(kv, r)); return nullptr;

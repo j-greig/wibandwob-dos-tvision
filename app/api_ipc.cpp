@@ -1,6 +1,7 @@
 #include "api_ipc.h"
 #include "command_registry.h"
 #include "core/json_utils.h"
+#include "room_chat_view.h"
 #include "window_type_registry.h"
 
 #ifndef _WIN32
@@ -150,6 +151,9 @@ extern std::string api_close_window(TTestPatternApp& app, const std::string& id)
 extern std::string api_get_canvas_size(TTestPatternApp& app);
 extern void api_spawn_paint(TTestPatternApp& app, const TRect* bounds);
 extern TPaintCanvasView* api_find_paint_canvas(TTestPatternApp& app, const std::string& id);
+extern std::string api_room_chat_receive(TTestPatternApp& app, const std::string& sender, const std::string& text, const std::string& ts);
+extern std::string api_room_presence(TTestPatternApp& app, const std::string& participants_json);
+extern std::string api_get_room_chat_pending(TTestPatternApp& app);
 extern std::string api_browser_fetch(TTestPatternApp& app, const std::string& url);
 extern std::string api_send_text(TTestPatternApp& app, const std::string& id, 
                                  const std::string& content, const std::string& mode, 
@@ -598,6 +602,21 @@ void ApiIpcServer::poll() {
                 }
             }
         }
+    } else if (cmd == "room_chat_receive") {
+        std::string sender = kv.count("sender") ? kv.at("sender") : "remote";
+        std::string text = kv.count("text") ? kv.at("text") : "";
+        std::string ts = kv.count("ts") ? kv.at("ts") : "";
+        ts = normaliseMsgTs(ts);
+        if (text.empty()) {
+            resp = "err missing text\n";
+        } else {
+            resp = api_room_chat_receive(*app_, sender, text, ts) + "\n";
+        }
+    } else if (cmd == "room_presence") {
+        std::string participants = kv.count("participants") ? kv.at("participants") : "[]";
+        resp = api_room_presence(*app_, participants) + "\n";
+    } else if (cmd == "room_chat_pending") {
+        resp = api_get_room_chat_pending(*app_) + "\n";
     } else if (cmd == "browser_fetch") {
         auto url_it = kv.find("url");
         if (url_it != kv.end()) {

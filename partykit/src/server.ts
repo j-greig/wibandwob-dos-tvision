@@ -50,7 +50,6 @@ interface CanonicalState {
 
 type IncomingMessage =
   | { type: "state_delta"; room_id?: string; delta: StateDelta }
-  | { type: "state_request"; room_id?: string; reason?: string; instance?: string }
   | { type: "chat_msg"; sender: string; text: string; ts?: number }
   | { type: "cursor_pos"; sender: string; x: number; y: number }
   | { type: "ping" };
@@ -131,6 +130,19 @@ export default class WibWobRoom implements Party.Server {
       [conn.id]
     );
 
+    // Send the joiner a full presence snapshot so it can populate participants
+    // immediately without waiting for a later join/leave event.
+    const ids = [...this.room.getConnections()].map((c) => c.id);
+    conn.send(
+      JSON.stringify({
+        type: "presence",
+        event: "sync",
+        connections: ids,
+        count: ids.length,
+        self: conn.id,
+      })
+    );
+
     console.log(`[${this.room.id}] connect: ${conn.id} (total: ${[...this.room.getConnections()].length})`);
   }
 
@@ -157,18 +169,6 @@ export default class WibWobRoom implements Party.Server {
             from: sender.id,
           }),
           [sender.id]
-        );
-        break;
-      }
-
-      case "state_request": {
-        await this.ensureState();
-        sender.send(
-          JSON.stringify({
-            type: "state_sync",
-            state: this.state,
-            room: this.room.id,
-          })
         );
         break;
       }
