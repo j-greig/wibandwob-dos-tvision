@@ -1,6 +1,6 @@
 # Spike: FIGlet Text Stamp in Paint
 
-Status: in-progress
+Status: done
 GitHub issue: —
 PR: —
 Branch: `spike/paint-figlet-stamp`
@@ -23,17 +23,15 @@ onto the canvas as text-layer cells at the current cursor position.
 
 ## Implementation
 
-### P0 — Stamp with input dialog (~50 lines)
+### P0 — Stamp with dialog + API (~200 lines)
 
-- [~] `cmPaintStampFiglet = 630` command constant
-- [~] `Edit > Stamp FIGlet...` menu item in paint window menu bar
-- [~] `doStampFiglet()` on `TPaintWindow`:
-  - inputBox for text (pre-filled with last text)
-  - inputBox for font name (pre-filled with last font, default "standard")
-  - `figlet::renderLines(text, font, canvasCols)`
-  - loop lines → for each non-space char, set `textChar/textFg/textBg` at cursor offset
-  - mark dirty
-- [~] IPC command `paint_stamp_figlet` (text, font, x, y, fg, bg params)
+- [x] `cmPaintStampFiglet = 630` command constant
+- [x] `Edit > Stamp FIGlet...` menu item in paint window menu bar
+- [x] `TFigletStampDialog`: text input + font TListBox + live TFigletPreview
+- [x] `doStampFiglet()` uses dialog, transparent stamp (skip spaces)
+- [x] IPC `paint_stamp_figlet` (id,text,font,x,y,fg,bg)
+- [x] IPC `list_figlet_fonts` — JSON array of 148 fonts
+- [x] IPC `preview_figlet` — render text+font to plain text (no canvas needed)
 
 ### P1 — Font picker (stretch)
 
