@@ -98,6 +98,12 @@ _ANIMALS = [
     "rook", "swift", "tern", "vole", "wasp", "yak",
 ]
 
+def _display_name(conn_id: str, self_id: str) -> str:
+    """Return the display name for a connection, appending ' (me)' for self."""
+    name = _name_for_conn(conn_id)
+    return f"{name} (me)" if (self_id and conn_id == self_id) else name
+
+
 def _name_for_conn(conn_id: str) -> str:
     """Map a connection ID deterministically to an adjective-animal name.
 
@@ -277,7 +283,7 @@ class PartyKitBridge:
                 # after the initial join event.
                 if self._participants:
                     participants_json = json.dumps(
-                        [{"id": _name_for_conn(p)} for p in self._participants]
+                        [{"id": _display_name(p, self._self_conn_id)} for p in self._participants]
                     )
                     await asyncio.to_thread(
                         ipc_command, self.sock_path, "room_presence",
@@ -393,7 +399,7 @@ class PartyKitBridge:
                         # track locally and push the full snapshot)
                         self._update_presence(event_name, conn_id)
                     participants_json = json.dumps(
-                        [{"id": _name_for_conn(p)} for p in self._participants]
+                        [{"id": _display_name(p, self._self_conn_id)} for p in self._participants]
                     )
                     await asyncio.to_thread(
                         ipc_command, self.sock_path, "room_presence",
