@@ -7,6 +7,8 @@
 
 #define Uses_TEvent
 #define Uses_TKeys
+#define Uses_TProgram
+#define Uses_TDeskTop
 #define Uses_MsgBox
 #include <tvision/tv.h>
 
@@ -59,14 +61,31 @@ void TFigletPreview::draw()
    └──────────────────────────────────────────────────────┘
 */
 
+static TRect calcStampDialogBounds() {
+    TRect d = TProgram::deskTop->getExtent();
+    int dw = d.b.x - d.a.x;
+    int dh = d.b.y - d.a.y;
+    int w = std::max(60, (int)(dw * 0.85));
+    int h = std::max(18, (int)(dh * 0.85));
+    int left = d.a.x + (dw - w) / 2;
+    int top  = d.a.y + (dh - h) / 2;
+    return TRect(left, top, left + w, top + h);
+}
+
 TFigletStampDialog::TFigletStampDialog(const std::string& initialText,
                                        const std::string& initialFont)
     : TWindowInit(&TFigletStampDialog::initFrame),
-      TDialog(TRect(2, 1, 76, 22), "Stamp FIGlet Text")
+      TDialog(calcStampDialogBounds(), "Stamp FIGlet Text")
 {
+    int W = size.x;   // inner width
+    int H = size.y;   // inner height
+    int listW = 22;
+    int listTop = 3;
+    int listBot = H - 4;
+    int prevLeft = listW + 3;
 
-    // ── Text input ──
-    textInput_ = new TInputLine(TRect(8, 1, 72, 2), 255);
+    // ── Text input (full width) ──
+    textInput_ = new TInputLine(TRect(8, 1, W - 2, 2), 255);
     insert(textInput_);
     insert(new TLabel(TRect(2, 1, 7, 2), "~T~ext", textInput_));
     if (!initialText.empty()) {
@@ -74,36 +93,33 @@ TFigletStampDialog::TFigletStampDialog(const std::string& initialText,
         textInput_->setData(lastText_);
     }
 
-    // ── Font list (left) ──
-    fontScroll_ = new TScrollBar(TRect(23, 3, 24, 13));
+    // ── Font list (left column) ──
+    fontScroll_ = new TScrollBar(TRect(listW + 1, listTop, listW + 2, listBot));
     insert(fontScroll_);
-    fontList_ = new TListBox(TRect(2, 3, 23, 13), 1, fontScroll_);
+    fontList_ = new TListBox(TRect(2, listTop, listW + 1, listBot), 1, fontScroll_);
     insert(fontList_);
     insert(new TLabel(TRect(2, 2, 10, 3), "~F~onts", fontList_));
 
-    // Populate font list — use TStringCollection (sorted)
+    // Populate font list
     const auto& fonts = figlet::allFontsSorted();
     fontNames_ = new TStringCollection((short)fonts.size(), 1);
-    for (size_t i = 0; i < fonts.size(); i++) {
+    for (size_t i = 0; i < fonts.size(); i++)
         fontNames_->insert(newStr(fonts[i].c_str()));
-    }
     fontList_->newList(fontNames_);
 
-    // Select initial font in the sorted collection
+    // Select initial font
     currentFont_ = initialFont.empty() ? "standard" : initialFont;
-    lastFontIdx_ = 0;  // focusItem crashes during construction; start at 0
+    lastFontIdx_ = 0;
 
-    // ── Preview (right) ──
-    preview_ = new TFigletPreview(TRect(25, 3, 72, 13));
+    // ── Preview (right, fills remaining space) ──
+    preview_ = new TFigletPreview(TRect(prevLeft, listTop, W - 2, listBot));
     insert(preview_);
 
-    // ── Buttons ──
-    insert(new TButton(TRect(48, 14, 58, 16), "~O~K", cmOK, bfDefault));
-    insert(new TButton(TRect(60, 14, 72, 16), "Cancel", cmCancel, bfNormal));
+    // ── Buttons (bottom right) ──
+    insert(new TButton(TRect(W - 26, H - 3, W - 16, H - 1), "~O~K", cmOK, bfDefault));
+    insert(new TButton(TRect(W - 14, H - 3, W - 2, H - 1), "Cancel", cmCancel, bfNormal));
 
-    // Initial preview
     updatePreview();
-
     textInput_->select();
 }
 
