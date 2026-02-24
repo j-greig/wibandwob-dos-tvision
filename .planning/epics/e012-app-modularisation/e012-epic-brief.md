@@ -66,6 +66,11 @@ app/views/      — all view types
 - [ ] S09: Extract window chrome context menu → shared `ChromeContextMenu` helper
   Test: `TFrameAnimationWindow` + `TFigletTextWindow` use shared helper; visual parity
 
+### F02b — Window Sizing Helpers (absorbed from spk-window-sizing-helpers)
+
+- [ ] S07: Add `centredRect(w,h)`, `centredRectPct(pctW,pctH)`, `cascadedRect(w,h,idx)` static helpers; rewrite `api_centered_bounds` to delegate; replace 4 hand-rolled handleEvent sites (`cmAppLauncher` L1461, `cmAsciiGallery` L1482, `cmNewPaintCanvas` L1802, `api_spawn_paint` L5066) + `cmOpenImageFile` cascade (L1843)
+  Test: `rg "centredRect|centredRectPct|cascadedRect" app/test_pattern_app.cpp | wc -l` ≥ 8; zero hand-rolled centring maths remains in handleEvent; clean build
+
 ### F03 — Major Refactors (later phase)
 
 - [ ] S10: Slim `TTestPatternApp` to orchestration-only
