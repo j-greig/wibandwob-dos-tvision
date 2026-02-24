@@ -62,6 +62,8 @@ extern std::string api_paint_line(TTestPatternApp& app, const std::string& id, i
 extern std::string api_paint_rect(TTestPatternApp& app, const std::string& id, int x0, int y0, int x1, int y1, bool erase);
 extern std::string api_paint_clear(TTestPatternApp& app, const std::string& id);
 extern std::string api_paint_export(TTestPatternApp& app, const std::string& id);
+extern std::string api_paint_save(TTestPatternApp& app, const std::string& id, const std::string& path);
+extern std::string api_paint_load(TTestPatternApp& app, const std::string& id, const std::string& path);
 
 const std::vector<CommandCapability>& get_command_capabilities() {
     static const std::vector<CommandCapability> capabilities = {
@@ -100,6 +102,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
+        {"paint_save", "Save paint canvas to .wwp file (id, path params)", true},
+        {"paint_load", "Load paint canvas from .wwp file (id, path params)", true},
         {"window_shadow", "Toggle window shadow (id, on params)", true},
         {"window_title", "Set window title (id, title params — empty string removes title)", true},
         {"desktop_preset", "Set desktop to a named preset (preset param)", true},
@@ -373,6 +377,20 @@ std::string exec_registry_command(
         auto id_it = kv.find("id");
         if (id_it == kv.end()) return "err missing id";
         return api_paint_export(app, id_it->second);
+    }
+    if (name == "paint_save") {
+        auto id_it = kv.find("id");
+        auto path_it = kv.find("path");
+        if (id_it == kv.end()) return "err missing id";
+        if (path_it == kv.end()) return "err missing path";
+        return api_paint_save(app, id_it->second, path_it->second);
+    }
+    if (name == "paint_load") {
+        auto id_it = kv.find("id");
+        auto path_it = kv.find("path");
+        if (id_it == kv.end()) return "err missing id";
+        if (path_it == kv.end()) return "err missing path";
+        return api_paint_load(app, id_it->second, path_it->second);
     }
     if (name == "window_shadow") {
         auto id_it = kv.find("id");

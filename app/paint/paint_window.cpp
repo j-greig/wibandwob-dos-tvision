@@ -385,7 +385,8 @@ void TPaintWindow::doOpen()
 
     std::ifstream in(pathStr);
     if (!in) {
-        messageBox("Cannot open file.", mfError | mfOKButton);
+        std::string msg = std::string("Cannot open: ") + pathStr;
+        messageBox(msg.c_str(), mfError | mfOKButton);
         return;
     }
     std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
