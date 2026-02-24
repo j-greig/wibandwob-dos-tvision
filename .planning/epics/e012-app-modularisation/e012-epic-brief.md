@@ -86,6 +86,18 @@ app/views/      — all view types
 | AC-7 | Workspace code in `app/workspace/` | Save/load/manage works |
 | AC-8 | Dual-dispatch eliminated from `api_ipc` | No paint handler duplication |
 
+## Stretch Goals
+
+> Note: additional DRY/extensibility opportunities found while working. Add more here as they surface.
+
+- [ ] `file_dialog_helpers.*` — 7 nearly-identical `new TFileDialog(...)` + cancel-flow blocks across `test_pattern_app.cpp` (L1843, L1861, L2344, L2396) and `paint_window.cpp` (L322, L381, L479) → one `openFileDialog(glob, title, flags)` helper
+- [ ] Shared atomic-write helper — `saveWwpFile()` in `paint_window.cpp` and `saveWorkspacePath()` in workspace manager use the same temp-write-then-rename dance → one `atomicWriteFile(path, content)` utility
+- [ ] `IWindowStateCodec` interface — formal interface for window types to implement save/restore props (feeds into S12 registry-driven workspace serialisation; defines the contract early)
+- [ ] `CommandSpec` table-driven dispatch — replace 53-branch `if (name == ...)` chain in `command_registry.cpp:168` with a static dispatch table keyed by name
+- [ ] IPC / capabilities parity audit — 16 IPC-direct commands not in registry caps; 39 registry caps not in IPC direct; document which direction each should resolve (some intentionally IPC-only, some should be promoted to registry)
+- [ ] `SpawnAndCaptureWindow` helper — before/after desktop scan pattern repeated multiple times in workspace load for registry spawns → one helper
+- [ ] CMake internal libraries — once modules are split, define `app_ui`, `app_workspace`, `app_api`, `app_windows` as `add_library(STATIC)` targets to shrink the monolithic source list in `CMakeLists.txt`
+
 ## Risks
 
 | Risk | Mitigation |

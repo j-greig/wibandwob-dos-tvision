@@ -130,6 +130,19 @@ Currently requires 5-9 touchpoints:
 - [ ] Registry-driven workspace serialization for all window types
 - [ ] Restructure app/ into modules + CMake internal libraries
 
+#### Stretch Goals
+
+> Note: additional DRY/extensibility opportunities found while working. Add more here as they surface.
+
+- [ ] `file_dialog_helpers.*` — 7 nearly-identical `new TFileDialog(...)` blocks across `test_pattern_app.cpp` (L1843, L1861, L2344, L2396) and `paint_window.cpp` (L322, L381, L479) → one helper
+- [ ] Shared atomic-write helper — `saveWwpFile()` + `saveWorkspacePath()` both do temp-write-then-rename → one `atomicWriteFile(path, content)` utility
+- [ ] `IWindowStateCodec` interface — formal interface for window types to implement save/restore props (contract for future registry-driven workspace serialisation)
+- [ ] `CommandSpec` table-driven dispatch — replace 53-branch `if (name == ...)` chain in `command_registry.cpp:168` with a static dispatch table
+- [ ] IPC / capabilities parity audit — 16 IPC-direct commands not in registry caps; 39 registry caps not in IPC direct; document intent for each
+- [ ] `SpawnAndCaptureWindow` helper — before/after desktop scan pattern repeated in workspace load for registry spawns
+- [ ] CMake internal libraries — `app_ui`, `app_workspace`, `app_api`, `app_windows` as `add_library(STATIC)` targets once modules exist
+
 ## Source
 
 Full Codex analyst report: `.codex-logs/2026-02-24/codex-do-a-comprehensive-architectur-2026-02-24T09-36-22.log`
+Note: there be other opps to make the codebase more DRY and modular and future-extensible, add these to a Stretch Goals list above if you come across additional stuff as you work on this.
