@@ -1,6 +1,6 @@
 ---
 title: "File > Recent Workspaces submenu"
-status: not-started
+status: done
 created: 2026-02-24
 github_issue: "—"
 PR: "—"
