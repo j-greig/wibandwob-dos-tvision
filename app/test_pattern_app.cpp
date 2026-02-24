@@ -5075,6 +5075,79 @@ void api_spawn_paint(TTestPatternApp& app, const TRect* bounds) {
     app.registerWindow(pw);
 }
 
+void api_spawn_paint_with_file(TTestPatternApp& app, const std::string& path) {
+    api_spawn_paint(app, nullptr);
+    // Find the just-created paint window (last inserted)
+    TView* v = app.deskTop->last;
+    if (!v) return;
+    // Walk to find the newest paint window
+    TView* p = v;
+    do {
+        p = p->next;
+        auto* pw = dynamic_cast<TPaintWindow*>(p);
+        if (pw && pw->getCanvas()) {
+            // Load file into it
+            std::ifstream in(path);
+            if (!in) return;
+            std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+            auto parseIntAfter = [](const std::string& s, size_t pos, const char* key) -> int {
+                std::string needle = std::string("\"") + key + "\":";
+                size_t k = s.find(needle, pos);
+                if (k == std::string::npos) { needle = std::string("\"") + key + "\" :"; k = s.find(needle, pos); }
+                if (k == std::string::npos) return -1;
+                size_t vStart = s.find_first_of("-0123456789", k + needle.size());
+                if (vStart == std::string::npos) return -1;
+                return std::atoi(s.c_str() + vStart);
+            };
+            auto parseBoolAfter = [](const std::string& s, size_t pos, const char* key) -> bool {
+                std::string needle = std::string("\"") + key + "\":";
+                size_t k = s.find(needle, pos);
+                if (k == std::string::npos) { needle = std::string("\"") + key + "\" :"; k = s.find(needle, pos); }
+                if (k == std::string::npos) return false;
+                size_t vStart = k + needle.size();
+                while (vStart < s.size() && s[vStart] == ' ') vStart++;
+                return (vStart < s.size() && s[vStart] == 't');
+            };
+
+            auto* canvas = pw->getCanvas();
+            canvas->clear();
+
+            size_t cellsArr = data.find("\"cells\"");
+            if (cellsArr == std::string::npos) return;
+            size_t pos2 = data.find('[', cellsArr);
+            size_t arrEnd = data.find(']', pos2);
+            if (pos2 == std::string::npos || arrEnd == std::string::npos) return;
+
+            while (pos2 < arrEnd) {
+                size_t objStart = data.find('{', pos2);
+                if (objStart == std::string::npos || objStart >= arrEnd) break;
+                size_t objEnd = data.find('}', objStart);
+                if (objEnd == std::string::npos) break;
+                int cx = parseIntAfter(data, objStart, "x");
+                int cy = parseIntAfter(data, objStart, "y");
+                if (cx >= 0 && cy >= 0 && cx < canvas->getCols() && cy < canvas->getRows()) {
+                    PaintCell& cell = canvas->cellAt(cx, cy);
+                    cell.uOn = parseBoolAfter(data, objStart, "uOn");
+                    cell.lOn = parseBoolAfter(data, objStart, "lOn");
+                    int v;
+                    v = parseIntAfter(data, objStart, "uFg");  if (v >= 0) cell.uFg = (uint8_t)v;
+                    v = parseIntAfter(data, objStart, "lFg");  if (v >= 0) cell.lFg = (uint8_t)v;
+                    v = parseIntAfter(data, objStart, "qMask"); if (v >= 0) cell.qMask = (uint8_t)v;
+                    v = parseIntAfter(data, objStart, "qFg");  if (v >= 0) cell.qFg = (uint8_t)v;
+                    v = parseIntAfter(data, objStart, "textChar"); if (v >= 0) cell.textChar = (char)v;
+                    v = parseIntAfter(data, objStart, "textFg"); if (v >= 0) cell.textFg = (uint8_t)v;
+                    v = parseIntAfter(data, objStart, "textBg"); if (v >= 0) cell.textBg = (uint8_t)v;
+                }
+                pos2 = objEnd + 1;
+            }
+            pw->setFilePath(path);
+            canvas->drawView();
+            return;
+        }
+    } while (p != v);
+}
+
 TPaintCanvasView* api_find_paint_canvas(TTestPatternApp& app, const std::string& id) {
     TWindow* w = app.findWindowById(id);
     if (!w) return nullptr;

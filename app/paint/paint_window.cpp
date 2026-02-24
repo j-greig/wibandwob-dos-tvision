@@ -81,9 +81,9 @@ void TPaintWindow::buildLayout()
     TRect menuRect(client.a.x, client.a.y, client.b.x, client.a.y + 1);
     menuBar = new TMenuBar(menuRect,
         *new TSubMenu("~F~ile", kbAltF) +
-            *new TMenuItem("~S~ave", cmPaintSave, kbCtrlS) +
+            *new TMenuItem("~S~ave", cmPaintSave, kbNoKey) +
             *new TMenuItem("Save ~A~s...", cmPaintSaveAs, kbNoKey) +
-            *new TMenuItem("~O~pen...", cmPaintOpen, kbCtrlO) +
+            *new TMenuItem("~O~pen...", cmPaintOpen, kbNoKey) +
             newLine() +
             *new TMenuItem("E~x~port ANSI...", cmPaintExportAnsi, kbNoKey) +
             newLine() +
@@ -310,12 +310,8 @@ void TPaintWindow::doSaveAs()
         std::strcpy(fileName, "paintings/*.wwp");
 
     TFileDialog* dlg = new TFileDialog("paintings/*.wwp", "Save Paint As", "~N~ame", fdOKButton, 100);
-    if (TProgram::application->execView(dlg) == cmCancel) {
-        TObject::destroy(dlg);
+    if (TProgram::application->executeDialog(dlg, fileName) == cmCancel)
         return;
-    }
-    dlg->getFileName(fileName);
-    TObject::destroy(dlg);
 
     std::string path(fileName);
     if (path.empty()) return;
@@ -373,22 +369,21 @@ void TPaintWindow::doOpen()
     std::strcpy(fileName, "paintings/*.wwp");
 
     TFileDialog* dlg = new TFileDialog("paintings/*.wwp", "Open Paint File", "~N~ame", fdOpenButton, 100);
-    if (TProgram::application->execView(dlg) == cmCancel) {
-        TObject::destroy(dlg);
+    if (TProgram::application->executeDialog(dlg, fileName) == cmCancel)
         return;
-    }
-    dlg->getFileName(fileName);
-    TObject::destroy(dlg);
 
     std::string pathStr(fileName);
+    fprintf(stderr, "[paint] doOpen path='%s'\n", pathStr.c_str());
     if (pathStr.empty()) return;
 
     std::ifstream in(pathStr);
     if (!in) {
+        fprintf(stderr, "[paint] doOpen FAILED to open '%s' errno=%d\n", pathStr.c_str(), errno);
         std::string msg = std::string("Cannot open: ") + pathStr;
         messageBox(msg.c_str(), mfError | mfOKButton);
         return;
     }
+    fprintf(stderr, "[paint] doOpen SUCCESS reading '%s'\n", pathStr.c_str());
     std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
     int fileCols = parseIntAfter(data, 0, "cols");
@@ -475,12 +470,8 @@ void TPaintWindow::doExportAnsi()
     }
 
     TFileDialog* dlg = new TFileDialog("paintings/*.ans", "Export ANSI", "~N~ame", fdOKButton, 100);
-    if (TProgram::application->execView(dlg) == cmCancel) {
-        TObject::destroy(dlg);
+    if (TProgram::application->executeDialog(dlg, fileName) == cmCancel)
         return;
-    }
-    dlg->getFileName(fileName);
-    TObject::destroy(dlg);
 
     std::string path(fileName);
     if (path.empty()) return;
