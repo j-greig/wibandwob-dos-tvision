@@ -28,6 +28,8 @@ extern void api_set_pattern_mode(TTestPatternApp& app, const std::string& mode);
 extern std::string api_set_theme_mode(TTestPatternApp& app, const std::string& mode);
 extern std::string api_set_theme_variant(TTestPatternApp& app, const std::string& variant);
 extern std::string api_reset_theme(TTestPatternApp& app);
+extern std::string api_window_shadow(TTestPatternApp& app, const std::string& id, bool on);
+extern std::string api_window_title(TTestPatternApp& app, const std::string& id, const std::string& title);
 extern std::string api_desktop_preset(TTestPatternApp& app, const std::string& preset);
 extern std::string api_desktop_texture(TTestPatternApp& app, const std::string& ch);
 extern std::string api_desktop_color(TTestPatternApp& app, int fg, int bg);
@@ -94,6 +96,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
+        {"window_shadow", "Toggle window shadow (id, on params)", true},
+        {"window_title", "Set window title (id, title params — empty string removes title)", true},
         {"desktop_preset", "Set desktop to a named preset (preset param)", true},
         {"desktop_texture", "Set desktop fill character (char param)", true},
         {"desktop_color", "Set desktop fg/bg colour 0-15 (fg, bg params)", true},
@@ -361,6 +365,20 @@ std::string exec_registry_command(
         auto id_it = kv.find("id");
         if (id_it == kv.end()) return "err missing id";
         return api_paint_export(app, id_it->second);
+    }
+    if (name == "window_shadow") {
+        auto id_it = kv.find("id");
+        auto on_it = kv.find("on");
+        if (id_it == kv.end() || on_it == kv.end()) return "err missing id or on";
+        bool on = (on_it->second == "true" || on_it->second == "1");
+        return api_window_shadow(app, id_it->second, on);
+    }
+    if (name == "window_title") {
+        auto id_it = kv.find("id");
+        auto title_it = kv.find("title");
+        if (id_it == kv.end()) return "err missing id";
+        std::string title = (title_it != kv.end()) ? title_it->second : "";
+        return api_window_title(app, id_it->second, title);
     }
     if (name == "desktop_preset") {
         auto it = kv.find("preset");

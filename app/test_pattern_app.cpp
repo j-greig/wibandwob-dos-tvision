@@ -905,6 +905,9 @@ private:
                                      const std::string&, const std::string&);
     friend std::string api_send_figlet(TTestPatternApp&, const std::string&, const std::string&, 
                                        const std::string&, int, const std::string&);
+    // Per-window toggles
+    friend std::string api_window_shadow(TTestPatternApp&, const std::string&, bool);
+    friend std::string api_window_title(TTestPatternApp&, const std::string&, const std::string&);
     // Desktop texture & gallery mode
     friend std::string api_desktop_preset(TTestPatternApp&, const std::string&);
     friend std::string api_desktop_texture(TTestPatternApp&, const std::string&);
@@ -2971,6 +2974,23 @@ std::string api_close_window(TTestPatternApp& app, const std::string& id) {
     }
 
     return "{\"success\":true}";
+}
+
+std::string api_window_shadow(TTestPatternApp& app, const std::string& id, bool on) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "err window not found";
+    w->setState(sfShadow, on);
+    w->owner->drawView();  // redraw desktop to clear/show shadow
+    return "ok";
+}
+
+std::string api_window_title(TTestPatternApp& app, const std::string& id, const std::string& title) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "err window not found";
+    delete[] (char*)w->title;
+    w->title = title.empty() ? nullptr : newStr(title);
+    w->frame->drawView();
+    return "ok";
 }
 
 // --- Minimal JSON parsing helpers (subset tailored to our schema) ---
