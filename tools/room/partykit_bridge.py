@@ -84,6 +84,20 @@ def ipc_sock_path(instance_id: str) -> str:
     return f"/tmp/wibwob_{instance_id}.sock"
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _normalise_ts(ts: str | int | float) -> str:
+    """Return HH:MM from ts, handling epoch-ms integers/strings or pre-formatted strings."""
+    try:
+        ms = int(ts)
+        # Epoch-ms: 13-digit numbers (year ~2001+); convert to local HH:MM
+        from datetime import datetime
+        return datetime.fromtimestamp(ms / 1000).strftime("%H:%M")
+    except (ValueError, TypeError, OSError):
+        # Already formatted (e.g. "15:04") or empty — use as-is or fall back
+        return str(ts) if ts else time.strftime("%H:%M")
+
+
 # ── Bridge ────────────────────────────────────────────────────────────────────
 
 def build_ws_url(partykit_url: str, room: str) -> str:
@@ -311,7 +325,10 @@ class PartyKitBridge:
                             )
                     else:
                         # Default: deliver to RoomChatView
-                        ts_str = ts if ts else time.strftime("%H:%M")
+                        # Normalise ts: PartyKit may relay epoch-ms integers or
+                        # strings like "1771946285090".  Convert to HH:MM; fall
+                        # back to local time if ts is absent or unparseable.
+                        ts_str = _normalise_ts(ts)
                         await asyncio.to_thread(
                             ipc_command, self.sock_path, "room_chat_receive",
                             {"sender": sender, "text": text, "ts": ts_str},
