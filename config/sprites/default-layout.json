@@ -1,8 +1,8 @@
 {
   "version": 1,
   "app": "wwdos",
-  "timestamp": "2026-02-25T13:00:00",
-  "comment": "Sprites default: primers stacked top-left, room chat to their right",
+  "timestamp": "2026-02-25T14:00:00",
+  "comment": "Sprites default: primers left, room chat + scramble right",
   "screen": { "width": 160, "height": 45 },
   "globals": { "patternMode": "continuous" },
   "windows": [
@@ -32,12 +32,20 @@
     },
     {
       "id": "w4",
+      "type": "scramble",
+      "title": "Scramble Cat",
+      "bounds": { "x": 59, "y": 3, "w": 75, "h": 20 },
+      "zoomed": false,
+      "props": { "display": "tall" }
+    },
+    {
+      "id": "w5",
       "type": "room_chat",
       "title": "Room Chat",
-      "bounds": { "x": 59, "y": 3, "w": 75, "h": 28 },
+      "bounds": { "x": 59, "y": 24, "w": 75, "h": 18 },
       "zoomed": false,
       "props": {}
     }
   ],
-  "focusedIndex": 3
+  "focusedIndex": 4
 }

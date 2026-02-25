@@ -52,11 +52,20 @@ bool ScrambleHaikuClient::configure()
             fprintf(stderr, "[scramble] API Key mode (len=%zu)\n", apiKey.size());
             return true;
 
-        case AuthMode::NoAuth:
+        case AuthMode::NoAuth: {
             useCliMode = false;
-            fprintf(stderr, "[scramble] No auth — haiku unavailable. "
-                            "Run 'claude /login' or set ANTHROPIC_API_KEY.\n");
+            // Fall back to OpenRouter free tier
+            const char* orKey = std::getenv("OPENROUTER_API_KEY");
+            if (orKey && orKey[0]) {
+                openRouterMode = true;
+                openRouterKey = orKey;
+                fprintf(stderr, "[scramble] OpenRouter free mode (key len=%zu)\n", openRouterKey.size());
+                return true;
+            }
+            fprintf(stderr, "[scramble] No auth — haiku unavailable, no OPENROUTER_API_KEY. "
+                            "Run 'claude /login' or set ANTHROPIC_API_KEY or OPENROUTER_API_KEY.\n");
             return false;
+        }
     }
     return false;
 }
@@ -64,6 +73,10 @@ bool ScrambleHaikuClient::configure()
 void ScrambleHaikuClient::setApiKey(const std::string& key)
 {
     apiKey = key;
+    if (!key.empty()) {
+        openRouterMode = false;  // Anthropic key takes priority
+        useCliMode = false;
+    }
     fprintf(stderr, "[scramble] api key set at runtime (len=%zu, prefix=%.8s...)\n",
             key.size(), key.size() >= 8 ? key.c_str() : "short");
 }
@@ -226,12 +239,84 @@ std::string ScrambleHaikuClient::askViaCurl(const std::string& question) const
     return result;
 }
 
+std::string ScrambleHaikuClient::askViaOpenRouter(const std::string& question) const
+{
+    std::string sysPrompt = buildSystemPrompt();
+
+    // OpenRouter uses OpenAI chat completions format
+    std::ostringstream json;
+    json << "{\n";
+    json << "  \"model\": \"openrouter/free\",\n";
+    json << "  \"max_tokens\": " << maxTokens << ",\n";
+    json << "  \"messages\": [\n";
+    json << "    {\"role\": \"system\", \"content\": \"" << jsonEscape(sysPrompt) << "\"},\n";
+    json << "    {\"role\": \"user\", \"content\": \"" << jsonEscape(question) << "\"}\n";
+    json << "  ]\n";
+    json << "}\n";
+
+    std::string tempFile = "/tmp/scramble_openrouter.json";
+    {
+        std::ofstream out(tempFile);
+        out << json.str();
+    }
+
+    std::string cmd = "curl -sS --max-time 30 ";
+    cmd += "-H \"Content-Type: application/json\" ";
+    cmd += "-H \"Authorization: Bearer " + openRouterKey + "\" ";
+    cmd += "-X POST \"https://openrouter.ai/api/v1/chat/completions\" ";
+    cmd += "--data @" + tempFile + " 2>/dev/null";
+
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "";
+
+    std::string response;
+    char buffer[4096];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        response += buffer;
+    }
+    pclose(pipe);
+
+    if (response.empty()) return "";
+
+    // Parse OpenAI format: {"choices":[{"message":{"content":"..."}}]}
+    size_t contentPos = response.find("\"content\":");
+    if (contentPos == std::string::npos) {
+        fprintf(stderr, "[scramble] OpenRouter: no content in response (%.80s...)\n", response.c_str());
+        return "";
+    }
+
+    size_t start = response.find("\"", contentPos + 10);
+    if (start == std::string::npos) return "";
+    start++;
+
+    std::string result;
+    for (size_t i = start; i < response.size(); ++i) {
+        if (response[i] == '\\' && i + 1 < response.size()) {
+            char next = response[i + 1];
+            if (next == '"') { result += '"'; i++; }
+            else if (next == 'n') { result += '\n'; i++; }
+            else if (next == '\\') { result += '\\'; i++; }
+            else if (next == 't') { result += '\t'; i++; }
+            else { result += response[i]; }
+        } else if (response[i] == '"') {
+            break;
+        } else {
+            result += response[i];
+        }
+    }
+
+    return result;
+}
+
 std::string ScrambleHaikuClient::ask(const std::string& question) const
 {
     if (!isAvailable()) return "";
 
     if (useCliMode) {
         return askViaCli(question);
+    }
+    if (openRouterMode) {
+        return askViaOpenRouter(question);
     }
     return askViaCurl(question);
 }
@@ -314,6 +399,68 @@ std::string ScrambleHaikuClient::parseCurlResponse(const std::string& raw) const
     return result;
 }
 
+std::string ScrambleHaikuClient::buildOpenRouterCommand(const std::string& question) const
+{
+    std::string sysPrompt = buildSystemPrompt();
+    std::ostringstream json;
+    json << "{\n";
+    json << "  \"model\": \"openrouter/free\",\n";
+    json << "  \"max_tokens\": " << maxTokens << ",\n";
+    json << "  \"messages\": [\n";
+    json << "    {\"role\": \"system\", \"content\": \"" << jsonEscape(sysPrompt) << "\"},\n";
+    json << "    {\"role\": \"user\", \"content\": \"" << jsonEscape(question) << "\"}\n";
+    json << "  ]\n";
+    json << "}\n";
+
+    std::string tempFile = "/tmp/scramble_openrouter.json";
+    {
+        std::ofstream out(tempFile);
+        out << json.str();
+    }
+
+    std::string cmd = "curl -sS --max-time 30 ";
+    cmd += "-H \"Content-Type: application/json\" ";
+    cmd += "-H \"Authorization: Bearer " + openRouterKey + "\" ";
+    cmd += "-X POST \"https://openrouter.ai/api/v1/chat/completions\" ";
+    cmd += "--data @" + tempFile + " 2>/dev/null";
+    return cmd;
+}
+
+std::string ScrambleHaikuClient::parseOpenRouterResponse(const std::string& raw) const
+{
+    if (raw.empty()) return "";
+    // OpenAI format: {"choices":[{"message":{"content":"..."}}]}
+    // Find the content field inside message (skip any top-level content)
+    size_t msgPos = raw.find("\"message\"");
+    if (msgPos == std::string::npos) {
+        fprintf(stderr, "[scramble] OpenRouter: no message in response (%.80s...)\n", raw.c_str());
+        return "";
+    }
+    size_t contentPos = raw.find("\"content\"", msgPos);
+    if (contentPos == std::string::npos) return "";
+
+    size_t start = raw.find("\"", contentPos + 9);
+    if (start == std::string::npos) return "";
+    start++;
+
+    std::string result;
+    for (size_t i = start; i < raw.size(); ++i) {
+        if (raw[i] == '\\' && i + 1 < raw.size()) {
+            char next = raw[i + 1];
+            if (next == '"') { result += '"'; i++; }
+            else if (next == 'n') { result += '\n'; i++; }
+            else if (next == '\\') { result += '\\'; i++; }
+            else if (next == 't') { result += '\t'; i++; }
+            else { result += raw[i]; }
+        } else if (raw[i] == '"') {
+            break;
+        } else {
+            result += raw[i];
+        }
+    }
+    return result;
+}
+
 bool ScrambleHaikuClient::startAsync(const std::string& question, ResponseCallback callback)
 {
     if (activePipe) return false;  // Already busy
@@ -323,9 +470,15 @@ bool ScrambleHaikuClient::startAsync(const std::string& question, ResponseCallba
     if (useCliMode) {
         cmd = buildCliCommand(question);
         asyncIsCliMode = true;
+        asyncIsOpenRouter = false;
+    } else if (openRouterMode) {
+        cmd = buildOpenRouterCommand(question);
+        asyncIsCliMode = false;
+        asyncIsOpenRouter = true;
     } else {
         cmd = buildCurlCommand(question);
         asyncIsCliMode = false;
+        asyncIsOpenRouter = false;
     }
 
     fprintf(stderr, "[scramble] async start: %.80s...\n", cmd.c_str());
@@ -369,8 +522,10 @@ void ScrambleHaikuClient::poll()
                 result = outputBuffer;
                 while (!result.empty() && (result.back() == '\n' || result.back() == '\r'))
                     result.pop_back();
+            } else if (asyncIsOpenRouter) {
+                result = parseOpenRouterResponse(outputBuffer);
             } else {
-                // Curl output is JSON
+                // Curl output is JSON (Anthropic)
                 result = parseCurlResponse(outputBuffer);
             }
         }

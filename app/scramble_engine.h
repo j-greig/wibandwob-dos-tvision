@@ -40,8 +40,8 @@ public:
     bool isBusy() const { return activePipe != nullptr; }
     void cancelAsync();
 
-    // Check if client is usable (API key or CLI mode).
-    bool isAvailable() const { return !apiKey.empty() || useCliMode; }
+    // Check if client is usable (API key, CLI mode, or OpenRouter free).
+    bool isAvailable() const { return !apiKey.empty() || useCliMode || openRouterMode; }
 
     // Rate limiting: returns true if enough time has passed since last call.
     bool canCall() const;
@@ -61,11 +61,16 @@ private:
     bool useCliMode = false;
     std::string claudeCliPath;
 
+    // OpenRouter free fallback (when no Anthropic key or CLI)
+    bool openRouterMode = false;
+    std::string openRouterKey;  // from OPENROUTER_API_KEY env var
+
     // Async state
     FILE* activePipe = nullptr;
     std::string outputBuffer;
     ResponseCallback pendingCallback;
-    bool asyncIsCliMode = false;  // Which backend the active pipe uses
+    bool asyncIsCliMode = false;     // Which backend the active pipe uses
+    bool asyncIsOpenRouter = false;  // OpenRouter free tier mode
 
     // Scramble system prompt (personality + context).
     std::string buildSystemPrompt() const;
@@ -77,6 +82,9 @@ private:
     // Synchronous implementations (kept for tests).
     std::string askViaCli(const std::string& question) const;
     std::string askViaCurl(const std::string& question) const;
+    std::string askViaOpenRouter(const std::string& question) const;
+    std::string buildOpenRouterCommand(const std::string& question) const;
+    std::string parseOpenRouterResponse(const std::string& raw) const;
 
     // Parse curl JSON response → text.
     std::string parseCurlResponse(const std::string& raw) const;

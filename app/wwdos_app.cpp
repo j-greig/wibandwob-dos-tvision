@@ -3568,6 +3568,25 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
                 windowNumber++;
             }
             continue;
+        } else if (type == "scramble") {
+            std::string stateStr;
+            size_t propsPos = obj.find("\"props\"");
+            if (propsPos != std::string::npos) {
+                size_t brace = obj.find('{', propsPos);
+                if (brace != std::string::npos)
+                    parseKeyedString(obj, brace+1, "display", stateStr);
+            }
+            ScrambleDisplayState sds = sdsSmol;
+            if (stateStr == "tall") sds = sdsTall;
+            else if (stateStr == "hidden") sds = sdsHidden;
+            TWindow* sw = createScrambleWindow(bounds, sds);
+            if (sw) {
+                scrambleWindow = static_cast<TScrambleWindow*>(sw);
+                deskTop->insert(sw);
+                registerWindow(sw);
+                windowNumber++;
+            }
+            continue;
         } else if (type == "frame_player") {
             std::string path; unsigned pms = 300;
             bool frameless = false, shadowless = false;
