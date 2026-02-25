@@ -34,6 +34,8 @@ const ushort cmRoomChat        = 182;  // open RoomChatWindow
 const ushort cmRoomChatReceive = 183;  // IPC: incoming message
 const ushort cmRoomChatSend    = 184;  // user submitted input
 const ushort cmRoomPresence    = 185;  // IPC: presence update
+const ushort cmApiKeyChanged   = 186;  // broadcast: runtime API key was set
+const ushort cmNoOp            = 999;  // harmless no-op (safe in menus — see E015 null submenu fix)
 
 // ── Data structures ────────────────────────────────────────────────────────
 

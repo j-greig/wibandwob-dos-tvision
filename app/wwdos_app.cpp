@@ -267,7 +267,7 @@ const ushort cmResetGlitchParams = 146;
 const ushort cmGlitchSettings = 147;
 
 // Right-click context menu commands
-const ushort cmApiKeyChanged   = 186;  // broadcast: runtime API key was set via dialog
+// cmApiKeyChanged (186) and cmNoOp (999) defined in room_chat_view.h
 const ushort cmCtxToggleShadow = 250;
 const ushort cmCtxClearTitle = 251;
 const ushort cmCtxToggleFrame = 252;
@@ -359,7 +359,7 @@ static TMenuItem* buildRecentWorkspacesSubmenuItem()
     std::vector<std::string> recents = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
     TMenuItem* items = nullptr;
     if (recents.empty()) {
-        items = new TMenuItem("(none)", cmOK, kbNoKey);  // command must be non-zero; 0 = "has submenu" in tvision → null deref crash
+        items = new TMenuItem("(none)", cmNoOp, kbNoKey);  // must be non-zero; 0 = "has submenu" → null deref crash
     } else {
         for (int i = (int)recents.size() - 1; i >= 0; --i) {
             std::string label = recentWorkspaceLabel(recents[i]);
@@ -920,6 +920,7 @@ private:
     friend std::string api_room_chat_receive(TWwdosApp&, const std::string& sender, const std::string& text, const std::string& ts);
     friend std::string api_room_presence(TWwdosApp&, const std::string& participants_json);
     friend std::string api_get_room_chat_pending(TWwdosApp&);
+    friend std::string api_get_room_chat_display_name(TWwdosApp&);
     friend std::string api_take_last_registered_window_id(TWwdosApp&);
     friend void api_spawn_verse(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_mycelium(TWwdosApp&, const TRect* bounds);

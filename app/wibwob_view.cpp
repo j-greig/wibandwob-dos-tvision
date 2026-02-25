@@ -7,6 +7,7 @@
 
 #include "wibwob_view.h"
 #include "wibwob_engine.h"
+#include "room_chat_view.h"  // cmApiKeyChanged
 #include "text_wrap.h"
 #include "llm/base/auth_config.h"
 #include "llm/providers/claude_code_sdk_provider.h"  // For SDK streaming
@@ -595,7 +596,7 @@ void TWibWobWindow::handleEvent(TEvent& event) {
     }
 
     // Re-initialise engine when API key is set via Help > Set API Key dialog
-    if (event.what == evBroadcast && event.message.command == 186 /*cmApiKeyChanged*/) {
+    if (event.what == evBroadcast && event.message.command == cmApiKeyChanged) {
         if (engine) {
             extern std::string getAppRuntimeApiKey();
             std::string key = getAppRuntimeApiKey();
