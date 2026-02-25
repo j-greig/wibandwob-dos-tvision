@@ -358,7 +358,7 @@ static TMenuItem* buildRecentWorkspacesSubmenuItem()
     std::vector<std::string> recents = scanRecentWorkspacePaths("workspaces", kMaxRecentWorkspaces);
     TMenuItem* items = nullptr;
     if (recents.empty()) {
-        items = new TMenuItem("(none)", 0, kbNoKey);
+        items = new TMenuItem("(none)", cmOK, kbNoKey);  // command must be non-zero; 0 = "has submenu" in tvision → null deref crash
     } else {
         for (int i = (int)recents.size() - 1; i >= 0; --i) {
             std::string label = recentWorkspaceLabel(recents[i]);
