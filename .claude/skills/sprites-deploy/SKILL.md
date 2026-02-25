@@ -100,6 +100,27 @@ but cut off. Always verify files exist explicitly:
 ls vendor/MicropolisCore/MicropolisEngine/src/*.cpp | wc -l   # expect 27
 ```
 
+### ⚠️ `modules-private` — tar + pipe, don't clone
+
+Private submodule can't clone on Sprite (no GitHub auth for submodule
+fetches). And it has a nested git repo (`primers/`) that macOS tar
+won't descend into. Stage to a clean dir first, then tar:
+
+```bash
+# Local (macOS)
+rm -rf /tmp/mp-stage
+mkdir -p /tmp/mp-stage/modules-private/wibwob-primers/primers
+mkdir -p /tmp/mp-stage/modules-private/wibwob-prompts
+cp modules-private/README.md /tmp/mp-stage/modules-private/
+cp modules-private/wibwob-primers/module.json /tmp/mp-stage/modules-private/wibwob-primers/
+cp modules-private/wibwob-prompts/*.md /tmp/mp-stage/modules-private/wibwob-prompts/
+cp modules-private/wibwob-primers/primers/*.txt /tmp/mp-stage/modules-private/wibwob-primers/primers/
+cd /tmp/mp-stage && COPYFILE_DISABLE=1 tar czf /tmp/modules-private.tar.gz modules-private/
+
+# Pipe to Sprite
+cat /tmp/modules-private.tar.gz | sprite exec -- bash -c "cd /home/sprite/app && rm -rf modules-private && tar xzf -"
+```
+
 ### ⚠️ git DNS works but `git clone` fails — retry
 
 Sprites can intermittently fail DNS inside `git` even when `curl` works.
@@ -228,11 +249,38 @@ See full debate: `.planning/epics/e015-sprites-hosting/debate/round-4-agreed.md`
 
 ---
 
+### ⚠️ figlet not preinstalled
+
+```bash
+sudo apt-get install -y figlet
+```
+
+### ⚠️ `TMenuItem("label", 0, kbNoKey)` crashes tvision on ANY keypress
+
+tvision treats `command == 0` as "this item has a submenu" and dereferences
+`subMenu->items` without null check. The menu bar scans ALL keypresses for
+hotkeys, so this crashes on every single keypress in every view.
+Fix: use `cmOK` (10) or any non-zero command instead.
+
+### ⚠️ GDB debug wrapper — use per-PID log files
+
+When using ttyd + gdb wrapper, multiple sessions overwrite the same log.
+Always use `$$.log`:
+
+```bash
+LOG=/tmp/gdb-crash-$$.log
+gdb -batch -ex 'run' -ex 'bt full' --args ./build-debug/app/wwdos > $LOG 2>&1
+```
+
+Remember to switch back to the release binary + normal session script after
+debugging (the service remembers the gdb wrapper command).
+
 ## TODO / still to verify on live Sprite
 
 - [x] Confirm `sprite-env services` exact syntax — `--args` comma-separated
 - [x] Confirm Sprite URL routes to port 8080 — `--http-port 8080` on service
-- [ ] Confirm tvision renders correctly inside ttyd PTY on headless Sprite
-- [ ] Confirm 2 browser windows → 2 different adjective-animal names
+- [x] Confirm tvision renders correctly inside ttyd PTY — works
+- [x] Confirm 2 browser windows → 2 different adjective-animal names — works
+- [x] Typing in any view works (was crashing due to null submenu bug)
 - [ ] Confirm chat relays between the 2 windows
 - [ ] Confirm bridge exits cleanly when browser tab closed (no zombie)
