@@ -48,10 +48,12 @@ A `wibwob_agent.py` process connects to the same PartyKit room as a regular part
 - **Silence**: Nobody's talked for 2+ minutes → W&W say something unprompted (rare)
 - **Never**: Don't respond to own messages, don't double-respond, don't interrupt active conversation between humans
 
-### API key
-- Agent needs its own `ANTHROPIC_API_KEY` — set as Sprite env var on the service, NOT the per-user dialog key
-- Human users' API keys stay RAM-only and per-process as before
-- Agent key is a project-level secret, not user-supplied
+### Model tiering
+- **Default (no key needed)**: Free model via [OpenRouter](https://openrouter.ai/models/?q=free) — e.g. `meta-llama/llama-4-scout:free` or `google/gemma-3-27b-it:free`. Zero cost, always-on
+- **Upgrade (key set via Help)**: `claude-haiku-4-5-20250501` (verify model name — Anthropic may have released newer Haiku by 2026). Better personality coherence, worth the ~$0.01/response
+- Agent checks for `OPENROUTER_API_KEY` (free tier, set as Sprite env var) first, falls back to `ANTHROPIC_API_KEY` if available
+- OpenRouter uses the same OpenAI-compatible chat completions format, so the agent code is model-agnostic — just swap base URL + key + model name
+- Human users' Anthropic API keys stay RAM-only and per-process as before
 
 ### Personality constraints
 - Short messages (1–3 sentences max for chat)
@@ -62,7 +64,7 @@ A `wibwob_agent.py` process connects to the same PartyKit room as a regular part
 ## Hard parts
 1. **Knowing when NOT to talk** — most annoying thing an AI can do in a chat room is over-respond. The trigger logic is the real design challenge
 2. **Context window** — chat history grows. Need a sliding window or summary. Maybe last 20 messages + a system prompt
-3. **Cost** — every response = an API call. At ~$0.01/response with Haiku, a busy room could cost $5–10/day. Rate limiting essential
+3. **Cost** — free tier via OpenRouter eliminates this for default mode. Haiku fallback at ~$0.01/response still needs rate limiting. Free models may have lower quality/coherence — test personality fidelity
 4. **Multiple rooms (V2)** — one agent per room? One agent watching all rooms? Needs thought if we add lobby/room selection
 
 ## Open questions
