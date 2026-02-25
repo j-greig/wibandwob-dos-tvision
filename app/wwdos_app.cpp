@@ -1042,6 +1042,17 @@ TWwdosApp::TWwdosApp() :
 
     // Init Scramble engine (KB + Haiku client).
     scrambleEngine.init(".");
+
+    // Auto-open Scramble if WIBWOB_SCRAMBLE_DEFAULT is set (e.g. "tall" or "smol")
+    const char* scrambleDefault = std::getenv("WIBWOB_SCRAMBLE_DEFAULT");
+    if (scrambleDefault && scrambleDefault[0]) {
+        // cycleScramble() creates in smol mode first
+        cycleScramble();
+        // If "tall", cycle again to expand
+        if (std::string(scrambleDefault) == "tall") {
+            cycleScramble();
+        }
+    }
 }
 
 void TWwdosApp::handleEvent(TEvent& event)

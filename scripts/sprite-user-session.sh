@@ -24,6 +24,7 @@ fi
 export WIBWOB_PARTYKIT_URL="${WIBWOB_PARTYKIT_URL:-https://wibwob-rooms.j-greig.partykit.dev}"
 export WIBWOB_PARTYKIT_ROOM="${WIBWOB_PARTYKIT_ROOM:-rchat-live}"
 export WIBWOB_NO_STATE_SYNC="${WIBWOB_NO_STATE_SYNC:-1}"  # Sprites: chat+presence only
+export WIBWOB_SCRAMBLE_DEFAULT="${WIBWOB_SCRAMBLE_DEFAULT:-tall}"  # Auto-open scramble chat
 export WIBWOB_LAYOUT_PATH="${WIBWOB_LAYOUT_PATH:-$APP/config/sprites/default-layout.json}"
 
 SOCK="/tmp/wibwob_${INST}.sock"
