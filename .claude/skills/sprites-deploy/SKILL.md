@@ -144,6 +144,23 @@ Key: `--args` is **comma-separated** (not space-separated).
 Key: `--http-port` routes the Sprite URL to that port AND auto-starts the
 service when an HTTP request arrives. Only one service can own `--http-port`.
 
+### ⚠️ `sprite-env services restart` returns 404
+
+Use stop + start instead:
+
+```bash
+sprite exec -- sprite-env services stop tui-host
+sprite exec -- sprite-env services start tui-host
+```
+
+### ⚠️ Always clean stale sockets before restart
+
+ttyd kills processes with SIGHUP but doesn't clean up Unix sockets:
+
+```bash
+sprite exec -- rm -f /tmp/wibwob_*.sock /tmp/wibwob_bridge_*.log
+```
+
 ### ⚠️ RAM is generous — 16GB on tested Sprite
 
 Each user costs ~35MB (wwdos ~15MB + bridge ~20MB).
