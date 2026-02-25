@@ -154,6 +154,7 @@ extern TPaintCanvasView* api_find_paint_canvas(TWwdosApp& app, const std::string
 extern std::string api_room_chat_receive(TWwdosApp& app, const std::string& sender, const std::string& text, const std::string& ts);
 extern std::string api_room_presence(TWwdosApp& app, const std::string& participants_json);
 extern std::string api_get_room_chat_pending(TWwdosApp& app);
+extern std::string api_get_room_chat_display_name(TWwdosApp& app);
 extern std::string api_browser_fetch(TWwdosApp& app, const std::string& url);
 extern std::string api_send_text(TWwdosApp& app, const std::string& id, 
                                  const std::string& content, const std::string& mode, 
@@ -617,6 +618,8 @@ void ApiIpcServer::poll() {
         resp = api_room_presence(*app_, participants) + "\n";
     } else if (cmd == "room_chat_pending") {
         resp = api_get_room_chat_pending(*app_) + "\n";
+    } else if (cmd == "room_chat_display_name") {
+        resp = api_get_room_chat_display_name(*app_) + "\n";
     } else if (cmd == "browser_fetch") {
         auto url_it = kv.find("url");
         if (url_it != kv.end()) {

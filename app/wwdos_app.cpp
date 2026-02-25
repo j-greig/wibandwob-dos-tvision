@@ -4610,6 +4610,12 @@ std::string api_get_room_chat_pending(TWwdosApp& /*app*/) {
     return json;
 }
 
+std::string api_get_room_chat_display_name(TWwdosApp& /*app*/) {
+    TRoomChatWindow* win = getRoomChatWindow();
+    if (!win) return "";
+    return win->getDisplayName();
+}
+
 // Generative / animated art windows — spawnable via IPC create_window type=X
 static TRect api_centered_bounds(TWwdosApp& app, int width, int height) {
     TRect d = app.deskTop->getExtent();

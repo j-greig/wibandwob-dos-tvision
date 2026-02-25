@@ -110,8 +110,10 @@ _ANIMALS = [
     "rook", "swift", "tern", "vole", "wasp", "yak",
 ]
 
-def _display_name(conn_id: str, self_id: str) -> str:
+def _display_name(conn_id: str, self_id: str, custom_name: str = "") -> str:
     """Return the display name for a connection, appending ' (me)' for self."""
+    if self_id and conn_id == self_id and custom_name:
+        return f"{custom_name} (me)"
     name = _name_for_conn(conn_id)
     return f"{name} (me)" if (self_id and conn_id == self_id) else name
 
@@ -171,6 +173,7 @@ class PartyKitBridge:
         self._ws = None
         self._participants: list[str] = []   # tracked conn ids for presence strip
         self._self_conn_id: str = ""          # own PartyKit connection ID (from presence sync)
+        self._custom_name: str = ""           # set via /rename in TUI
         # Protects last_windows from concurrent coroutine updates.
         # asyncio is single-threaded but awaits between diff and baseline write
         # can allow another coroutine to interleave and overwrite with stale state.
@@ -294,9 +297,17 @@ class PartyKitBridge:
                     try:
                         pending = json.loads(raw)
                         for text in pending:
-                            sender = (_name_for_conn(self._self_conn_id)
-                                      if self._self_conn_id
-                                      else f"human:{self.instance_id}")
+                            # Check for custom display name set via /rename
+                            custom = await asyncio.to_thread(
+                                ipc_command_raw, self.sock_path, "room_chat_display_name", {}
+                            )
+                            self._custom_name = custom.strip() if custom else ""
+                            if self._custom_name:
+                                sender = self._custom_name
+                            elif self._self_conn_id:
+                                sender = _name_for_conn(self._self_conn_id)
+                            else:
+                                sender = f"human:{self.instance_id}"
                             self.log(f"outbound: {text[:50]}")
                             await self.push_chat(sender, text)
                     except Exception:
@@ -305,7 +316,7 @@ class PartyKitBridge:
                 # after the initial join event.
                 if self._participants:
                     participants_json = json.dumps(
-                        [{"id": _display_name(p, self._self_conn_id)} for p in self._participants]
+                        [{"id": _display_name(p, self._self_conn_id, self._custom_name)} for p in self._participants]
                     )
                     await asyncio.to_thread(
                         ipc_command, self.sock_path, "room_presence",
@@ -423,7 +434,7 @@ class PartyKitBridge:
                         # track locally and push the full snapshot)
                         self._update_presence(event_name, conn_id)
                     participants_json = json.dumps(
-                        [{"id": _display_name(p, self._self_conn_id)} for p in self._participants]
+                        [{"id": _display_name(p, self._self_conn_id, self._custom_name)} for p in self._participants]
                     )
                     await asyncio.to_thread(
                         ipc_command, self.sock_path, "room_presence",

@@ -111,7 +111,12 @@ public:
     std::vector<std::string> pendingOutbound;
     std::vector<std::string> drainPending();  // returns + clears queue
 
+    // Custom display name — bridge polls via room_chat_display_name IPC
+    std::string displayName_;  // empty = use default adjective-animal
+    const std::string& getDisplayName() const { return displayName_; }
+
 private:
+    bool handleSlashCommand(const std::string& text);
     TRoomParticipantStrip* strip_ = nullptr;
     TRoomMessageView*      msgView_ = nullptr;
 

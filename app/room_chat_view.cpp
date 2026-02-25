@@ -352,6 +352,61 @@ std::vector<std::string> TRoomChatWindow::drainPending() {
     return out;
 }
 
+bool TRoomChatWindow::handleSlashCommand(const std::string& text) {
+    if (text.empty() || text[0] != '/') return false;
+
+    RoomChatMessage sys;
+    sys.sender = "system";
+    sys.ts     = nowHHMM();
+
+    if (text == "/help") {
+        sys.text = "Commands: /help  /rename <name>  /name";
+        if (msgView_) msgView_->addMessage(sys);
+        sys.text = "/rename <name> — set display name (a-z, 0-9, hyphens)";
+        if (msgView_) msgView_->addMessage(sys);
+        sys.text = "/name — show your current name";
+        if (msgView_) msgView_->addMessage(sys);
+        return true;
+    }
+
+    if (text == "/name") {
+        sys.text = displayName_.empty()
+            ? "Using default name (assigned by room)"
+            : "Display name: " + displayName_;
+        if (msgView_) msgView_->addMessage(sys);
+        return true;
+    }
+
+    if (text.substr(0, 8) == "/rename ") {
+        std::string name = text.substr(8);
+        // Trim
+        while (!name.empty() && name.front() == ' ') name.erase(name.begin());
+        while (!name.empty() && name.back() == ' ')  name.pop_back();
+        // Validate: alphanumeric + hyphens, 1-20 chars
+        bool valid = !name.empty() && name.size() <= 20;
+        for (char c : name) {
+            if (!std::isalnum(c) && c != '-') { valid = false; break; }
+        }
+        if (valid) {
+            displayName_ = name;
+            sys.text = "Display name set to: " + name;
+            if (msgView_) msgView_->addMessage(sys);
+        } else {
+            sys.text = "Invalid name. Use 1-20 chars: a-z, 0-9, hyphens.";
+            if (msgView_) msgView_->addMessage(sys);
+        }
+        return true;
+    }
+
+    if (text[0] == '/') {
+        sys.text = "Unknown command. Type /help for commands.";
+        if (msgView_) msgView_->addMessage(sys);
+        return true;
+    }
+
+    return false;
+}
+
 TRoomChatWindow::~TRoomChatWindow() {
     if (g_roomChatWindow == this) g_roomChatWindow = nullptr;
 }
@@ -384,14 +439,16 @@ void TRoomChatWindow::handleEvent(TEvent& event) {
             case cmRoomChatSend: {
                 auto* text = static_cast<std::string*>(event.message.infoPtr);
                 if (text && !text->empty()) {
-                    // Show locally as "me" immediately
-                    RoomChatMessage msg;
-                    msg.sender = "me";
-                    msg.text   = *text;
-                    msg.ts     = nowHHMM();
-                    if (msgView_) msgView_->addMessage(msg);
-                    // Queue for bridge to pick up
-                    pendingOutbound.push_back(*text);
+                    if (!handleSlashCommand(*text)) {
+                        // Show locally as "me" immediately
+                        RoomChatMessage msg;
+                        msg.sender = "me";
+                        msg.text   = *text;
+                        msg.ts     = nowHHMM();
+                        if (msgView_) msgView_->addMessage(msg);
+                        // Queue for bridge to pick up
+                        pendingOutbound.push_back(*text);
+                    }
                     delete text;
                 }
                 clearEvent(event);
