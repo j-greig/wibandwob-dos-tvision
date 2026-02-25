@@ -1036,46 +1036,9 @@ TWwdosApp::TWwdosApp() :
         }
     }
 
-    // Sprites default layout: room chat (top-left) + primers (top-right area)
-    const char* noSync = std::getenv("WIBWOB_NO_STATE_SYNC");
-    if (noSync && noSync[0] == '1' && !layoutPath) {
-        TRect deskBounds = deskTop->getExtent();
-        int dw = deskBounds.b.x, dh = deskBounds.b.y;
-        int pad = 3;  // padding from edges
-
-        // Room chat: top-left, roughly half width
-        int chatW = std::min(60, dw / 2 - pad);
-        int chatH = std::min(24, dh - pad * 2);
-        TRect chatBounds(pad, pad, pad + chatW, pad + chatH);
-        TWindow* chatWin = createRoomChatWindow(chatBounds);
-        if (chatWin) {
-            deskTop->insert(chatWin);
-            registerWindow(chatWin);
-            windowNumber++;
-        }
-
-        // Helper: open a primer at a specific position
-        std::string primerDir = findPrimerDir();
-        auto openPrimer = [&](const std::string& filename, int x, int y) {
-            std::string path = primerDir + "/" + filename;
-            struct stat st;
-            if (stat(path.c_str(), &st) == 0) {
-                TRect bounds = calculateWindowBounds(path);
-                int pw = bounds.b.x - bounds.a.x;
-                int ph = bounds.b.y - bounds.a.y;
-                TRect positioned(x, y, x + pw, y + ph);
-                openAnimationFilePath(path, positioned, false, false, filename);
-            }
-        };
-
-        // Primers arranged in top-right area
-        int rx = dw / 2 + pad;  // right half starts here
-        openPrimer("wibwob-symbient-protest.txt", rx, pad);
-        openPrimer("chaos-vs-order.txt", rx, pad + 10);
-        openPrimer("iso-tall-cubes-emoji.txt", rx, pad + 24);
-
-        fprintf(stderr, "[wibwob] Sprites default layout: room chat + 3 primers\n");
-    }
+    // Sprites / multi-user mode: no hardcoded layout — use WIBWOB_LAYOUT_PATH
+    // to point at workspaces/sprites-default.json (or any custom workspace).
+    // See scripts/sprite-user-session.sh for env var wiring.
 
     // Init Scramble engine (KB + Haiku client).
     scrambleEngine.init(".");
@@ -3589,6 +3552,14 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
             else if (gtype == "radial") gt = TGradientWindow::gtRadial;
             else if (gtype == "diagonal") gt = TGradientWindow::gtDiagonal;
             win = new TGradientWindow(bounds, "", gt);
+        } else if (type == "room_chat") {
+            TWindow* rcWin = createRoomChatWindow(bounds);
+            if (rcWin) {
+                deskTop->insert(rcWin);
+                registerWindow(rcWin);
+                windowNumber++;
+            }
+            continue;
         } else if (type == "frame_player") {
             std::string path; unsigned pms = 300;
             size_t propsPos = obj.find("\"props\"");

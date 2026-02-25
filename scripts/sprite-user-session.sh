@@ -21,6 +21,7 @@ APP="${APP:-/home/sprite/app}"
 export WIBWOB_PARTYKIT_URL="${WIBWOB_PARTYKIT_URL:-https://wibwob-rooms.j-greig.partykit.dev}"
 export WIBWOB_PARTYKIT_ROOM="${WIBWOB_PARTYKIT_ROOM:-rchat-live}"
 export WIBWOB_NO_STATE_SYNC="${WIBWOB_NO_STATE_SYNC:-1}"  # Sprites: chat+presence only
+export WIBWOB_LAYOUT_PATH="${WIBWOB_LAYOUT_PATH:-$APP/workspaces/sprites-default.json}"
 
 SOCK="/tmp/wibwob_${INST}.sock"
 LOG="/tmp/wibwob_bridge_${INST}.log"
