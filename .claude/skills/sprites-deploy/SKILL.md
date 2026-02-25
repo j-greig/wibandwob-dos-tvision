@@ -12,13 +12,33 @@ Gotchas marked ⚠️ — learned from actual deploys, not theory.
 
 ```bash
 sprite use wibwob-dos
-sprite exec -- bash -c "cd /home/sprite/app && git pull && cmake --build build-sprites --target wwdos -j$(nproc)"
+sprite exec -- bash -c "cd /home/sprite/app && git pull && cmake --build build-sprites --target wwdos -j\$(nproc)"
+# Then restart service:
+sprite exec -- sprite-env services stop tui-host
+sprite exec -- rm -f /tmp/wibwob_*.sock /tmp/wibwob_bridge_*.log
+sprite exec -- sprite-env services start tui-host
 ```
 
-## Full provision (fresh Sprite)
+## Full provision checklist (fresh Sprite)
 
 ```bash
-.claude/skills/sprites-deploy/scripts/provision.sh
+sprite create wibwob-dos && sprite use wibwob-dos
+sprite exec -- git clone https://github.com/j-greig/wibandwob-dos /home/sprite/app
+sprite exec -- bash -c "cd /home/sprite/app && git checkout feat/e015-sprites-hosting"
+# System deps
+sprite exec -- sudo apt-get install -y cmake ttyd figlet
+# Python deps
+sprite exec -- pip install websockets
+# Submodules (skip modules-private — use tar pipe below)
+sprite exec -- bash -c "cd /home/sprite/app && git submodule deinit modules-private 2>/dev/null; true"
+sprite exec -- bash -c "cd /home/sprite/app && git submodule update --init vendor/tvision"
+sprite exec -- bash -c "cd /home/sprite/app && rm -rf vendor/tvterm && git clone https://github.com/j-greig/tvterm.git vendor/tvterm && cd vendor/tvterm && git submodule update --init --recursive"
+sprite exec -- bash -c "cd /home/sprite/app && git submodule update --init vendor/MicropolisCore"
+# Build
+sprite exec -- bash -c "cd /home/sprite/app && cmake --preset sprites && cmake --build --preset sprites --target wwdos -- -j\$(nproc)"
+# Pipe modules-private (see gotcha below)
+# Register ttyd service (see service creation below)
+sprite url update --auth public
 ```
 
 ---
@@ -48,8 +68,7 @@ init. Init vendor submodules explicitly by path, skipping private ones:
 cd /home/sprite/app
 git submodule deinit modules-private 2>/dev/null || true
 git submodule update --init vendor/tvision
-git submodule update --init vendor/tvterm
-git -C vendor/tvterm submodule update --init --recursive   # gets vterm
+# tvterm: see next gotcha
 git submodule update --init vendor/MicropolisCore
 ```
 
@@ -69,8 +88,7 @@ Upstream fallback if j-greig/tvterm is unavailable:
 
 ### ⚠️ MicropolisCore needs specific commit checkout
 
-`git clone SimHacker/MicropolisCore` at HEAD has a different dir structure
-than the pinned submodule commit. Always checkout the exact hash:
+If the directory structure looks wrong after clone, checkout the pinned hash:
 
 ```bash
 cd vendor/MicropolisCore
@@ -78,27 +96,17 @@ git checkout e32fb8689b4eb6c9c2dd890df57ef3fd5dc1090d
 ```
 
 CMakeLists.txt expects `vendor/MicropolisCore/MicropolisEngine/src/*.cpp`.
-Verify with: `ls vendor/MicropolisCore/MicropolisEngine/src/*.cpp | wc -l` → 27
+Verify: `ls vendor/MicropolisCore/MicropolisEngine/src/*.cpp | wc -l` → 27
 
 ### ⚠️ CMakePresets.json must be on the branch being built
 
 `CMakePresets.json` lives on feature branches until merged to main.
-Always checkout the right branch on the Sprite before building:
+Always checkout the right branch on the Sprite before building.
 
-```bash
-git fetch origin feat/e015-sprites-hosting
-git checkout feat/e015-sprites-hosting
-git pull
-```
+### ⚠️ `ls | head -N` hides files
 
-### ⚠️ `ls | head -N` hides files — MicropolisEngine appeared missing
-
-`ls /dir | head -5` truncated the listing. `MicropolisEngine/` was present
-but cut off. Always verify files exist explicitly:
-
-```bash
-ls vendor/MicropolisCore/MicropolisEngine/src/*.cpp | wc -l   # expect 27
-```
+`ls /dir | head -5` truncated the listing and made MicropolisEngine
+appear missing. Always verify files exist explicitly with `wc -l`.
 
 ### ⚠️ `modules-private` — tar + pipe, don't clone
 
@@ -124,28 +132,25 @@ cat /tmp/modules-private.tar.gz | sprite exec -- bash -c "cd /home/sprite/app &&
 ### ⚠️ git DNS works but `git clone` fails — retry
 
 Sprites can intermittently fail DNS inside `git` even when `curl` works.
-Just retry — it resolves on second attempt. Not a real error.
+Just retry — it resolves on second attempt.
 
 ### ⚠️ `apt-get install` needs `sudo`
 
-Despite running as the `sprite` user, apt needs sudo:
-
 ```bash
-sudo apt-get install -y cmake ttyd build-essential libncurses-dev
+sudo apt-get install -y cmake ttyd figlet build-essential libncurses-dev
 ```
 
-### ⚠️ cmake and ttyd not preinstalled
+### ⚠️ cmake, ttyd, figlet not preinstalled
 
 Sprites Ubuntu 24.04 ships with: gcc, Python, Node, Go, git, curl.
-**Not preinstalled**: cmake, ttyd. Always install both at provision time.
+**Not preinstalled**: cmake, ttyd, figlet. Install all three at provision time.
 
 ### ⚠️ Use `cmake --preset sprites` on Linux for stripped release binary
 
-`CMakePresets.json` has a `sprites` preset (Release + stripped, Linux only).
 Build dir is `build-sprites/` — kept separate from dev `build/`.
 
 ```bash
-cmake --preset sprites      # configure (Linux only — has -s strip flag)
+cmake --preset sprites
 cmake --build --preset sprites -- -j$(nproc)
 # binary → build-sprites/app/wwdos
 ```
@@ -156,7 +161,7 @@ cmake --build --preset sprites -- -j$(nproc)
 sprite exec -- sprite-env services create tui-host \
   --cmd ttyd \
   --args '--port,8080,--writable,/home/sprite/app/scripts/sprite-user-session.sh' \
-  --env 'WIBWOB_PARTYKIT_ROOM=rchat-live,WIBWOB_PARTYKIT_URL=https://wibwob-rooms.j-greig.partykit.dev,APP=/home/sprite/app' \
+  --env 'WIBWOB_PARTYKIT_ROOM=rchat-live,WIBWOB_PARTYKIT_URL=https://wibwob-rooms.j-greig.partykit.dev,APP=/home/sprite/app,WIBWOB_NO_STATE_SYNC=1' \
   --dir /home/sprite/app \
   --http-port 8080
 ```
@@ -182,85 +187,41 @@ ttyd kills processes with SIGHUP but doesn't clean up Unix sockets:
 sprite exec -- rm -f /tmp/wibwob_*.sock /tmp/wibwob_bridge_*.log
 ```
 
-### ⚠️ RAM is generous — 16GB on tested Sprite
-
-Each user costs ~35MB (wwdos ~15MB + bridge ~20MB).
-16GB = ~450 concurrent users. Not a constraint.
-
 ---
 
-## Sprite specs (observed)
-
-| Thing | Value |
-|-------|-------|
-| OS | Ubuntu 24.04 LTS |
-| RAM | 16 GB |
-| Disk | 99 GB |
-| Preinstalled | gcc 14, Python 3, Node, Go, git, curl |
-| NOT preinstalled | cmake, ttyd, uv |
-| URL format | `https://<name>-<org>.sprites.app` |
-| HTTP default port | 8080 |
-| Auth modes | `sprite` (org only) / `public` (anyone) |
-
----
-
-## Key commands
-
-```bash
-sprite create <name>                    # create new Sprite
-sprite use <name>                       # set active
-sprite list                             # list all Sprites
-sprite exec -- <cmd>                    # run command
-sprite exec -tty -- <cmd>             # interactive TTY
-sprite console                          # interactive shell
-sprite url                              # show URL
-sprite url update --auth public        # make public
-sprite proxy 8080                       # forward port locally for testing
-sprite checkpoint create               # snapshot filesystem
-sprite restore                          # roll back to checkpoint
-sprite destroy                          # ⚠️ IRREVERSIBLE — deletes everything
-```
-
----
-
-## Architecture reminder
-
-```
-Browser → ttyd :8080 → forks sprite-user-session.sh per connection
-                          INST=$$ → unique socket /tmp/wibwob_$$.sock
-                          wwdos (foreground, PTY)
-                          partykit_bridge.py (background, waits for socket)
-                          All bridges → same PartyKit room
-```
-
-See full debate: `.planning/epics/e015-sprites-hosting/debate/round-4-agreed.md`
-
----
-
-## Files
-
-| File | Role |
-|------|------|
-| `scripts/sprite-setup.sh` | Full provision script |
-| `scripts/sprite-user-session.sh` | Per-connection ttyd wrapper |
-| `tools/room/partykit_bridge.py` | Bridge — exits cleanly when TUI socket gone |
-| `CMakePresets.json` | `sprites` / `dev` / `release` build presets |
-| `docs/sprites/README.md` | Full architecture + maintenance docs |
-
----
-
-### ⚠️ figlet not preinstalled
-
-```bash
-sudo apt-get install -y figlet
-```
+## wwdos-specific Sprites gotchas
 
 ### ⚠️ `TMenuItem("label", 0, kbNoKey)` crashes tvision on ANY keypress
 
 tvision treats `command == 0` as "this item has a submenu" and dereferences
-`subMenu->items` without null check. The menu bar scans ALL keypresses for
-hotkeys, so this crashes on every single keypress in every view.
-Fix: use `cmOK` (10) or any non-zero command instead.
+`subMenu->items` without null check in `findHotKey()`. The menu bar scans
+ALL keypresses for hotkeys, so this crashes on every keypress in every view.
+
+Fix: use `cmNoOp` (999, defined in `room_chat_view.h`) instead of 0.
+Regression test: `tests/test_menu_null_submenu.sh` (static source scan).
+
+### ⚠️ `WIBWOB_NO_STATE_SYNC=1` required for multi-user Sprites
+
+Without this, both bridges push window deltas to the same PartyKit room.
+Results in: resize ping-pong, foreign windows appearing, crashes.
+Set in `sprite-user-session.sh` as default. Chat + presence still relay.
+
+### ⚠️ Session script must `cd "$APP"` before exec wwdos
+
+wwdos uses relative paths for `primers/`, `modules/`, `modules-private/`.
+Without `cd`, these resolve to `/home/sprite/primers` → file not found.
+
+### ⚠️ WibWobEngine doesn't pick up runtime API key
+
+Scramble sidebar uses `scrambleEngine.setApiKey()` directly, but WibWobEngine
+uses `AuthConfig::instance()` which is set at startup and never refreshed.
+Fix: broadcast `cmApiKeyChanged` (186) from the API key dialog; WibWobView
+handles it and calls `engine->setApiKey()`. Constant defined in `room_chat_view.h`.
+
+### ⚠️ FIGlet font change locks the window
+
+Known bug on Sprites. Default font works. Font switching hangs. Not yet
+diagnosed — may be a PATH issue or subprocess timeout. Track separately.
 
 ### ⚠️ GDB debug wrapper — use per-PID log files
 
@@ -272,15 +233,98 @@ LOG=/tmp/gdb-crash-$$.log
 gdb -batch -ex 'run' -ex 'bt full' --args ./build-debug/app/wwdos > $LOG 2>&1
 ```
 
+Also add `handle SIGWINCH nostop noprint pass` to avoid gdb catching
+terminal resize signals.
+
 Remember to switch back to the release binary + normal session script after
-debugging (the service remembers the gdb wrapper command).
+debugging (the service remembers the gdb wrapper command):
 
-## TODO / still to verify on live Sprite
+```bash
+sprite exec -- sprite-env services delete tui-host
+# Then re-create with the normal session script (see service creation above)
+```
 
-- [x] Confirm `sprite-env services` exact syntax — `--args` comma-separated
-- [x] Confirm Sprite URL routes to port 8080 — `--http-port 8080` on service
-- [x] Confirm tvision renders correctly inside ttyd PTY — works
-- [x] Confirm 2 browser windows → 2 different adjective-animal names — works
-- [x] Typing in any view works (was crashing due to null submenu bug)
-- [ ] Confirm chat relays between the 2 windows
-- [ ] Confirm bridge exits cleanly when browser tab closed (no zombie)
+---
+
+## Sprite specs (observed)
+
+| Thing | Value |
+|-------|-------|
+| OS | Ubuntu 24.04 LTS |
+| RAM | 16 GB |
+| Disk | 99 GB |
+| Preinstalled | gcc 14, Python 3, Node, Go, git, curl |
+| NOT preinstalled | cmake, ttyd, figlet |
+| URL format | `https://<name>-<id>.sprites.app` |
+| HTTP default port | 8080 |
+| Auth modes | `sprite` (org only) / `public` (anyone) |
+| Live URL | `https://wibwob-dos-bbxc2.sprites.app` |
+
+---
+
+## Key commands
+
+```bash
+sprite create <name>                    # create new Sprite
+sprite use <name>                       # set active
+sprite list                             # list all Sprites
+sprite exec -- <cmd>                    # run command
+sprite exec -tty -- <cmd>              # interactive TTY
+sprite console                          # interactive shell
+sprite url                              # show URL
+sprite url update --auth public         # make public
+sprite proxy 8080                       # forward port locally for testing
+sprite checkpoint create                # snapshot filesystem
+sprite restore                          # roll back to checkpoint
+sprite destroy                          # ⚠️ IRREVERSIBLE — deletes everything
+```
+
+---
+
+## Architecture
+
+```
+Browser → ttyd :8080 → forks sprite-user-session.sh per connection
+                          INST=$$ → unique socket /tmp/wibwob_$$.sock
+                          cd $APP (fixes relative paths)
+                          wwdos (foreground, PTY)
+                          partykit_bridge.py (background, waits for socket)
+                          WIBWOB_NO_STATE_SYNC=1 → chat + presence only
+                          All bridges → same PartyKit room (rchat-live)
+```
+
+E016 plans two modes:
+- **F01 (current):** Independent TUIs + shared chat room
+- **F02 (future):** Single shared wwdos via tmux shared session
+
+See: `.planning/epics/e016-shared-experience/e016-epic-brief.md`
+
+---
+
+## Files
+
+| File | Role |
+|------|------|
+| `scripts/sprite-setup.sh` | Full provision script |
+| `scripts/sprite-user-session.sh` | Per-connection ttyd wrapper |
+| `tools/room/partykit_bridge.py` | Bridge — chat + presence relay, exits on socket gone |
+| `CMakePresets.json` | `sprites` / `dev` / `release` build presets |
+| `docs/sprites/README.md` | Full architecture + maintenance docs |
+| `tests/test_menu_null_submenu.sh` | Regression: no command=0 in menu items |
+
+---
+
+## Verified ✅ / still to verify
+
+- [x] `sprite-env services` exact syntax — `--args` comma-separated
+- [x] Sprite URL routes to port 8080 — `--http-port 8080` on service
+- [x] tvision renders correctly inside ttyd PTY
+- [x] 2 browser windows → 2 different adjective-animal names
+- [x] Typing in any view works (null submenu crash fixed)
+- [x] Primers load from `modules-private/wibwob-primers/primers/`
+- [x] FIGlet renders with default font
+- [x] State sync disabled — no foreign windows, no resize ping-pong
+- [ ] Chat messages relay between 2 windows
+- [ ] `/rename` custom name appears in other user's view
+- [ ] Bridge exits cleanly when browser tab closed (no zombie)
+- [ ] FIGlet font change (known broken, separate bug)
