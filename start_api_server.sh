@@ -8,12 +8,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 PORT="${WIBWOB_API_PORT:-8089}"
-INSTANCE="${WIBWOB_INSTANCE:-1}"
 
 # WIBWOB_INSTANCE must match what the TUI was started with.
-# Default is 1 → socket /tmp/wibwob_1.sock.
-# If TUI was started without WIBWOB_INSTANCE it uses /tmp/wwdos.sock (legacy fallback: /tmp/test_pattern_app.sock).
-export WIBWOB_INSTANCE="$INSTANCE"
+# If TUI was started without WIBWOB_INSTANCE it uses /tmp/wwdos.sock
+# (legacy fallback: /tmp/test_pattern_app.sock).
+# Only export WIBWOB_INSTANCE if explicitly set — otherwise let
+# ipc_client.py default to /tmp/wwdos.sock with legacy fallback.
+if [ -n "${WIBWOB_INSTANCE:-}" ]; then
+    export WIBWOB_INSTANCE
+fi
 
 # Kill any stale server on this port
 STALE_PID=$(lsof -ti :"$PORT" 2>/dev/null || true)
