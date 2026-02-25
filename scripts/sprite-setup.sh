@@ -49,9 +49,8 @@ fi
 echo "  binary: $WWDOS_BIN"
 
 # ── 4. Python deps ─────────────────────────────────────────────────────────
-echo "▸ uv sync..."
-cd "$APP"
-uv sync 2>&1 | tail -3
+echo "▸ pip install websockets..."
+pip install websockets --quiet
 
 # ── 5. Make session script executable ─────────────────────────────────────
 chmod +x "$APP/scripts/sprite-user-session.sh"

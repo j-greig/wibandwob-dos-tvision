@@ -6,8 +6,8 @@
 
 One [Sprites.dev](https://sprites.dev) microVM runs `ttyd`. Each browser
 connection gets its own isolated `wwdos` process + PartyKit bridge with a
-unique identity. All users land in the same room. Presence strip shows the
-real count. ~35 MB RAM per user.
+unique identity. All users land in the same chat room. Presence sidebar shows
+the live count. ~35 MB RAM per user.
 
 ```
 [Browser A]   [Browser B]   [Browser C]
@@ -18,6 +18,8 @@ real count. ~35 MB RAM per user.
               └──────── PartyKit room ──────────┘
                          3 in room ✓
 ```
+
+**Live URL**: `https://wibwob-dos-bbxc2.sprites.app`
 
 ---
 
@@ -36,15 +38,37 @@ real count. ~35 MB RAM per user.
 sprite create wibwob-dos
 sprite use wibwob-dos
 
-# 2. Upload and run setup (provisions deps, builds binary, registers Services)
-sprite exec -- bash -c "$(cat scripts/sprite-setup.sh)"
+# 2. Clone repo onto Sprite
+sprite exec -- git clone https://<GITHUB_TOKEN>@github.com/j-greig/wibandwob-dos /home/sprite/app
+sprite exec -- bash -c "cd /home/sprite/app && git checkout feat/e015-sprites-hosting"
 
-# 3. Open to the world
+# 3. Provision (deps, build, services)
+# Copy sprite-setup.sh to Sprite and run it — or run inline:
+sprite exec -- bash /home/sprite/app/scripts/sprite-setup.sh
+
+# 4. Open to the world
 sprite url update --auth public
-sprite url        # → https://wibwob-dos-<org>.sprites.app
+sprite url        # → https://wibwob-dos-<id>.sprites.app
 
-# 4. Send the URL to a friend. You both open it. Chat.
+# 5. Send the URL to a friend. You both open it. Chat.
 ```
+
+---
+
+## Default layout
+
+The Sprites layout is config-driven via `config/sprites/default-layout.json`,
+loaded automatically by `sprite-user-session.sh` through the `WIBWOB_LAYOUT_PATH`
+env var.
+
+Default arrangement:
+- **Left column**: 3 ASCII art primers stacked vertically (chaos-vs-order, iso-tall-cubes-emoji, symbient-protest)
+- **Right column**: Room Chat window (wide, offset 2 chars from primers)
+
+To customise: edit `config/sprites/default-layout.json` and restart the service.
+No rebuild needed — the JSON is read at runtime.
+
+See [`config/sprites/README.md`](../../config/sprites/README.md) for layout format docs.
 
 ---
 
@@ -63,7 +87,13 @@ drives the IPC socket path:
 Each user gets:
 - Their own `wwdos` process (own TUI state, own input)
 - Their own `partykit_bridge.py` (own WebSocket to PartyKit → own `conn.id` → own adjective-animal name)
-- Their own identity in the presence strip
+- Their own identity in the presence sidebar
+
+### Chat & presence relay
+
+- `WIBWOB_NO_STATE_SYNC=1` (default for Sprites) — only chat messages and presence events relay between users. Window state is per-user
+- `/rename <name>` changes your display name. Broadcast to all connected users via PartyKit `rename` message type
+- Late joiners receive rename re-broadcasts when they connect (bridge re-sends on presence join events)
 
 ### Bridge lifecycle (F04 fix)
 
@@ -93,8 +123,7 @@ cmake --preset sprites && cmake --build --preset sprites
 cmake --preset release && cmake --build --preset release
 ```
 
-See [`CMakePresets.json`](../../CMakePresets.json) at repo root. The `sprites`
-preset is Linux-only (the `-s` strip flag). On macOS, use `release`.
+The `sprites` preset is Linux-only (the `-s` strip flag). On macOS, use `release`.
 
 `sprite-user-session.sh` prefers `build-sprites/app/wwdos` and falls back to
 `build/app/wwdos` if the sprites build isn't present.
@@ -103,13 +132,40 @@ preset is Linux-only (the `-s` strip flag). On macOS, use `release`.
 
 ## Maintenance
 
-### Redeploy after a code push
+### Quick redeploy after a code push
 
 ```bash
-sprite exec -- bash -c "cd /home/sprite/app && git pull --ff-only && cmake --preset sprites && cmake --build --preset sprites"
+# JSON/Python only (no rebuild needed):
+sprite exec -- bash -c "cd /home/sprite/app && git pull -q"
+sprite exec -- sprite-env services stop tui-host
+sprite exec -- bash -c "rm -f /tmp/wibwob_*.sock /tmp/wibwob_bridge_*.log"
+sprite exec -- sprite-env services start tui-host
+
+# C++ changes (rebuild required):
+sprite exec -- bash -c "cd /home/sprite/app && git pull -q && cmake --build --preset sprites --target wwdos -- -j\$(nproc)"
+sprite exec -- sprite-env services stop tui-host
+sprite exec -- bash -c "rm -f /tmp/wibwob_*.sock /tmp/wibwob_bridge_*.log"
+sprite exec -- sprite-env services start tui-host
 ```
 
-Or automate via GitHub Actions — see [`../../.github/workflows/sprite-redeploy.yml`](../../.github/workflows/sprite-redeploy.yml) (F06, not yet implemented).
+**Note**: `sprite-env services restart` returns 404 — always use stop + start.
+
+### PartyKit server redeploy
+
+If you change `partykit/src/server.ts` (e.g. adding new message types):
+```bash
+cd partykit && npx partykit deploy
+```
+
+### modules-private (primer art files)
+
+These can't be cloned on the Sprite (nested git repo). Deploy via tar staging:
+```bash
+# On macOS — stage to clean dir to avoid tar + nested .git issues
+rm -rf /tmp/mp-stage && mkdir -p /tmp/mp-stage/wibwob-primers/primers
+cp modules-private/wibwob-primers/primers/*.txt /tmp/mp-stage/wibwob-primers/primers/
+tar -C /tmp/mp-stage -cf - . | sprite exec -- bash -c "cd /home/sprite/app/modules-private && tar xf -"
+```
 
 ### Check RAM headroom
 
@@ -118,13 +174,10 @@ sprite exec -- free -m
 # Each user ≈ 35 MB (wwdos ~15 MB + bridge ~20 MB)
 ```
 
-### Watch bridge logs for a session
+### Watch bridge logs
 
 ```bash
-# On the Sprite — list active sessions
 sprite exec -- ls /tmp/wibwob_bridge_*.log
-
-# Tail a specific session
 sprite exec -- tail -f /tmp/wibwob_bridge_<PID>.log
 ```
 
@@ -134,49 +187,19 @@ sprite exec -- tail -f /tmp/wibwob_bridge_<PID>.log
 sprite exec -- ps aux | grep partykit_bridge
 ```
 
-### Restart ttyd Service
-
-```bash
-sprite exec -- sprite-env services restart tui-host
-```
-
-### Take a checkpoint before risky changes
-
-```bash
-sprite checkpoint create
-# Roll back with:
-sprite restore
-```
-
 ---
 
-## Changing the room name
+## Gotchas learned from live deploys
 
-Room name is baked into the Sprite via `WIBWOB_PARTYKIT_ROOM` env var set at
-Service registration time. To change it:
-
-```bash
-sprite exec -- sprite-env services update tui-host \
-  --env "WIBWOB_PARTYKIT_ROOM=rchat-newroom,WIBWOB_PARTYKIT_URL=https://wibwob-rooms.j-greig.partykit.dev,APP=/home/sprite/app"
-sprite exec -- sprite-env services restart tui-host
-```
-
----
-
-## Local testing (no Sprite needed)
-
-```bash
-# F04 bridge exit fix — Python unit tests
-cd tools/room && uv run test_bridge_exit.py
-
-# Session script mechanics — shell integration tests
-bash tools/room/test_sprite_session.sh
-
-# ttyd locally (macOS — ttyd is installed)
-APP=$(pwd) WIBWOB_PARTYKIT_ROOM=rchat-test \
-  ttyd --port 7799 --writable scripts/sprite-user-session.sh
-# → open http://localhost:7799 in a browser
-```
+| Gotcha | Fix |
+|--------|-----|
+| tvision `command==0` = "has submenu" → null deref crash on ANY keypress | Use `cmNoOp` (999) for placeholder menu items, never 0 |
+| `workspaces/` is gitignored | Layout JSON lives in `config/sprites/` instead |
+| macOS `tar` + nested `.git` dirs → empty directories on extract | Stage files to clean `/tmp/` dir first, then tar |
+| `sprite-env services restart` → 404 | Use `stop` then `start` |
+| FIGlet font change freezes TUI | `popen()` blocks main thread. Known issue, needs async fix |
+| Rename messages dropped by PartyKit | Must add each message type to `onMessage` switch in `server.ts` and redeploy |
+| Late joiners don't see existing custom names | Bridge re-broadcasts rename on join events |
 
 ---
 
@@ -184,13 +207,14 @@ APP=$(pwd) WIBWOB_PARTYKIT_ROOM=rchat-test \
 
 | File | Purpose |
 |------|---------|
-| `scripts/sprite-setup.sh` | One-time Sprite provisioning (deps → build → Services) |
+| `scripts/sprite-setup.sh` | One-time Sprite provisioning (deps → build → services) |
 | `scripts/sprite-user-session.sh` | Per-connection wrapper (INST=$$, bridge wait, TUI exec) |
-| `tools/room/partykit_bridge.py` | Bridge — includes F04 TUIExited exit fix |
-| `tools/room/test_bridge_exit.py` | 5 Python tests for F04 fix |
-| `tools/room/test_sprite_session.sh` | 8 shell tests for session mechanics |
+| `config/sprites/default-layout.json` | Default window layout for Sprites |
+| `tools/room/partykit_bridge.py` | Bridge — chat relay, presence, rename broadcast |
+| `partykit/src/server.ts` | PartyKit server — relays chat, presence, rename |
 | `CMakePresets.json` | dev / sprites / release build presets |
-| `.planning/epics/e015-sprites-hosting/` | Epic brief + 4-round architecture debate |
+| `.planning/epics/e015-sprites-hosting/` | Epic brief + architecture debate |
+| `.planning/epics/e016-shared-experience/` | Multi-user experience epic (F01–F03) |
 
 ---
 
@@ -199,24 +223,12 @@ APP=$(pwd) WIBWOB_PARTYKIT_ROOM=rchat-test \
 See the full debate record:
 [`.planning/epics/e015-sprites-hosting/debate/`](../../.planning/epics/e015-sprites-hosting/debate/)
 
-Key choices:
-
 | Decision | Choice | Why |
 |----------|--------|-----|
 | Process model | Per-connection fork (ttyd default) | Each user = own PartyKit identity |
-| Instance ID | `WIBWOB_INSTANCE=$$` | Shell PID, unique, confirmed in `wwdos_app.cpp:997` |
-| API server | Not in per-user path | Humans use PTY, not API |
-| Room name | Fixed env var `rchat-live` | Zero coordination; lobby is V2 |
+| Instance ID | `WIBWOB_INSTANCE=$$` | Shell PID, unique per session |
+| API server | Not in per-user path | Humans use PTY, not REST API |
+| State sync | Disabled (`WIBWOB_NO_STATE_SYNC=1`) | Chat + presence only; window state per-user |
+| Room name | Fixed `rchat-live` env var | Zero coordination; lobby is V2 |
 | Sprite count | 1 | ttyd + N forked children, ~35 MB/user |
-| HTTP port | 8080 | Sprite URL default |
-
----
-
-## Open questions (pre-deploy)
-
-| # | Question | How to answer |
-|---|----------|--------------|
-| 1 | Sprite RAM ceiling | `sprite exec -- free -m` |
-| 2 | tvision ncurses in ttyd PTY | `sprite console` → `ttyd --port 8080 --writable ./build-sprites/app/wwdos` → connect browser |
-| 3 | Sprites URL → port 8080 routing | `sprite proxy 8080` then `curl localhost:8080` |
-| 4 | `sprite-env services` exact syntax | Check with `sprite-env --help` on Sprite |
+| Layout | Config-driven JSON workspace | No C++ rebuilds for layout tweaks |
