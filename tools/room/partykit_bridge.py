@@ -289,6 +289,12 @@ class PartyKitBridge:
                 _check_socket_alive(self.sock_path)  # raises TUIExited if socket gone
             # Drain outbound messages from RoomChatView input
             if not self.legacy_scramble_chat:
+                # Refresh custom display name every poll (picks up /rename)
+                custom = await asyncio.to_thread(
+                    ipc_command_raw, self.sock_path, "room_chat_display_name", {}
+                )
+                self._custom_name = custom.strip() if custom else ""
+
                 raw = await asyncio.to_thread(
                     ipc_command_raw, self.sock_path, "room_chat_pending", {}
                 )
@@ -296,22 +302,16 @@ class PartyKitBridge:
                     raw = raw.strip()
                     try:
                         pending = json.loads(raw)
-                        if pending:
-                            # Refresh custom display name once per drain cycle (not per message)
-                            custom = await asyncio.to_thread(
-                                ipc_command_raw, self.sock_path, "room_chat_display_name", {}
-                            )
-                            self._custom_name = custom.strip() if custom else ""
-                            sender = (self._custom_name
-                                      or (_name_for_conn(self._self_conn_id) if self._self_conn_id
-                                          else f"human:{self.instance_id}"))
+                        sender = (self._custom_name
+                                  or (_name_for_conn(self._self_conn_id) if self._self_conn_id
+                                      else f"human:{self.instance_id}"))
                         for text in pending:
                             self.log(f"outbound: {text[:50]}")
                             await self.push_chat(sender, text)
                     except Exception:
                         pass
                 # Re-push presence so strip stays current if window opened
-                # after the initial join event.
+                # after the initial join event, or after /rename.
                 if self._participants:
                     participants_json = json.dumps(
                         [{"id": _display_name(p, self._self_conn_id, self._custom_name)} for p in self._participants]
