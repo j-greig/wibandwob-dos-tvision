@@ -21,12 +21,23 @@ Environment:
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
 import sys
 import time
 from typing import Any
+
+
+class TUIExited(Exception):
+    """Raised when the TUI's IPC socket disappears — bridge should exit, not retry."""
+
+
+def _check_socket_alive(sock_path: str) -> None:
+    """Raise TUIExited if the socket file no longer exists."""
+    if not os.path.exists(sock_path):
+        raise TUIExited(f"IPC socket gone: {sock_path} — TUI has exited")
 
 from state_diff import (
     windows_from_state,
@@ -249,6 +260,7 @@ class PartyKitBridge:
                         if event_name in ("state_changed", "window_closed"):
                             await self._sync_state_now(f"event:{event_name}")
             except (OSError, ConnectionRefusedError, EOFError) as e:
+                _check_socket_alive(self.sock_path)   # raises TUIExited if socket gone
                 self.log(f"event subscribe dropped ({e}), retrying in {EVENT_RETRY_DELAY}s")
             finally:
                 if writer is not None:
@@ -261,7 +273,9 @@ class PartyKitBridge:
         """Slow heartbeat poll — catches anything missed by event subscription.
         Also drains outbound messages typed in the TUI RoomChatView."""
         while True:
-            await self._sync_state_now("heartbeat")
+            state = await self._sync_state_now("heartbeat")
+            if state is None:
+                _check_socket_alive(self.sock_path)  # raises TUIExited if socket gone
             # Drain outbound messages from RoomChatView input
             if not self.legacy_scramble_chat:
                 raw = await asyncio.to_thread(
@@ -451,8 +465,13 @@ class PartyKitBridge:
                     raise ConnectionError("ws receive_loop ended cleanly")
             except asyncio.CancelledError:
                 raise
+            except TUIExited as e:
+                self._ws = None
+                self.log(f"TUI exited — bridge shutting down ({e})")
+                return  # clean exit, no reconnect
             except Exception as e:
                 self._ws = None
+                _check_socket_alive(self.sock_path)  # exit if TUI died while WS was down
                 self.log(f"disconnected ({e}), reconnecting in {RECONNECT_DELAY}s")
                 await asyncio.sleep(RECONNECT_DELAY)
 

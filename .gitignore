@@ -52,6 +52,8 @@ workspaces/*
 _codeql_build_dir/
 _codeql_*
 build-linux/
+build-release/
+build-sprites/
 260219-*.txt
 build-asan/
 wibwob_crash.log
