@@ -6,4 +6,5 @@
 > When done or dropped mv epic dir and contents to .planning/epics/.trash/
 
 e005-theme-runtime-wiring — not-started
+e015-sprites-hosting — not-started
 e011-desktop-shell — not-started
