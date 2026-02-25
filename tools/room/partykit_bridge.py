@@ -296,18 +296,16 @@ class PartyKitBridge:
                     raw = raw.strip()
                     try:
                         pending = json.loads(raw)
-                        for text in pending:
-                            # Check for custom display name set via /rename
+                        if pending:
+                            # Refresh custom display name once per drain cycle (not per message)
                             custom = await asyncio.to_thread(
                                 ipc_command_raw, self.sock_path, "room_chat_display_name", {}
                             )
                             self._custom_name = custom.strip() if custom else ""
-                            if self._custom_name:
-                                sender = self._custom_name
-                            elif self._self_conn_id:
-                                sender = _name_for_conn(self._self_conn_id)
-                            else:
-                                sender = f"human:{self.instance_id}"
+                            sender = (self._custom_name
+                                      or (_name_for_conn(self._self_conn_id) if self._self_conn_id
+                                          else f"human:{self.instance_id}"))
+                        for text in pending:
                             self.log(f"outbound: {text[:50]}")
                             await self.push_chat(sender, text)
                     except Exception:

@@ -385,7 +385,7 @@ bool TRoomChatWindow::handleSlashCommand(const std::string& text) {
         // Validate: alphanumeric + hyphens, 1-20 chars
         bool valid = !name.empty() && name.size() <= 20;
         for (char c : name) {
-            if (!std::isalnum(c) && c != '-') { valid = false; break; }
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-') { valid = false; break; }
         }
         if (valid) {
             displayName_ = name;
@@ -398,13 +398,10 @@ bool TRoomChatWindow::handleSlashCommand(const std::string& text) {
         return true;
     }
 
-    if (text[0] == '/') {
-        sys.text = "Unknown command. Type /help for commands.";
-        if (msgView_) msgView_->addMessage(sys);
-        return true;
-    }
-
-    return false;
+    // All paths above returned — if we get here, it's an unrecognised /command
+    sys.text = "Unknown command. Type /help for commands.";
+    if (msgView_) msgView_->addMessage(sys);
+    return true;
 }
 
 TRoomChatWindow::~TRoomChatWindow() {
