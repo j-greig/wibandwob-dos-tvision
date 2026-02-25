@@ -49,7 +49,7 @@ A `wibwob_agent.py` process connects to the same PartyKit room as a regular part
 - **Never**: Don't respond to own messages, don't double-respond, don't interrupt active conversation between humans
 
 ### Model tiering
-- **Default (no key needed)**: Free model via [OpenRouter](https://openrouter.ai/models/?q=free) — e.g. `meta-llama/llama-4-scout:free` or `google/gemma-3-27b-it:free`. Zero cost, always-on
+- **Default (no key needed)**: `openrouter/free` — a meta-router that picks from available free models at random. Zero cost, always-on, no model selection needed
 - **Upgrade (key set via Help)**: `claude-haiku-4-5-20250501` (verify model name — Anthropic may have released newer Haiku by 2026). Better personality coherence, worth the ~$0.01/response
 - Agent checks for `OPENROUTER_API_KEY` (free tier, set as Sprite env var) first, falls back to `ANTHROPIC_API_KEY` if available
 - OpenRouter uses the same OpenAI-compatible chat completions format, so the agent code is model-agnostic — just swap base URL + key + model name
