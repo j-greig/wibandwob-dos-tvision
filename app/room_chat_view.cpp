@@ -341,7 +341,7 @@ TRoomChatWindow::TRoomChatWindow(const TRect& bounds, const char* title, int num
     // Seed with a system welcome line
     RoomChatMessage welcome;
     welcome.sender = "system";
-    welcome.text   = "Room chat connected. Say hello!";
+    welcome.text   = "Room chat connected. Type /help for commands, /rename <name> to set your name.";
     welcome.ts     = nowHHMM();
     msgView_->addMessage(welcome);
 }
