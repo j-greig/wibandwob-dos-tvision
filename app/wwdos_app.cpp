@@ -267,6 +267,7 @@ const ushort cmResetGlitchParams = 146;
 const ushort cmGlitchSettings = 147;
 
 // Right-click context menu commands
+const ushort cmApiKeyChanged   = 186;  // broadcast: runtime API key was set via dialog
 const ushort cmCtxToggleShadow = 250;
 const ushort cmCtxClearTitle = 251;
 const ushort cmCtxToggleFrame = 252;
@@ -2409,9 +2410,11 @@ void TWwdosApp::showApiKeyDialog()
 
         if (!key.empty()) {
             runtimeApiKey = key;
-            // Also wire to Scramble engine so it can use Haiku immediately.
+            // Wire to Scramble engine so it can use Haiku immediately.
             scrambleEngine.setApiKey(key);
-            fprintf(stderr, "[app] api key set via dialog (len=%zu) — wired to runtimeApiKey + scrambleEngine\n",
+            // Broadcast to all views (WibWobView picks this up to re-init its engine).
+            message(deskTop, evBroadcast, cmApiKeyChanged, nullptr);
+            fprintf(stderr, "[app] api key set via dialog (len=%zu) — wired to runtimeApiKey + scrambleEngine + broadcast\n",
                     key.size());
             if (key.substr(0, 6) == "sk-ant") {
                 messageBox("API key set. Chat will use Anthropic API.",

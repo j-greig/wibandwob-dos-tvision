@@ -594,6 +594,23 @@ void TWibWobWindow::handleEvent(TEvent& event) {
         }
     }
 
+    // Re-initialise engine when API key is set via Help > Set API Key dialog
+    if (event.what == evBroadcast && event.message.command == 186 /*cmApiKeyChanged*/) {
+        if (engine) {
+            extern std::string getAppRuntimeApiKey();
+            std::string key = getAppRuntimeApiKey();
+            if (!key.empty()) {
+                engine->setApiKey(key);
+                if (messageView)
+                    messageView->addMessage("System", "API key updated — LLM ready.");
+                if (inputView)
+                    inputView->setStatus("Type a message and press Enter");
+                fprintf(stderr, "[wibwob] API key updated via broadcast (len=%zu)\n", key.size());
+            }
+        }
+        clearEvent(event);
+    }
+
     // Handle injected wibwob_ask messages from API
     if (event.what == evBroadcast && event.message.command == 0xF0F0) {
         auto* text = static_cast<std::string*>(event.message.infoPtr);
