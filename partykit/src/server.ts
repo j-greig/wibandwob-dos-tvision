@@ -52,6 +52,7 @@ type IncomingMessage =
   | { type: "state_delta"; room_id?: string; delta: StateDelta }
   | { type: "chat_msg"; sender: string; text: string; ts?: number }
   | { type: "cursor_pos"; sender: string; x: number; y: number }
+  | { type: "rename"; conn_id: string; name: string }
   | { type: "ping" };
 
 interface StateDelta {
@@ -196,6 +197,21 @@ export default class WibWobRoom implements Party.Server {
           from: sender.id,
         };
         this.room.broadcast(JSON.stringify(relay), [sender.id]);
+        break;
+      }
+
+      case "rename": {
+        // Relay display-name change to all except sender.
+        const renameMsg = msg as { type: "rename"; conn_id: string; name: string };
+        this.room.broadcast(
+          JSON.stringify({
+            type: "rename",
+            conn_id: renameMsg.conn_id,
+            name: renameMsg.name,
+            from: sender.id,
+          }),
+          [sender.id]
+        );
         break;
       }
 

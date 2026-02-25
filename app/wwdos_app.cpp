@@ -1036,7 +1036,7 @@ TWwdosApp::TWwdosApp() :
         }
     }
 
-    // Sprites default layout: room chat (top-left) + symbient primer (top-right)
+    // Sprites default layout: room chat (top-left) + primers (top-right area)
     const char* noSync = std::getenv("WIBWOB_NO_STATE_SYNC");
     if (noSync && noSync[0] == '1' && !layoutPath) {
         TRect deskBounds = deskTop->getExtent();
@@ -1054,21 +1054,27 @@ TWwdosApp::TWwdosApp() :
             windowNumber++;
         }
 
-        // Symbient primer: top-right
-        std::string primerPath = findPrimerDir() + "/wibwob-symbient-protest.txt";
-        struct stat st;
-        if (stat(primerPath.c_str(), &st) == 0) {
-            TRect primerBounds = calculateWindowBounds(primerPath);
-            int pw = primerBounds.b.x - primerBounds.a.x;
-            int ph = primerBounds.b.y - primerBounds.a.y;
-            // Position top-right with padding
-            int px = dw - pw - pad;
-            int py = pad;
-            TRect positioned(px, py, px + pw, py + ph);
-            openAnimationFilePath(primerPath, positioned, false, false, "symbient.txt");
-        }
+        // Helper: open a primer at a specific position
+        std::string primerDir = findPrimerDir();
+        auto openPrimer = [&](const std::string& filename, int x, int y) {
+            std::string path = primerDir + "/" + filename;
+            struct stat st;
+            if (stat(path.c_str(), &st) == 0) {
+                TRect bounds = calculateWindowBounds(path);
+                int pw = bounds.b.x - bounds.a.x;
+                int ph = bounds.b.y - bounds.a.y;
+                TRect positioned(x, y, x + pw, y + ph);
+                openAnimationFilePath(path, positioned, false, false, filename);
+            }
+        };
 
-        fprintf(stderr, "[wibwob] Sprites default layout: room chat + symbient primer\n");
+        // Primers arranged in top-right area
+        int rx = dw / 2 + pad;  // right half starts here
+        openPrimer("wibwob-symbient-protest.txt", rx, pad);
+        openPrimer("chaos-vs-order.txt", rx, pad + 10);
+        openPrimer("iso-tall-cubes-emoji.txt", rx, pad + 24);
+
+        fprintf(stderr, "[wibwob] Sprites default layout: room chat + 3 primers\n");
     }
 
     // Init Scramble engine (KB + Haiku client).
