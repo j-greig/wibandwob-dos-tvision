@@ -14,10 +14,11 @@ Usage (spawned by orchestrator):
     uv run tools/room/partykit_bridge.py
 
 Environment:
-    WIBWOB_INSTANCE      — instance ID (e.g. "1"), drives /tmp/wibwob_1.sock
-    WIBWOB_PARTYKIT_URL  — PartyKit server URL (e.g. https://wibwob.user.partykit.dev)
-    WIBWOB_PARTYKIT_ROOM — PartyKit room/Durable Object key (e.g. "wibwob-shared")
-    WIBWOB_AUTH_SECRET   — shared HMAC secret for IPC auth (optional)
+    WIBWOB_INSTANCE        — instance ID (e.g. "1"), drives /tmp/wibwob_1.sock
+    WIBWOB_PARTYKIT_URL    — PartyKit server URL (e.g. https://wibwob.user.partykit.dev)
+    WIBWOB_PARTYKIT_ROOM   — PartyKit room/Durable Object key (e.g. "wibwob-shared")
+    WIBWOB_AUTH_SECRET     — shared HMAC secret for IPC auth (optional)
+    WIBWOB_NO_STATE_SYNC   — if "1", disable window state sync (keep chat + presence only)
 """
 
 import asyncio
@@ -155,12 +156,14 @@ def build_ws_url(partykit_url: str, room: str) -> str:
 
 class PartyKitBridge:
     def __init__(self, instance_id: str, partykit_url: str, room: str,
-                 ai_relay: bool = False, legacy_scramble_chat: bool = False):
+                 ai_relay: bool = False, legacy_scramble_chat: bool = False,
+                 no_state_sync: bool = False):
         self.sock_path = ipc_sock_path(instance_id)
         self.ws_url = build_ws_url(partykit_url, room)
         self.instance_id = instance_id
         self.ai_relay = ai_relay  # legacy: True = wibwob_ask, False = chat_receive
         self.legacy_scramble_chat = legacy_scramble_chat  # route to Scramble instead of RoomChatView
+        self.no_state_sync = no_state_sync  # Sprites mode: chat + presence only, no window sync
         self.last_windows: dict[str, dict] = {}
         self.last_chat_seq: int = 0
         self.id_map: dict[str, str] = {}  # remote window id -> local IPC id
@@ -212,10 +215,15 @@ class PartyKitBridge:
         Holds _state_lock around the diff+push+baseline update to prevent
         concurrent coroutines from overwriting last_windows with stale state.
         Returns the raw state dict (for callers that also need it), or None on error.
+
+        When no_state_sync is True, still fetches state (for liveness check)
+        but never computes or pushes window deltas.
         """
         state = await asyncio.to_thread(ipc_get_state, self.sock_path)
         if not state:
             return None
+        if self.no_state_sync:
+            return state  # skip window diff/push entirely
         if self._state_lock is None:
             return state
         async with self._state_lock:
@@ -313,6 +321,8 @@ class PartyKitBridge:
                 continue
 
             mtype = msg.get("type")
+            if mtype in ("state_sync", "state_delta") and self.no_state_sync:
+                continue  # Sprites mode: ignore all window state messages
             if mtype == "state_sync":
                 canonical = msg.get("state", {})
                 windows = canonical.get("windows", {})
@@ -495,6 +505,9 @@ def main() -> int:
 
     ai_relay = os.environ.get("WIBWOB_AI_RELAY", "").lower() in ("1", "true", "yes")
     legacy   = os.environ.get("WIBWOB_LEGACY_CHAT", "").lower() in ("1", "true", "yes")
+    no_sync  = os.environ.get("WIBWOB_NO_STATE_SYNC", "").lower() in ("1", "true", "yes")
+    if no_sync:
+        print("[bridge] NO_STATE_SYNC=ON — chat + presence only (Sprites mode)")
     if legacy:
         print("[bridge] LEGACY_CHAT=ON — routing chat to Scramble (old behaviour)")
     elif ai_relay:
@@ -502,7 +515,8 @@ def main() -> int:
     else:
         print("[bridge] room_chat mode — routing chat to RoomChatView")
     bridge = PartyKitBridge(instance_id, partykit_url, room,
-                            ai_relay=ai_relay, legacy_scramble_chat=legacy)
+                            ai_relay=ai_relay, legacy_scramble_chat=legacy,
+                            no_state_sync=no_sync)
     try:
         asyncio.run(bridge.run())
     except KeyboardInterrupt:

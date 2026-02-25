@@ -20,6 +20,7 @@ export WIBWOB_INSTANCE=$INST
 APP="${APP:-/home/sprite/app}"
 export WIBWOB_PARTYKIT_URL="${WIBWOB_PARTYKIT_URL:-https://wibwob-rooms.j-greig.partykit.dev}"
 export WIBWOB_PARTYKIT_ROOM="${WIBWOB_PARTYKIT_ROOM:-rchat-live}"
+export WIBWOB_NO_STATE_SYNC="${WIBWOB_NO_STATE_SYNC:-1}"  # Sprites: chat+presence only
 
 SOCK="/tmp/wibwob_${INST}.sock"
 LOG="/tmp/wibwob_bridge_${INST}.log"
@@ -39,8 +40,8 @@ LOG="/tmp/wibwob_bridge_${INST}.log"
     exit 1
   fi
   echo "[bridge:${INST}] socket ready, starting bridge" >> "$LOG"
-  cd "$APP"
-  uv run tools/room/partykit_bridge.py >> "$LOG" 2>&1
+  cd "$APP/tools/room"
+  python3 partykit_bridge.py >> "$LOG" 2>&1
   echo "[bridge:${INST}] bridge exited" >> "$LOG"
 ) &
 BRIDGE_PID=$!
@@ -48,6 +49,9 @@ BRIDGE_PID=$!
 # ── Start TUI in foreground (attached to browser PTY) ────────────────────────
 # When browser tab closes: PTY closes → this process exits →
 # socket removed → bridge detects and exits (F04 fix).
+# cd to APP so relative paths (primers/, modules/, etc.) resolve correctly
+cd "$APP"
+
 WWDOS="${APP}/build-sprites/app/wwdos"
 if [ ! -x "$WWDOS" ]; then
   # Fallback to dev build if sprites build not present
