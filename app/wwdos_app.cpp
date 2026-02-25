@@ -1055,7 +1055,7 @@ TWwdosApp::TWwdosApp() :
         }
 
         // Symbient primer: top-right
-        std::string primerPath = findPrimerDir() + "/symbient.txt";
+        std::string primerPath = findPrimerDir() + "/wibwob-symbient-protest.txt";
         struct stat st;
         if (stat(primerPath.c_str(), &st) == 0) {
             TRect primerBounds = calculateWindowBounds(primerPath);

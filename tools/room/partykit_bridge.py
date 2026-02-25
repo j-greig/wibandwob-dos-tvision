@@ -110,12 +110,16 @@ _ANIMALS = [
     "rook", "swift", "tern", "vole", "wasp", "yak",
 ]
 
-def _display_name(conn_id: str, self_id: str, custom_name: str = "") -> str:
+def _display_name(conn_id: str, self_id: str, custom_name: str = "",
+                   remote_names: dict[str, str] | None = None) -> str:
     """Return the display name for a connection, appending ' (me)' for self."""
-    if self_id and conn_id == self_id and custom_name:
+    is_me = self_id and conn_id == self_id
+    if is_me and custom_name:
         return f"{custom_name} (me)"
+    if not is_me and remote_names and conn_id in remote_names:
+        return remote_names[conn_id]
     name = _name_for_conn(conn_id)
-    return f"{name} (me)" if (self_id and conn_id == self_id) else name
+    return f"{name} (me)" if is_me else name
 
 
 def _name_for_conn(conn_id: str) -> str:
@@ -174,6 +178,7 @@ class PartyKitBridge:
         self._participants: list[str] = []   # tracked conn ids for presence strip
         self._self_conn_id: str = ""          # own PartyKit connection ID (from presence sync)
         self._custom_name: str = ""           # set via /rename in TUI
+        self._remote_names: dict[str, str] = {}  # conn_id → custom name (from other bridges)
         # Protects last_windows from concurrent coroutine updates.
         # asyncio is single-threaded but awaits between diff and baseline write
         # can allow another coroutine to interleave and overwrite with stale state.
@@ -198,6 +203,16 @@ class PartyKitBridge:
             await self._ws.send(msg)
         except Exception as e:
             self.log(f"send error: {e}")
+            self._ws = None
+
+    async def push_rename(self, conn_id: str, name: str) -> None:
+        if self._ws is None:
+            return
+        msg = json.dumps({"type": "rename", "conn_id": conn_id, "name": name})
+        try:
+            await self._ws.send(msg)
+        except Exception as e:
+            self.log(f"send error (rename): {e}")
             self._ws = None
 
     async def push_chat(self, sender: str, text: str) -> None:
@@ -293,7 +308,13 @@ class PartyKitBridge:
                 custom = await asyncio.to_thread(
                     ipc_command_raw, self.sock_path, "room_chat_display_name", {}
                 )
-                self._custom_name = custom.strip() if custom else ""
+                new_name = custom.strip() if custom else ""
+                if new_name != self._custom_name:
+                    self._custom_name = new_name
+                    if new_name and self._self_conn_id:
+                        await self.push_rename(self._self_conn_id, new_name)
+                        self.log(f"broadcast rename: {new_name}")
+                    self._custom_name = new_name
 
                 raw = await asyncio.to_thread(
                     ipc_command_raw, self.sock_path, "room_chat_pending", {}
@@ -314,7 +335,7 @@ class PartyKitBridge:
                 # after the initial join event, or after /rename.
                 if self._participants:
                     participants_json = json.dumps(
-                        [{"id": _display_name(p, self._self_conn_id, self._custom_name)} for p in self._participants]
+                        [{"id": _display_name(p, self._self_conn_id, self._custom_name, self._remote_names)} for p in self._participants]
                     )
                     await asyncio.to_thread(
                         ipc_command, self.sock_path, "room_presence",
@@ -411,6 +432,23 @@ class PartyKitBridge:
                             {"sender": sender, "text": text, "ts": ts_str},
                         )
 
+            elif mtype == "rename":
+                conn_id = msg.get("conn_id", "")
+                name = msg.get("name", "")
+                if conn_id and name and conn_id != self._self_conn_id:
+                    self._remote_names[conn_id] = name
+                    self.log(f"remote rename: {conn_id[:8]}… → {name}")
+                    # Re-push presence to update strip immediately
+                    if self._participants:
+                        participants_json = json.dumps(
+                            [{"id": _display_name(p, self._self_conn_id, self._custom_name, self._remote_names)}
+                             for p in self._participants]
+                        )
+                        await asyncio.to_thread(
+                            ipc_command, self.sock_path, "room_presence",
+                            {"participants": participants_json},
+                        )
+
             elif mtype == "presence":
                 event_name = msg.get("event", "")
                 conn_id    = msg.get("id", "")
@@ -432,7 +470,7 @@ class PartyKitBridge:
                         # track locally and push the full snapshot)
                         self._update_presence(event_name, conn_id)
                     participants_json = json.dumps(
-                        [{"id": _display_name(p, self._self_conn_id, self._custom_name)} for p in self._participants]
+                        [{"id": _display_name(p, self._self_conn_id, self._custom_name, self._remote_names)} for p in self._participants]
                     )
                     await asyncio.to_thread(
                         ipc_command, self.sock_path, "room_presence",
