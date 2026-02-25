@@ -1927,12 +1927,19 @@ void TWwdosApp::wireScrambleInput()
             [this](const std::string& response) {
                 // Callback fires from poll() inside idle() — do NOT drawView() here.
                 pendingScrambleReply = response.empty() ? "... (=^..^=)" : response;
+                // Clear spinner
+                if (scrambleWindow && scrambleWindow->getInputView())
+                    scrambleWindow->getInputView()->setThinking(false);
                 TEvent event;
                 event.what = evCommand;
                 event.message.command = cmScrambleReply;
                 event.message.infoPtr = nullptr;
                 putEvent(event);
             });
+
+        if (isAsync && scrambleWindow->getInputView()) {
+            scrambleWindow->getInputView()->setThinking(true);
+        }
 
         if (!isAsync) {
             // Slash command or fallback — deliver immediately (not from idle)

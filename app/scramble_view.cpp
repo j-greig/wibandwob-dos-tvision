@@ -571,6 +571,15 @@ void TScrambleInputView::draw()
 
     // Input line on row 1
     b.moveChar(0, ' ', inputAttr, size.x);
+    if (thinking) {
+        static const char* spinChars = "|/-\\";
+        char spin[2] = { spinChars[spinnerFrame % 4], 0 };
+        TColorAttr spinAttr = TColorAttr(TColorRGB(200, 180, 120), TColorRGB(0, 0, 0));
+        b.moveStr(0, spin, spinAttr);
+        b.moveStr(2, "thinking...", TColorAttr(TColorRGB(130, 130, 150), TColorRGB(0, 0, 0)));
+        writeLine(0, 1, size.x, 1, b);
+        return;
+    }
     b.moveStr(0, "> ", promptAttr);
 
     // Render input text
@@ -660,6 +669,7 @@ void TScrambleInputView::handleEvent(TEvent& event)
     if (event.what == evBroadcast && event.message.command == cmTimerExpired) {
         if (cursorTimerId != 0 && event.message.infoPtr == cursorTimerId) {
             cursorVisible = !cursorVisible;
+            if (thinking) spinnerFrame++;
             drawView();
             clearEvent(event);
         }

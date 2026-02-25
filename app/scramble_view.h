@@ -73,6 +73,7 @@ public:
     void setEngine(ScrambleEngine* engine) { scrambleEngine = engine; }
     void setBubbleEnabled(bool enabled) { bubbleEnabled = enabled; if (!enabled) { bubbleVisible = false; drawView(); } }
     ScramblePose getPose() const { return currentPose; }
+    ScrambleEngine* getEngine() const { return scrambleEngine; }
 
 private:
     ScrambleEngine* scrambleEngine;
@@ -164,9 +165,15 @@ public:
     // Callback when user presses Enter
     std::function<void(const std::string&)> onSubmit;
 
+    // Spinner: set externally when LLM is thinking
+    void setThinking(bool t) { thinking = t; drawView(); }
+    bool isThinking() const { return thinking; }
+
 private:
     std::string currentInput;
     int cursorPos;
+    bool thinking = false;
+    int spinnerFrame = 0;
 
     // Cursor blink
     bool cursorVisible;
