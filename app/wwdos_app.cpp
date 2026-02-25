@@ -3525,12 +3525,20 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
         int x=2,y=1,w=50,h=15; parseBounds(obj, 0, x,y,w,h);
         bool zoomed=false; parseKeyedBool(obj, 0, "zoomed", zoomed);
 
-        // Clamp
+        // Anchor: "right" = x is offset from right edge; "bottom" = y from bottom
+        std::string anchor; parseKeyedString(obj, 0, "anchor", anchor);
+
+        // Clamp and anchor
         TRect ext = deskTop->getExtent();
         int maxW = ext.b.x - ext.a.x;
         int maxH = ext.b.y - ext.a.y;
         if (w < 16) w = 16; if (h < 6) h = 6;
         if (w > maxW) w = maxW; if (h > maxH) h = maxH;
+        // Right-anchor: x = desktop_width - x_offset - width
+        if (anchor.find("right") != std::string::npos)
+            x = std::max(0, maxW - x - w);
+        if (anchor.find("bottom") != std::string::npos)
+            y = std::max(0, maxH - y - h);
         if (x < 0) x = 0; if (y < 0) y = 0;
         if (x + w > maxW) x = std::max(0, maxW - w);
         if (y + h > maxH) y = std::max(0, maxH - h);
@@ -3562,6 +3570,7 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
             continue;
         } else if (type == "frame_player") {
             std::string path; unsigned pms = 300;
+            bool frameless = false, shadowless = false;
             size_t propsPos = obj.find("\"props\"");
             if (propsPos != std::string::npos) {
                 size_t brace = obj.find('{', propsPos);
@@ -3570,9 +3579,11 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
                     std::string pmsStr;
                     parseKeyedString(obj, brace+1, "periodMs", pmsStr);
                     if (!pmsStr.empty()) pms = (unsigned)std::stoul(pmsStr);
+                    parseKeyedBool(obj, brace+1, "frameless", frameless);
+                    parseKeyedBool(obj, brace+1, "shadowless", shadowless);
                 }
             }
-            if (!path.empty()) openAnimationFilePath(path, bounds, false, false, title);
+            if (!path.empty()) openAnimationFilePath(path, bounds, frameless, shadowless, title);
             continue; // openAnimationFilePath handles insert + register
         } else if (type == "text_view") {
             std::string path;

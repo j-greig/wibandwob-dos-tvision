@@ -469,6 +469,10 @@ class PartyKitBridge:
                         # (PartyKit join/leave events only include the changed id;
                         # track locally and push the full snapshot)
                         self._update_presence(event_name, conn_id)
+                        # Re-broadcast our custom name so late joiners learn it
+                        if event_name == "join" and self._custom_name and self._self_conn_id:
+                            await self.push_rename(self._self_conn_id, self._custom_name)
+                            self.log(f"re-broadcast rename to new joiner: {self._custom_name}")
                     participants_json = json.dumps(
                         [{"id": _display_name(p, self._self_conn_id, self._custom_name, self._remote_names)} for p in self._participants]
                     )
