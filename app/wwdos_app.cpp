@@ -1036,6 +1036,41 @@ TWwdosApp::TWwdosApp() :
         }
     }
 
+    // Sprites default layout: room chat (top-left) + symbient primer (top-right)
+    const char* noSync = std::getenv("WIBWOB_NO_STATE_SYNC");
+    if (noSync && noSync[0] == '1' && !layoutPath) {
+        TRect deskBounds = deskTop->getExtent();
+        int dw = deskBounds.b.x, dh = deskBounds.b.y;
+        int pad = 3;  // padding from edges
+
+        // Room chat: top-left, roughly half width
+        int chatW = std::min(60, dw / 2 - pad);
+        int chatH = std::min(24, dh - pad * 2);
+        TRect chatBounds(pad, pad, pad + chatW, pad + chatH);
+        TWindow* chatWin = createRoomChatWindow(chatBounds);
+        if (chatWin) {
+            deskTop->insert(chatWin);
+            registerWindow(chatWin);
+            windowNumber++;
+        }
+
+        // Symbient primer: top-right
+        std::string primerPath = findPrimerDir() + "/symbient.txt";
+        struct stat st;
+        if (stat(primerPath.c_str(), &st) == 0) {
+            TRect primerBounds = calculateWindowBounds(primerPath);
+            int pw = primerBounds.b.x - primerBounds.a.x;
+            int ph = primerBounds.b.y - primerBounds.a.y;
+            // Position top-right with padding
+            int px = dw - pw - pad;
+            int py = pad;
+            TRect positioned(px, py, px + pw, py + ph);
+            openAnimationFilePath(primerPath, positioned, false, false, "symbient.txt");
+        }
+
+        fprintf(stderr, "[wibwob] Sprites default layout: room chat + symbient primer\n");
+    }
+
     // Init Scramble engine (KB + Haiku client).
     scrambleEngine.init(".");
 }
