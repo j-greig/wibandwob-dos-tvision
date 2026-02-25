@@ -1,102 +1,62 @@
 ---
 id: E015
-title: Sprites Hosting — Remote Multi-User WibWob-DOS
+title: Sprites Hosting — Multi-User WibWob-DOS via xterm.js
 status: not-started
 issue: TBD
 pr: —
 depends_on: [E008]
 ---
 
-# E015: Sprites Hosting — Remote Multi-User WibWob-DOS
+# E015: Sprites Hosting — Multi-User WibWob-DOS via xterm.js
 
-Host WibWob-DOS on [sprites.dev](https://sprites.dev) so remote users can join a shared PartyKit room via browser, with no local setup. Each user gets their own Sprite (isolated TUI instance). All Sprites share one PartyKit room via the bridge.
+Host WibWob-DOS on a **single [sprites.dev](https://sprites.dev) microVM** so
+any number of remote users can open the full TUI in their browser (xterm.js via
+ttyd), each with their own identity in a shared PartyKit room. No local setup
+required for remote users.
 
 ## TL;DR
 
-Sprites = persistent Linux microVMs with a public HTTPS URL, auto-sleep when idle, instant wake on request. Plan: each user's TUI runs inside their own Sprite, exposed via `ttyd` (WebSocket → PTY → browser terminal). All bridges point to the same PartyKit room → N users in one room.
-
----
-
-## What are Sprites?
-
-Source: https://docs.sprites.dev
-
-| Feature | Detail |
-|---------|--------|
-| OS | Ubuntu 24.04 LTS |
-| Storage | 100 GB persistent ext4 (survives hibernation) |
-| RAM | Does **not** persist — processes restart on wake |
-| URL | `https://<name>.sprites.app` — auto-wakes Sprite on request |
-| HTTP port | Routes to port 8080 by default |
-| Billing | Per-second compute; free when idle |
-| Preinstalled | Node, Python, Go, Git, Claude CLI, Codex, `uv`, common dev tools |
-| Isolation | Hardware-level microVM (not just containers) |
-
-### Key CLI commands
-
-```bash
-sprite create <name>              # create a new Sprite
-sprite use <name>                 # set active Sprite (skip -s flag)
-sprite exec -- <cmd>              # run one-off command
-sprite exec -tty -- <cmd>        # TTY session (interactive)
-sprite console                    # interactive shell
-sprite sessions list              # list running sessions
-sprite sessions attach <id>       # reattach detached session
-sprite proxy 8089                 # forward Sprite port 8089 → localhost:8089
-sprite url                        # show HTTPS URL
-sprite url update --auth public   # make URL publicly accessible
-sprite checkpoint create          # snapshot filesystem
-sprite destroy                    # irreversible — deletes everything
-```
-
-### Services — the key primitive for persistent daemons
-
-RAM doesn't persist through hibernation. **Services** auto-restart when the Sprite wakes:
-
-```bash
-sprite-env services create my-server --cmd uvicorn --args "tools.api_server.main:app --port 8080"
-```
-
-Use Services for: API server, PartyKit bridge, ttyd. Use TTY sessions for: TUI (user-facing, detachable).
-
-### Sessions — detachable TTY
-
-```bash
-sprite exec -tty -- tmux new-session ./build/app/wwdos
-# Ctrl+\ to detach
-sprite sessions attach <id>       # reattach
-```
+One Sprite runs `ttyd`. Each browser connection forks a fresh `wwdos` + bridge
+process with a unique `WIBWOB_INSTANCE=$$` (shell PID) → unique IPC socket →
+own PartyKit connection → own adjective-animal name. All users land in the same
+room. Presence strip shows real count. Identity works. ~35MB RAM per user.
 
 ---
 
 ## Architecture
 
 ```
-[User A browser]                        [User B browser]
-       │ HTTPS                                 │ HTTPS
-       ▼                                       ▼
-[Sprite A: wibwob-alice.sprites.app]   [Sprite B: wibwob-bob.sprites.app]
-  ttyd :8080 → PTY → wwdos TUI           ttyd :8080 → PTY → wwdos TUI
-  API server :8089                        API server :8089
-  PartyKit bridge                         PartyKit bridge
-       │ WebSocket                               │ WebSocket
-       └──────────────┐  ┌────────────────────┘
-                      ▼  ▼
-              [PartyKit: wibwob-rooms.j-greig.partykit.dev]
-                      room: rchat-xyz
+                sprites.app HTTPS URL (public)
+                        │
+                ttyd :8080 — forks per connection
+                        │
+     ┌──────────────────┼──────────────────┐
+  Browser A          Browser B          Browser C
+  INST=101           INST=247           INST=389
+  wwdos+bridge       wwdos+bridge       wwdos+bridge
+  amber-gnu          sage-jay           swift-fox
+     │                  │                  │
+     └──────────────────┴──────────────────┘
+                  PartyKit "rchat-live"
+                     3 in room ✓
 ```
 
-Each user browses to their Sprite's URL → sees the full DOS TUI in their browser terminal. Messages typed in one TUI appear in all others via PartyKit within ~500ms.
+**Key**: ttyd default behaviour forks the command for each new browser
+connection. No `--once` flag needed. Each fork gets `INST=$$` (shell PID) →
+`/tmp/wibwob_$$.sock` → fully isolated wwdos instance.
 
 ---
 
-## Recommended approach: ttyd-per-Sprite
+## Design decisions
 
-**Why not shared Sprite?** tvision/ncurses = one terminal per TUI instance. Two users sharing one PTY = input conflicts. Isolation wins.
-
-**Why not web frontend?** Full rewrite, loses DOS aesthetic entirely. ttyd preserves everything for zero C++ changes.
-
-**Why ttyd?** It's exactly this use case: wraps any terminal app in a WebSocket/browser terminal. `apt install ttyd`. Routes HTTP → PTY. Browser gets xterm.js. Zero changes to the TUI binary.
+| Decision | Choice | Why |
+|----------|--------|-----|
+| Process model | Per-connection fork (ttyd default) | Each user = own identity in PartyKit |
+| Instance ID | `WIBWOB_INSTANCE=$$` (shell PID) | Guaranteed unique; confirmed in `wwdos_app.cpp:997` |
+| API server | Not deployed per user | Not in the human TUI→PartyKit path |
+| Room name | Fixed env var `rchat-live` | Zero coordination; V2 can add lobby |
+| Sprite count | 1 | ttyd + N forked children all on one microVM |
+| HTTP port | 8080 (Sprite URL default) | ttyd listens on 8080 |
 
 ---
 
@@ -104,119 +64,87 @@ Each user browses to their Sprite's URL → sees the full DOS TUI in their brows
 
 | # | Title | Status | Detail |
 |---|-------|--------|--------|
-| F01 | Sprite setup script | not-started | One-time provisioning: deps, build, uv, git clone |
-| F02 | Services wiring | not-started | API server + bridge as auto-restart Services |
-| F03 | ttyd integration | not-started | TUI exposed via ttyd on port 8080, Sprite URL → public |
-| F04 | Room coordination | not-started | Mechanism for users to discover/join a shared room name |
-| F05 | GitHub → auto-redeploy | not-started | GH Action triggers `sprite exec git pull && rebuild` on push |
-| F06 | ww-room-chat skill update | not-started | Add remote Sprite launch path alongside local start.sh |
+| F01 | Sprite setup script | not-started | `scripts/sprite-setup.sh` — deps, git clone, cmake build, uv sync |
+| F02 | User session wrapper | not-started | `scripts/sprite-user-session.sh` — INST=$$, bridge wait loop, TUI foreground |
+| F03 | ttyd Service registration | not-started | `sprite-env services create tui-host` — auto-restarts on Sprite wake |
+| F04 | Bridge exit fix | not-started | `partykit_bridge.py` — socket-gone = exit, not retry (zombie prevention) |
+| F05 | Public URL + room env | not-started | `sprite url update --auth public`, `WIBWOB_PARTYKIT_ROOM=rchat-live` |
+| F06 | GitHub auto-redeploy | not-started | GH Action on push to main → `sprite exec git pull && cmake --build` |
 
 ---
 
-## Key Files (to create)
+## Key files (to create/modify)
 
-| File | Role |
-|------|------|
-| `scripts/sprite-setup.sh` | One-time Sprite provisioning (deps + build + services) |
-| `scripts/sprite-start.sh` | Start TUI session + services on a Sprite |
-| `scripts/sprite-stop.sh` | Stop services + TUI session |
-| `.github/workflows/sprite-redeploy.yml` | Auto-redeploy on push to main |
-
----
-
-## Deployment plan (step-by-step)
-
-### Step 1 — Create and provision a Sprite
-
-```bash
-sprite create wibwob-alice
-sprite use wibwob-alice
-sprite exec -- apt-get install -y ttyd cmake git build-essential
-sprite exec -- git clone https://github.com/j-greig/wibandwob-dos /home/sprite/app
-sprite exec -- bash -c "cd /home/sprite/app && cmake -B build && cmake --build build --target wwdos"
-sprite exec -- bash -c "cd /home/sprite/app && uv sync --project tools/api_server"
-```
-
-### Step 2 — Register Services (auto-restart on wake)
-
-```bash
-sprite exec -- sprite-env services create api \
-  --cmd /home/sprite/app/tools/api_server/venv/bin/uvicorn \
-  --args "tools.api_server.main:app --host 0.0.0.0 --port 8089" \
-  --workdir /home/sprite/app --env "WIBWOB_INSTANCE=1"
-
-sprite exec -- sprite-env services create bridge \
-  --cmd uv \
-  --args "run tools/room/partykit_bridge.py" \
-  --workdir /home/sprite/app \
-  --env "WIBWOB_INSTANCE=1,WIBWOB_PARTYKIT_URL=https://wibwob-rooms.j-greig.partykit.dev,WIBWOB_PARTYKIT_ROOM=rchat-live"
-```
-
-### Step 3 — Expose TUI via ttyd on port 8080
-
-```bash
-# ttyd on port 8080 (Sprite's default HTTP port)
-# -W = writable (users can type), -t = title, --once = one session
-sprite exec -tty -- ttyd --port 8080 --writable \
-  bash -c "WIBWOB_INSTANCE=1 /home/sprite/app/build/app/wwdos"
-```
-
-### Step 4 — Make URL public
-
-```bash
-sprite url update --auth public
-sprite url   # → https://wibwob-alice.sprites.app
-```
-
-User visits that URL → full WibWob-DOS TUI in browser.
-
-### Step 5 — GitHub auto-redeploy
-
-```yaml
-# .github/workflows/sprite-redeploy.yml
-on:
-  push:
-    branches: [main]
-    paths: [app/**, tools/**, partykit/**]
-jobs:
-  redeploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Rebuild on Sprite
-        env:
-          SPRITE_TOKEN: ${{ secrets.SPRITE_TOKEN }}
-        run: |
-          sprite exec -s wibwob-alice -- bash -c \
-            "cd /home/sprite/app && git pull && cmake --build build --target wwdos"
-```
+| File | Change |
+|------|--------|
+| `scripts/sprite-setup.sh` | New — one-time Sprite provisioning |
+| `scripts/sprite-user-session.sh` | New — per-connection ttyd wrapper |
+| `.github/workflows/sprite-redeploy.yml` | New — auto-redeploy on push |
+| `tools/room/partykit_bridge.py` | Fix — exit on socket-gone, not retry |
 
 ---
 
-## Open questions
+## Acceptance criteria
 
-| # | Question | Notes |
-|---|----------|-------|
-| 1 | Does ttyd work with tvision's ncurses init in a headless PTY? | ttyd sends `TIOCSWINSZ` from browser — needs live test |
-| 2 | Sprites HTTP URL → port 8080 confirmed? | Docs say "first HTTP port opened" — need to verify ttyd on 8080 gets routed |
-| 3 | `sprite-env services` exact syntax | Docs show it but needs verification against installed CLI version |
-| 4 | Room name coordination | Fixed env var (simplest) vs. lobby room vs. URL param |
-| 5 | Multi-user Sprite naming convention | `wibwob-<username>` or `wibwob-<role>` (alice/bob/wibwob) |
-| 6 | GitHub integration specifics | User says "Sprites linked to the symbient's GitHub repo" — what does the Sprites GitHub app actually do? |
-| 7 | `WIBWOB_INSTANCE` per Sprite | Each Sprite = instance 1; no shared IPC socket conflicts |
+| Check | Test |
+|-------|------|
+| Two browsers open Sprite URL, both see TUI | Visual |
+| Presence strip shows correct count | `2 in room` with 2 browsers |
+| Each browser has distinct adjective-animal name | Check sidebar |
+| Message sent from browser A appears in browser B | Chat relay |
+| Closing browser tab → bridge process exits (no zombie) | `sprite exec -- ps aux | grep bridge` |
+| Sprite wakes and ttyd is ready after idle period | Open URL after 10min idle |
 
 ---
 
-## References
+## Sprites reference (for implementers)
 
-- Sprites overview: https://docs.sprites.dev
-- CLI reference: https://docs.sprites.dev/cli/commands
-- Working with Sprites: https://docs.sprites.dev/working-with-sprites
-- ttyd: https://github.com/tsl0922/ttyd
-- E008 (PartyKit room chat): `.planning/epics/e008-multiplayer-partykit/`
-- ww-room-chat skill: `.claude/skills/ww-room-chat/SKILL.md`
+```bash
+sprite create wibwob-dos          # create the Sprite
+sprite use wibwob-dos             # set as active
+sprite exec -- <cmd>              # run one-off command
+sprite exec -tty -- <cmd>        # interactive TTY
+sprite console                    # interactive shell
+sprite proxy 8080                 # forward Sprite :8080 → localhost:8080
+sprite url update --auth public  # make URL public
+sprite url                        # show URL
+sprite exec -- free -m            # check RAM
+sprite-env services create ...   # register auto-restart daemon
+sprite checkpoint create          # snapshot filesystem
+```
+
+URL format: `https://wibwob-dos-<org>.sprites.app`
+
+---
+
+## Open questions (pre-implementation)
+
+| # | Question | Answer via |
+|---|----------|-----------|
+| 1 | Sprite RAM ceiling | `sprite exec -- free -m` |
+| 2 | tvision ncurses init in headless ttyd PTY | Smoke test |
+| 3 | Does Sprite URL route to port 8080? | `sprite proxy 8080` then curl test |
+| 4 | `sprite-env services` exact syntax | Check installed CLI |
+
+---
+
+## Debate record
+
+Architecture settled over 4 rounds in `debate/`. Key decisions:
+- Round 0→1: shared-tmux rejected (one PartyKit identity, presence broken)
+- Round 1→2: per-connection fork accepted; API server dropped from user path
+- Round 2→3: bridge zombie risk identified (socket retry on exit)
+- Round 4: agreed architecture + bridge fix scoped
 
 ## Status
 
-Status: not-started
-GitHub issue: TBD — create before starting F01
+Status: not-started — create GitHub issue before starting F01
+GitHub issue: TBD
 PR: —
+
+## References
+
+- Sprites docs: https://docs.sprites.dev
+- ttyd: https://github.com/tsl0922/ttyd
+- E008 (PartyKit room chat, done): `.planning/epics/e008-multiplayer-partykit/`
+- Debate transcript: `.planning/epics/e015-sprites-hosting/debate/`
