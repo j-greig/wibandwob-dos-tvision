@@ -250,18 +250,30 @@ public:
     explicit TRoomInputView(const TRect& bounds) : TView(bounds) {
         growMode = gfGrowLoY | gfGrowHiX | gfGrowHiY;
         options  |= ofSelectable | ofFirstClick;
-        eventMask |= evKeyboard;
+        eventMask |= evKeyboard | evBroadcast;
+        blinkTimer = setTimer(500, 500);
     }
 
     virtual void draw() override {
         TDrawBuffer b;
         TColorAttr attr = inputBgColor();
+        TColorAttr cursorAttr = TColorAttr(TColorRGB(25, 25, 35), TColorRGB(220, 220, 230));
         b.moveChar(0, ' ', attr, size.x);
-        std::string prompt = "> " + buf + "_";
-        if ((int)prompt.size() > size.x) prompt = prompt.substr(0, size.x);
+        std::string prompt = "> " + buf;
+        if ((int)prompt.size() > size.x - 1) prompt = prompt.substr(0, size.x - 1);
         b.moveStr(0, prompt.c_str(), attr);
+        // Blinking block cursor
+        if (cursorVisible && (state & sfFocused)) {
+            int cx = (int)prompt.size();
+            if (cx < size.x)
+                b.moveStr(cx, " ", cursorAttr);
+        }
         writeLine(0, 0, size.x, 1, b);
     }
+
+private:
+    bool cursorVisible = true;
+    void* blinkTimer = nullptr;
 
     virtual void handleEvent(TEvent& event) override {
         if (event.what == evKeyboard) {
@@ -292,6 +304,14 @@ public:
             }
         }
         TView::handleEvent(event);
+
+        if (event.what == evBroadcast && event.message.command == cmTimerExpired) {
+            if (blinkTimer && event.message.infoPtr == blinkTimer) {
+                cursorVisible = !cursorVisible;
+                drawView();
+                clearEvent(event);
+            }
+        }
     }
 };
 
