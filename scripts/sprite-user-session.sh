@@ -16,8 +16,11 @@ set -euo pipefail
 INST=$$
 export WIBWOB_INSTANCE=$INST
 
-# ── Environment (set by ttyd Service, overridable) ────────────────────────────
+# ── Load .env if present (secrets + config, never committed) ──────────────────
 APP="${APP:-/home/sprite/app}"
+if [ -f "$APP/.env" ]; then
+  set -a; source "$APP/.env"; set +a
+fi
 export WIBWOB_PARTYKIT_URL="${WIBWOB_PARTYKIT_URL:-https://wibwob-rooms.j-greig.partykit.dev}"
 export WIBWOB_PARTYKIT_ROOM="${WIBWOB_PARTYKIT_ROOM:-rchat-live}"
 export WIBWOB_NO_STATE_SYNC="${WIBWOB_NO_STATE_SYNC:-1}"  # Sprites: chat+presence only

@@ -62,3 +62,4 @@ saves/
 tools/api_server/venv/
 workspaces/
 tools/room/__pycache__/
+.env
