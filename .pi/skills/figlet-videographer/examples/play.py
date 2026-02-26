@@ -203,26 +203,59 @@ def wait_for_speech(timeout=5):
 
 # ── Primers ──────────────────────────────────────────────
 
+def _measure_primer(path):
+    """Read a primer file and return (width, height) excluding comment lines."""
+    # Resolve bare filenames via API to find the actual primer dir
+    # Fallback: try common locations
+    candidates = [path]
+    if '/' not in path and '\\' not in path:
+        for d in ["modules-private", "modules"]:
+            if os.path.isdir(d):
+                for sub in os.listdir(d):
+                    candidate = os.path.join(d, sub, "primers", path)
+                    if os.path.isfile(candidate):
+                        candidates.insert(0, candidate)
+                        break
+    for full in candidates:
+        try:
+            max_w = 0
+            lines = 0
+            with open(full) as f:
+                for line in f:
+                    if line.startswith('#'):
+                        continue
+                    max_w = max(max_w, len(line.rstrip()))
+                    lines += 1
+            # Add window chrome: 2 for borders
+            return max_w + 4, lines + 2
+        except FileNotFoundError:
+            continue
+    return 40, 10  # fallback
+
+
 def place_primer(path, x, y, known_ids):
-    """Open a primer and position it. Returns window ID or None.
+    """Open a primer at exact position and size. Returns window ID or None.
 
     known_ids: set of frame_player IDs already placed — so we find the NEW one.
     """
-    post("open_primer", {"path": path})
+    w, h = _measure_primer(path)
+    post("open_primer", {
+        "path": path,
+        "x": str(x), "y": str(y),
+        "w": str(w), "h": str(h),
+    })
     time.sleep(0.3)
     state = get_state()
-    for w in reversed(state.get("windows", [])):
-        if w.get("type") == "frame_player" and w["id"] not in known_ids:
-            wid = w["id"]
-            position_window(wid, x, y)
-            print(f"    primer: {path} → {wid} at ({x},{y})")
+    for win in reversed(state.get("windows", [])):
+        if win.get("type") == "frame_player" and win["id"] not in known_ids:
+            wid = win["id"]
+            print(f"    primer: {path} → {wid} at ({x},{y}) {w}x{h}")
             return wid
     # Fallback: open_primer may reuse the gallery window
-    for w in reversed(state.get("windows", [])):
-        if w.get("type") == "frame_player":
-            wid = w["id"]
-            position_window(wid, x, y)
-            print(f"    primer: {path} → {wid} at ({x},{y}) (reused)")
+    for win in reversed(state.get("windows", [])):
+        if win.get("type") == "frame_player":
+            wid = win["id"]
+            print(f"    primer: {path} → {wid} at ({x},{y}) {w}x{h} (reused)")
             return wid
     print(f"  WARN: couldn't place primer {path}")
     return None
@@ -279,13 +312,14 @@ def play_frame(frame, speech_cfg, mute, stingers, primer_ids):
         print(f"    ♫ stinger: {cue}")
         play_audio(stingers[cue])
 
-    # Primer
+    # Primer (placed before words, then raised to front after)
     primer = frame.get("primer")
+    primer_wid = None
     if primer:
         pos = frame.get("primer_pos", {"x": 0, "y": 0})
-        wid = place_primer(primer, pos["x"], pos["y"], primer_ids)
-        if wid:
-            primer_ids.add(wid)
+        primer_wid = place_primer(primer, pos["x"], pos["y"], primer_ids)
+        if primer_wid:
+            primer_ids.add(primer_wid)
 
     # Words
     transition = frame.get("transition", "cut")
@@ -296,6 +330,10 @@ def play_frame(frame, speech_cfg, mute, stingers, primer_ids):
         print(f"    → {word['text']} ({word.get('font', 'standard')}){tag}")
         place_word(word, speech_cfg)
         time.sleep(delay)
+
+    # Raise primer above words so art is visible
+    if primer_wid:
+        post("raise_window", {"id": primer_wid})
 
 
 def play_timeline(timeline, mute=False, dry_run=False, loop=False, layout=False):
