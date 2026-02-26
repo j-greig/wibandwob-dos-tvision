@@ -32,9 +32,12 @@ MP4="$DIR/$BASE.mp4"
 PLAY="$DIR/play.py"
 
 BACKING=$(python3 -c "
-import json
+import json, os
 with open('$TIMELINE') as f: t = json.load(f)
-print(t.get('meta',{}).get('audio',{}).get('backing',''))
+b = t.get('meta',{}).get('audio',{}).get('backing','')
+if b and not os.path.isabs(b):
+    b = os.path.join(os.path.dirname('$TIMELINE'), b)
+print(b)
 ")
 DURATION=$(python3 -c "
 import json
@@ -43,7 +46,7 @@ frames = t.get('frames',[])
 print(int(max((f.get('t',0) for f in frames), default=0)) + 12)
 ")
 
-TMUX_SESSION="wwdos"
+TMUX_SESSION="${WIBWOB_TMUX_SESSION:-wibwob}"
 TMUX_PANE="${TMUX_SESSION}:0.0"
 
 # Use canvas size from timeline meta (not the current terminal size)

@@ -4,7 +4,10 @@
     "author": "wib & wob",
     "canvas": { "width": 162, "height": 65 },
     "bg": { "fg": 0, "bg": 0, "texture": " " },
-    "gallery_mode": true
+    "gallery_mode": true,
+    "audio": {
+      "backing": "audio/01-sparse-industrial.mp3"
+    }
   },
   "frames": [
     {
