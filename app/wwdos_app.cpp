@@ -41,7 +41,6 @@
 
 #include "test_pattern.h"
 #include "core/json_utils.h"
-#include "core/primer_utils.h"
 #include "gradient.h"
 #include "ui/ui_helpers.h"
 #include "glitch_engine.h"
@@ -50,6 +49,7 @@
 #include "ascii_image_view.h"
 // Animated blocks view/window
 #include "animated_blocks_view.h"
+#include "backrooms_tv_view.h"
 // Animated gradient view/window
 #include "animated_gradient_view.h"
 // Animated score (ASCII score) view/window
@@ -67,8 +67,6 @@
 #include "generative_monster_portal_view.h"
 // Generative art: Monster Verse (Verse engine + monsters)
 #include "generative_monster_verse_view.h"
-#include "contour_map_view.h"
-#include "generative_lab_view.h"
 // Generative art: Monster Cam (Emoji)
 #include "generative_monster_cam_view.h"
 #include "game_of_life_view.h"
@@ -171,31 +169,6 @@ std::string findPrimerDir() {
 // false = Tiled mode (pattern resets at start of each line, crops at edges)
 bool USE_CONTINUOUS_PATTERN = true;  // Made non-const so it can be changed at runtime
 
-static TRect clampToDesktop(TRect bounds, const TRect& desk) {
-    const int minW = 10;
-    const int minH = 5;
-    const int deskW = std::max(1, desk.b.x - desk.a.x);
-    const int deskH = std::max(1, desk.b.y - desk.a.y);
-
-    int w = bounds.b.x - bounds.a.x;
-    int h = bounds.b.y - bounds.a.y;
-
-    if (w < minW) w = minW;
-    if (h < minH) h = minH;
-    if (w > deskW) w = deskW;
-    if (h > deskH) h = deskH;
-
-    int x = bounds.a.x;
-    int y = bounds.a.y;
-
-    if (x + w > desk.b.x) x = desk.b.x - w;
-    if (y + h > desk.b.y) y = desk.b.y - h;
-    if (x < desk.a.x) x = desk.a.x;
-    if (y < desk.a.y) y = desk.a.y;
-
-    return TRect(x, y, x + w, y + h);
-}
-
 // Command constants
 // File menu commands
 const ushort cmNewWindow = 100;
@@ -249,8 +222,6 @@ const ushort cmMonsterPortal = 154;
 const ushort cmMonsterVerse = 155;
 const ushort cmMonsterCam   = 156;
 const ushort cmASCIICam     = 157;
-const ushort cmContourMap   = 158;
-const ushort cmGenerativeLab = 159;
 
 // Tools menu commands (future)
 const ushort cmAnsiEditor = 125;
@@ -285,6 +256,7 @@ const ushort cmOpenTerminal = 214;
 const ushort cmAppLauncher = 232;    // Applications folder browser
 const ushort cmScrambleReply = 233;  // Async Scramble LLM response ready
 const ushort cmAsciiGallery = 234;   // ASCII Art Gallery browser
+const ushort cmBackroomsTv = 284;    // Backrooms TV live art window
 
 // Glitch menu commands
 const ushort cmToggleGlitchMode = 140;
@@ -785,7 +757,7 @@ private:
     bool openWorkspacePath(const std::string& path);
     void cascade();
     void tile();
-    void closeAll(bool preserveSession = true);
+    void closeAll();
     void takeScreenshot(bool showDialog = true);
     void setPatternMode(bool continuous);
     void showApiKeyDialog();
@@ -855,11 +827,6 @@ private:
         if (it != winToId.end()) {
             lastRegisteredWindowId_ = it->second;
             return it->second;
-        }
-        if (TProgram::deskTop) {
-            TRect desk = TProgram::deskTop->getExtent();
-            TRect clamped = clampToDesktop(w->getBounds(), desk);
-            w->locate(clamped);
         }
         char buf[32];
         std::snprintf(buf, sizeof(buf), "w%d", apiIdCounter++);
@@ -970,9 +937,8 @@ private:
     friend void api_spawn_ascii(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_animated_gradient(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_monster_cam(TWwdosApp&, const TRect* bounds);
+    friend void api_spawn_backrooms_tv(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_monster_verse(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_contour_map(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_generative_lab(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_monster_portal(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_micropolis_ascii(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_quadra(TWwdosApp&, const TRect* bounds);
@@ -987,7 +953,6 @@ private:
     friend void api_spawn_figlet_text_at(TWwdosApp&,
         const std::string& text, const std::string& font, int x, int y,
         bool frameless, bool shadowless);
-    friend TFigletTextWindow* findFigletWindow(TWwdosApp&, const std::string& id);
     friend std::string api_figlet_set_text(TWwdosApp&, const std::string& id, const std::string& text);
     friend std::string api_figlet_set_font(TWwdosApp&, const std::string& id, const std::string& font);
     friend std::string api_figlet_set_color(TWwdosApp&, const std::string& id, const std::string& fg, const std::string& bg);
@@ -998,7 +963,6 @@ private:
     friend std::string api_terminal_read(TWwdosApp&, const std::string& window_id);
     friend void api_spawn_paint(TWwdosApp&, const TRect* bounds);
     friend TPaintCanvasView* api_find_paint_canvas(TWwdosApp&, const std::string&);
-    friend TGenerativeLabView* api_find_gen_lab_view(TWwdosApp&, const std::string&);
     friend std::string api_browser_fetch(TWwdosApp&, const std::string& url);
     friend std::string api_send_text(TWwdosApp&, const std::string&, const std::string&, 
                                      const std::string&, const std::string&);
@@ -1293,16 +1257,6 @@ void TWwdosApp::handleEvent(TEvent& event)
                 clearEvent(event);
                 break;
             }
-            case cmContourMap: {
-                api_spawn_contour_map(*this, nullptr);
-                clearEvent(event);
-                break;
-            }
-            case cmGenerativeLab: {
-                api_spawn_generative_lab(*this, nullptr);
-                clearEvent(event);
-                break;
-            }
             case cmMonsterVerse: {
                 TRect r = deskTop->getExtent();
                 r.grow(-2, -1);
@@ -1314,6 +1268,13 @@ void TWwdosApp::handleEvent(TEvent& event)
                 TRect r = deskTop->getExtent();
                 r.grow(-2, -1);
                 deskTop->insert(createGenerativeMonsterCamWindow(r));
+                clearEvent(event);
+                break;
+            }
+            case cmBackroomsTv: {
+                TRect r = deskTop->getExtent();
+                r.grow(-2, -1);
+                deskTop->insert(createBackroomsTvWindow(r));
                 clearEvent(event);
                 break;
             }
@@ -2054,28 +2015,17 @@ void TWwdosApp::tile()
     deskTop->tile(deskTop->getExtent());
 }
 
-void TWwdosApp::closeAll(bool preserveSession)
+void TWwdosApp::closeAll()
 {
-    // Close windows on the desktop.
-    // When preserveSession=true (default, used by menu and API close_all):
-    //   Keeps Wib&Wob chat, terminals, and Scramble alive so the agent
-    //   does not lose its communication channel.
-    // When preserveSession=false (used by workspace restore):
-    //   Closes everything for a clean slate.
+    // Close all regular windows on the desktop (iterating safely over circular list)
     std::vector<TWindow*> toClose;
     TView *start = deskTop->first();
     if (start) {
         TView *v = start;
         do {
-            TView *nextV = v->next;
+            TView *nextV = v->next; // cache next to avoid invalidation issues
             if (TWindow *w = dynamic_cast<TWindow*>(v)) {
-                if (preserveSession &&
-                    (dynamic_cast<TWibWobWindow*>(w) ||
-                     dynamic_cast<TWibWobTerminalWindow*>(w) ||
-                     dynamic_cast<TScrambleWindow*>(w))) {
-                    v = nextV;
-                    continue;
-                }
+                // Skip non-user windows if any (none expected here)
                 toClose.push_back(w);
             }
             v = nextV;
@@ -2535,16 +2485,11 @@ void TWwdosApp::takeScreenshot(bool showDialog)
     txtOpts.includeMetadata = true;
     bool txtOk = getFrameCapture().saveFrame(frame, txtPath, txtOpts);
 
-    // ANSI export disabled by default — nobody uses it and it doubles
-    // screenshot I/O.  Flip this to true or add a command param to re-enable.
-    bool ansiOk = false;
-    if (false) {
-        CaptureOptions ansiOpts;
-        ansiOpts.format = CaptureFormat::AnsiEscapes;
-        ansiOpts.addTimestamp = true;
-        ansiOpts.includeMetadata = true;
-        ansiOk = getFrameCapture().saveFrame(frame, ansiPath, ansiOpts);
-    }
+    CaptureOptions ansiOpts;
+    ansiOpts.format = CaptureFormat::AnsiEscapes;
+    ansiOpts.addTimestamp = true;
+    ansiOpts.includeMetadata = true;
+    bool ansiOk = getFrameCapture().saveFrame(frame, ansiPath, ansiOpts);
 
     if (showDialog) {
         if (txtOk || ansiOk) {
@@ -2673,8 +2618,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("Monster ~P~ortal (Generative)", cmMonsterPortal, kbNoKey) +
             *new TMenuItem("Monster Ve~r~se (Generative)", cmMonsterVerse, kbNoKey) +
             *new TMenuItem("Monster Cam (Emo~j~i)", cmMonsterCam, kbNoKey) +
-            *new TMenuItem("~C~ontour Studio", cmContourMap, kbNoKey) +
-            *new TMenuItem("~G~enerative Lab", cmGenerativeLab, kbNoKey) +
+            *new TMenuItem("~B~ackrooms TV", cmBackroomsTv, kbNoKey) +
             newLine() +
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
             *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
@@ -3227,15 +3171,7 @@ std::string api_get_state(TWwdosApp& app) {
              << ",\"text\":\"" << json_escape(entry.text) << "\"}";
         firstChat = false;
     }
-    json << "]";
-
-    // Desktop size for proportional layout calculations
-    TRect desk = TProgram::deskTop->getExtent();
-    json << ",\"desktop\":{\"w\":" << (desk.b.x - desk.a.x)
-         << ",\"h\":" << (desk.b.y - desk.a.y)
-         << ",\"cell_aspect\":2.0}";
-
-    json << "}";
+    json << "]}";
     return json.str();
 }
 
@@ -3245,9 +3181,7 @@ std::string api_move_window(TWwdosApp& app, const std::string& id, int x, int y)
 
     TRect newBounds = w->getBounds();
     newBounds.move(x - newBounds.a.x, y - newBounds.a.y);
-    TRect desk = TProgram::deskTop->getExtent();
-    TRect clamped = clampToDesktop(newBounds, desk);
-    w->locate(clamped);
+    w->locate(newBounds);
 
     if (app.ipcServer) {
         std::string payload = std::string("{\"id\":\"") + id + "\"}";
@@ -3263,9 +3197,7 @@ std::string api_resize_window(TWwdosApp& app, const std::string& id, int width, 
     TRect newBounds = w->getBounds();
     newBounds.b.x = newBounds.a.x + width;
     newBounds.b.y = newBounds.a.y + height;
-    TRect desk = TProgram::deskTop->getExtent();
-    TRect clamped = clampToDesktop(newBounds, desk);
-    w->locate(clamped);
+    w->locate(newBounds);
 
     if (app.ipcServer) {
         std::string payload = std::string("{\"id\":\"") + id + "\"}";
@@ -3315,13 +3247,16 @@ std::string api_close_window(TWwdosApp& app, const std::string& id) {
         return false;
     };
 
-    // Ask the window to close itself through Turbo Vision's normal flow.
-    // This lets destructors run in the correct order (sub-views kill timers,
-    // threads, etc.). We do NOT force-remove+destroy if close() is rejected
-    // — that path caused UAF with timer callbacks in room_chat and similar.
+    // TWindow::close() can no-op when valid(cmClose) fails.
+    // For API semantics, ensure the target is actually removed.
     w->close();
+    if (isWindowAlive(w)) {
+        if (w->owner)
+            w->owner->remove(w);
+        TObject::destroy(w);
+    }
     if (isWindowAlive(w))
-        return "{\"error\":\"Window rejected close\"}";
+        return "{\"error\":\"Close failed\"}";
 
     // Remove from registry after successful removal.
     app.winToId.erase(w);
@@ -3611,8 +3546,8 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
         ++p;
     }
 
-    // Close ALL windows for clean workspace restore (including session windows)
-    closeAll(false);
+    // Close current windows
+    closeAll();
 
     // Apply globals
     USE_CONTINUOUS_PATTERN = continuous;
@@ -3959,29 +3894,11 @@ std::string TWwdosApp::buildWorkspaceJson()
         if (type == "test_pattern") {
             props = "{}"; // Pattern mode is global in MVP
         } else if (type == "frame_player") {
-            // TFrameAnimationWindow stores the path — also expose content dimensions
+            // TFrameAnimationWindow stores the path directly — use its getter
             if (auto *faw = dynamic_cast<TFrameAnimationWindow*>(w)) {
                 const std::string& fp = faw->getFilePath();
-                props = "{\"path\": \"" + json_escape(fp) + "\"";
-                // Find the child view to get content dimensions
-                TView *child = faw->first();
-                if (child) {
-                    TView *v = child;
-                    do {
-                        if (auto *tfv = dynamic_cast<TTextFileView*>(v)) {
-                            props += ", \"content_lines\": " + std::to_string(tfv->getContentLines());
-                            props += ", \"content_width\": " + std::to_string(tfv->getContentWidth());
-                            break;
-                        } else if (auto *ffpv = dynamic_cast<FrameFilePlayerView*>(v)) {
-                            props += ", \"content_lines\": " + std::to_string(ffpv->getContentLines());
-                            props += ", \"content_width\": " + std::to_string(ffpv->getContentWidth());
-                            props += ", \"frame_count\": " + std::to_string(ffpv->getFrameCount());
-                            break;
-                        }
-                        v = v->nextView();
-                    } while (v && v != child);
-                }
-                props += "}";
+                if (!fp.empty())
+                    props = "{\"path\": \"" + json_escape(fp) + "\"}";
             }
         } else if (type == "gradient") {
             // Keep concrete gradient subtype in props for backward compatibility.
@@ -4878,39 +4795,9 @@ void api_spawn_monster_cam(TWwdosApp& app, const TRect* bounds) {
     app.registerWindow(w);
 }
 
-void api_spawn_contour_map(TWwdosApp& app, const TRect* bounds) {
-    TRect r;
-    if (bounds) {
-        r = *bounds;
-    } else {
-        // 90% of desktop
-        TRect desk = app.deskTop->getExtent();
-        int w90 = desk.b.x * 90 / 100;
-        int h90 = desk.b.y * 90 / 100;
-        int x = (desk.b.x - w90) / 2;
-        int y = (desk.b.y - h90) / 2;
-        r = TRect(x, y, x + w90, y + h90);
-    }
-    int seed = rand() % 100000;
-    // Pass deferLaunch=true so generation waits until window is sized
-    TWindow* w = createContourMapWindow(r, seed, 5, 5, false, false);
-    app.deskTop->insert(w);
-    app.registerWindow(w);
-}
-
-void api_spawn_generative_lab(TWwdosApp& app, const TRect* bounds) {
-    TRect r;
-    if (bounds) {
-        r = *bounds;
-    } else {
-        TRect desk = app.deskTop->getExtent();
-        int w90 = desk.b.x * 90 / 100;
-        int h90 = desk.b.y * 90 / 100;
-        int x = (desk.b.x - w90) / 2;
-        int y = (desk.b.y - h90) / 2;
-        r = TRect(x, y, x + w90, y + h90);
-    }
-    TWindow* w = createGenerativeLabWindow(r);
+void api_spawn_backrooms_tv(TWwdosApp& app, const TRect* bounds) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 100, 35);
+    TWindow* w = createBackroomsTvWindow(r);
     app.deskTop->insert(w);
     app.registerWindow(w);
 }
@@ -5046,19 +4933,14 @@ void api_spawn_figlet_text_at(TWwdosApp& app,
     app.registerWindow(win);
 }
 
-TFigletTextWindow* findFigletWindow(TWwdosApp& app, const std::string& id) {
-    // Scan desktop — match by registry ID (w1, w2, ...), title, or "auto" (first match)
+static TFigletTextWindow* findFigletWindow(TWwdosApp& app, const std::string& id) {
     TView* v = app.deskTop->first();
     for (; v; v = v->nextView()) {
         TFigletTextWindow* fw = dynamic_cast<TFigletTextWindow*>(v);
         if (fw) {
             if (id == "auto" || id.empty()) return fw;
-            // Check title
             const char* t = fw->getTitle(256);
             if (t && id == t) return fw;
-            // Check registry ID via winToId map
-            auto it = app.winToId.find(fw);
-            if (it != app.winToId.end() && it->second == id) return fw;
         }
     }
     return nullptr;
@@ -5163,16 +5045,7 @@ std::string api_gallery_list(TWwdosApp& app, const std::string& tab) {
     os << "{\"count\":" << files.size() << ",\"files\":[";
     for (size_t i = 0; i < files.size(); i++) {
         if (i > 0) os << ",";
-        // Include content dimensions so agents can size windows in one shot
-        std::string fullPath = primerDir + "/" + files[i];
-        PrimerInfo pi = measurePrimer(fullPath);
-        os << "{\"name\":\"" << json_escape(files[i]) << "\""
-           << ",\"lines\":" << pi.lines
-           << ",\"width\":" << pi.width
-           << ",\"recommended_w\":" << (pi.width + 2)
-           << ",\"recommended_h\":" << (pi.lines + 2)
-           << ",\"animated\":" << (pi.hasFrames ? "true" : "false")
-           << "}";
+        os << "\"" << json_escape(files[i]) << "\"";
     }
     os << "]}";
     return os.str();
@@ -5409,23 +5282,6 @@ TPaintCanvasView* api_find_paint_canvas(TWwdosApp& app, const std::string& id) {
     auto *pw = dynamic_cast<TPaintWindow*>(w);
     if (!pw) return nullptr;
     return pw->getCanvas();
-}
-
-TGenerativeLabView* api_find_gen_lab_view(TWwdosApp& app, const std::string& id) {
-    TWindow* w = app.findWindowById(id);
-    if (!w) return nullptr;
-    auto *gw = dynamic_cast<TGenerativeLabWindow*>(w);
-    if (!gw) return nullptr;
-    // Walk children to find the TGenerativeLabView
-    TView* v = gw->last;
-    if (!v) return nullptr;
-    TView* first = v;
-    do {
-        auto* glv = dynamic_cast<TGenerativeLabView*>(v);
-        if (glv) return glv;
-        v = v->next;
-    } while (v != first);
-    return nullptr;
 }
 
 // Paint wrappers for command_registry (avoids tvision include dependency)

@@ -1,50 +1,20 @@
 #include "command_registry.h"
 
 #include "api_ipc.h"
-#include "contour_map_view.h"
 #include "core/json_utils.h"
-#include "core/primer_utils.h"
 #include "figlet_utils.h"
 
 #include <cstdint>
 #include <sys/stat.h>
 
-#include <algorithm>
 #include <sstream>
-#include <fstream>
 
 // TRect for window bounds
 #define Uses_TRect
 #define Uses_TPoint
 #define Uses_TEvent
 #define Uses_TProgram
-#define Uses_TDeskTop
 #include <tvision/tv.h>
-
-static TRect clampToDesktop(TRect bounds, const TRect& desk) {
-    const int minW = 10;
-    const int minH = 5;
-    const int deskW = std::max(1, desk.b.x - desk.a.x);
-    const int deskH = std::max(1, desk.b.y - desk.a.y);
-
-    int w = bounds.b.x - bounds.a.x;
-    int h = bounds.b.y - bounds.a.y;
-
-    if (w < minW) w = minW;
-    if (h < minH) h = minH;
-    if (w > deskW) w = deskW;
-    if (h > deskH) h = deskH;
-
-    int x = bounds.a.x;
-    int y = bounds.a.y;
-
-    if (x + w > desk.b.x) x = desk.b.x - w;
-    if (y + h > desk.b.y) y = desk.b.y - h;
-    if (x < desk.a.x) x = desk.a.x;
-    if (y < desk.a.y) y = desk.a.y;
-
-    return TRect(x, y, x + w, y + h);
-}
 
 extern void api_cascade(TWwdosApp& app);
 extern void api_toggle_scramble(TWwdosApp& app);
@@ -84,7 +54,6 @@ extern void api_spawn_quadra(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_snake(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_rogue(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_deep_signal(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_generative_lab(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_app_launcher(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_gallery(TWwdosApp& app, const TRect* bounds);
 extern void api_open_animation_path(TWwdosApp& app, const std::string& path);
@@ -103,6 +72,7 @@ extern void api_spawn_gradient(TWwdosApp& app, const std::string& kind, const TR
 extern void api_spawn_monster_cam(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_monster_verse(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_monster_portal(TWwdosApp& app, const TRect* bounds);
+extern void api_spawn_backrooms_tv(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_browser(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_figlet_text(TWwdosApp& app, const TRect* bounds,
     const std::string& text, const std::string& font, bool frameless, bool shadowless);
@@ -171,9 +141,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_animated_gradient", "Open animated colour gradient", false},
         {"open_gradient", "Open static gradient window", false},
         {"open_monster_cam", "Open Monster Camera window", false},
+        {"open_backrooms_tv", "Open Backrooms TV — live streaming ASCII art generator", false},
         {"open_monster_verse", "Open Monster Verse eldritch poetry", false},
-        {"open_contour_map", "Open Contour Studio — topographic map generator (optional: seed, terrain, levels, grow, triptych)", false},
-        {"open_generative_lab", "Open Generative Lab — cellular automata and generative systems playground (presets: game-of-life, brians-brain, eno-bloom, coral-reef, mycelium, crystal, tidal, erosion, aurora, spiral-life, random)", false},
         {"open_monster_portal", "Open Monster Portal dimensional rift", false},
         {"open_browser", "Open the in-terminal web browser", false},
         {"open_figlet_text", "Open a FIGlet text window (optional text, font params; defaults to 'Hello' in 'standard')", false},
@@ -187,9 +156,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},
         {"open_gallery", "Open the ASCII Art Gallery browser with tabbed primer explorer", false},
-        {"gallery_list", "List primers with dimensions: {name, lines, width, recommended_w, recommended_h, animated}. Use recommended_w/h to open at full size. Optional tab param: 1/#-C, 2/D-L, 3/M, 4/N-S, 5/T-Z, 6/Find with search param", false},
-        {"open_primer", "Open a primer file by name (path param). Optional: x,y,w,h for placement. Tip: call primer_info first to get content dimensions, then open at the right size.", true},
-        {"primer_info", "Get content dimensions of a primer file WITHOUT opening it (path param). Returns content_lines, content_width, has_frames. Use to size windows before opening.", true},
+        {"gallery_list", "List available primer filenames (optional tab param: 1/#-C, 2/D-L, 3/M, 4/N-S, 5/T-Z, 6/Find with search param)", false},
+        {"open_primer", "Open a primer file by name in a viewer window (requires path param, e.g. 'wibwob-faces.txt')", true},
         {"open_terminal", "Open a terminal emulator window", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
@@ -222,12 +190,11 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"figlet_list_fonts", "List available figlet font names", false},
         // ── Window management ────────────────────────────────────────────
         {"move_window", "Move a window (id, x, y params)", true},
-        {"resize_window", "Resize a window (id + w,h for exact size, OR id + aspect + w or h to constrain proportions). aspect: 16:9, 4:3, 1:1/square, 3:2, 21:9, portrait/9:16, golden, A4, or any W:H. Cell aspect ~2:1 is handled automatically.", true},
+        {"resize_window", "Resize a window (id, w, h params)", true},
         {"focus_window", "Bring window to front and focus (id param)", true},
         {"raise_window", "Bring window to front of z-order and focus it (id param)", true},
         {"lower_window", "Send window to back of z-order (id param)", true},
         {"close_window", "Close a window by ID (id param)", true},
-        {"snap_window", "Snap window to a named zone or grid cell (id, zone params; optional: margin, cols, rows, col, row, colspan, rowspan). Zones: tl,tr,bl,br,left,right,top,bottom,full,center. Grid: cols+rows divides desktop into grid, zone picks corner or col+row picks cell.", true},
     };
     return capabilities;
 }
@@ -413,12 +380,8 @@ std::string exec_registry_command(
         api_spawn_monster_cam(app, nullptr);
         return "ok";
     }
-    if (name == "open_contour_map") {
-        api_spawn_contour_map(app, nullptr);
-        return "ok";
-    }
-    if (name == "open_generative_lab") {
-        api_spawn_generative_lab(app, nullptr);
+    if (name == "open_backrooms_tv") {
+        api_spawn_backrooms_tv(app, nullptr);
         return "ok";
     }
     if (name == "open_monster_verse") {
@@ -504,26 +467,6 @@ std::string exec_registry_command(
             api_open_animation_path(app, path, nullptr, frameless, shadowless, title);
         }
         return "ok";
-    }
-    if (name == "primer_info") {
-        auto it = kv.find("path");
-        if (it == kv.end() || it->second.empty())
-            return "err missing path";
-        std::string path = it->second;
-        if (path.find('/') == std::string::npos && path.find('\\') == std::string::npos) {
-            extern std::string findPrimerDir();
-            path = findPrimerDir() + "/" + path;
-        }
-        struct stat st;
-        if (stat(path.c_str(), &st) != 0)
-            return "err file not found: " + path;
-        PrimerInfo pi = measurePrimer(path);
-        if (!pi.ok) return "err cannot read: " + path;
-        return "{\"content_lines\": " + std::to_string(pi.lines)
-             + ", \"content_width\": " + std::to_string(pi.width)
-             + ", \"has_frames\": " + (pi.hasFrames ? "true" : "false")
-             + ", \"file_size\": " + std::to_string(st.st_size)
-             + ", \"path\": \"" + json_escape(path) + "\"}";
     }
     if (name == "open_terminal") {
         api_spawn_terminal(app, nullptr);
@@ -767,59 +710,10 @@ std::string exec_registry_command(
     }
     if (name == "resize_window") {
         auto id = kv.find("id");
-        if (id == kv.end()) return "err missing id";
-
         auto wi = kv.find("w");
         auto hi = kv.find("h");
-        auto asp = kv.find("aspect");
-
-        if (asp != kv.end()) {
-            // Aspect-ratio mode: compute missing dimension from the other.
-            // Terminal cells are ~2:1 (twice as tall as wide in pixels),
-            // so cell_aspect ≈ 2.0. A "16:9 visual" window needs:
-            //   w_cells = h_cells * (aspect_w / aspect_h) * cell_aspect
-            constexpr double CELL_ASPECT = 2.0;
-
-            // Parse aspect string: "16:9", "4:3", "1:1", "3:2", or named
-            double aw = 1, ah = 1;
-            std::string a = asp->second;
-            if (a == "square" || a == "1:1") { aw = 1; ah = 1; }
-            else if (a == "4:3")    { aw = 4;    ah = 3; }
-            else if (a == "3:2")    { aw = 3;    ah = 2; }
-            else if (a == "16:9")   { aw = 16;   ah = 9; }
-            else if (a == "21:9")   { aw = 21;   ah = 9; }
-            else if (a == "A4" || a == "a4") { aw = 1; ah = 1.414; }  // portrait
-            else if (a == "portrait" || a == "9:16") { aw = 9; ah = 16; }
-            else if (a == "golden") { aw = 1.618; ah = 1; }
-            else {
-                // Try parsing "W:H"
-                auto colon = a.find(':');
-                if (colon != std::string::npos) {
-                    aw = std::stod(a.substr(0, colon));
-                    ah = std::stod(a.substr(colon + 1));
-                } else {
-                    return "err invalid aspect '" + a
-                        + "' — use W:H ratio, or: square, 4:3, 16:9, 21:9, portrait, golden, A4";
-                }
-            }
-
-            int w = 0, h = 0;
-            if (wi != kv.end()) {
-                w = std::stoi(wi->second);
-                // h = w / (aw/ah * CELL_ASPECT)
-                h = std::max(5, (int)(w / (aw / ah * CELL_ASPECT)));
-            } else if (hi != kv.end()) {
-                h = std::stoi(hi->second);
-                // w = h * (aw/ah * CELL_ASPECT)
-                w = std::max(10, (int)(h * (aw / ah * CELL_ASPECT)));
-            } else {
-                return "err aspect requires at least w or h";
-            }
-            return api_resize_window(app, id->second, w, h);
-        }
-
-        // Plain w,h mode
-        if (wi == kv.end() || hi == kv.end()) return "err missing w or h (or use aspect param)";
+        if (id == kv.end()) return "err missing id";
+        if (wi == kv.end() || hi == kv.end()) return "err missing w or h";
         return api_resize_window(app, id->second, std::stoi(wi->second), std::stoi(hi->second));
     }
     if (name == "focus_window") {
@@ -841,122 +735,6 @@ std::string exec_registry_command(
         auto id = kv.find("id");
         if (id == kv.end()) return "err missing id";
         return api_close_window(app, id->second);
-    }
-    // ── Zone-based snap ──────────────────────────────────────────────
-    if (name == "snap_window") {
-        auto id_it = kv.find("id");
-        auto zone_it = kv.find("zone");
-        if (id_it == kv.end()) return "err missing id";
-        if (zone_it == kv.end()) return "err missing zone";
-
-        std::string zone = zone_it->second;
-        int margin = kv.count("margin") ? std::atoi(kv.at("margin").c_str()) : 0;
-        int cols   = kv.count("cols")   ? std::atoi(kv.at("cols").c_str())   : 0;
-        int rows   = kv.count("rows")   ? std::atoi(kv.at("rows").c_str())   : 0;
-        int col    = kv.count("col")    ? std::atoi(kv.at("col").c_str())    : -1;
-        int row    = kv.count("row")    ? std::atoi(kv.at("row").c_str())    : -1;
-        int cspan  = kv.count("colspan") ? std::atoi(kv.at("colspan").c_str()) : 1;
-        int rspan  = kv.count("rowspan") ? std::atoi(kv.at("rowspan").c_str()) : 1;
-
-        // Get desktop extent
-        TRect desk = TProgram::deskTop->getExtent();
-        int dw = desk.b.x - desk.a.x;
-        int dh = desk.b.y - desk.a.y;
-        if (dw <= 0 || dh <= 0) return "err no desktop";
-
-        // Compute fractional rect
-        double fx0 = 0, fy0 = 0, fx1 = 1, fy1 = 1;
-
-        if (cols > 0 && rows > 0) {
-            // Grid mode
-            double cw = 1.0 / cols;
-            double ch = 1.0 / rows;
-            int gc = 0, gr = 0;
-
-            if (col >= 0 && row >= 0) {
-                gc = col; gr = row;
-            } else if (zone == "tl" || zone == "top" || zone == "left" || zone == "full") {
-                gc = 0; gr = 0;
-            } else if (zone == "tr") {
-                gc = cols - cspan; gr = 0;
-            } else if (zone == "bl") {
-                gc = 0; gr = rows - rspan;
-            } else if (zone == "br") {
-                gc = cols - cspan; gr = rows - rspan;
-            } else if (zone == "center") {
-                gc = (cols - cspan) / 2; gr = (rows - rspan) / 2;
-            } else if (zone == "right") {
-                gc = cols - cspan; gr = 0; rspan = rows;
-            } else if (zone == "bottom") {
-                gc = 0; gr = rows - rspan; cspan = cols;
-            } else {
-                return "err unknown zone '" + zone + "'";
-            }
-
-            // Clamp
-            if (gc < 0) gc = 0;
-            if (gr < 0) gr = 0;
-            if (gc + cspan > cols) cspan = cols - gc;
-            if (gr + rspan > rows) rspan = rows - gr;
-
-            fx0 = gc * cw;
-            fy0 = gr * ch;
-            fx1 = (gc + cspan) * cw;
-            fy1 = (gr + rspan) * ch;
-        } else {
-            // Named zone mode
-            struct ZoneDef { const char* name; double x0, y0, x1, y1; };
-            static const ZoneDef zones[] = {
-                {"tl",     0.0,  0.0,  0.5,  0.5},
-                {"tr",     0.5,  0.0,  1.0,  0.5},
-                {"bl",     0.0,  0.5,  0.5,  1.0},
-                {"br",     0.5,  0.5,  1.0,  1.0},
-                {"left",   0.0,  0.0,  0.5,  1.0},
-                {"right",  0.5,  0.0,  1.0,  1.0},
-                {"top",    0.0,  0.0,  1.0,  0.5},
-                {"bottom", 0.0,  0.5,  1.0,  1.0},
-                {"full",   0.0,  0.0,  1.0,  1.0},
-                {"center", 0.25, 0.25, 0.75, 0.75},
-                {nullptr, 0,0,0,0}
-            };
-            bool found = false;
-            for (int i = 0; zones[i].name; ++i) {
-                if (zone == zones[i].name) {
-                    fx0 = zones[i].x0; fy0 = zones[i].y0;
-                    fx1 = zones[i].x1; fy1 = zones[i].y1;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                return "err unknown zone '" + zone
-                    + "' — valid: tl,tr,bl,br,left,right,top,bottom,full,center";
-            }
-        }
-
-        int x = (int)(fx0 * dw) + desk.a.x + margin;
-        int y = (int)(fy0 * dh) + desk.a.y + margin;
-        int w = (int)((fx1 - fx0) * dw) - margin * 2;
-        int h = (int)((fy1 - fy0) * dh) - margin * 2;
-        if (w < 10) w = 10;
-        if (h < 5)  h = 5;
-        TRect clamped = clampToDesktop(TRect(x, y, x + w, y + h), desk);
-        x = clamped.a.x;
-        y = clamped.a.y;
-        w = clamped.b.x - clamped.a.x;
-        h = clamped.b.y - clamped.a.y;
-
-        std::string r1 = api_resize_window(app, id_it->second, w, h);
-        if (r1.rfind("err", 0) == 0) return r1;
-        std::string r2 = api_move_window(app, id_it->second, x, y);
-        if (r2.rfind("err", 0) == 0) return r2;
-
-        std::ostringstream os;
-        os << "{\"ok\":true,\"id\":\"" << json_escape(id_it->second) << "\""
-           << ",\"zone\":\"" << json_escape(zone) << "\""
-           << ",\"x\":" << x << ",\"y\":" << y
-           << ",\"w\":" << w << ",\"h\":" << h << "}";
-        return os.str();
     }
     return "err unknown command";
 }
