@@ -177,8 +177,10 @@ void TContourMapView::processData(const std::string& data) {
                 lines_.push_back(partial_);
                 partial_.clear();
             }
-            // In grow mode, each RS means "replace display with next frame"
-            // We keep accumulating for scroll history in grow mode
+            // In grow mode, clear for next frame (replace, not accumulate)
+            if (grow_) {
+                lines_.clear();
+            }
             continue;
         }
 
