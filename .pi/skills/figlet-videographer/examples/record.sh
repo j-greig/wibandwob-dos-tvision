@@ -14,7 +14,8 @@
 # The TUI must be running in tmux session "wwdos".
 # Requirements: asciinema, agg, ffmpeg, python3, tmux
 
-set -euo pipefail
+set -uo pipefail
+# NOTE: not using set -e — we handle errors explicitly so the pipeline doesn't abort
 
 TIMELINE="$(cd "$(dirname "${1:?Usage: record.sh <timeline.json> [--gif] [--mp4]}")" && pwd)/$(basename "$1")"
 MAKE_GIF=false; MAKE_MP4=false
@@ -104,7 +105,7 @@ urllib.request.urlopen(req, timeout=5)
 body = json.dumps({'command':'close_all'}).encode()
 req = urllib.request.Request('http://127.0.0.1:8089/menu/command', body, {'Content-Type':'application/json'})
 urllib.request.urlopen(req, timeout=5)
-" 2>/dev/null
+"
 sleep 1
 
 echo "Recording... (Ctrl-C to abort)"
@@ -137,7 +138,7 @@ for frame in t.get('frames',[]):
         print(f'  say {word[\"text\"]:12s} t={t_word:.1f}s voice={voice}')
 with open('$SPEECH_DIR/manifest.json','w') as f:
     json.dump(manifest, f)
-" 2>/dev/null
+"
 echo ""
 
 python3 "$PLAY" "$TIMELINE" --auto-layout --mute > /tmp/play_log.txt 2>&1 &
@@ -176,6 +177,7 @@ if $MAKE_GIF || $MAKE_MP4; then
 fi
 
 # ── MP4 with audio ──
+echo "MAKE_MP4=$MAKE_MP4 SPEECH_DIR=$SPEECH_DIR"
 if $MAKE_MP4; then
   echo ""
   # Mix speech audio files with backing track
@@ -223,7 +225,7 @@ else:
 
 subprocess.run(cmd, capture_output=True)
 print(f'Mixed audio: $MIXED_AUDIO')
-" 2>/dev/null
+"
   fi
 
   if [ -f "$MIXED_AUDIO" ]; then

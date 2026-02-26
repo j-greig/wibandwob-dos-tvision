@@ -7,7 +7,7 @@ Practical guidance for AI agents (Claude, pi, Codex) helping compose and record 
 1. **Measure before placing** — always use `preview_figlet` with `info=true` to get exact window dimensions before writing x,y coordinates. Never guess sizes.
 2. **Reading order matters** — layouts must read left→right, top→bottom like a book. The poem must be legible to a human scanning naturally.
 3. **Fit the canvas** — sum line heights BEFORE writing JSON. If total > canvas height, shrink fonts or merge lines. The canvas is typically 152×46 in gallery mode.
-4. **Small voice palette** — 2-3 `say` voices max. Wobble for key words, Cellos for weight, Whisper for connective tissue (the, in, through).
+4. **Creative voice/font choices** — don't default to the same voices and fonts every time. Consider the poem's subject, mood, pacing. A funeral poem wants different textures than a playground chant. Explore the full palette — `say -v '?'` lists all voices, `list_figlet_fonts` shows all 148 fonts. Match typographic weight to semantic weight. Match voice character to word meaning.
 5. **Small primers only** — primers over 45w × 22h overwhelm the composition. Stick to the small ones (see list below). Place in sidebar at x≥120, never overlapping words.
 6. **Clean canvas first** — `close_all` twice with 0.5s waits. The TUI needs time to redraw.
 
@@ -46,21 +46,15 @@ python3 play.py timeline.json --auto-layout --mute
 ```
 Auto-layout places words L→R, T→B with gap compression. Then screenshot and iterate.
 
-## Font Cheat Sheet
+## Font Sizing Reference
 
-| Font | Height | Width for "hello" | Character |
-|------|--------|--------------------|-----------|
-| mini | 4 (7 win) | 18 | Tiny, whisper |
-| small | 5 (8 win) | 24 | Compact, readable |
-| standard | 6 (9 win) | 30 | Default, balanced |
-| doom | 8 (11 win) | 35 | Bold, weight |
-| big | 8 (11 win) | 32 | Tall, bold |
-| larry3d | 9 (12 win) | 47 | 3D depth, expressive |
-| banner | 7 (10 win) | 37 | Blocky hash-marks |
-| block | 8 (10 win) | 40 | Solid blocks |
-| isometric1 | 11 (14 win)| 76 | Very wide, use for short words only |
+There are 148 fonts available (`list_figlet_fonts`). Always measure with `preview_figlet info=true` — don't memorise sizes. Key sizing facts:
 
-**Rule of thumb**: window_height = font_catalogue_height + 3 (chrome). window_width = measured + 6.
+- **window_height** = font_catalogue_height + 3 (chrome/borders)
+- **window_width** = rendered text width + 6 (chrome/padding)
+- Fonts range from 4-line (mini) to 11-line (isometric1) character heights
+- Wider fonts (isometric1, banner3-D) wrap long words even at unlimited width — always check `wrapped` field
+- **Choose fonts for the poem's mood**, not by rote. A delicate poem might use `small` everywhere. A brutalist piece might hammer `banner` and `block`. A dreamy one might float `larry3d` and `isometric1`. Let the subject matter guide typographic choices.
 
 ## Small Primers (safe to use)
 
