@@ -1684,6 +1684,20 @@ void TWwdosApp::handleEvent(TEvent& event)
                 break;
             }
 
+            case cmCancel:
+            {
+                // Cancel async scramble request if one is in flight
+                if (scrambleEngine.isBusy()) {
+                    scrambleEngine.haiku().cancelAsync();
+                    if (scrambleWindow && scrambleWindow->getInputView())
+                        scrambleWindow->getInputView()->setThinking(false);
+                    if (scrambleWindow && scrambleWindow->getMessageView())
+                        scrambleWindow->getMessageView()->addMessage("scramble", "(cancelled)");
+                    clearEvent(event);
+                }
+                break;
+            }
+
             // REMOVED E009: entire Glitch Effects submenu handlers
             // (cmToggleGlitchMode, cmGlitchScatter, cmGlitchColorBleed,
             //  cmGlitchRadialDistort, cmGlitchDiagonalScatter,
@@ -3182,7 +3196,7 @@ std::string api_focus_window(TWwdosApp& app, const std::string& id) {
     TWindow* w = app.findWindowById(id);
     if (!w) return "{\"error\":\"Window not found\"}";
     
-    app.deskTop->setCurrent(w, TDeskTop::normalSelect);
+    w->select();  // raises to front AND focuses (uses makeFirst → putInFrontOf)
     return "{\"success\":true}";
 }
 

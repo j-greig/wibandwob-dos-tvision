@@ -124,6 +124,7 @@ public:
 
     // Access Haiku client (for testing).
     const ScrambleHaikuClient& haiku() const { return haikuClient; }
+    ScrambleHaikuClient& haiku() { return haikuClient; }
 
     // Check if Haiku is available.
     bool hasLLM() const { return haikuClient.isAvailable(); }
