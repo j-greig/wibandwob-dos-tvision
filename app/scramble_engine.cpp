@@ -653,11 +653,10 @@ std::string ScrambleEngine::ask(const std::string& input)
 
     // No LLM available.
     if (!haikuClient.isAvailable()) {
-        return "... (no auth — Help > LLM Status) /ᐠ- -ᐟ\\";
+        return "(no LLM configured — set API key via Help menu)";
     }
 
-    // Rate-limited.
-    return "... /ᐠ- -ᐟ\\";
+    return "(busy — try again in a moment)";
 }
 
 bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
@@ -676,13 +675,13 @@ bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
 
     // No LLM available — synchronous fallback.
     if (!haikuClient.isAvailable()) {
-        syncResult = "... (no auth — Help > LLM Status) /ᐠ- -ᐟ\\";
+        syncResult = "(no LLM configured — set API key via Help menu)";
         return false;
     }
 
-    // Rate-limited — synchronous fallback.
-    if (!haikuClient.canCall()) {
-        syncResult = "... /ᐠ- -ᐟ\\";
+    // Already processing a request — honest message.
+    if (haikuClient.isBusy()) {
+        syncResult = "(still thinking about your last message...)";
         return false;
     }
 
@@ -692,7 +691,7 @@ bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
     auto filteredCallback = [this, callback](const std::string& raw) {
         std::string result = raw;
         if (result.empty()) {
-            result = "... /ᐠ- -ᐟ\\";
+            result = "(no response from model — try again)";
         } else {
             result = voiceFilter(result);
         }

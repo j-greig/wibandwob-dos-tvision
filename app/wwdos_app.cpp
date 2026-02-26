@@ -1926,7 +1926,7 @@ void TWwdosApp::wireScrambleInput()
         bool isAsync = scrambleEngine.askAsync(input, syncResult,
             [this](const std::string& response) {
                 // Callback fires from poll() inside idle() — do NOT drawView() here.
-                pendingScrambleReply = response.empty() ? "... (=^..^=)" : response;
+                pendingScrambleReply = response.empty() ? "(no response from model — try again)" : response;
                 // Clear spinner
                 if (scrambleWindow && scrambleWindow->getInputView())
                     scrambleWindow->getInputView()->setThinking(false);
@@ -1943,7 +1943,7 @@ void TWwdosApp::wireScrambleInput()
 
         if (!isAsync) {
             // Slash command or fallback — deliver immediately (not from idle)
-            pendingScrambleReply = syncResult.empty() ? "... (=^..^=)" : syncResult;
+            pendingScrambleReply = syncResult.empty() ? "(no response from model — try again)" : syncResult;
             deliverScrambleReply();
         } else {
             // Show "thinking" state while async runs
@@ -2923,7 +2923,7 @@ std::string api_scramble_say(TWwdosApp& app, const std::string& text) {
     bool isAsync = app.scrambleEngine.askAsync(text, syncResult,
         [&app](const std::string& response) {
             // Queue for event-loop delivery (never drawView from idle)
-            app.pendingScrambleReply = response.empty() ? "... (=^..^=)" : response;
+            app.pendingScrambleReply = response.empty() ? "(no response from model — try again)" : response;
             TEvent event;
             event.what = evCommand;
             event.message.command = cmScrambleReply;
@@ -2933,7 +2933,7 @@ std::string api_scramble_say(TWwdosApp& app, const std::string& text) {
 
     if (!isAsync) {
         // Slash command or fallback — deliver immediately
-        app.pendingScrambleReply = syncResult.empty() ? "... (=^..^=)" : syncResult;
+        app.pendingScrambleReply = syncResult.empty() ? "(no response from model — try again)" : syncResult;
         app.deliverScrambleReply();
         return app.pendingScrambleReply.empty() ? syncResult : syncResult;
     }

@@ -55,7 +55,7 @@ private:
     std::string model;
     int maxTokens;
     mutable time_t lastCallTime;
-    static const int kRateLimitSeconds = 3;  // min gap between Haiku calls
+    static const int kRateLimitSeconds = 1;  // min gap between API calls
 
     // Claude Code CLI mode (when logged in via `claude /login`)
     bool useCliMode = false;
