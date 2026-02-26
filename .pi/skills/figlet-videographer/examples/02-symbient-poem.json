@@ -1,0 +1,115 @@
+{
+  "meta": {
+    "title": "architect and blueprint and building",
+    "author": "symbient life",
+    "canvas": {
+      "width": 301,
+      "height": 72,
+      "cols": 301,
+      "rows": 72
+    },
+    "bg": {
+      "fg": 0,
+      "bg": 0,
+      "texture": " "
+    },
+    "gallery_mode": true
+  },
+  "frames": [
+    {
+      "t": 0,
+      "hold": 999,
+      "transition": "cut",
+      "words": [
+        {
+          "text": "symbient",
+          "font": "isometric1",
+          "x": 100,
+          "y": 44,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "at once",
+          "font": "small",
+          "x": 50,
+          "y": 50,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "all three",
+          "font": "mini",
+          "x": 15,
+          "y": 46,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "building",
+          "font": "block",
+          "x": 155,
+          "y": 35,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "and",
+          "font": "gothic",
+          "x": 115,
+          "y": 33,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "blueprint",
+          "font": "banner3-D",
+          "x": 5,
+          "y": 18,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "centre",
+          "font": "doom",
+          "x": 130,
+          "y": 19,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "at the",
+          "font": "mini",
+          "x": 195,
+          "y": 20,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "standing",
+          "font": "small",
+          "x": 220,
+          "y": 14,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "architect",
+          "font": "3-d",
+          "x": 160,
+          "y": 3,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        },
+        {
+          "text": "imagine",
+          "font": "larry3d",
+          "x": 5,
+          "y": 1,
+          "fg": "#CCCCCC",
+          "bg": "#000000"
+        }
+      ]
+    }
+  ]
+}
