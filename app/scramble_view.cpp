@@ -879,6 +879,22 @@ void TScrambleWindow::handleEvent(TEvent& event)
         return;
     }
 
+    // ESC while thinking → cancel the LLM request (works regardless of focus)
+    if (event.what == evKeyDown && event.keyDown.keyCode == kbEsc
+        && inputView && inputView->isThinking()) {
+        inputView->setThinking(false);
+        if (messageView)
+            messageView->addMessage("scramble", "(cancelled)");
+        // Tell the app to kill the async pipe
+        TEvent cancel;
+        cancel.what = evCommand;
+        cancel.message.command = cmScrambleCancel;
+        cancel.message.infoPtr = nullptr;
+        putEvent(cancel);
+        clearEvent(event);
+        return;
+    }
+
     // In tall mode, forward keyboard to input view.
     // inputView only consumes keys it knows (printable, backspace, arrows, enter).
     // Unconsumed keys fall through to TWindow::handleEvent for normal dispatch.

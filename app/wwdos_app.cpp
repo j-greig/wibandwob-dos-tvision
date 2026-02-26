@@ -912,6 +912,8 @@ private:
     friend std::string api_move_window(TWwdosApp&, const std::string&, int, int);
     friend std::string api_resize_window(TWwdosApp&, const std::string&, int, int);
     friend std::string api_focus_window(TWwdosApp&, const std::string&);
+    friend std::string api_raise_window(TWwdosApp&, const std::string&);
+    friend std::string api_lower_window(TWwdosApp&, const std::string&);
     friend std::string api_close_window(TWwdosApp&, const std::string&);
     friend std::string api_get_canvas_size(TWwdosApp&);
     friend void api_spawn_text_editor(TWwdosApp&, const TRect* bounds, const std::string& title);
@@ -1684,17 +1686,13 @@ void TWwdosApp::handleEvent(TEvent& event)
                 break;
             }
 
-            case cmCancel:
+            case cmScrambleCancel:
             {
-                // Cancel async scramble request if one is in flight
+                // Cancel async scramble request (ESC during thinking)
                 if (scrambleEngine.isBusy()) {
                     scrambleEngine.haiku().cancelAsync();
-                    if (scrambleWindow && scrambleWindow->getInputView())
-                        scrambleWindow->getInputView()->setThinking(false);
-                    if (scrambleWindow && scrambleWindow->getMessageView())
-                        scrambleWindow->getMessageView()->addMessage("scramble", "(cancelled)");
-                    clearEvent(event);
                 }
+                clearEvent(event);
                 break;
             }
 
@@ -3114,8 +3112,10 @@ std::string api_get_state(TWwdosApp& app) {
     json << "{\"windows\":[";
 
     bool first = true;
+    int z = 0;
     for (TWindow* w : activeWins) {
         std::string id = app.registerWindow(w, false);
+        bool focused = (w == app.deskTop->current);
         if (!first) json << ",";
         json << "{\"id\":\"" << id << "\""
              << ",\"type\":\"" << windowTypeName(w) << "\""
@@ -3123,6 +3123,8 @@ std::string api_get_state(TWwdosApp& app) {
              << ",\"y\":" << w->origin.y
              << ",\"w\":" << w->size.x
              << ",\"h\":" << w->size.y
+             << ",\"z\":" << z
+             << ",\"focused\":" << (focused ? "true" : "false")
              << ",\"title\":\"";
         if (w->title) {
             std::string title(w->title);
@@ -3143,6 +3145,7 @@ std::string api_get_state(TWwdosApp& app) {
         }
         json << "}";
         first = false;
+        ++z;
     }
 
     json << "]";
@@ -3197,6 +3200,23 @@ std::string api_focus_window(TWwdosApp& app, const std::string& id) {
     if (!w) return "{\"error\":\"Window not found\"}";
     
     w->select();  // raises to front AND focuses (uses makeFirst → putInFrontOf)
+    return "{\"success\":true}";
+}
+
+std::string api_raise_window(TWwdosApp& app, const std::string& id) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "{\"error\":\"Window not found\"}";
+    w->select();
+    return "{\"success\":true}";
+}
+
+std::string api_lower_window(TWwdosApp& app, const std::string& id) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "{\"error\":\"Window not found\"}";
+    // putInFrontOf(background) sends to back of z-stack but above wallpaper
+    if (app.deskTop->background) {
+        w->putInFrontOf(app.deskTop->background);
+    }
     return "{\"success\":true}";
 }
 

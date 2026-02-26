@@ -26,6 +26,7 @@
 
 // Command constants for Scramble subsystem
 const ushort cmScrambleToggle = 180;   // Toggle scramble visibility
+const ushort cmScrambleCancel = 235;   // Cancel async LLM request
 const ushort cmScrambleExpand = 181;   // Scramble expand/shrink
 
 // Forward declare — engine lives in scramble_engine.h (no tvision dependency)
