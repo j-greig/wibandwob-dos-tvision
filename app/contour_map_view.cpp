@@ -110,6 +110,7 @@ void TContourMapView::launch(int seed, int terrainIdx, int levels, bool grow, bo
     grow_ = grow;
     triptych_ = triptych;
     lines_.clear();
+    nextFrame_.clear();
     partial_.clear();
     statusLine_.clear();
     autoScroll_ = true;
@@ -167,31 +168,34 @@ void TContourMapView::pollPipe() {
 }
 
 void TContourMapView::processData(const std::string& data) {
+    // In grow mode, accumulate into nextFrame_ and swap on RS.
+    // In static mode, append directly to lines_.
+    auto& target = grow_ ? nextFrame_ : lines_;
+
     for (size_t i = 0; i < data.size(); ++i) {
         char c = data[i];
 
         if (c == '\x1E') {
-            // Record separator — new frame in grow mode
-            // Flush partial line
+            // Record separator — swap in completed frame (grow mode)
             if (!partial_.empty()) {
-                lines_.push_back(partial_);
+                target.push_back(partial_);
                 partial_.clear();
             }
-            // In grow mode, clear for next frame (replace, not accumulate)
             if (grow_) {
-                lines_.clear();
+                lines_.swap(nextFrame_);
+                nextFrame_.clear();
             }
             continue;
         }
 
         if (c == '\n') {
             // Check for STATUS: header
-            if (partial_.substr(0, 7) == "STATUS:") {
+            if (partial_.size() >= 7 && partial_.substr(0, 7) == "STATUS:") {
                 statusLine_ = partial_.substr(7);
                 partial_.clear();
                 continue;
             }
-            lines_.push_back(partial_);
+            target.push_back(partial_);
             partial_.clear();
         } else if (c != '\r') {
             partial_ += c;

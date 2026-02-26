@@ -82,7 +82,8 @@ private:
     bool triptych_ = false;
 
     // Display state
-    std::vector<std::string> lines_;     // current frame lines
+    std::vector<std::string> lines_;     // current displayed frame
+    std::vector<std::string> nextFrame_; // grow mode: accumulating next frame
     std::string statusLine_;             // parsed from STATUS: header
     std::string partial_;                // incomplete line accumulator
     bool autoScroll_ = true;
