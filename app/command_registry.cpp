@@ -2,6 +2,7 @@
 
 #include "api_ipc.h"
 #include "core/json_utils.h"
+#include "figlet_utils.h"
 
 #include <cstdint>
 #include <sys/stat.h>
@@ -72,6 +73,13 @@ extern void api_spawn_monster_cam(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_monster_verse(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_monster_portal(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_browser(TWwdosApp& app, const TRect* bounds);
+extern void api_spawn_figlet_text(TWwdosApp& app, const TRect* bounds,
+    const std::string& text, const std::string& font, bool frameless, bool shadowless);
+extern void api_spawn_figlet_text_at(TWwdosApp& app,
+    const std::string& text, const std::string& font, int x, int y,
+    bool frameless, bool shadowless);
+extern void api_spawn_text_editor(TWwdosApp& app, const TRect* bounds, const std::string& title);
+extern void api_spawn_wibwob(TWwdosApp& app, const TRect* bounds);
 extern std::string api_gallery_list(TWwdosApp& app, const std::string& tab);
 extern void api_spawn_terminal(TWwdosApp& app, const TRect* bounds);
 extern std::string api_terminal_write(TWwdosApp& app, const std::string& text, const std::string& window_id);
@@ -92,6 +100,10 @@ extern std::string api_paint_stamp_figlet(TWwdosApp& app, const std::string& id,
     int x, int y, uint8_t fg, uint8_t bg);
 extern std::string api_list_figlet_fonts();
 extern std::string api_preview_figlet(const std::string& text, const std::string& font, int width);
+extern std::string api_move_window(TWwdosApp& app, const std::string& id, int x, int y);
+extern std::string api_resize_window(TWwdosApp& app, const std::string& id, int width, int height);
+extern std::string api_focus_window(TWwdosApp& app, const std::string& id);
+extern std::string api_close_window(TWwdosApp& app, const std::string& id);
 
 const std::vector<CommandCapability>& get_command_capabilities() {
     static const std::vector<CommandCapability> capabilities = {
@@ -129,6 +141,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_monster_verse", "Open Monster Verse eldritch poetry", false},
         {"open_monster_portal", "Open Monster Portal dimensional rift", false},
         {"open_browser", "Open the in-terminal web browser", false},
+        {"open_figlet_text", "Open a FIGlet text window (optional text, font params; defaults to 'Hello' in 'standard')", false},
+        {"open_text_editor", "Open a text editor window (optional title param)", false},
+        {"open_wibwob", "Open the Wib&Wob chat window", false},
         // ── Games ────────────────────────────────────────────────────────
         {"open_micropolis_ascii", "Open Micropolis ASCII MVP window", false},
         {"open_quadra", "Open Quadra falling blocks game", false},
@@ -169,6 +184,11 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"figlet_set_font", "Change font in a figlet window (id, font params)", true},
         {"figlet_set_color", "Set figlet window colours (id, fg, bg params — hex RGB e.g. #FF00FF)", true},
         {"figlet_list_fonts", "List available figlet font names", false},
+        // ── Window management ────────────────────────────────────────────
+        {"move_window", "Move a window (id, x, y params)", true},
+        {"resize_window", "Resize a window (id, w, h params)", true},
+        {"focus_window", "Focus/bring a window to front (id param)", true},
+        {"close_window", "Close a window by ID (id param)", true},
     };
     return capabilities;
 }
@@ -366,6 +386,31 @@ std::string exec_registry_command(
         api_spawn_browser(app, nullptr);
         return "ok";
     }
+    if (name == "open_figlet_text") {
+        auto ti = kv.find("text");
+        auto fi = kv.find("font");
+        std::string text = (ti != kv.end()) ? ti->second : "Hello";
+        std::string font = (fi != kv.end()) ? fi->second : "standard";
+        bool shadowless = kv.count("shadow") && kv.at("shadow") == "false";
+        if (kv.count("x") && kv.count("y")) {
+            int x = std::atoi(kv.at("x").c_str());
+            int y = std::atoi(kv.at("y").c_str());
+            api_spawn_figlet_text_at(app, text, font, x, y, false, shadowless);
+        } else {
+            api_spawn_figlet_text(app, nullptr, text, font, false, shadowless);
+        }
+        return "ok";
+    }
+    if (name == "open_text_editor") {
+        auto ti = kv.find("title");
+        std::string title = (ti != kv.end()) ? ti->second : "Untitled";
+        api_spawn_text_editor(app, nullptr, title);
+        return "ok";
+    }
+    if (name == "open_wibwob") {
+        api_spawn_wibwob(app, nullptr);
+        return "ok";
+    }
     if (name == "open_gallery") {
         api_spawn_gallery(app, nullptr);
         return "ok";
@@ -538,7 +583,35 @@ std::string exec_registry_command(
         if (text_it == kv.end()) return "err missing text";
         std::string font = kv.count("font") ? kv.at("font") : "standard";
         int width = kv.count("width") ? std::atoi(kv.at("width").c_str()) : 80;
-        return api_preview_figlet(text_it->second, font, width);
+        bool info = kv.count("info") && kv.at("info") == "true";
+        std::string rendered = api_preview_figlet(text_it->second, font, width);
+        if (!info) return rendered;
+        // Return JSON with render metadata
+        int totalLines = 0, maxW = 0;
+        size_t pos = 0;
+        while (pos < rendered.size()) {
+            size_t nl = rendered.find('\n', pos);
+            if (nl == std::string::npos) nl = rendered.size();
+            int len = static_cast<int>(nl - pos);
+            if (len > maxW) maxW = len;
+            ++totalLines;
+            pos = nl + 1;
+        }
+        int fh = figlet::fontHeight(font);
+        int rows = (fh > 0 && totalLines > 0) ? (totalLines / fh) : 1;
+        bool wrapped = rows > 1;
+        std::ostringstream os;
+        os << "{\"text\":\"" << text_it->second << "\""
+           << ",\"font\":\"" << font << "\""
+           << ",\"font_height\":" << fh
+           << ",\"total_lines\":" << totalLines
+           << ",\"max_width\":" << maxW
+           << ",\"rows\":" << rows
+           << ",\"wrapped\":" << (wrapped ? "true" : "false")
+           << ",\"window_width\":" << (maxW + 6)
+           << ",\"window_height\":" << ((fh > 0 ? fh : totalLines) + 3)
+           << "}";
+        return os.str();
     }
     if (name == "inject_command") {
         auto id_it = kv.find("cmd_id");
@@ -615,6 +688,33 @@ std::string exec_registry_command(
     }
     if (name == "figlet_list_fonts") {
         return api_figlet_list_fonts();
+    }
+    // ── Window management ────────────────────────────────────────────
+    if (name == "move_window") {
+        auto id = kv.find("id");
+        auto xi = kv.find("x");
+        auto yi = kv.find("y");
+        if (id == kv.end()) return "err missing id";
+        if (xi == kv.end() || yi == kv.end()) return "err missing x or y";
+        return api_move_window(app, id->second, std::stoi(xi->second), std::stoi(yi->second));
+    }
+    if (name == "resize_window") {
+        auto id = kv.find("id");
+        auto wi = kv.find("w");
+        auto hi = kv.find("h");
+        if (id == kv.end()) return "err missing id";
+        if (wi == kv.end() || hi == kv.end()) return "err missing w or h";
+        return api_resize_window(app, id->second, std::stoi(wi->second), std::stoi(hi->second));
+    }
+    if (name == "focus_window") {
+        auto id = kv.find("id");
+        if (id == kv.end()) return "err missing id";
+        return api_focus_window(app, id->second);
+    }
+    if (name == "close_window") {
+        auto id = kv.find("id");
+        if (id == kv.end()) return "err missing id";
+        return api_close_window(app, id->second);
     }
     return "err unknown command";
 }

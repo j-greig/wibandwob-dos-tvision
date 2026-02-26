@@ -70,6 +70,10 @@ const std::string& fontByIndex(int index);
 // Look up index for a font name. Returns -1 if not found.
 int fontIndex(const std::string& name);
 
+// Return the character height for a font (lines per row of text).
+// Uses the catalogue font_metadata. Returns 0 if unknown.
+int fontHeight(const std::string& name);
+
 } // namespace figlet
 
 // Forward-declare tvision types (avoids pulling in tv.h from this header)
