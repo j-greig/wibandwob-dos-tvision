@@ -257,7 +257,8 @@ def place_word(word, speech_cfg):
 def setup_canvas(meta):
     """Clear desktop and set background from meta."""
     post("close_all")
-    time.sleep(0.2)
+    time.sleep(0.5)
+    # Set background
     if meta.get("gallery_mode"):
         post("desktop_gallery", {"on": "true"})
     bg = meta.get("bg", {})
@@ -265,7 +266,9 @@ def setup_canvas(meta):
         post("desktop_color", {"fg": str(bg.get("fg", 0)), "bg": str(bg.get("bg", 0))})
     if "texture" in bg:
         post("desktop_texture", {"char": bg["texture"]})
-    time.sleep(0.1)
+    # Force a clean redraw — close again in case gallery_mode opened something
+    post("close_all")
+    time.sleep(0.5)
 
 
 def play_frame(frame, speech_cfg, mute, stingers, primer_ids):

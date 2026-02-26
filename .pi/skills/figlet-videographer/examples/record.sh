@@ -124,7 +124,7 @@ cat /tmp/play_log.txt
 if $MAKE_GIF || $MAKE_MP4; then
   echo ""
   echo "Rendering GIF..."
-  agg "$CAST" "$GIF" --font-size 14
+  agg "$CAST" "$GIF" --font-size 28
   echo "GIF: $GIF ($(du -h "$GIF" | cut -f1))"
 fi
 
