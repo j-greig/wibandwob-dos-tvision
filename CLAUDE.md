@@ -187,6 +187,18 @@ Human / AI Agent
 
 **One list, many callers.** All TUI commands are defined once in `get_command_capabilities()`. Menu items, IPC socket, REST API, MCP tools, and Scramble's slash commands all read from the same registry. To add a new command: add to the capabilities vector + dispatch in `exec_registry_command()` + stub in test files. Never wire a command in multiple places separately.
 
+### Window Z-Order (`raise_window`, `lower_window`, `focus_window`)
+
+Z-order is the Turbo Vision child linked list. `0` = frontmost. Works on ANY window type (figlet, primer, chat, terminal, paint, generative art, games — anything with a window ID).
+
+| Command | Effect |
+|---|---|
+| `raise_window` (id) | Bring to front + focus. Uses `w->select()` |
+| `lower_window` (id) | Send to back (above desktop background). Uses `w->putInFrontOf(background)` |
+| `focus_window` (id) | Same as raise — raises AND focuses |
+
+`/state` reports real `z` (0=front, incrementing) and `focused` (bool) per window. Previously these were hardcoded to `0`/`false`.
+
 ### Scramble (`app/scramble_view.h/cpp`, `app/scramble_engine.h/cpp`)
 
 Symbient cat. Three window states: hidden / smol (28×14, cat + bubble) / tall (full height, message history + input). Slash commands typed in Scramble's input check the command registry first — `/cascade`, `/screenshot`, `/scramble_pet` etc all execute. Commands not in registry fall through to `ScrambleEngine` for `/help`, `/who`, `/cmds`, or Haiku chat. Auth is shared with Wib&Wob via `AuthConfig` — Claude Code mode uses `claude -p --model haiku`, API Key mode uses direct curl. Fallback: `ANTHROPIC_API_KEY` env var or Tools > API Key at runtime.
