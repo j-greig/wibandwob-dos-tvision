@@ -1,27 +1,25 @@
 #!/bin/bash
-# Record a figlet videographer performance as .cast / .gif / .mp4
+# Record a figlet videographer performance via asciinema
 #
-# Usage: ./record.sh <timeline.json> [--gif] [--mp4] [--mute]
+# Usage: ./record.sh <timeline.json> [--gif] [--mp4]
+#
+# ⚠️  Run this from a REAL terminal (not from pi/codex) — asciinema needs a TTY.
 #
 # Pipeline:
-#   1. Capture TUI pane with tmux capture-pane in a polling loop → .cast
-#   2. play.py drives the TUI via API (audio plays live)
+#   1. asciinema records a read-only tmux attach (sees the TUI directly)
+#   2. play.py runs in background driving the TUI via API
 #   3. agg renders .cast → .gif
 #   4. ffmpeg muxes .gif + backing track → .mp4
 #
 # The TUI must be running in tmux session "wwdos".
-# Requirements: agg, ffmpeg, python3, tmux
+# Requirements: asciinema, agg, ffmpeg, python3, tmux
 
 set -euo pipefail
 
-TIMELINE="$(cd "$(dirname "${1:?Usage: record.sh <timeline.json> [--gif] [--mp4] [--mute]}")" && pwd)/$(basename "$1")"
-MAKE_GIF=false; MAKE_MP4=false; MUTE=""
+TIMELINE="$(cd "$(dirname "${1:?Usage: record.sh <timeline.json> [--gif] [--mp4]}")" && pwd)/$(basename "$1")"
+MAKE_GIF=false; MAKE_MP4=false
 for arg in "$@"; do
-  case "$arg" in
-    --gif)  MAKE_GIF=true ;;
-    --mp4)  MAKE_MP4=true ;;
-    --mute) MUTE="--mute" ;;
-  esac
+  case "$arg" in --gif) MAKE_GIF=true ;; --mp4) MAKE_MP4=true ;; esac
 done
 $MAKE_GIF || $MAKE_MP4 || MAKE_GIF=true
 
@@ -37,69 +35,71 @@ import json
 with open('$TIMELINE') as f: t = json.load(f)
 print(t.get('meta',{}).get('audio',{}).get('backing',''))
 ")
+DURATION=$(python3 -c "
+import json
+with open('$TIMELINE') as f: t = json.load(f)
+frames = t.get('frames',[])
+print(int(max((f.get('t',0) for f in frames), default=0)) + 12)
+")
 
-TMUX_PANE="wwdos:0.0"
-COLS=$(tmux display-message -t "$TMUX_PANE" -p '#{pane_width}')
-ROWS=$(tmux display-message -t "$TMUX_PANE" -p '#{pane_height}')
+TMUX_SESSION="wwdos"
+COLS=$(tmux display-message -t "${TMUX_SESSION}:0.0" -p '#{pane_width}' 2>/dev/null || echo 152)
+ROWS=$(tmux display-message -t "${TMUX_SESSION}:0.0" -p '#{pane_height}' 2>/dev/null || echo 46)
 
 echo "=== Figlet Videographer Recorder ==="
 echo "  Timeline: $(basename "$TIMELINE")"
 echo "  Terminal: ${COLS}x${ROWS}"
+echo "  Duration: ${DURATION}s"
 [ -n "$BACKING" ] && echo "  Audio:    $(basename "$BACKING")"
 echo ""
 
-# ── Capture loop: poll tmux pane → asciicast v2 format ──
-capture_frames() {
-  local cast_file="$1" cols="$2" rows="$3" fps="${4:-10}"
-  local interval=$(python3 -c "print(1.0/$fps)")
-
-  # Write asciicast v2 header
-  echo "{\"version\":2,\"width\":$cols,\"height\":$rows,\"timestamp\":$(date +%s),\"env\":{\"TERM\":\"xterm-256color\"}}" > "$cast_file"
-
-  local start=$(python3 -c "import time; print(time.time())")
-  while [ -f "$cast_file.recording" ]; do
-    local now=$(python3 -c "import time; print(time.time())")
-    local t=$(python3 -c "print(round($now - $start, 3))")
-    # Capture full pane content with escape sequences
-    local content
-    content=$(tmux capture-pane -t "$TMUX_PANE" -p -e 2>/dev/null | python3 -c "
-import sys, json
-lines = sys.stdin.read()
-# Asciicast v2: each frame is [time, 'o', data]
-print(json.dumps([float('$t'), 'o', lines]))" 2>/dev/null) || true
-    [ -n "$content" ] && echo "$content" >> "$cast_file"
-    sleep "$interval"
-  done
-}
+# Check we have a TTY
+if [ ! -t 0 ]; then
+  echo "ERROR: No TTY — run this from a real terminal, not from pi/codex."
+  echo ""
+  echo "  cd $(pwd)"
+  echo "  bash $0 $*"
+  exit 1
+fi
 
 # ── Record ──
-echo "Recording..."
-touch "$CAST.recording"
-capture_frames "$CAST" "$COLS" "$ROWS" 10 &
-CAPTURE_PID=$!
+# play.py drives the TUI via API in the background
+# asciinema records a read-only tmux attach (sees the TUI output directly)
+# A background sleeper detaches tmux after the performance ends
 
-# Run the performance
-python3 "$PLAY" "$TIMELINE" --auto-layout $MUTE
+echo "Recording... (Ctrl-C to abort)"
 
-# Let final frame settle
-sleep 2
-rm -f "$CAST.recording"
-wait $CAPTURE_PID 2>/dev/null || true
+python3 "$PLAY" "$TIMELINE" --auto-layout > /tmp/play_log.txt 2>&1 &
+PLAY_PID=$!
 
-FRAMES=$(wc -l < "$CAST")
-echo "Cast saved: $CAST ($((FRAMES-1)) frames, $(du -h "$CAST" | cut -f1))"
+# Auto-detach after duration
+(sleep "$DURATION" && tmux detach-client 2>/dev/null) &
+DETACH_PID=$!
+
+asciinema rec "$CAST" \
+  --cols "$COLS" --rows "$ROWS" \
+  --overwrite \
+  --command "tmux attach-session -t $TMUX_SESSION -r"
+
+# Cleanup
+kill $PLAY_PID 2>/dev/null; wait $PLAY_PID 2>/dev/null || true
+kill $DETACH_PID 2>/dev/null; wait $DETACH_PID 2>/dev/null || true
+
+echo ""
+echo "Cast: $CAST ($(du -h "$CAST" | cut -f1))"
+cat /tmp/play_log.txt
 
 # ── GIF ──
 if $MAKE_GIF || $MAKE_MP4; then
+  echo ""
   echo "Rendering GIF..."
-  agg "$CAST" "$GIF" \
-    --cols "$COLS" --rows "$ROWS" \
-    --font-size 14
+  agg "$CAST" "$GIF" --font-size 14
   echo "GIF: $GIF ($(du -h "$GIF" | cut -f1))"
 fi
 
 # ── MP4 with audio ──
 if $MAKE_MP4; then
+  echo ""
   if [ -n "$BACKING" ] && [ -f "$BACKING" ]; then
     echo "Muxing with audio..."
     ffmpeg -y -i "$GIF" -i "$BACKING" \
@@ -108,9 +108,11 @@ if $MAKE_MP4; then
       -movflags faststart \
       "$MP4" 2>/dev/null
   else
+    echo "Converting to MP4 (no audio)..."
     ffmpeg -y -i "$GIF" -movflags faststart -pix_fmt yuv420p "$MP4" 2>/dev/null
   fi
   echo "MP4: $MP4 ($(du -h "$MP4" | cut -f1))"
 fi
 
+echo ""
 echo "Done!"
