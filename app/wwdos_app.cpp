@@ -66,6 +66,7 @@
 #include "generative_monster_portal_view.h"
 // Generative art: Monster Verse (Verse engine + monsters)
 #include "generative_monster_verse_view.h"
+#include "contour_map_view.h"
 // Generative art: Monster Cam (Emoji)
 #include "generative_monster_cam_view.h"
 #include "game_of_life_view.h"
@@ -221,6 +222,7 @@ const ushort cmMonsterPortal = 154;
 const ushort cmMonsterVerse = 155;
 const ushort cmMonsterCam   = 156;
 const ushort cmASCIICam     = 157;
+const ushort cmContourMap   = 158;
 
 // Tools menu commands (future)
 const ushort cmAnsiEditor = 125;
@@ -936,6 +938,7 @@ private:
     friend void api_spawn_animated_gradient(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_monster_cam(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_monster_verse(TWwdosApp&, const TRect* bounds);
+    friend void api_spawn_contour_map(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_monster_portal(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_micropolis_ascii(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_quadra(TWwdosApp&, const TRect* bounds);
@@ -1251,6 +1254,11 @@ void TWwdosApp::handleEvent(TEvent& event)
                 TRect r = deskTop->getExtent();
                 r.grow(-2, -1);
                 deskTop->insert(createGenerativeMonsterPortalWindow(r));
+                clearEvent(event);
+                break;
+            }
+            case cmContourMap: {
+                api_spawn_contour_map(*this, nullptr);
                 clearEvent(event);
                 break;
             }
@@ -2608,6 +2616,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("Monster ~P~ortal (Generative)", cmMonsterPortal, kbNoKey) +
             *new TMenuItem("Monster Ve~r~se (Generative)", cmMonsterVerse, kbNoKey) +
             *new TMenuItem("Monster Cam (Emo~j~i)", cmMonsterCam, kbNoKey) +
+            *new TMenuItem("~C~ontour Studio", cmContourMap, kbNoKey) +
             newLine() +
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
             *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
@@ -4780,6 +4789,14 @@ void api_spawn_animated_gradient(TWwdosApp& app, const TRect* bounds) {
 void api_spawn_monster_cam(TWwdosApp& app, const TRect* bounds) {
     TRect r = bounds ? *bounds : api_centered_bounds(app, 96, 30);
     TWindow* w = createGenerativeMonsterCamWindow(r);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
+}
+
+void api_spawn_contour_map(TWwdosApp& app, const TRect* bounds) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 90, 35);
+    int seed = rand() % 100000;
+    TWindow* w = createContourMapWindow(r, seed, 5, 5, false, false);
     app.deskTop->insert(w);
     app.registerWindow(w);
 }

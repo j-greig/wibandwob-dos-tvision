@@ -1,6 +1,7 @@
 #include "command_registry.h"
 
 #include "api_ipc.h"
+#include "contour_map_view.h"
 #include "core/json_utils.h"
 #include "figlet_utils.h"
 
@@ -141,6 +142,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_gradient", "Open static gradient window", false},
         {"open_monster_cam", "Open Monster Camera window", false},
         {"open_monster_verse", "Open Monster Verse eldritch poetry", false},
+        {"open_contour_map", "Open Contour Studio — topographic map generator (optional: seed, terrain, levels, grow, triptych)", false},
         {"open_monster_portal", "Open Monster Portal dimensional rift", false},
         {"open_browser", "Open the in-terminal web browser", false},
         {"open_figlet_text", "Open a FIGlet text window (optional text, font params; defaults to 'Hello' in 'standard')", false},
@@ -376,6 +378,10 @@ std::string exec_registry_command(
     }
     if (name == "open_monster_cam") {
         api_spawn_monster_cam(app, nullptr);
+        return "ok";
+    }
+    if (name == "open_contour_map") {
+        api_spawn_contour_map(app, nullptr);
         return "ok";
     }
     if (name == "open_monster_verse") {

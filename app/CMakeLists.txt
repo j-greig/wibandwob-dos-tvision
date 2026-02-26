@@ -61,6 +61,7 @@ add_executable(wwdos
     transparent_text_view.cpp
     ansi_view.cpp
     wibwob_scroll_test.cpp
+    contour_map_view.cpp
     scramble_view.cpp
     scramble_engine.cpp
     paint/paint_canvas.cpp
