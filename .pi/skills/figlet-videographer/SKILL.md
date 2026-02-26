@@ -211,45 +211,46 @@ Best voices for wibwob: **Wobble** (warm), **Cellos** (deep/slow), **Whisper** (
 
 ## Recording
 
-`record.sh` captures a performance as .cast / .gif / .mp4 with audio:
+`record.sh` captures a performance as .cast / .gif / .mp4 with speech + music:
 
 ```bash
-# Record garden poem as GIF
-./examples/record.sh examples/03-garden-poem-av.json --gif
-
-# Record as MP4 with kibble-dnb backing track muxed in
-./examples/record.sh examples/03-garden-poem-av.json --mp4
-
-# Both
+# Run from a REAL terminal (not pi/codex) — asciinema needs TTY
 ./examples/record.sh examples/03-garden-poem-av.json --gif --mp4
 ```
 
-Pipeline: `tmux capture-pane` (10fps polling) → asciicast v2 `.cast` → `agg` → `.gif` → `ffmpeg` + backing mp3 → `.mp4`
+Pipeline: asciinema (tmux attach read-only) → `.cast` → `agg --font-size 28` → `.gif` → ffmpeg (mix speech .aiff + backing .mp3) → `.mp4`
 
-Requirements: `agg` (`brew install agg`), `ffmpeg`, TUI running in tmux session `wwdos`.
+- Canvas cleared before recording starts (no stale windows from previous runs)
+- Speech pre-rendered to .aiff files, mixed at correct timestamps into final audio
+- `stty` forces TTY to canvas size so tmux shows full pane
+- `pad` filter handles odd dimensions for libx264
 
-The `say` voices play live during recording (captured by system audio if screen-recording simultaneously). The `.mp4` muxes only the backing track — for full audio (backing + stingers + speech), use macOS screen recording alongside, or capture system audio with BlackHole/Loopback.
+Requirements: `asciinema`, `agg` (`brew install agg`), `ffmpeg`.
 
-### Known issues
+## Agent Guide
+
+See **[AGENT-GUIDE.md](AGENT-GUIDE.md)** for detailed guidance on:
+- Layout planning workflow (measure → plan → check → place)
+- Font cheat sheet with exact sizes
+- Small primer list (safe sizes)
+- Common mistakes and fixes
+- Audio source guide (backing tracks, stingers)
+- Recording checklist
+- Iteration pattern for when compositions need tightening
+
+## Known Issues
 
 - Duplicate word titles (e.g. two "we" windows) — second `place_word` may move the first
-- Primer windows have no title — identified by `type=frame_player`, takes newest match
+- Primer windows reuse gallery viewer — each new primer replaces the last
 - `afplay` / `say` are macOS-only — swap for `mpv --no-video` / `espeak` on Linux
-- Large primers (>50w or >25h) overwhelm the composition — use small ones
-
-### Mixed media composition
-
-Combine in a single timeline:
-- **Figlet words** — typographic hierarchy (fonts, sizes, positions)
-- **Primers** — ASCII art illustrations (open_primer + move_window)
-- **Audio cues** — stingers on reveals, backing track for mood
-- **Desktop state** — colour/texture changes between sections
+- Large primers (>45w or >22h) overwhelm compositions — use small ones only
 
 ## Tips
 
-- Use **mini** font for small connecting words (and, the, but, into)
-- Use **banner** or **big** for emphasis words
-- Leave breathing room — overlapping windows obscure each other
+- **mini** for connective words (and, the, but, in the, through the)
+- **doom** or **larry3d** for key verbs/nouns — they carry visual weight
+- **standard** for everything else — clean and balanced
+- Always measure with `preview_figlet info=true` before placing
 - Gallery mode + black desktop = clean presentation canvas
-- Screenshot after composing to save the visual result
-- Window auto-sizing measures the figlet render, so short words get small windows
+- Merge connective words ("through the" as one) to save horizontal space
+- Keep voice palette to 2-3 (Wobble, Cellos, Whisper)
