@@ -43,12 +43,31 @@ print(int(max((f.get('t',0) for f in frames), default=0)) + 12)
 ")
 
 TMUX_SESSION="wwdos"
-COLS=$(tmux display-message -t "${TMUX_SESSION}:0.0" -p '#{pane_width}' 2>/dev/null || echo 152)
-ROWS=$(tmux display-message -t "${TMUX_SESSION}:0.0" -p '#{pane_height}' 2>/dev/null || echo 46)
+TMUX_PANE="${TMUX_SESSION}:0.0"
+
+# Use canvas size from timeline meta (not the current terminal size)
+CANVAS_W=$(python3 -c "
+import json
+with open('$TIMELINE') as f: t = json.load(f)
+print(t.get('meta',{}).get('canvas',{}).get('width', 152))
+")
+CANVAS_H=$(python3 -c "
+import json
+with open('$TIMELINE') as f: t = json.load(f)
+print(t.get('meta',{}).get('canvas',{}).get('height', 46))
+")
+# Add 2 rows for menu/status bar
+COLS=$CANVAS_W
+ROWS=$((CANVAS_H + 4))
+
+# Save current terminal size to restore later
+ORIG_COLS=$(tmux display-message -t "$TMUX_PANE" -p '#{pane_width}' 2>/dev/null || echo "$COLS")
+ORIG_ROWS=$(tmux display-message -t "$TMUX_PANE" -p '#{pane_height}' 2>/dev/null || echo "$ROWS")
 
 echo "=== Figlet Videographer Recorder ==="
 echo "  Timeline: $(basename "$TIMELINE")"
-echo "  Terminal: ${COLS}x${ROWS}"
+echo "  Canvas:   ${CANVAS_W}x${CANVAS_H}"
+echo "  Record:   ${COLS}x${ROWS} (was ${ORIG_COLS}x${ORIG_ROWS})"
 echo "  Duration: ${DURATION}s"
 [ -n "$BACKING" ] && echo "  Audio:    $(basename "$BACKING")"
 echo ""
@@ -61,6 +80,11 @@ if [ ! -t 0 ]; then
   echo "  bash $0 $*"
   exit 1
 fi
+
+# Resize tmux to match canvas
+echo "Resizing tmux pane to ${COLS}x${ROWS}..."
+tmux resize-window -t "$TMUX_SESSION" -x "$COLS" -y "$ROWS" 2>/dev/null || true
+sleep 0.5
 
 # ── Record ──
 # play.py drives the TUI via API in the background
@@ -76,14 +100,21 @@ PLAY_PID=$!
 (sleep "$DURATION" && tmux detach-client 2>/dev/null) &
 DETACH_PID=$!
 
+# Force the recording terminal to match the TUI pane size.
+# asciinema's --cols/--rows only sets the cast header;
+# the actual view is constrained by the TTY size, which tmux uses
+# to decide how much of the pane to show. We use stty to resize
+# before attaching so tmux renders the full pane.
 asciinema rec "$CAST" \
   --cols "$COLS" --rows "$ROWS" \
   --overwrite \
-  --command "tmux attach-session -t $TMUX_SESSION -r"
+  --command "stty cols $COLS rows $ROWS; tmux attach-session -t $TMUX_SESSION -r"
 
-# Cleanup
-kill $PLAY_PID 2>/dev/null; wait $PLAY_PID 2>/dev/null || true
-kill $DETACH_PID 2>/dev/null; wait $DETACH_PID 2>/dev/null || true
+# Cleanup (|| true to avoid set -e exit)
+kill $PLAY_PID 2>/dev/null || true
+wait $PLAY_PID 2>/dev/null || true
+kill $DETACH_PID 2>/dev/null || true
+wait $DETACH_PID 2>/dev/null || true
 
 echo ""
 echo "Cast: $CAST ($(du -h "$CAST" | cut -f1))"
