@@ -358,6 +358,10 @@ void ApiIpcServer::poll() {
     if (fd < 0) {
         return; // EAGAIN expected in non-blocking mode
     }
+    // macOS Unix socket default SO_SNDBUF is 8192 — too small for
+    // JSON responses like get_capabilities (~9KB with 75+ commands).
+    int sndbuf = 65536;
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
     // Authenticate if secret is set.
     if (auth_required()) {
@@ -772,7 +776,21 @@ void ApiIpcServer::poll() {
     last_command_time_ = std::chrono::steady_clock::now();
     ++total_commands_;
 
-    (void)safe_write(fd, resp.c_str(), resp.size());
+    if (resp.size() > 4096)
+        fprintf(stderr, "[ipc] large response: %zu bytes for cmd=%s\n", resp.size(), cmd.c_str());
+    // For large responses, set SO_LINGER so close() blocks until all
+    // data is delivered to the client (macOS drops unread data on close).
+    if (resp.size() > 4096) {
+        struct linger lg = { 1, 2 };  // linger on, 2 second timeout
+        ::setsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+    }
+    bool ok = safe_write(fd, resp.c_str(), resp.size());
+    if (!ok)
+        fprintf(stderr, "[ipc] ERROR: safe_write failed for %zu bytes\n", resp.size());
+    ::shutdown(fd, SHUT_WR);
+    // Drain client's FIN so close doesn't RST and discard buffered data.
+    char drain[64];
+    while (::read(fd, drain, sizeof(drain)) > 0) {}
     ::close(fd);
 #endif
 }

@@ -8,21 +8,14 @@ AC-3: browser_fetch url=<url> → response ok
 """
 
 import json
-import os
 import socket
 import sys
 import time
 from urllib.parse import quote
+from ipc_client import resolve_sock_path
 
 
-def _sock_path():
-    inst = os.environ.get("WIBWOB_INSTANCE")
-    if inst:
-        return f"/tmp/wibwob_{inst}.sock"
-    return "/tmp/wwdos.sock"
-
-
-SOCK_PATH = _sock_path()
+SOCK_PATH = resolve_sock_path()
 
 
 def send_ipc(cmd: str) -> str:

@@ -107,8 +107,9 @@ class Controller:
                 data = json.loads(resp.strip())
                 if isinstance(data, dict):
                     return data
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.warning(f"[controller] get_registry_capabilities failed: {exc} (resp len={len(resp) if resp else 0})")
         return {"version": "v1", "commands": []}
 
     async def get_window_types_from_cpp(self) -> List[Dict[str, Any]]:

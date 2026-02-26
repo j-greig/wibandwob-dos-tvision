@@ -47,9 +47,9 @@ Window Types
 - **wallpaper** — Static wallpaper patterns
 
 IPC Bridge to the C++ App
-- The C++ `wwdos` app now starts a Unix-domain socket listener at `/tmp/wwdos.sock`.
-- This FastAPI server auto-forwards core commands to the live app when the socket is available.
-- To change the socket path, set `TV_IPC_SOCK=/custom/path.sock` (in both app and server if changed).
+- The C++ `wwdos` app creates a Unix socket at `/tmp/wwdos.sock`.
+- This FastAPI server connects to that socket and forwards commands.
+- Multi-instance: set `WIBWOB_INSTANCE=N` on both TUI and API → `/tmp/wibwob_N.sock`.
 
 Key Endpoints
 - Health: `GET /health` — basic liveness.

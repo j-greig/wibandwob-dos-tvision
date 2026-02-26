@@ -9,11 +9,8 @@ cd "$SCRIPT_DIR"
 
 PORT="${WIBWOB_API_PORT:-8089}"
 
-# WIBWOB_INSTANCE must match what the TUI was started with.
-# If TUI was started without WIBWOB_INSTANCE it uses /tmp/wwdos.sock
-# (legacy fallback: /tmp/test_pattern_app.sock).
-# Only export WIBWOB_INSTANCE if explicitly set — otherwise let
-# ipc_client.py default to /tmp/wwdos.sock with legacy fallback.
+# Socket: /tmp/wwdos.sock by default, or /tmp/wibwob_N.sock if WIBWOB_INSTANCE=N.
+# Only set WIBWOB_INSTANCE if running multiple TUI instances.
 if [ -n "${WIBWOB_INSTANCE:-}" ]; then
     export WIBWOB_INSTANCE
 fi

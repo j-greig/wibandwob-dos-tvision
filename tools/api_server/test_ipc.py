@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-import os
 import socket
-import time
-
-
-def _sock_path():
-    inst = os.environ.get("WIBWOB_INSTANCE")
-    if inst:
-        return f"/tmp/wibwob_{inst}.sock"
-    return "/tmp/wwdos.sock"
+from ipc_client import resolve_sock_path
 
 
 def test_ipc_connection():
     """Test direct IPC connection to debug the issue"""
-    sock_path = _sock_path()
+    sock_path = resolve_sock_path()
     
     print(f"Testing connection to {sock_path}")
     

@@ -4,17 +4,11 @@
 Exercises: create_window type=paint, paint_cell, paint_text,
 paint_line, paint_rect, paint_export (inline + file).
 
-Requires a running test_pattern app with IPC socket.
-Set WIBWOB_INSTANCE env var to match the running instance.
+Requires a running wwdos app (socket: /tmp/wwdos.sock).
 
 Usage:
-    # With app already running:
+    ./build/app/wwdos &
     python3 tests/test_paint_ipc.py
-
-    # Or launch app yourself first:
-    WIBWOB_INSTANCE=99 ./build/app/test_pattern &
-    sleep 2
-    WIBWOB_INSTANCE=99 python3 tests/test_paint_ipc.py
 """
 
 import json
@@ -24,20 +18,16 @@ import sys
 import tempfile
 import time
 
-
-def _sock_path():
-    inst = os.environ.get("WIBWOB_INSTANCE")
-    if inst:
-        return f"/tmp/wibwob_{inst}.sock"
-    return "/tmp/wwdos.sock"
+# Add tools/api_server to path so we can import the canonical resolver
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools", "api_server"))
+from ipc_client import resolve_sock_path
 
 
 def ipc_send(cmd: str, timeout: float = 5.0) -> str:
     """Send a command to the IPC socket and return the response."""
-    sock_path = _sock_path()
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
-    s.connect(sock_path)
+    s.connect(resolve_sock_path())
     s.sendall((cmd + "\n").encode("utf-8"))
     chunks = []
     while True:
@@ -235,8 +225,7 @@ if __name__ == "__main__":
     sock = _sock_path()
     if not os.path.exists(sock):
         print(f"ERROR: Socket {sock} not found.")
-        print("Start the app first: ./build/app/test_pattern")
-        print("Or set WIBWOB_INSTANCE to match a running instance.")
+        print("Start the app first: ./build/app/wwdos")
         sys.exit(1)
 
     tests = PaintIPCTests()
