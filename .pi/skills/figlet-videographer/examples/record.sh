@@ -134,13 +134,15 @@ if $MAKE_MP4; then
   if [ -n "$BACKING" ] && [ -f "$BACKING" ]; then
     echo "Muxing with audio..."
     ffmpeg -y -i "$GIF" -i "$BACKING" \
+      -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" \
       -c:v libx264 -pix_fmt yuv420p \
       -c:a aac -shortest \
       -movflags faststart \
       "$MP4" 2>/dev/null
   else
     echo "Converting to MP4 (no audio)..."
-    ffmpeg -y -i "$GIF" -movflags faststart -pix_fmt yuv420p "$MP4" 2>/dev/null
+    ffmpeg -y -i "$GIF" -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" \
+      -movflags faststart -pix_fmt yuv420p "$MP4" 2>/dev/null
   fi
   echo "MP4: $MP4 ($(du -h "$MP4" | cut -f1))"
 fi
