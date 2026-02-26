@@ -610,6 +610,11 @@ void TScrambleInputView::handleEvent(TEvent& event)
     // Handle keyboard events directly — don't pass to TView first
     // (avoids TV's focus-gating on keyboard dispatch)
     if (event.what == evKeyDown) {
+        // Block all input while thinking — prevents overloading the API
+        if (thinking) {
+            clearEvent(event);
+            return;
+        }
         ushort keyCode = event.keyDown.keyCode;
         char ch = event.keyDown.charScan.charCode;
 
