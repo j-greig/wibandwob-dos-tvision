@@ -103,6 +103,8 @@ extern std::string api_preview_figlet(const std::string& text, const std::string
 extern std::string api_move_window(TWwdosApp& app, const std::string& id, int x, int y);
 extern std::string api_resize_window(TWwdosApp& app, const std::string& id, int width, int height);
 extern std::string api_focus_window(TWwdosApp& app, const std::string& id);
+extern std::string api_raise_window(TWwdosApp& app, const std::string& id);
+extern std::string api_lower_window(TWwdosApp& app, const std::string& id);
 extern std::string api_close_window(TWwdosApp& app, const std::string& id);
 
 const std::vector<CommandCapability>& get_command_capabilities() {
@@ -187,7 +189,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         // ── Window management ────────────────────────────────────────────
         {"move_window", "Move a window (id, x, y params)", true},
         {"resize_window", "Resize a window (id, w, h params)", true},
-        {"focus_window", "Focus/bring a window to front (id param)", true},
+        {"focus_window", "Bring window to front and focus (id param)", true},
+        {"raise_window", "Bring window to front of z-order and focus it (id param)", true},
+        {"lower_window", "Send window to back of z-order (id param)", true},
         {"close_window", "Close a window by ID (id param)", true},
     };
     return capabilities;
@@ -710,6 +714,16 @@ std::string exec_registry_command(
         auto id = kv.find("id");
         if (id == kv.end()) return "err missing id";
         return api_focus_window(app, id->second);
+    }
+    if (name == "raise_window") {
+        auto it = kv.find("id");
+        if (it == kv.end()) return "err missing id";
+        return api_raise_window(app, it->second);
+    }
+    if (name == "lower_window") {
+        auto it = kv.find("id");
+        if (it == kv.end()) return "err missing id";
+        return api_lower_window(app, it->second);
     }
     if (name == "close_window") {
         auto id = kv.find("id");

@@ -200,8 +200,8 @@ class Controller:
                                 w=win_data.get("width", win_data.get("w", 40)),
                                 h=win_data.get("height", win_data.get("h", 12))
                             ),
-                            z=0,  # C++ doesn't provide z-order
-                            focused=False,  # Will be determined later
+                            z=int(win_data.get("z", 0)),
+                            focused=bool(win_data.get("focused", False)),
                             props=props,
                         )
                         new_windows.append(win)
