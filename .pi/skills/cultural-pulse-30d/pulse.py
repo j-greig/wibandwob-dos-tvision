@@ -909,8 +909,10 @@ examples:
     else:
         sections = DEFAULT_SECTIONS
 
-    results: dict[str, list[dict]] = {}
-    for section in sections:
+    # Parallel fetch — all sources concurrently via thread pool
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _fetch_one(section: str) -> tuple[str, list[dict]]:
         print(f"Fetching {section}...", file=sys.stderr)
         fetcher = FETCHERS[section]
         kwargs: dict[str, Any] = {"days": args.days, "topic": args.topic}
@@ -920,11 +922,22 @@ examples:
             kwargs["bbc_sections"] = bbc_sections
         if section == "gnews" and gnews_topic:
             kwargs["gnews_topic"] = gnews_topic
-        result = fetcher(**kwargs)
+        try:
+            result = fetcher(**kwargs)
+        except Exception as e:
+            print(f"  {section} failed: {e}", file=sys.stderr)
+            result = []
         if args.limit:
             result = result[:args.limit]
-        results[section] = result
-        print(f"  {len(result)} items", file=sys.stderr)
+        print(f"  {section}: {len(result)} items", file=sys.stderr)
+        return section, result
+
+    results: dict[str, list[dict]] = {}
+    with ThreadPoolExecutor(max_workers=len(sections)) as pool:
+        futures = {pool.submit(_fetch_one, s): s for s in sections}
+        for future in as_completed(futures):
+            section, items = future.result()
+            results[section] = items
 
     if args.json:
         output = format_json_output(results, args.days)
