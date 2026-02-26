@@ -78,18 +78,17 @@ gh pr create --title "feat/e006: scramble three-state F8 cycle + visual polish" 
 ```bash
 # Terminal 1 — TUI
 cd /Users/james/Repos/wibandwob-dos
-tmux new-session -s wibwob ./build/app/test_pattern
+tmux new-session -s wibwob ./build/app/wwdos
 
-# Terminal 2 — API (with auto-reload)
+# Terminal 2 — API (auto-connects to /tmp/wwdos.sock)
 cd /Users/james/Repos/wibandwob-dos
-WIBWOB_INSTANCE=1 ./tools/api_server/venv/bin/uvicorn tools.api_server.main:app \
-  --host 127.0.0.1 --port 8089 --reload
+./start_api_server.sh
 
 # Build (if you edit C++)
-cmake --build build --target test_pattern -j4
+cmake --build build --target wwdos -j4
 
 # Binary is at:
-./build/app/test_pattern   # NOT ./build/test_pattern (friction log #17)
+./build/app/wwdos
 ```
 
 Canvas is **362×84** (Cinema Display). API port **8089**.
@@ -135,7 +134,7 @@ Branch: feat/scramble-visual-polish
 5. Fix anything broken, then commit and open a PR
 
 ## Key Context
-- API port: 8089, WIBWOB_INSTANCE=1
+- API port: 8089, socket: /tmp/wwdos.sock
 - Canvas: 362×84
 - SHADOW_W=2, SHADOW_H=1 — never change
 - Epic: E006 scramble TUI presence (.planning/epics/e006-scramble-tui-presence/e006-epic-brief.md)

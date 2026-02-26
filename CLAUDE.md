@@ -31,32 +31,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## ⚡ Quick start — copy-paste to get a working stack
 
-**Both TUI and API must use the same `WIBWOB_INSTANCE` or they connect to different sockets and IPC fails silently.**
-
 ```bash
-# 1. Kill everything stale
-pkill -f wwdos 2>/dev/null || true
-tmux kill-session -t wibwob 2>/dev/null || true
-rm -f /tmp/wibwob_1.sock /tmp/wwdos.sock
+# 1. Build
+cmake --build ./build --target wwdos -j$(nproc)
 
-# 2. Start TUI with WIBWOB_INSTANCE=1  →  socket: /tmp/wibwob_1.sock
-WIBWOB_INSTANCE=1 tmux new-session -d -s wibwob "./build/app/wwdos 2>/tmp/wibwob_debug.log"
-until [ -S /tmp/wibwob_1.sock ]; do sleep 0.5; done && echo "TUI socket ready"
+# 2. Start TUI (socket: /tmp/wwdos.sock)
+./build/app/wwdos 2>/tmp/wibwob_debug.log &
+until [ -S /tmp/wwdos.sock ]; do sleep 0.5; done && echo "TUI ready"
 
-# 3. Attach so canvas locks to your real terminal size, then detach
-tmux attach -t wibwob   # Ctrl-B D to detach
+# 3. Start API (connects to same socket automatically)
+./start_api_server.sh
 
-# 4. Start API with WIBWOB_INSTANCE=1  →  connects to same socket
-WIBWOB_INSTANCE=1 ./tools/api_server/venv/bin/uvicorn \
-  tools.api_server.main:app --host 127.0.0.1 --port 8089 --reload
-
-# 5. Verify
+# 4. Verify
 curl http://127.0.0.1:8089/health   # → {"ok":true}
-curl -s http://127.0.0.1:8089/state | python3 -c \
-  "import json,sys; d=json.load(sys.stdin); print(d['canvas'])"  # → real canvas size
 ```
 
-**If IPC gives "Connection refused":** check `tail -3 /tmp/wibwob_debug.log` — if it says `socket=/tmp/wwdos.sock` the TUI was started without `WIBWOB_INSTANCE=1`. Kill and restart from step 1.
+**Multi-instance** (rare): set `WIBWOB_INSTANCE=N` on both TUI and API → socket becomes `/tmp/wibwob_N.sock`.
 
 ## Project Overview
 
@@ -124,12 +114,12 @@ Use the **Quick start** section above as the authoritative startup recipe (TUI +
 ### Headless/tmux addendum
 
 ```bash
-# After starting the stack from Quick start, attach once so the canvas locks to your real terminal size
+# Run TUI in tmux, attach once to lock canvas size, then detach
+tmux new-session -d -s wibwob "./build/app/wwdos 2>/tmp/wibwob_debug.log"
 tmux attach -t wibwob   # Ctrl-B D to detach
 
-# Optional: run API in background tmux (same WIBWOB_INSTANCE as the TUI)
-tmux new-session -d -s wibwob-api \
-  "WIBWOB_INSTANCE=1 ./tools/api_server/venv/bin/uvicorn tools.api_server.main:app --host 127.0.0.1 --port 8089 --reload 2>&1 | tee /tmp/wibwob_api.log"
+# Run API in background tmux
+tmux new-session -d -s wibwob-api "./start_api_server.sh"
 ```
 
 ### Minimal verification loop
@@ -148,7 +138,7 @@ cat "$(ls -t logs/screenshots/tui_*.txt | head -1)"
 - **SDK bridge npm install**: if the Wib&Wob chat window silently times out, run `cd app/llm/sdk_bridge && npm install`. The `node_modules/` dir is gitignored and must be installed on each fresh clone.
 - **API hot-reload**: always start uvicorn with `--reload` (see above). Python edits take effect automatically — no restart needed.
 - **tmux terminal size**: do NOT pass `-x`/`-y` to `tmux new-session`. Let the session inherit your real terminal dimensions on first attach. Hardcoding a size larger than your terminal causes gallery placements to appear off-screen. After `tmux attach -t wibwob && Ctrl-B D`, the canvas locks to your viewport.
-- **Socket path**: the default socket is `/tmp/wwdos.sock`. If using multi-instance, set `WIBWOB_INSTANCE=N` for `/tmp/wibwob_N.sock`.
+- **Socket path**: default `/tmp/wwdos.sock`. Multi-instance: `WIBWOB_INSTANCE=N` → `/tmp/wibwob_N.sock`.
 - **First run dependency install**: `uv run --with-requirements` downloads packages on first invocation (~3-8s). Subsequent runs use cache.
 - **`/menu/command` vs `/windows`**: use `/menu/command` for the command registry (C++ dispatch, works for all commands). The `/windows` endpoint validates against the Python `WindowType` enum which may lag behind C++ if the server was started before code changes.
 
@@ -170,7 +160,7 @@ Human / AI Agent
               │  ├─ Chat interface (wibwob_view)  │
               │  └─ IPC socket listener           │
               └───────────┬──────────────────────┘
-                          │ Unix socket (/tmp/wibwob_N.sock or default /tmp/wwdos.sock)
+                          │ Unix socket (/tmp/wwdos.sock)
               ┌───────────▼──────────────────────┐
               │  FastAPI Server (Python)          │
               │  tools/api_server/main.py         │
@@ -253,6 +243,35 @@ curl -X POST .../gallery/arrange -d '{"show_title":true,...}'
 `shadowless` → clears `sfShadow` state flag post-construction.
 `title` kv arg → passed as `aTitle` to `TWindow`; visible only when framed.
 
+### FIGlet Typography System
+
+**Core files**: `app/figlet_utils.h/.cpp`, `app/figlet_text_view.h/.cpp`
+**Font catalogue**: `modules/wibwob-figlet-fonts/fonts.json` — 148 fonts with metadata
+**Skill**: `.pi/skills/figlet-videographer/SKILL.md`
+
+**Font height index** — every font has a fixed character height (lines per row of rendered text). The catalogue stores this in `font_metadata`:
+
+```cpp
+int h = figlet::fontHeight("banner");   // → 7
+int h = figlet::fontHeight("isometric1"); // → 11
+```
+
+Common font heights: mini=4, small=5, standard=6, big=8, banner=7, banner3-D=8, block=8, doom=8, gothic=9, larry3d=9, isometric1=11, 3-d=8.
+
+**Wrap detection** — if figlet output has more lines than `fontHeight()`, the text wrapped into multiple rows. The auto-sizer uses this: `if (total_lines > font_height) lines = font_height` to cap window height to one row.
+
+**Auto-sizing** — `api_spawn_figlet_text()` renders at unlimited width, measures max line width and line count, then sizes the window to fit: `width = maxW + 6` (borders + padding), `height = lines + 3`.
+
+**Window management via API**:
+- `open_figlet_text` — open auto-sized window (text, font args)
+- `move_window` / `resize_window` — position by ID (id, x, y / id, w, h)
+- `figlet_set_text` / `figlet_set_font` / `figlet_set_color` — mutate in-place
+- `window_shadow` — toggle shadow (id, on=true/false)
+- `preview_figlet` — render without opening a window (returns text)
+- `list_figlet_fonts` — returns all 148 font names
+
+**Concrete poetry** — the figlet-videographer skill composes spatial word arrangements on the desktop canvas. See `.pi/skills/figlet-videographer/examples/` for timeline JSON format and playback script.
+
 ### Turbo Vision ANSI Rendering Rule
 
 When implementing image/terminal-rich rendering in Turbo Vision views:
@@ -298,8 +317,7 @@ Opened via `open_micropolis_ascii` command. Guardrail: no raw ANSI bytes in any 
 
 | Variable | Effect |
 |----------|--------|
-| `WIBWOB_INSTANCE` | Instance ID (e.g. `1`, `2`). Drives socket path `/tmp/wibwob_N.sock`. Unset = default `/tmp/wwdos.sock` |
-| `TV_IPC_SOCK` | Explicit socket path override (Python only, takes priority over `WIBWOB_INSTANCE`) |
+| `WIBWOB_INSTANCE` | Multi-instance only. Set to `N` on both TUI and API → socket `/tmp/wibwob_N.sock`. Unset = `/tmp/wwdos.sock` |
 | `WIBWOB_REPO_ROOT` | Repo root for API server (set automatically by `start_api_server.sh`). Prevents cross-checkout path mismatch when API server and TUI run from different repo copies |
 
 Launch multiple instances: `./tools/scripts/launch_tmux.sh [N]` (tmux + monitor sidebar).

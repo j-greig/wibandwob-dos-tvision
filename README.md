@@ -140,7 +140,7 @@ Serve WibWob-DOS to a web browser via [ttyd](https://github.com/nicm/ttyd) PTY b
 ```bash
 brew install ttyd  # macOS
 ttyd --port 7681 --writable -t fontSize=14 -t 'theme={"background":"#000000"}' \
-  bash -c 'cd /path/to/repo && TERM=xterm-256color WIBWOB_INSTANCE=1 exec ./build/app/wwdos'
+  bash -c 'cd /path/to/repo && TERM=xterm-256color exec ./build/app/wwdos'
 # Open http://localhost:7681 in browser
 ```
 
