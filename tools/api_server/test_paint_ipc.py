@@ -13,23 +13,16 @@ AC-6: changeBounds is implemented in paint_canvas.cpp
 AC-7: Palette FG/BG chip code is present in paint_palette.cpp
 """
 
-import os
 import socket
 import sys
 import glob
 import re
-
-
-def _sock_path():
-    inst = os.environ.get("WIBWOB_INSTANCE")
-    if inst:
-        return f"/tmp/wibwob_{inst}.sock"
-    return "/tmp/wwdos.sock"
+from ipc_client import resolve_sock_path
 
 
 def _send(cmd: str) -> str:
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.connect(_sock_path())
+    s.connect(resolve_sock_path())
     s.sendall((cmd + "\n").encode())
     chunks = []
     s.settimeout(2.0)

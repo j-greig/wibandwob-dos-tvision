@@ -8,7 +8,7 @@
 sequenceDiagram
     participant A as Agent / API caller
     participant PY as FastAPI :8089<br/>(tools/api_server/)
-    participant IPC as Unix socket<br/>/tmp/wibwob_1.sock
+    participant IPC as Unix socket<br/>/tmp/wwdos.sock
     participant REG as command_registry.cpp
     participant APP as wwdos_app.cpp<br/>api_wibwob_ask()
     participant TV as Turbo Vision<br/>main UI thread

@@ -1,0 +1,114 @@
+{
+  "_note": "Vocabulary not jukebox. These inform decisions, not dictate them. Use drums_from_string() patterns directly.",
+
+  "dnb": {
+    "bpm": 170,
+    "drums": "K..K.S..K..K.S..|h.h.h.h.h.h.h.h.",
+    "bass": "reese",
+    "bass_register": "1-2",
+    "crush": 3,
+    "texture": "sparse noise_breath, ghost_echo for dub delay",
+    "key_vibe": "dark, relentless, breakbeat energy, jungle cat through concrete",
+    "references": "Goldie, LTJ Bukem, Roni Size, Photek"
+  },
+
+  "hiphop": {
+    "bpm": 85,
+    "drums": "K...S...k.K.S..s|h.h.h.h.h.h.h.h.",
+    "bass": "sine sub, simple pattern",
+    "bass_register": "1",
+    "crush": 6,
+    "texture": "noise_breath for vinyl crackle (n=25, low vol), warm triangle pad",
+    "swing": 0.02,
+    "key_vibe": "lazy, head-nod, lo-fi warmth, fire escape vibes",
+    "references": "J Dilla, Madlib, MF DOOM, Nujabes"
+  },
+
+  "italo_disco": {
+    "bpm": 120,
+    "drums": "K.H.C.H.K.H.C.H.",
+    "bass": "arpeggiated 8th notes: root-5th-octave-5th pattern",
+    "bass_register": "2-3",
+    "crush": 5,
+    "texture": "bright square melody, detuned sawtooth pads, sparkle runs at transitions",
+    "key_vibe": "dramatic, European melancholy, synth-driven, Moroder pulse",
+    "references": "Giorgio Moroder, Gazebo, Koto, Den Harrow"
+  },
+
+  "ambient": {
+    "bpm": 60,
+    "drums": null,
+    "bass": "drone with slow tremolo",
+    "bass_register": "1-2",
+    "crush": 8,
+    "texture": "noise_breath, ghost_echo, sub_rumble, long reverb tails",
+    "key_vibe": "spacious, contemplative, breath between sounds IS the music",
+    "references": "Brian Eno, Stars of the Lid, William Basinski"
+  },
+
+  "gabber": {
+    "bpm": 200,
+    "drums": "K.K.K.K.",
+    "bass": "square stab, aggressive duty cycle",
+    "bass_register": "1-2",
+    "crush": 2,
+    "texture": "harsh, distorted, minimal layers, stinger hits",
+    "key_vibe": "violent, unapologetic, industrial warehouse at 4am",
+    "references": "Rotterdam Terror Corps, Neophyte, The Speed Freak"
+  },
+
+  "detroit_techno": {
+    "bpm": 130,
+    "drums": "K.h.S.h.K.h.S.h.|..H...H...H...H.",
+    "bass": "sawtooth with moderate lowpass",
+    "bass_register": "2",
+    "crush": 5,
+    "texture": "clean pads, sparkle accents, sub_rumble foundation",
+    "key_vibe": "futuristic, soulful machines, cosmic, Belleville Three",
+    "references": "Juan Atkins, Derrick May, Kevin Saunderson, Jeff Mills"
+  },
+
+  "dub": {
+    "bpm": 75,
+    "drums": "K...S...|..h...h.",
+    "bass": "sine with heavy delay and reverb",
+    "bass_register": "1-2",
+    "crush": 6,
+    "texture": "heavy delay (400ms+), long reverb, ghost_echo everywhere, noise_breath for tape hiss",
+    "key_vibe": "spacious, echo-drenched, bass pressure, Kingston midnight",
+    "references": "King Tubby, Lee Scratch Perry, Mad Professor, Basic Channel"
+  },
+
+  "bossa_nova": {
+    "bpm": 140,
+    "drums": "K..k.S.k.K.k.S.k.",
+    "bass": "triangle walking bass, root-5th-octave patterns",
+    "bass_register": "2-3",
+    "crush": 7,
+    "texture": "warm triangle arps, sine pads, minimal effects, clean and intimate",
+    "key_vibe": "gentle, sophisticated, sunlit, café at golden hour",
+    "references": "Tom Jobim, Joao Gilberto, Stan Getz"
+  },
+
+  "grime": {
+    "bpm": 140,
+    "drums": "K..K.S..|K.k.S..K|..h.h.h.h.h.h.h.",
+    "bass": "square sub wobble, aggressive lowpass sweeps",
+    "bass_register": "1-2",
+    "crush": 3,
+    "texture": "sparse, aggressive, ice-cold synth stabs, skippy hi-hats",
+    "key_vibe": "cold, urban, confrontational, East London pirate radio",
+    "references": "Wiley, Dizzee Rascal, Skepta, Plastician"
+  },
+
+  "vaporwave": {
+    "bpm": 80,
+    "drums": "K...S...|..h...h.",
+    "bass": "sine sub, slow and dreamy",
+    "bass_register": "2",
+    "crush": 8,
+    "texture": "everything through heavy reverb + lowpass, bitcrush 8 for warm SNES feel, tremolo on pads",
+    "key_vibe": "nostalgic, mall at 3am, dead consumerism, beautiful decay",
+    "references": "Macintosh Plus, Saint Pepsi, Chuck Person"
+  }
+}

@@ -395,6 +395,14 @@ int fontIndex(const std::string& name) {
     return -1;
 }
 
+int fontHeight(const std::string& name) {
+    const auto& cat = catalogue();
+    auto it = cat.metadata.find(name);
+    if (it != cat.metadata.end() && it->second.height > 0)
+        return it->second.height;
+    return 0;
+}
+
 } // namespace figlet
 
 // ── Menu builder (outside namespace — uses tvision types) ────────────────────

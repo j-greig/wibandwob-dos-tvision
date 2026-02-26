@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "title": "we drift through static (spoken)",
+    "author": "wib & wob",
+    "canvas": { "width": 152, "height": 46 },
+    "bg": { "fg": 0, "bg": 0, "texture": " " },
+    "gallery_mode": true,
+    "speech": {
+      "enabled": true,
+      "default_voice": "Wobble",
+      "default_rate": 140
+    }
+  },
+  "frames": [
+    {
+      "t": 0.0,
+      "transition": "typewriter",
+      "typewriter_delay": 1.5,
+      "words": [
+        { "text": "we",      "font": "standard", "x": 5,  "y": 2,  "say": { "voice": "Whisper", "rate": 100 } },
+        { "text": "drift",   "font": "banner",   "x": 25, "y": 1,  "say": { "voice": "Wobble" } }
+      ]
+    },
+    {
+      "t": 4.0,
+      "transition": "typewriter",
+      "typewriter_delay": 1.2,
+      "words": [
+        { "text": "through", "font": "small",    "x": 85, "y": 5,  "say": { "voice": "Trinoids", "rate": 120 } }
+      ]
+    },
+    {
+      "t": 6.5,
+      "transition": "typewriter",
+      "typewriter_delay": 1.0,
+      "words": [
+        { "text": "static",  "font": "big",      "x": 8,  "y": 10, "say": { "voice": "Zarvox", "rate": 80 } },
+        { "text": "and",     "font": "mini",      "x": 48, "y": 12, "say": { "voice": "Whisper" } },
+        { "text": "light",   "font": "standard",  "x": 60, "y": 9,  "say": { "voice": "Bells" } }
+      ]
+    },
+    {
+      "t": 11.0,
+      "transition": "typewriter",
+      "typewriter_delay": 0.8,
+      "words": [
+        { "text": "the",     "font": "mini",      "x": 92, "y": 14, "say": { "voice": "Whisper", "rate": 90 } },
+        { "text": "signal",  "font": "big",       "x": 20, "y": 17, "say": { "voice": "Cellos" } },
+        { "text": "fades",   "font": "small",     "x": 70, "y": 19, "say": { "voice": "Wobble", "rate": 60 } }
+      ]
+    },
+    {
+      "t": 15.0,
+      "transition": "typewriter",
+      "typewriter_delay": 0.6,
+      "words": [
+        { "text": "into",    "font": "mini",      "x": 108, "y": 17, "say": { "voice": "Bubbles" } },
+        { "text": "noise",   "font": "standard",  "x": 95,  "y": 21, "say": { "voice": "Bad News", "rate": 70 } }
+      ]
+    },
+    {
+      "t": 18.0,
+      "transition": "typewriter",
+      "typewriter_delay": 0.8,
+      "words": [
+        { "text": "we",      "font": "mini",      "x": 55, "y": 25, "say": { "voice": "Whisper" } },
+        { "text": "still",   "font": "small",     "x": 25, "y": 27, "say": { "voice": "Wobble", "rate": 50 } },
+        { "text": "but",     "font": "mini",      "x": 10, "y": 25, "say": { "voice": "Trinoids" } },
+        { "text": "listen",  "font": "big",       "x": 85, "y": 27, "say": { "voice": "Good News", "rate": 180 } }
+      ]
+    }
+  ]
+}

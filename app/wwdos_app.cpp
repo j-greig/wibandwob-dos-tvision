@@ -945,6 +945,9 @@ private:
     friend void api_spawn_figlet_text(TWwdosApp&, const TRect*,
         const std::string& text, const std::string& font,
         bool frameless, bool shadowless);
+    friend void api_spawn_figlet_text_at(TWwdosApp&,
+        const std::string& text, const std::string& font, int x, int y,
+        bool frameless, bool shadowless);
     friend std::string api_figlet_set_text(TWwdosApp&, const std::string& id, const std::string& text);
     friend std::string api_figlet_set_font(TWwdosApp&, const std::string& id, const std::string& font);
     friend std::string api_figlet_set_color(TWwdosApp&, const std::string& id, const std::string& fg, const std::string& bg);
@@ -993,38 +996,19 @@ TWwdosApp::TWwdosApp() :
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
 
-    // Derive socket path from WIBWOB_INSTANCE env var.
-    // Unset or empty: new default path with one-cycle legacy fallback.
+    // Socket path: /tmp/wwdos.sock (default) or /tmp/wibwob_N.sock (multi-instance).
     std::string sockPath = "/tmp/wwdos.sock";
     const char* inst = std::getenv("WIBWOB_INSTANCE");
-    bool usedLegacyDefaultSock = false;
-    if (inst && inst[0] != '\0') {
+    if (inst && inst[0] != '\0')
         sockPath = std::string("/tmp/wibwob_") + inst + ".sock";
-        fprintf(stderr, "[wibwob] instance=%s socket=%s\n", inst, sockPath.c_str());
-    } else {
-        fprintf(stderr, "[wibwob] instance=(none) socket=%s\n", sockPath.c_str());
-    }
-    bool ipcStarted = ipcServer->start(sockPath);
-    if (!ipcStarted && (!inst || inst[0] == '\0') && sockPath == "/tmp/wwdos.sock") {
-        const std::string legacySockPath = "/tmp/test_pattern_app.sock";
-        fprintf(stderr, "[wibwob] WARN: IPC start failed on %s, retrying legacy socket %s\n",
-                sockPath.c_str(), legacySockPath.c_str());
-        sockPath = legacySockPath;
-        ipcStarted = ipcServer->start(sockPath);
-        usedLegacyDefaultSock = ipcStarted;
-    }
-    if (!ipcStarted) {
+    fprintf(stderr, "[wibwob] IPC socket: %s\n", sockPath.c_str());
+
+    if (!ipcServer->start(sockPath)) {
         fprintf(stderr, "[wibwob] ERROR: IPC server failed to start on %s\n", sockPath.c_str());
-        // Hard-disable IPC on startup failure so later idle/event paths
-        // never touch a server that failed to bind.
         delete ipcServer;
         ipcServer = nullptr;
     } else {
-        if (usedLegacyDefaultSock) {
-            fprintf(stderr, "[wibwob] IPC server started on legacy socket %s\n", sockPath.c_str());
-        } else {
-            fprintf(stderr, "[wibwob] IPC server started on %s\n", sockPath.c_str());
-        }
+        fprintf(stderr, "[wibwob] IPC server started on %s\n", sockPath.c_str());
     }
 
     // Auto-restore layout from env var (room deployment).
@@ -4836,12 +4820,65 @@ void api_spawn_figlet_text(TWwdosApp& app, const TRect* bounds,
     const std::string& text, const std::string& font,
     bool frameless, bool shadowless) {
     TRect desk = app.deskTop->getExtent();
-    TRect r = bounds ? *bounds : TRect(
-        desk.b.x / 6, desk.b.y / 4,
-        desk.b.x * 5 / 6, desk.b.y * 3 / 4);
+    TRect r;
+    if (bounds) {
+        r = *bounds;
+    } else {
+        // Auto-size: render the figlet text at unlimited width, measure it.
+        std::string rendered = figlet::render(text, font, 0);
+        int maxW = 0, lines = 0;
+        size_t pos = 0;
+        while (pos < rendered.size()) {
+            size_t nl = rendered.find('\n', pos);
+            if (nl == std::string::npos) nl = rendered.size();
+            int len = static_cast<int>(nl - pos);
+            if (len > maxW) maxW = len;
+            ++lines;
+            pos = nl + 1;
+        }
+        // Detect figlet wrapping: if total lines > font char height, the text
+        // wrapped into multiple rows. Use only the first row's height.
+        int fh = figlet::fontHeight(font);
+        if (fh > 0 && lines > fh) {
+            lines = fh;  // show one row — window will be sized to fit it
+        }
+        // Chrome: 2 for window borders + 2 padding so figlet doesn't re-wrap
+        int w = std::min(maxW + 6, (int)desk.b.x - 2);
+        int h = std::min(lines + 3, (int)desk.b.y - 2);  // +2 border +1 breathing room
+        // Centre on desktop
+        int x = (desk.b.x - w) / 2;
+        int y = (desk.b.y - h) / 2;
+        r = TRect(x, y, x + w, y + h);
+    }
     TFigletTextWindow* w = new TFigletTextWindow(r, text, font, frameless, shadowless);
     app.deskTop->insert(w);
     app.registerWindow(w);
+}
+
+void api_spawn_figlet_text_at(TWwdosApp& app,
+    const std::string& text, const std::string& font, int x, int y,
+    bool frameless, bool shadowless) {
+    TRect desk = app.deskTop->getExtent();
+    // Auto-size: render at unlimited width, measure
+    std::string rendered = figlet::render(text, font, 0);
+    int maxW = 0, lines = 0;
+    size_t pos = 0;
+    while (pos < rendered.size()) {
+        size_t nl = rendered.find('\n', pos);
+        if (nl == std::string::npos) nl = rendered.size();
+        int len = static_cast<int>(nl - pos);
+        if (len > maxW) maxW = len;
+        ++lines;
+        pos = nl + 1;
+    }
+    int fh = figlet::fontHeight(font);
+    if (fh > 0 && lines > fh) lines = fh;
+    int w = std::min(maxW + 6, (int)desk.b.x - 2);
+    int h = std::min(lines + 3, (int)desk.b.y - 2);
+    TRect r(x, y, x + w, y + h);
+    TFigletTextWindow* win = new TFigletTextWindow(r, text, font, frameless, shadowless);
+    app.deskTop->insert(win);
+    app.registerWindow(win);
 }
 
 static TFigletTextWindow* findFigletWindow(TWwdosApp& app, const std::string& id) {

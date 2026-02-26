@@ -1,22 +1,14 @@
 #!/usr/bin/env python3
-import os
 import socket
 import time
-
-
-def _sock_path():
-    inst = os.environ.get("WIBWOB_INSTANCE")
-    if inst:
-        return f"/tmp/wibwob_{inst}.sock"
-    return "/tmp/wwdos.sock"
+from ipc_client import resolve_sock_path
 
 
 def send_ipc_cmd(cmd_str):
     """Send command directly to IPC socket"""
-    sock_path = _sock_path()
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        s.connect(sock_path)
+        s.connect(resolve_sock_path())
         s.sendall((cmd_str + "\n").encode("utf-8"))
         response = s.recv(4096).decode("utf-8", errors="ignore")
         return response.strip()

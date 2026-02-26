@@ -26,11 +26,11 @@ from typing import Dict, List, Set, Tuple
 
 
 def discover_sockets() -> List[str]:
-    """Find all /tmp/wibwob_*.sock files plus legacy path."""
-    socks = sorted(glob.glob("/tmp/wibwob_*.sock"))
-    legacy = "/tmp/test_pattern_app.sock"
-    if os.path.exists(legacy) and legacy not in socks:
-        socks.insert(0, legacy)
+    """Find all active WibWob IPC sockets."""
+    socks = []
+    if os.path.exists("/tmp/wwdos.sock"):
+        socks.append("/tmp/wwdos.sock")
+    socks += sorted(glob.glob("/tmp/wibwob_*.sock"))
     return socks
 
 

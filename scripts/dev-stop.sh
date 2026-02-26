@@ -26,5 +26,6 @@ fi
 tmux kill-session -t wibwob-api 2>/dev/null && echo "  stopped: API (wibwob-api)" || echo "  not running: wibwob-api"
 
 # ── Socket ────────────────────────────────────────────────────────────────────
-rm -f "/tmp/wibwob_${INSTANCE}.sock" && echo "  removed: /tmp/wibwob_${INSTANCE}.sock" || true
+rm -f "/tmp/wibwob_${INSTANCE}.sock" "/tmp/wwdos.sock" 2>/dev/null
+echo "  cleaned up sockets"
 echo "done."

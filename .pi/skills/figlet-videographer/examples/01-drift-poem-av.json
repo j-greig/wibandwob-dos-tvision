@@ -1,0 +1,85 @@
+{
+  "meta": {
+    "title": "we drift through static (a/v)",
+    "author": "wib & wob",
+    "canvas": { "width": 152, "height": 46 },
+    "bg": { "fg": 0, "bg": 0, "texture": " " },
+    "gallery_mode": true,
+    "audio": {
+      "backing": "/Users/james/Repos/wibandwob-heartbeat/output/blue-peter-chiptune.mp3",
+      "stingers": {
+        "reveal": "/Users/james/Repos/wibandwob-heartbeat/output/scramble-microfilm-v2/interstitials/recursive-stinger.mp3",
+        "accent": "/Users/james/Repos/wibandwob-heartbeat/output/scramble-microfilm-v2/interstitials/classified-stinger.mp3",
+        "drop":   "/Users/james/Repos/wibandwob-heartbeat/output/cowork-oops/but-stinger.mp3"
+      }
+    }
+  },
+  "frames": [
+    {
+      "t": 0.0,
+      "transition": "typewriter",
+      "typewriter_delay": 1.2,
+      "audio_cue": "reveal",
+      "words": [
+        { "text": "we",      "font": "standard", "x": 5,  "y": 2 },
+        { "text": "drift",   "font": "banner",   "x": 25, "y": 1 }
+      ]
+    },
+    {
+      "t": 3.0,
+      "transition": "typewriter",
+      "typewriter_delay": 1.0,
+      "audio_cue": "accent",
+      "words": [
+        { "text": "through", "font": "small",    "x": 85, "y": 5 }
+      ]
+    },
+    {
+      "t": 5.0,
+      "transition": "typewriter",
+      "typewriter_delay": 0.8,
+      "primer": "minds-meet-architecture.txt",
+      "primer_pos": { "x": 110, "y": 1 },
+      "words": [
+        { "text": "static",  "font": "big",      "x": 8,  "y": 10 },
+        { "text": "and",     "font": "mini",      "x": 48, "y": 12 },
+        { "text": "light",   "font": "standard",  "x": 60, "y": 9 }
+      ]
+    },
+    {
+      "t": 9.0,
+      "transition": "typewriter",
+      "typewriter_delay": 0.6,
+      "audio_cue": "reveal",
+      "words": [
+        { "text": "the",     "font": "mini",      "x": 92, "y": 14 },
+        { "text": "signal",  "font": "big",       "x": 20, "y": 17 },
+        { "text": "fades",   "font": "small",     "x": 70, "y": 19 }
+      ]
+    },
+    {
+      "t": 13.0,
+      "transition": "typewriter",
+      "typewriter_delay": 0.5,
+      "audio_cue": "accent",
+      "primer": "brain-loop.txt",
+      "primer_pos": { "x": 120, "y": 22 },
+      "words": [
+        { "text": "into",    "font": "mini",      "x": 108, "y": 17 },
+        { "text": "noise",   "font": "standard",  "x": 95,  "y": 21 }
+      ]
+    },
+    {
+      "t": 16.0,
+      "transition": "typewriter",
+      "typewriter_delay": 0.7,
+      "audio_cue": "drop",
+      "words": [
+        { "text": "we",      "font": "mini",      "x": 55, "y": 25 },
+        { "text": "still",   "font": "small",     "x": 25, "y": 27 },
+        { "text": "but",     "font": "mini",      "x": 10, "y": 25 },
+        { "text": "listen",  "font": "big",       "x": 85, "y": 27 }
+      ]
+    }
+  ]
+}

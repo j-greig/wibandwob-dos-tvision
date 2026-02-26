@@ -6,21 +6,19 @@ import base64
 from typing import Dict, Optional
 
 
-def _resolve_sock_path() -> str:
+def resolve_sock_path() -> str:
     """Resolve IPC socket path.
 
-    Priority: TV_IPC_SOCK (explicit) > WIBWOB_INSTANCE (derived) > default.
+    Default: /tmp/wwdos.sock (matches TUI default).
+    Multi-instance: set WIBWOB_INSTANCE=N on both TUI and API → /tmp/wibwob_N.sock.
     """
-    explicit = os.environ.get("TV_IPC_SOCK")
-    if explicit:
-        return explicit
     instance = os.environ.get("WIBWOB_INSTANCE")
     if instance:
         return f"/tmp/wibwob_{instance}.sock"
     return "/tmp/wwdos.sock"
 
 
-SOCK_PATH = _resolve_sock_path()
+SOCK_PATH = resolve_sock_path()
 
 
 def send_cmd(cmd: str, kv: Optional[Dict[str, str]] = None) -> str:
@@ -51,23 +49,8 @@ def send_cmd(cmd: str, kv: Optional[Dict[str, str]] = None) -> str:
 
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(5.0)  # 5 second timeout
-    try:
-        s.connect(path)
-    except OSError:
-        can_fallback = (
-            path == "/tmp/wwdos.sock"
-            and "TV_IPC_SOCK" not in os.environ
-            and not os.environ.get("WIBWOB_INSTANCE")
-        )
-        if not can_fallback:
-            s.close()
-            raise
-        s.close()
-        legacy_path = "/tmp/test_pattern_app.sock"
-        print(f"[IPC] fallback → {legacy_path}")
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(5.0)
-        s.connect(legacy_path)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
+    s.connect(path)
     try:
         parts = [f"cmd:{cmd}"]
         for k, v in (kv or {}).items():
@@ -85,7 +68,7 @@ def send_cmd(cmd: str, kv: Optional[Dict[str, str]] = None) -> str:
         s.sendall(line.encode("utf-8"))
         chunks = []
         while True:
-            chunk = s.recv(4096)
+            chunk = s.recv(65536)
             if not chunk:
                 break
             chunks.append(chunk)
