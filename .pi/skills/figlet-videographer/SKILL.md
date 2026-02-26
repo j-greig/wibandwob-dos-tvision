@@ -209,6 +209,27 @@ Best voices for wibwob: **Wobble** (warm), **Cellos** (deep/slow), **Whisper** (
 
 `open_figlet_text` now accepts `x`, `y` args — window appears directly at the target position (no centre→move jump). `play.py` uses this automatically when words have `x`/`y` set.
 
+## Recording
+
+`record.sh` captures a performance as .cast / .gif / .mp4 with audio:
+
+```bash
+# Record garden poem as GIF
+./examples/record.sh examples/03-garden-poem-av.json --gif
+
+# Record as MP4 with kibble-dnb backing track muxed in
+./examples/record.sh examples/03-garden-poem-av.json --mp4
+
+# Both
+./examples/record.sh examples/03-garden-poem-av.json --gif --mp4
+```
+
+Pipeline: `tmux capture-pane` (10fps polling) → asciicast v2 `.cast` → `agg` → `.gif` → `ffmpeg` + backing mp3 → `.mp4`
+
+Requirements: `agg` (`brew install agg`), `ffmpeg`, TUI running in tmux session `wwdos`.
+
+The `say` voices play live during recording (captured by system audio if screen-recording simultaneously). The `.mp4` muxes only the backing track — for full audio (backing + stingers + speech), use macOS screen recording alongside, or capture system audio with BlackHole/Loopback.
+
 ### Known issues
 
 - Duplicate word titles (e.g. two "we" windows) — second `place_word` may move the first
