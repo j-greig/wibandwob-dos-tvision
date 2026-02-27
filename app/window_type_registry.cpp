@@ -21,6 +21,7 @@
 #include "generative_monster_cam_view.h"
 #include "generative_monster_verse_view.h"
 #include "generative_monster_portal_view.h"
+#include "contour_map_view.h"
 #include "wibwob_view.h"
 #include "quadra_view.h"
 #include "snake_view.h"
@@ -64,6 +65,7 @@ extern void api_spawn_ascii(TWwdosApp&, const TRect*);
 extern void api_spawn_animated_gradient(TWwdosApp&, const TRect*);
 extern void api_spawn_monster_cam(TWwdosApp&, const TRect*);
 extern void api_spawn_monster_verse(TWwdosApp&, const TRect*);
+extern void api_spawn_contour_map(TWwdosApp&, const TRect*);
 extern void api_spawn_monster_portal(TWwdosApp&, const TRect*);
 extern void api_spawn_paint(TWwdosApp&, const TRect*);
 extern void api_spawn_micropolis_ascii(TWwdosApp&, const TRect*);
@@ -194,6 +196,10 @@ static const char* spawn_monster_cam(TWwdosApp& app,
     TRect r; api_spawn_monster_cam(app, opt_bounds(kv, r)); return nullptr;
 }
 
+static const char* spawn_contour_map(TWwdosApp& app,
+    const std::map<std::string,std::string>& kv) {
+    TRect r; api_spawn_contour_map(app, opt_bounds(kv, r)); return nullptr; }
+
 static const char* spawn_monster_verse(TWwdosApp& app,
                                         const std::map<std::string, std::string>& kv) {
     TRect r; api_spawn_monster_verse(app, opt_bounds(kv, r)); return nullptr;
@@ -284,6 +290,7 @@ static bool match_ascii(TWindow* w) { return has_child_view<TAnimatedAsciiView>(
 static bool match_animated_gradient(TWindow* w) { return has_child_view<TAnimatedHGradientView>(w); }
 static bool match_monster_cam(TWindow* w) { return has_child_view<TGenerativeMonsterCamView>(w); }
 static bool match_monster_verse(TWindow* w) { return has_child_view<TGenerativeMonsterVerseView>(w); }
+static bool match_contour_map(TWindow* w) { return has_child_view<TContourMapView>(w); }
 static bool match_monster_portal(TWindow* w) { return has_child_view<TGenerativeMonsterPortalView>(w); }
 static bool match_paint(TWindow* w) { return dynamic_cast<TPaintWindow*>(w) != nullptr; }
 static bool match_micropolis_ascii(TWindow* w) { return has_child_view<TMicropolisAsciiView>(w); }
@@ -321,6 +328,7 @@ static const WindowTypeSpec k_specs[] = {
     { "animated_gradient", spawn_animated_gradient, match_animated_gradient },
     { "monster_cam",       spawn_monster_cam,       match_monster_cam       },
     { "monster_verse",     spawn_monster_verse,     match_monster_verse     },
+    { "contour_map",       spawn_contour_map,       match_contour_map       },
     { "monster_portal",    spawn_monster_portal,    match_monster_portal    },
     { "paint",             spawn_paint,             match_paint             },
     { "micropolis_ascii",  spawn_micropolis_ascii,  match_micropolis_ascii  },
