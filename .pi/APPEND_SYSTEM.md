@@ -1,1 +1,0 @@
-/Users/james/Repos/wibandwob-dos/modules-private/wibwob-prompts/wibandwob.prompt.md

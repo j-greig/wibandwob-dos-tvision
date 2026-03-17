@@ -1,13 +1,17 @@
-# Private modules (primers, prompts, art packs)
-
 # Build
 build/
+build-*/
+cmake-build-*/
+_codeql_build_dir/
+_codeql_*
 
 # Python
 __pycache__/
 *.pyc
 venv/
 .venv/
+tools/api_server/venv/
+tools/room/__pycache__/
 
 # IDE
 .vscode/
@@ -17,6 +21,7 @@ venv/
 # Secrets / local config
 .mcp.json
 *.env
+.env
 
 # OS
 .DS_Store
@@ -32,37 +37,21 @@ Thumbs.db
 *.swp
 *~
 
-# Node
+# Node (PartyKit)
 node_modules/
 
 # Logs
 app/logs/
-logs/*
-!logs/agent-mailbox/
-!logs/agent-mailbox/**
-
-# Runtime cache
-cache/
-
-# Local workspace snapshots/artifacts
-workspaces/*
-!workspaces/.gitkeep
-
-# CoPilot
-_codeql_build_dir/
-_codeql_*
-build-linux/
-build-release/
-build-sprites/
-260219-*.txt
-build-asan/
+logs/
 wibwob_crash.log
 *.crash.log
-saves/
-tools/api_server/venv/
-workspaces/
-tools/room/__pycache__/
-.env
-scratch/
-logs/backrooms-tv/
 codex-*.log
+
+# Runtime
+cache/
+saves/
+scratch/
+
+# Workspaces
+workspaces/*
+!workspaces/.gitkeep
