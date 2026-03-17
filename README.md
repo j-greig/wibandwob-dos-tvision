@@ -1,7 +1,7 @@
 # WibWob-DOS — TVision/C++ Archive
 
 > [!NOTE]
-> **This repo is a read-only archive of the original C++ era of WibWob-DOS** (Feb–Mar 2026), built on [Turbo Vision](https://github.com/magiblot/tvision). The project has since been rewritten from scratch in TypeScript/Bun with [blessed](https://github.com/chjj/blessed).
+> **This repo is a read-only archive of the original C++ era of WibWob-DOS** (Feb–Mar 2026). The project has since been rewritten from scratch.
 >
 > 👉 **Active development continues at [j-greig/wibandwob-dos](https://github.com/j-greig/wibandwob-dos)**
 
