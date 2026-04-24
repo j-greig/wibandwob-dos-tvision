@@ -61,6 +61,7 @@
 #include <cstring>
 #include <ctime>
 #include <fstream>
+#include <map>
 #include <random>
 #include <sstream>
 #include <string>
@@ -171,12 +172,45 @@ struct Region {
     }
 };
 
-// Coordinates tuned to scenes/mycelium-pc-1985/scene.yaml
-static const Region R_CALC     = { 57, 10, 65, 21 };
-static const Region R_PALETTE  = { 66,  9, 73, 17 };
-static const Region R_BOARD    = { 43, 17, 55, 24 };
-static const Region R_CATALOG  = { 43, 10, 55, 15 };
-static const Region R_FACE     = {  8, 12, 29, 16 };
+// Fallback coordinates if tui.regions is missing. Kept in sync with
+// scenes/mycelium-pc-1985/scene.yaml by hand; at runtime we prefer the
+// named regions loaded from the sidecar (see load_regions() below).
+static const Region R_CALC_DEFAULT     = { 57, 10, 65, 21 };
+static const Region R_PALETTE_DEFAULT  = { 66,  9, 73, 17 };
+static const Region R_BOARD_DEFAULT    = { 43, 17, 55, 24 };
+static const Region R_CATALOG_DEFAULT  = { 43, 10, 55, 15 };
+static const Region R_FACE_DEFAULT     = {  8, 12, 29, 16 };
+
+// Parse tuiforge's tui.regions sidecar. Populates `out` with any
+// `region <name> <x0> <y0> <x1> <y1>` lines found. Returns true if
+// the file existed and was readable (even with zero regions).
+static bool load_regions(const std::string &dir,
+                         std::map<std::string, Region> &out) {
+    std::ifstream in(dir + "/tui.regions");
+    if (!in) return false;
+    std::string line;
+    auto isws = [](char c) { return c == ' ' || c == '\t' || c == '\r'; };
+    while (std::getline(in, line)) {
+        // strip comments
+        size_t hash = line.find('#');
+        if (hash != std::string::npos) line.resize(hash);
+        // trim
+        while (!line.empty() && isws(line.front())) line.erase(0, 1);
+        while (!line.empty() && isws(line.back()))  line.pop_back();
+        if (line.empty()) continue;
+
+        std::istringstream iss(line);
+        std::string kind;
+        iss >> kind;
+        if (kind != "region") continue;  // ignore canvas line, other kinds
+
+        std::string name;
+        int x0, y0, x1, y1;
+        if (!(iss >> name >> x0 >> y0 >> x1 >> y1)) continue;
+        out[name] = Region{x0, y0, x1, y1};
+    }
+    return true;
+}
 
 // ---------- app state ----------
 
@@ -306,8 +340,12 @@ static const std::array<SporeMove, 10> SPORE_SEQUENCE = {{
 // ---------- overlay application ----------
 
 // Apply all state-derived modifications to a mutable snapshot of the base grid.
-// Returns a grid that reflects the current AppState.
-static void apply_overlay(const TuiGrid &base, const AppState &s, TuiGrid &out) {
+// Returns a grid that reflects the current AppState. `regions` lets scene-
+// relative work (board cell iteration) resolve coords via named lookup
+// instead of hardcoded constants.
+static void apply_overlay(const TuiGrid &base, const AppState &s,
+                          const std::map<std::string, Region> &regions,
+                          TuiGrid &out) {
     out = base;  // copy
 
     // --- Calc display: right-align the current value in 7-char field at row 11, cols 58-64
@@ -401,13 +439,17 @@ static void apply_overlay(const TuiGrid &base, const AppState &s, TuiGrid &out) 
     }
 
     // --- Board spore breathing: existing spores pulse ● <-> ◉ / ○ <-> ◎
-    // Cells to inspect: any cell inside R_BOARD with a matching base glyph.
+    // Iterate the cells inside the named "board" region.
     if (s.spore_pulse) {
-        for (int row = R_BOARD.y0; row <= R_BOARD.y1; ++row) {
-            for (int col = R_BOARD.x0; col <= R_BOARD.x1; ++col) {
-                TuiCell &c = out.at(row, col);
-                if (c.glyph == "\xE2\x97\x8F") c.glyph = "\xE2\x97\x89"; // ● -> ◉
-                else if (c.glyph == "\xE2\x97\x8B") c.glyph = "\xE2\x97\x8E"; // ○ -> ◎
+        auto it = regions.find("board");
+        if (it != regions.end()) {
+            const Region &b = it->second;
+            for (int row = b.y0; row <= b.y1; ++row) {
+                for (int col = b.x0; col <= b.x1; ++col) {
+                    TuiCell &c = out.at(row, col);
+                    if (c.glyph == "\xE2\x97\x8F") c.glyph = "\xE2\x97\x89"; // ● -> ◉
+                    else if (c.glyph == "\xE2\x97\x8B") c.glyph = "\xE2\x97\x8E"; // ○ -> ◎
+                }
             }
         }
     }
@@ -546,7 +588,30 @@ public:
         }
         base = g;
 
+        // Load named regions from tui.regions if available; fall back to
+        // hardcoded defaults otherwise. Seed the fallbacks first, then
+        // overlay anything the sidecar provides (so missing names still
+        // resolve to a sensible region).
+        regions["calc"]     = R_CALC_DEFAULT;
+        regions["palette"]  = R_PALETTE_DEFAULT;
+        regions["board"]    = R_BOARD_DEFAULT;
+        regions["catalog"]  = R_CATALOG_DEFAULT;
+        regions["face"]     = R_FACE_DEFAULT;
+        if (load_regions(dir, regions)) {
+            std::fprintf(stderr, "mycelium_pc: loaded %zu named regions from tui.regions\n",
+                         regions.size());
+        } else {
+            std::fprintf(stderr, "mycelium_pc: tui.regions not found, using built-in defaults\n");
+        }
+
         spawnWindow();
+    }
+
+    // Safe lookup: returns a default Region if the name is absent.
+    const Region &region(const std::string &name) const {
+        static const Region empty{-1, -1, -2, -2};  // never contains anything
+        auto it = regions.find(name);
+        return (it == regions.end()) ? empty : it->second;
     }
 
     // Uniform random duration in [lo, hi] milliseconds.
@@ -603,11 +668,11 @@ public:
 
     // Called by the view on mouse clicks (col, row are grid coords).
     void handleClick(int col, int row) {
-        if (R_CALC.contains(col, row))        { cycleCalc(); return; }
-        if (R_PALETTE.contains(col, row))     { rotatePalette(); return; }
-        if (R_BOARD.contains(col, row))       { placeSpore(); return; }
-        if (R_CATALOG.contains(col, row))     { advanceCatalog(); return; }
-        if (R_FACE.contains(col, row))        { triggerBlink(); return; }
+        if (region("calc").contains(col, row))    { cycleCalc();       return; }
+        if (region("palette").contains(col, row)) { rotatePalette();   return; }
+        if (region("board").contains(col, row))   { placeSpore();      return; }
+        if (region("catalog").contains(col, row)) { advanceCatalog();  return; }
+        if (region("face").contains(col, row))    { triggerBlink();    return; }
     }
 
     void cycleCalc() {
@@ -686,6 +751,7 @@ public:
 
     const AppState &getState() const { return state; }
     const TuiGrid &getBase() const { return base; }
+    const std::map<std::string, Region> &getRegions() const { return regions; }
 
     static TMenuBar *initMenuBar(TRect r) {
         r.b.y = r.a.y + 1;
@@ -895,6 +961,7 @@ private:
     AppState state;
     MyceliumWindow *window = nullptr;
     std::mt19937 rng;
+    std::map<std::string, Region> regions;
 
     void spawnWindow() {
         TRect dr = deskTop->getExtent();
@@ -919,7 +986,7 @@ private:
 void MyceliumView::draw() {
     TuiGrid overlay;
     if (app) {
-        apply_overlay(base, app->getState(), overlay);
+        apply_overlay(base, app->getState(), app->getRegions(), overlay);
     } else {
         overlay = base;
     }
