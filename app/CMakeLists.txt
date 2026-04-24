@@ -117,6 +117,16 @@ add_executable(tuiforge_viewer
 )
 target_link_libraries(tuiforge_viewer PRIVATE tvision)
 
+# mycelium_pc (standalone interactive scene: Prof. Mycelium's HyphaeCom-1)
+# Loads tuiforge render at 80x50 and overlays click/key-driven state:
+# calc cycles, palette rotates, sporensi spores drop, Mycelium blinks,
+# LEDs flash. Default render path is $HOME/Repos/tuiforge/renders/
+# mycelium-pc-1985/default (override via argv[1]).
+add_executable(mycelium_pc
+    mycelium_pc.cpp
+)
+target_link_libraries(mycelium_pc PRIVATE tvision)
+
 # tvision_listbox_min (isolated scroll test used during tuiforge_viewer
 # debugging — standalone TListBox in a TWindow to rule out env issues.)
 add_executable(tvision_listbox_min tvision_listbox_min.cpp)
