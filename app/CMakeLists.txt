@@ -111,6 +111,17 @@ if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/ansi_viewer_main.cpp)
     target_link_libraries(ansi_viewer PRIVATE tvision)
 endif()
 
+# tuiforge_viewer (static viewer for tuiforge classified renders)
+add_executable(tuiforge_viewer
+    tuiforge_viewer.cpp
+)
+target_link_libraries(tuiforge_viewer PRIVATE tvision)
+
+# tvision_listbox_min (isolated scroll test used during tuiforge_viewer
+# debugging — standalone TListBox in a TWindow to rule out env issues.)
+add_executable(tvision_listbox_min tvision_listbox_min.cpp)
+target_link_libraries(tvision_listbox_min PRIVATE tvision)
+
 # paint_tui (painting MVP)
 add_executable(paint_tui
     paint/paint_app.cpp
