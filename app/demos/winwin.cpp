@@ -10,8 +10,11 @@
 // only the cells that changed, so a full-frame redraw stays cheap.
 //
 // Breathing loop: grid -> subdivide(dense) -> cascade/mirror -> MELT -> collapse.
-// Keys: g grid  s subdivide  c cascade  m mirror  . / , melt+/-  space freeze
-//       a auto-breathe  +/- window count  Esc/Alt-X quit
+// Keys: g grid  s subdivide(press repeatedly = finer)  c cascade  m mirror
+//       c/m KEEP the current window count   . start/accelerate pour  , ease off
+//       space freeze  a autoplay (choreographed scene loop)  +/- window count
+//       1-6 cascade stress (10..400)  Esc/Alt-X quit
+// Colour drifts per-window over time; melt has gravity (lower cells fall faster).
 //
 // Built by Wib & Wob for Zilla, 2026-06-21.   wib&wob
 
@@ -65,9 +68,9 @@ class TWinWin : public TView {
     std::vector<uchar> at;
     std::vector<Win> wins;
     Mode mode = M_GRID;
-    double clock = 0, melt = 0, autoT = 0;
+    double clock = 0, melt = 0, meltVel = 0, autoT = 0, sceneT = 0, sceneDur = 2.5;
     bool autoBreathe = false, frozen = false;
-    int nextId = 1, active = 12, subdivLevel = 1;
+    int nextId = 1, active = 12, subdivLevel = 1, scene = 0, sceneCount = 1;
     double drawMs = 0;   // EMA of compose+blit cost per frame
     std::chrono::steady_clock::time_point last;
 
@@ -161,33 +164,43 @@ public:
         int x = (int)std::lround(w.cx), y = (int)std::lround(w.cy);
         int ww = (int)std::lround(w.cw), wh = (int)std::lround(w.ch);
         if (ww < 4 || wh < 2) return;
+        // each window owns a background colour that SLOWLY DRIFTS over time, so the
+        // whole field shimmers through the palette instead of sitting flat red.
+        static const uchar PAL[6] = { 1, 2, 3, 5, 6, 4 };   // blue grn cyan mag brn red (bg)
+        uchar bg     = PAL[((unsigned)(w.id + (int)(clock * 0.7))) % 6];
+        uchar fill   = (uchar)((bg << 4) | 0x0F);           // bright white body
+        uchar border = (uchar)((bg << 4) | 0x0E);           // yellow frame
         // shadow (offset +2,+1) painted first; body overwrites the overlap
         for (int yy = y+1; yy <= y+wh; ++yy)
             for (int xx = x+2; xx <= x+ww+1; ++xx) put(xx, yy, ' ', A_SHADOW);
         // body fill
         for (int yy = y; yy <= y+wh; ++yy)
-            for (int xx = x; xx <= x+ww; ++xx) put(xx, yy, ' ', A_FILL);
+            for (int xx = x; xx <= x+ww; ++xx) put(xx, yy, ' ', fill);
         // border
-        for (int xx = x+1; xx < x+ww; ++xx) { put(xx, y, '-', A_BORDER); put(xx, y+wh, '-', A_BORDER); }
-        for (int yy = y+1; yy < y+wh; ++yy) { put(x, yy, '|', A_BORDER); put(x+ww, yy, '|', A_BORDER); }
-        put(x, y, '+', A_BORDER); put(x+ww, y, '+', A_BORDER);
-        put(x, y+wh, '+', A_BORDER); put(x+ww, y+wh, '+', A_BORDER);
+        for (int xx = x+1; xx < x+ww; ++xx) { put(xx, y, '-', border); put(xx, y+wh, '-', border); }
+        for (int yy = y+1; yy < y+wh; ++yy) { put(x, yy, '|', border); put(x+ww, yy, '|', border); }
+        put(x, y, '+', border); put(x+ww, y, '+', border);
+        put(x, y+wh, '+', border); put(x+ww, y+wh, '+', border);
         // title: WN:x,y  (Gysin's live coordinate label)
         char t[32];
         std::snprintf(t, sizeof(t), " W%d:%d,%d ", w.id, x, y);
         int tl = (int)std::strlen(t);
-        for (int k = 0; k < tl && x+2+k < x+ww; ++k) put(x+2+k, y, t[k], A_TITLE);
+        for (int k = 0; k < tl && x+2+k < x+ww; ++k) put(x+2+k, y, t[k], border);
     }
 
     // ---- per-column melt: drip the composited image downward ---------------
+    // GRAVITY: drip grows with depth, so lower cells fall further than upper
+    // ones and the image STRETCHES as it pours (acceleration, not a rigid slide).
     void meltPass() {
-        int m = (int)melt;
-        if (m <= 0) return;
+        if (melt <= 0) return;
+        double Hm1 = std::max(1, H - 1);
         for (int x = 0; x < W; ++x) {
-            int off = (int)(m * (0.45 + 0.55 * hashx(x)));
-            if (off <= 0) continue;
+            double speed = 0.45 + 0.55 * hashx(x);   // per-column drip rate (stable)
             for (int y = H - 1; y >= 0; --y) {
-                int src = y - off;
+                double depth = y / Hm1;               // 0 at top, 1 at bottom
+                double fall  = 0.20 + 0.80 * depth * depth;  // ~depth^2 = accelerating
+                int off = (int)(melt * speed * fall);
+                int src = y - off;                    // off>=0, so src is always ABOVE y
                 size_t d = (size_t)y * W + x;
                 if (src >= 0) { ch[d] = ch[(size_t)src*W + x]; at[d] = at[(size_t)src*W + x]; }
                 else { ch[d] = ' '; at[d] = A_DESK; }
@@ -223,17 +236,40 @@ public:
 
     void setMode(Mode mm) { mode = mm; melt = 0; buildTargets(); }
 
+    // ---- autoplay: a choreographed loop of scenes, not a 3-state breath -----
+    // n means subdivLevel for SUBDIV scenes, else the window count. mv is the
+    // melt velocity kicked in for that scene (0 = no drip).
+    void applyScene() {
+        static const struct { double dur; Mode mode; int n; double mv; } S[] = {
+            { 2.6, M_GRID,    12,   0 },   // calm grid
+            { 1.8, M_SUBDIV,   2,   0 },   // split
+            { 1.8, M_SUBDIV,   4,   0 },   // split finer
+            { 2.2, M_CASCADE, 30,   0 },   // fan out
+            { 2.2, M_MIRROR,  24,   0 },   // symmetry
+            { 2.8, M_MIRROR,  24,  14 },   // ...and pour
+            { 1.6, M_CASCADE,140,   0 },   // swarm burst
+            { 2.4, M_SUBDIV,   5,  18 },   // deep drip
+            { 2.0, M_CASCADE, 60,   8 },   // cascade melt
+            { 2.6, M_GRID,    12,   0 },   // heal back to calm
+        };
+        sceneCount = (int)(sizeof(S) / sizeof(S[0]));
+        const auto& s = S[scene % sceneCount];
+        sceneDur = s.dur;
+        if (s.mode == M_SUBDIV) subdivLevel = s.n; else active = s.n;
+        setMode(s.mode);          // resets melt to 0
+        meltVel = s.mv;           // ...then arm the drip for this scene
+    }
+
     void step(double dt) {
         clock += dt;
         if (autoBreathe) {
-            autoT += dt;
-            // breath: grid(0-3) -> subdiv(3-6) -> mirror+melt(6-10) -> loop
-            double p = std::fmod(autoT, 10.0);
-            if      (p < 3 && mode != M_GRID)    setMode(M_GRID);
-            else if (p >= 3 && p < 6 && mode != M_SUBDIV) { subdivLevel = 2; setMode(M_SUBDIV); }
-            else if (p >= 6 && mode != M_MIRROR) { active = 18; setMode(M_MIRROR); }
-            if (p >= 7) melt = (p - 7) * 9.0;      // ramp the drip in the down-phase
+            sceneT += dt;
+            if (sceneT >= sceneDur) { sceneT = 0; scene = (scene + 1) % sceneCount; applyScene(); }
         }
+        // melt advances from its VELOCITY, so one tap of '.' keeps pouring on its
+        // own; '.' adds drip, ',' bleeds it back off (negative vel = heal upward).
+        melt += meltVel * dt;
+        if (melt <= 0) { melt = 0; if (meltVel < 0) meltVel = 0; }
         for (int i = 0; i < (int)wins.size(); ++i) {
             Win& w = wins[i];
             double a = 1.0 - std::exp(-7.0 * dt);
@@ -252,29 +288,36 @@ public:
         TView::handleEvent(e);
         if (e.what == evKeyDown) {
             switch (e.keyDown.charScan.charCode) {
-            case 'g': active=12; setMode(M_GRID);    clearEvent(e); break;
+            case 'g': autoBreathe=false; active=12; setMode(M_GRID);    clearEvent(e); break;
             case 's':
                 // each press subdivides finer; wrap to level 1 when cells hit the floor
+                autoBreathe = false;
                 if (mode == M_SUBDIV) {
                     subdivLevel++;
                     if (4 * subdivLevel > (W - 1) / 6) subdivLevel = 1;
                 } else subdivLevel = 1;
                 setMode(M_SUBDIV);  clearEvent(e); break;
-            case 'c': active=14; setMode(M_CASCADE); clearEvent(e); break;
-            case 'm': active=18; setMode(M_MIRROR);  clearEvent(e); break;
-            case 'a': autoBreathe = !autoBreathe; autoT = 0; clearEvent(e); break;
+            // c / m KEEP the current window count (subdivide to a swarm, then reshape it)
+            case 'c': autoBreathe=false; setMode(M_CASCADE); clearEvent(e); break;
+            case 'm': autoBreathe=false; setMode(M_MIRROR);  clearEvent(e); break;
+            case 'a':
+                autoBreathe = !autoBreathe;
+                if (autoBreathe) { scene = 0; sceneT = 0; applyScene(); }
+                else meltVel = 0;
+                clearEvent(e); break;
             case ' ': frozen = !frozen; clearEvent(e); break;
-            case '.': melt += 4; clearEvent(e); break;
-            case ',': melt = std::max(0.0, melt - 4); clearEvent(e); break;
+            // one tap of '.' keeps pouring; tap again = faster; ',' eases / heals
+            case '.': meltVel += 18; melt += 1; clearEvent(e); break;
+            case ',': meltVel -= 18; melt = std::max(0.0, melt - 6); clearEvent(e); break;
             case '+': case '=': active = std::min((int)wins.size(), active+2); buildTargets(); clearEvent(e); break;
             case '-': case '_': active = std::max(2, active-2); buildTargets(); clearEvent(e); break;
             // stress levels (cascade): 10 / 30 / 60 / 100 / 200 / 400
-            case '1': active=10;  setMode(M_CASCADE); clearEvent(e); break;
-            case '2': active=30;  setMode(M_CASCADE); clearEvent(e); break;
-            case '3': active=60;  setMode(M_CASCADE); clearEvent(e); break;
-            case '4': active=100; setMode(M_CASCADE); clearEvent(e); break;
-            case '5': active=200; setMode(M_CASCADE); clearEvent(e); break;
-            case '6': active=400; setMode(M_CASCADE); clearEvent(e); break;
+            case '1': autoBreathe=false; active=10;  setMode(M_CASCADE); clearEvent(e); break;
+            case '2': autoBreathe=false; active=30;  setMode(M_CASCADE); clearEvent(e); break;
+            case '3': autoBreathe=false; active=60;  setMode(M_CASCADE); clearEvent(e); break;
+            case '4': autoBreathe=false; active=100; setMode(M_CASCADE); clearEvent(e); break;
+            case '5': autoBreathe=false; active=200; setMode(M_CASCADE); clearEvent(e); break;
+            case '6': autoBreathe=false; active=400; setMode(M_CASCADE); clearEvent(e); break;
             }
         }
     }
