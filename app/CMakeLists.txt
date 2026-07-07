@@ -142,6 +142,7 @@ add_executable(paint_tui
     paint/paint_wwp_codec.cpp
     paint/paint_window.cpp
     paint/figlet_stamp_dialog.cpp
+    figlet_utils.cpp
 )
 target_include_directories(paint_tui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(paint_tui PRIVATE tvision)
@@ -161,20 +162,22 @@ add_executable(ascii_dump
 target_include_directories(ascii_dump PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
 # command_registry_test (native ctest coverage for registry capability payload)
-add_executable(command_registry_test
+add_executable(command_registry_test EXCLUDE_FROM_ALL
     command_registry_test.cpp
     command_registry.cpp
 )
+target_link_libraries(command_registry_test PRIVATE tvision)
 
 add_test(NAME command_registry COMMAND command_registry_test)
 
 # scramble_engine_test (KB queries, rate limiter, engine integration)
-add_executable(scramble_engine_test
+add_executable(scramble_engine_test EXCLUDE_FROM_ALL
     scramble_engine_test.cpp
     scramble_engine.cpp
     command_registry.cpp
     llm/base/auth_config.cpp
 )
+target_link_libraries(scramble_engine_test PRIVATE tvision)
 
 add_test(NAME scramble_engine COMMAND scramble_engine_test)
 

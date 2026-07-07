@@ -1427,9 +1427,9 @@ void TGenerativeLabWindow::setup() {
     // View
     TRect viewRect = c;
     viewRect.b.x -= 1;
-    auto* view = new TGenerativeLabView(viewRect, vsb);
-    insert(view);
-    view->deferLaunch();
+    view_ = new TGenerativeLabView(viewRect, vsb);
+    insert(view_);
+    view_->deferLaunch();
 }
 
 void TGenerativeLabWindow::changeBounds(const TRect& b) {

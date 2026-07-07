@@ -147,6 +147,10 @@ public:
     TGenerativeLabWindow(const TRect& bounds);
     void setup();
     virtual void changeBounds(const TRect& b) override;
+    TGenerativeLabView* getView() const { return view_; }
+
+private:
+    TGenerativeLabView* view_ = nullptr;
 };
 
 TWindow* createGenerativeLabWindow(const TRect& bounds);

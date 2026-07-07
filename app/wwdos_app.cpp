@@ -69,6 +69,8 @@
 #include "generative_monster_verse_view.h"
 // Generative art: Monster Cam (Emoji)
 #include "generative_monster_cam_view.h"
+#include "contour_map_view.h"
+#include "generative_lab_view.h"
 #include "game_of_life_view.h"
 #include "animated_ascii_view.h"
 // Generative art: ASCII Cam
@@ -937,6 +939,9 @@ private:
     friend void api_spawn_ascii(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_animated_gradient(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_monster_cam(TWwdosApp&, const TRect* bounds);
+    friend void api_spawn_contour_map(TWwdosApp&, const TRect* bounds);
+    friend void api_spawn_generative_lab(TWwdosApp&, const TRect* bounds);
+    friend TGenerativeLabView* api_find_gen_lab_view(TWwdosApp&, const std::string&);
     friend void api_spawn_backrooms_tv(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_backrooms_tv(TWwdosApp&, const TRect* bounds, const BackroomsChannel* ch);
     friend void api_spawn_monster_verse(TWwdosApp&, const TRect* bounds);
@@ -4805,6 +4810,20 @@ void api_spawn_monster_cam(TWwdosApp& app, const TRect* bounds) {
     app.registerWindow(w);
 }
 
+void api_spawn_contour_map(TWwdosApp& app, const TRect* bounds) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 96, 30);
+    TWindow* w = createContourMapWindow(r, 0, 5, 5, false, false);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
+}
+
+void api_spawn_generative_lab(TWwdosApp& app, const TRect* bounds) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 96, 30);
+    TWindow* w = createGenerativeLabWindow(r);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
+}
+
 // Overload: with explicit channel (for API/IPC — no dialog)
 void api_spawn_backrooms_tv(TWwdosApp& app, const TRect* bounds, const BackroomsChannel* ch) {
     BackroomsChannel channel;
@@ -5305,6 +5324,14 @@ TPaintCanvasView* api_find_paint_canvas(TWwdosApp& app, const std::string& id) {
     auto *pw = dynamic_cast<TPaintWindow*>(w);
     if (!pw) return nullptr;
     return pw->getCanvas();
+}
+
+TGenerativeLabView* api_find_gen_lab_view(TWwdosApp& app, const std::string& id) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return nullptr;
+    auto *gw = dynamic_cast<TGenerativeLabWindow*>(w);
+    if (!gw) return nullptr;
+    return gw->getView();
 }
 
 // Paint wrappers for command_registry (avoids tvision include dependency)
