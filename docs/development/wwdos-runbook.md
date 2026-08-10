@@ -101,6 +101,11 @@ appearing until a keypress, one of these regressed:
 Symptom key: IPC log all ✓ + `get_state` correct + screen stale + `API IDLE` in the
 status bar = flush problem, not a dead app. F5 repaint reveals everything.
 
+KNOWN GAP (2026-08): the trailing wake covers small bursts but a 90+-command
+burst (e.g. 31 windows + colours) can still finish unflushed — send one F5 (or
+any key) after very large batches, or fix properly: have the watcher thread
+keep firing wakes until poll() reports no work for ~200ms.
+
 ## Ghostty AppleScript (launching & driving any TUI binary)
 
 Ghostty ships an AppleScript dictionary (v1.3+): `sdef /Applications/Ghostty.app`,
