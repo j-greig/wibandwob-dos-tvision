@@ -53,6 +53,9 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
 - Windows spawned with no explicit rect use `TWwdosApp::findSpreadRect()` (least-overlap
   placement, added 2026-08). If new spawn paths hardcode rects, route them through it —
   jumbled/obscured windows are a bug, not a vibe.
+- **MSDOS/CGA skin**: `set_theme_variant cga` (real chrome swap) + `desktop_texture ▒` +
+  `desktop_color 8,7` + per-window `set_window_bg`/`set_window_fg` (CGA 0-15; 6=brown,
+  10=phosphor green, -1=auto fg). `monochrome` restores the house grey.
 - `/gallery/arrange` art-installation mode: `frameless+shadowless+padding:0` = chromeless
   glyph blocks. `stamp` pattern `text` spells words in primer-windows (3×5 pixel font,
   one window per lit pixel — magnificent with tiny primers like cave-monster 9×3).
