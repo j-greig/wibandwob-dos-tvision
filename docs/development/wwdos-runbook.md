@@ -66,10 +66,11 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
 Flow: `wibwob_view` → `WibWobEngine` → `ClaudeCodeSDKProvider` (C++) → spawns
 `node app/llm/sdk_bridge/claude_sdk_bridge.js` → `@anthropic-ai/claude-agent-sdk` → claude CLI auth.
 
-- **Model is normalised in THREE places** — change all of them or your model string
-  gets silently clamped: `app/llm/config/llm_config.json`, `configure()` in
-  `app/llm/providers/claude_code_sdk_provider.cpp`, `normalizeModelId()` in
-  `app/llm/sdk_bridge/claude_sdk_bridge.js`. Current: `claude-sonnet-5`.
+- **Model resolution has ONE home**: `resolveModelId()` in
+  `app/llm/providers/claude_code_sdk_provider.cpp` (full `claude-*` ids pass
+  verbatim; bare aliases map there). Config: `app/llm/config/llm_config.json`;
+  the JS bridge is pure passthrough. Current: `claude-sonnet-5`. History note:
+  it used to be clamped in three places — never reintroduce mapping elsewhere.
 - **`app/llm/sdk_bridge` needs `npm install`** — a fresh clone has no node_modules and
   the bridge dies on `require('@anthropic-ai/claude-agent-sdk')`; the chat then hangs
   at "Wobbling..." forever with no visible error. Check first when chat is dead.
