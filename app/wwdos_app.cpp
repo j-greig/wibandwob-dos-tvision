@@ -918,6 +918,7 @@ private:
     friend std::string api_get_state(TWwdosApp&);
     friend std::string api_move_window(TWwdosApp&, const std::string&, int, int);
     friend std::string api_set_window_bg(TWwdosApp&, const std::string&, int);
+    friend std::string api_set_window_fg(TWwdosApp&, const std::string&, int);
     friend std::string api_resize_window(TWwdosApp&, const std::string&, int, int);
     friend std::string api_focus_window(TWwdosApp&, const std::string&);
     friend std::string api_raise_window(TWwdosApp&, const std::string&);
@@ -2546,10 +2547,15 @@ void TWwdosApp::takeScreenshot(bool showDialog)
     "\x0F\x0F\x0F\x70\x0F\x07\x70\x70\x70\x07\x70\x0F\x07\x07\x78\x00" \
     "\x07\x0F\x07\x70\x70\x07\x0F\x70"
 
+// Chrome variant: which application palette styles frames/menus/scrollbars.
+// "monochrome" = the wwdos house grey; "cga" = classic DOS colour chrome.
+static bool g_cgaChrome = false;
+
 TPalette& TWwdosApp::getPalette() const
 {
-    static TPalette palette(cpMonochrome, sizeof(cpMonochrome)-1);
-    return palette;
+    static TPalette mono(cpMonochrome, sizeof(cpMonochrome)-1);
+    static TPalette cga(cpAppColor, sizeof(cpAppColor)-1);
+    return g_cgaChrome ? cga : mono;
 }
 
 // Build "FIGlet ~F~ont ▶ { categories... | More Fonts... }" submenu item
@@ -3258,6 +3264,21 @@ static ViewType* ww_get_child_view(TWindow* w) {
         v = v->next;
     } while (v != start);
     return nullptr;
+}
+
+// Set the text colour (CGA/ANSI index 0-15, -1 = auto) of a viewer window.
+std::string api_set_window_fg(TWwdosApp& app, const std::string& id, int idx) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "err window not found";
+    if (auto* fp = ww_get_child_view<FrameFilePlayerView>(w)) {
+        fp->setForegroundIndex(idx);
+        return "ok";
+    }
+    if (auto* tv = ww_get_child_view<TTextFileView>(w)) {
+        tv->setForegroundIndex(idx);
+        return "ok";
+    }
+    return "err window has no colourable view";
 }
 
 // Set the solid background colour (CGA/ANSI index 0-15) of a viewer window.
@@ -5271,9 +5292,14 @@ std::string api_set_theme_mode(TWwdosApp& app, const std::string& mode) {
 }
 
 std::string api_set_theme_variant(TWwdosApp& app, const std::string& variant) {
-    (void)app;
-    if (variant != "monochrome" && variant != "dark_pastel")
-        return "err invalid theme variant";
+    if (variant == "cga") {
+        g_cgaChrome = true;
+    } else if (variant == "monochrome" || variant == "dark_pastel") {
+        g_cgaChrome = false;
+    } else {
+        return "err invalid theme variant (monochrome|dark_pastel|cga)";
+    }
+    app.redraw();  // repaint all chrome with the new palette
     return "ok";
 }
 

@@ -84,6 +84,14 @@ namespace {
         return interpolateColors(start, end, t);
     }
     
+    // Foreground: explicit palette index wins; else auto-contrast by bg brightness
+    TColorRGB pickFg(const TBackgroundConfig& config, const TColorRGB& bg) {
+        if (config.fgColorIndex >= 0 && config.fgColorIndex <= 15)
+            return kAnsiBg[config.fgColorIndex];
+        int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+        return bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
+    }
+
     // Get background color based on configuration and position
     TColorAttr getBackgroundAttr(const TBackgroundConfig& config, int x, int y, int width, int height) {
         switch (config.type) {
@@ -92,36 +100,31 @@ namespace {
                 
             case TBackgroundType::Solid: {
                 const TColorRGB &bg = kAnsiBg[config.solidColorIndex];
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
-                TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
+                TColorRGB fg = pickFg(config, bg);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::HorizontalGradient: {
                 TColorRGB bg = getHorizontalGradientColor(x, width, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
-                TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
+                TColorRGB fg = pickFg(config, bg);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::VerticalGradient: {
                 TColorRGB bg = getVerticalGradientColor(y, height, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
-                TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
+                TColorRGB fg = pickFg(config, bg);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::RadialGradient: {
                 TColorRGB bg = getRadialGradientColor(x, y, width, height, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
-                TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
+                TColorRGB fg = pickFg(config, bg);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::DiagonalGradient: {
                 TColorRGB bg = getDiagonalGradientColor(x, y, width, height, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
-                TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
+                TColorRGB fg = pickFg(config, bg);
                 return TColorAttr(fg, bg);
             }
                 
@@ -589,6 +592,7 @@ public:
                 int idx = ry*cols + cx;
                 if (idx >= 16) break;
                 const TColorRGB &bg = kAnsiBg[idx];
+                // Colour-picker swatch: auto-contrast only (no per-window config here)
                 int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 TColorAttr attr(fg, bg);
@@ -663,6 +667,7 @@ public:
                 int idx = ry*cols + cx;
                 if (idx >= 16) break;
                 const TColorRGB &bg = kAnsiBg[idx];
+                // Colour-picker swatch: auto-contrast only (no per-window config here)
                 int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 TColorAttr attr(fg, bg);
@@ -756,6 +761,13 @@ void FrameFilePlayerView::setBackgroundIndex(int idx)
     drawView();
 }
 
+void FrameFilePlayerView::setForegroundIndex(int idx)
+{
+    if (idx > 15) idx = 15;
+    bgConfig.fgColorIndex = idx;  // negative = auto contrast
+    drawView();
+}
+
 bool FrameFilePlayerView::openBackgroundDialog()
 {
     TBackgroundConfig config = bgConfig;
@@ -776,6 +788,13 @@ void TTextFileView::setBackgroundIndex(int idx)
     if (idx < 0) idx = 0; if (idx > 15) idx = 15;
     bgConfig.type = TBackgroundType::Solid;
     bgConfig.solidColorIndex = idx;
+    drawView();
+}
+
+void TTextFileView::setForegroundIndex(int idx)
+{
+    if (idx > 15) idx = 15;
+    bgConfig.fgColorIndex = idx;  // negative = auto contrast
     drawView();
 }
 
