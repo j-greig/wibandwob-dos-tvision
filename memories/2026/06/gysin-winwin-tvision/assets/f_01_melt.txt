@@ -1,0 +1,40 @@
+
+ meltcode  melt=20 dir=R   .,melt d dir r rainbow l nums
+            3  #include <cmath>
+               +- 20x7 ------------+
+                 |  struct Char { int|idx; TColorRGB fg, bg; };                    +- 36x11 ---------------------------+
+                    |                   |                                             |
+          |  class Grid {     |                                             |                                   |
+             |      int w, h;    |                                             |                                   |
+                |      std::vector<C|ar> +- 32x10 -----------------------+        |                                   |
+                 1|  public:          |    |                               |        |
+                    1+-------------------+int |, int y, int tw, int th, Char v| {      |
+          12          for (int j = 0| j < th; ++j)                  |        |                                   |
+             13              for (int i|= 0; i < tw; ++i)              |        |                                   |
+                14                  set(x | i, y + j, v);                 |        |                                   |
+                  15      }                 |                               |        |      +- 28x9 --------------------
+         16      void melt(double a|ount) {                        |        +-----------------------------------+
+            17          for (int x = 0| x < w; ++x) {                 |               |                           |
+              18              int off = |int)(amount * noise(x));       |               |                           |
+                 19              for (int y+-------------------------------+               |                           |
+                   20                  cells[y*w+x] = (y - off >= 0)                         |
+          21                      ? cells[(y - off)*w + x] : BLANK;                 |                           |
+             22          }                        +- 24x8 ----------------+            |                           |
+               23      }                            |                       |            |                           |
+                  24  };                               |                       |            +---------------------------
+                    25                                   |                       |
+           26  void draw(Grid& g, double t) {   |                       |
+             27      g.clear(0x000010);           |                       |
+                28      for (auto& win : windows)    |                       |
+                   29          rasterize(g, win, 0xFFFF0|, 0x441111);           |
+         30      g.melt(t * 9.0);   // the dri+-----------------------+
+            31  }
+               32
+                 33  int main() {
+                    34      while (running) { update(); draw(grid, now); }
+          35      return 0;   // win-win
+             36  }
+                 1  // meltcode ΓÇö a highlighter that melts its own source
+                   2  #include <vector>
+          3  #include <cmath>
+ .,melt dir rainbow lines Spacefreeze auto  Alt-X
