@@ -27,6 +27,7 @@ extern std::string api_room_chat_receive(TWwdosApp& app, const std::string& send
 extern std::string api_room_presence(TWwdosApp& app, const std::string& participants_json);
 extern std::string api_chat_receive(TWwdosApp& app, const std::string& sender, const std::string& text);
 extern std::string api_wibwob_ask(TWwdosApp& app, const std::string& text);
+extern std::string api_set_window_bg(TWwdosApp& app, const std::string& id, int idx);
 extern std::string api_get_chat_history(TWwdosApp& app);
 extern void api_tile(TWwdosApp& app);
 extern void api_close_all(TWwdosApp& app);
@@ -160,6 +161,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_gallery", "Open the ASCII Art Gallery browser with tabbed primer explorer", false},
         {"gallery_list", "List available primer filenames (optional tab param: 1/#-C, 2/D-L, 3/M, 4/N-S, 5/T-Z, 6/Find with search param)", false},
         {"open_primer", "Open a primer file by name in a viewer window (requires path param, e.g. 'wibwob-faces.txt')", true},
+        {"set_window_bg", "Set solid background colour of a viewer window (id + idx params, CGA palette 0-15: 1=blue 6=brown)", true},
         {"open_terminal", "Open a terminal emulator window", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
@@ -519,6 +521,13 @@ std::string exec_registry_command(
         if (itText == kv.end() || itText->second.empty())
             return "err missing text";
         return api_wibwob_ask(app, itText->second);
+    }
+    if (name == "set_window_bg") {
+        auto id_it = kv.find("id");
+        auto idx_it = kv.find("idx");
+        if (id_it == kv.end() || idx_it == kv.end())
+            return "err missing id/idx";
+        return api_set_window_bg(app, id_it->second, std::atoi(idx_it->second.c_str()));
     }
     if (name == "paint_cell") {
         auto id_it = kv.find("id");

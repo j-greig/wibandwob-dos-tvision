@@ -917,6 +917,7 @@ private:
     friend void api_screenshot(TWwdosApp&);
     friend std::string api_get_state(TWwdosApp&);
     friend std::string api_move_window(TWwdosApp&, const std::string&, int, int);
+    friend std::string api_set_window_bg(TWwdosApp&, const std::string&, int);
     friend std::string api_resize_window(TWwdosApp&, const std::string&, int, int);
     friend std::string api_focus_window(TWwdosApp&, const std::string&);
     friend std::string api_raise_window(TWwdosApp&, const std::string&);
@@ -3243,6 +3244,35 @@ std::string api_get_state(TWwdosApp& app) {
     }
     json << "]}";
     return json.str();
+}
+
+// Find the first child view of a given type inside a window (z-order walk).
+template <typename ViewType>
+static ViewType* ww_get_child_view(TWindow* w) {
+    if (!w) return nullptr;
+    TView* start = w->first();
+    if (!start) return nullptr;
+    TView* v = start;
+    do {
+        if (auto* t = dynamic_cast<ViewType*>(v)) return t;
+        v = v->next;
+    } while (v != start);
+    return nullptr;
+}
+
+// Set the solid background colour (CGA/ANSI index 0-15) of a viewer window.
+std::string api_set_window_bg(TWwdosApp& app, const std::string& id, int idx) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "err window not found";
+    if (auto* fp = ww_get_child_view<FrameFilePlayerView>(w)) {
+        fp->setBackgroundIndex(idx);
+        return "ok";
+    }
+    if (auto* tv = ww_get_child_view<TTextFileView>(w)) {
+        tv->setBackgroundIndex(idx);
+        return "ok";
+    }
+    return "err window has no colourable view";
 }
 
 std::string api_move_window(TWwdosApp& app, const std::string& id, int x, int y) {
