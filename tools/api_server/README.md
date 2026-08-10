@@ -16,7 +16,7 @@ Structure
 - `tools/api_server/README.md`: This guide.
 
 Install and Run
-- Python: 3.9+ (3.11 recommended). The code is 3.9-compatible.
+- Python: 3.9+ (3.11 recommended). Intel and Apple Silicon Macs both work; first install may compile a package if pip cannot find a wheel.
 - Create venv in API server dir: `cd tools/api_server && python3 -m venv venv`
 - Activate venv: `source venv/bin/activate`
 - Install deps: `pip install -r requirements.txt`

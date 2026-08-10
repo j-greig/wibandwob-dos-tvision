@@ -3,7 +3,7 @@
   "providers": {
     "claude_code_sdk": {
       "enabled": true,
-      "model": "claude-sonnet-4-6",
+      "model": "claude-sonnet-5",
       "maxTurns": 50,
       "allowedTools": [
         "Read",

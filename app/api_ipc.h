@@ -9,6 +9,8 @@
 #include <vector>
 #include <cstdint>
 #include <chrono>
+#include <thread>
+#include <atomic>
 
 class TWwdosApp;
 
@@ -41,6 +43,11 @@ public:
 private:
     TWwdosApp* app_ = nullptr;
     int fd_listen_ = -1;
+
+    // Watcher thread: wakes the TVision event loop when a connection is
+    // pending so idle()/poll() runs without needing user input.
+    std::thread wake_thread_;
+    std::atomic<bool> wake_running_{false};
     std::string sock_path_;
     std::string auth_secret_;       // from WIBWOB_AUTH_SECRET env var (empty = no auth)
     std::set<std::string> used_nonces_;  // replay protection

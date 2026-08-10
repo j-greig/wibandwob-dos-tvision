@@ -600,7 +600,17 @@ std::string ClaudeCodeSDKProvider::getVersion() const {
 }
 
 std::vector<std::string> ClaudeCodeSDKProvider::getSupportedModels() const {
-    return {"claude-sonnet-4-6", "claude-opus-4-6"};
+    return {"claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-5", "claude-opus-4-6"};
+}
+
+// Single source of model-string resolution for the whole chat stack.
+// Full ids pass through verbatim; bare aliases resolve to current defaults.
+std::string ClaudeCodeSDKProvider::resolveModelId(const std::string& modelStr) {
+    if (modelStr.rfind("claude-", 0) == 0) return modelStr;  // full id — trust it
+    if (modelStr.find("opus") != std::string::npos)   return "claude-opus-5";
+    if (modelStr.find("sonnet") != std::string::npos) return "claude-sonnet-5";
+    if (modelStr.find("haiku") != std::string::npos)  return "claude-haiku-4-5";
+    return "claude-sonnet-5";
 }
 
 bool ClaudeCodeSDKProvider::configure(const std::string& config) {
@@ -674,15 +684,10 @@ bool ClaudeCodeSDKProvider::configure(const std::string& config) {
     // sessionTimeout (quoted or numeric)
     sessionTimeout = parseIntField("sessionTimeout", sessionTimeout);
 
-    // model - map to full 4.6 IDs
-    std::string modelStr = parseStringField("model", "claude-sonnet-4-6");
-    if (modelStr.find("opus") != std::string::npos) {
-        configuredModel = "claude-opus-4-6";
-    } else if (modelStr.find("sonnet") != std::string::npos) {
-        configuredModel = "claude-sonnet-4-6";
-    } else {
-        configuredModel = "claude-sonnet-4-6";  // Default
-    }
+    // Model resolution — THE single home for it (bridge passes through verbatim).
+    // Full ids ("claude-*") from llm_config.json pass untouched; bare aliases map here.
+    std::string modelStr = parseStringField("model", "claude-sonnet-5");
+    configuredModel = resolveModelId(modelStr);
     fprintf(stderr, "[SDK] Configured model: %s (from %s)\n", configuredModel.c_str(), modelStr.c_str());
 
     // allowedTools: if present, keep defaults for now
@@ -698,13 +703,7 @@ bool ClaudeCodeSDKProvider::configure(const ProviderConfig& config) {
     maxTurns = config.getParameterInt("maxTurns", maxTurns);
 
     if (!config.model.empty()) {
-        if (config.model.find("opus") != std::string::npos) {
-            configuredModel = "claude-opus-4-6";
-        } else if (config.model.find("sonnet") != std::string::npos) {
-            configuredModel = "claude-sonnet-4-6";
-        } else {
-            configuredModel = "claude-sonnet-4-6";
-        }
+        configuredModel = resolveModelId(config.model);
     }
     fprintf(stderr, "[SDK] Configured model: %s (from %s)\n",
             configuredModel.c_str(),

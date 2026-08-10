@@ -129,6 +129,8 @@ static bool safe_write(int fd, const void* buf, size_t len) {
 // Include TRect definition
 #define Uses_TRect
 #define Uses_TWindow
+#define Uses_TEvent
+#define Uses_TEventQueue
 #include <tvision/tv.h>
 
 #include "paint/paint_window.h"
@@ -348,6 +350,33 @@ bool ApiIpcServer::start(const std::string& path) {
         fd_listen_ = -1;
         return false;
     }
+
+    // Watcher thread: TVision's getEvent blocks on terminal input, so idle()
+    // (which drives poll()) starves when the user isn't typing. Select on the
+    // listen fd and wake the event queue whenever a connection is pending —
+    // API-created windows then render immediately, no keypress needed.
+    wake_running_ = true;
+    wake_thread_ = std::thread([this]() {
+        while (wake_running_) {
+            fd_set rfds;
+            FD_ZERO(&rfds);
+            FD_SET(fd_listen_, &rfds);
+            struct timeval tv{0, 200 * 1000}; // 200ms
+            int r = ::select(fd_listen_ + 1, &rfds, nullptr, nullptr, &tv);
+            if (r > 0 && wake_running_) {
+                TEventQueue::wakeUp();
+                // Give the main loop time to accept + handle the command.
+                ::usleep(50 * 1000);
+                // Trailing wake: the screen flushes at the TOP of the next
+                // event cycle, so the just-handled command's paint is still
+                // buffered. A same-thread wakeUp() inside poll() can race and
+                // be swallowed; this cross-thread wake reliably forces the
+                // flush cycle — without it, the last command of a burst stays
+                // invisible until the user presses a key.
+                if (wake_running_) TEventQueue::wakeUp();
+            }
+        }
+    });
     return true;
 #endif
 }
@@ -810,6 +839,12 @@ void ApiIpcServer::poll() {
     char drain[64];
     while (::read(fd, drain, sizeof(drain)) > 0) {}
     ::close(fd);
+
+    // Self-wake: TVision flushes the screen at the top of the event cycle,
+    // BEFORE idle() runs — so anything this command just drew sits in the
+    // buffer until the next cycle. Force that next cycle now, otherwise the
+    // change stays invisible until the user presses a key.
+    TEventQueue::wakeUp();
 #endif
 }
 
@@ -876,6 +911,10 @@ void ApiIpcServer::publish_event(const char* event_type, const std::string& payl
 
 void ApiIpcServer::stop() {
 #ifndef _WIN32
+    // Stop the wake watcher thread first (it selects on fd_listen_).
+    wake_running_ = false;
+    if (wake_thread_.joinable()) wake_thread_.join();
+
     // Close all event subscriber fds.
     for (int sub_fd : event_subscribers_) ::close(sub_fd);
     event_subscribers_.clear();

@@ -84,7 +84,7 @@ private:
 // ── Gallery window ──────────────────────────────────────
 class TGalleryWindow : public TWindow {
 public:
-    TGalleryWindow(const TRect& bounds, const std::string& primerDir);
+    TGalleryWindow(const TRect& bounds, const std::vector<std::string>& primerDirs);
     virtual void handleEvent(TEvent& event) override;
     int getSelected() const;
     const std::string& getSearchText() const;
@@ -99,7 +99,7 @@ private:
     TScrollBar* previewScrollBar;
     TInputLine* searchInput;
 
-    std::string primerDir;
+    std::vector<std::string> primerDirs;
     std::string openPath;               // temp storage for path pointer lifetime
     std::vector<std::string> allFiles;  // all filenames (basename)
     std::vector<std::string> allPaths;  // all full paths

@@ -768,6 +768,9 @@ private:
     void manageWorkspaces();
     bool saveWorkspacePath(const std::string& path);
     TRect calculateWindowBounds(const std::string& filePath);
+    // Place a w×h window where it overlaps existing windows the least, so
+    // successive spawns spread across the desktop instead of stacking.
+    TRect findSpreadRect(int w, int h);
     std::string buildWorkspaceJson();
     bool loadWorkspaceFromFile(const std::string& path);
 public:
@@ -2824,13 +2827,65 @@ TRect TWwdosApp::calculateWindowBounds(const std::string& filePath)
     int windowHeight = maxHeight + 2;
     capToDesktop(windowWidth, windowHeight);
 
-    // Center on desktop
-    TRect screenBounds = deskTop->getExtent();
-    int screenWidth = screenBounds.b.x;
-    int screenHeight = screenBounds.b.y;
-    int x = std::max(0, (screenWidth - windowWidth) / 2);
-    int y = std::max(0, (screenHeight - windowHeight) / 2);
-    return TRect(x, y, x + windowWidth, y + windowHeight);
+    // Spread placement: least-overlap spot instead of always centring
+    // (centring stacked every window on top of the previous one).
+    return findSpreadRect(windowWidth, windowHeight);
+}
+
+TRect TWwdosApp::findSpreadRect(int w, int h)
+{
+    TRect ext = deskTop->getExtent();
+    const int SW = ext.b.x, SH = ext.b.y;
+    if (w > SW) w = SW;
+    if (h > SH) h = SH;
+
+    // Collect visible window rects on the desktop.
+    std::vector<TRect> occupied;
+    if (TView* start = deskTop->first()) {
+        TView* v = start;
+        do {
+            if ((v->state & sfVisible) && v->size.x > 2 && v->size.y > 2) {
+                TRect r(v->origin.x, v->origin.y,
+                        v->origin.x + v->size.x, v->origin.y + v->size.y);
+                occupied.push_back(r);
+            }
+            v = v->next;
+        } while (v != start);
+    }
+
+    // Empty desktop → centre.
+    if (occupied.empty()) {
+        int x = std::max(0, (SW - w) / 2);
+        int y = std::max(0, (SH - h) / 2);
+        return TRect(x, y, x + w, y + h);
+    }
+
+    // Grid-scan candidate positions; score = total overlap area with existing
+    // windows. Ties broken by distance from the centroid of existing windows
+    // (farther = better) so zero-overlap spots spread out rather than cluster.
+    long cx = 0, cy = 0;
+    for (const auto& r : occupied) { cx += (r.a.x + r.b.x) / 2; cy += (r.a.y + r.b.y) / 2; }
+    cx /= (long)occupied.size(); cy /= (long)occupied.size();
+
+    const int stepX = 4, stepY = 2;
+    long bestScore = -1; long bestDist = -1; int bestX = 0, bestY = 0;
+    for (int y = 0; y <= SH - h; y += stepY) {
+        for (int x = 0; x <= SW - w; x += stepX) {
+            long overlap = 0;
+            for (const auto& r : occupied) {
+                int ox = std::min(x + w, (int)r.b.x) - std::max(x, (int)r.a.x);
+                int oy = std::min(y + h, (int)r.b.y) - std::max(y, (int)r.a.y);
+                if (ox > 0 && oy > 0) overlap += (long)ox * oy;
+            }
+            long dx = (x + w / 2) - cx, dy = ((y + h / 2) - cy) * 2; // cell aspect ≈ 2
+            long dist = dx * dx + dy * dy;
+            if (bestScore < 0 || overlap < bestScore ||
+                (overlap == bestScore && dist > bestDist)) {
+                bestScore = overlap; bestDist = dist; bestX = x; bestY = y;
+            }
+        }
+    }
+    return TRect(bestX, bestY, bestX + w, bestY + h);
 }
 
 void TWwdosApp::idle()
@@ -5094,7 +5149,7 @@ std::string api_gallery_list(TWwdosApp& app, const std::string& tab) {
 }
 
 void api_spawn_wibwob(TWwdosApp& app, const TRect* bounds) {
-    TRect r = bounds ? *bounds : TRect(2, 1, 82, 28);
+    TRect r = bounds ? *bounds : app.findSpreadRect(80, 27);
     app.windowNumber++;
     std::string title = "Wib&Wob Chat " + std::to_string(app.windowNumber);
     TWindow* w = createWibWobWindow(r, title);

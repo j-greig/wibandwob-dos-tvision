@@ -41,6 +41,9 @@ public:
     std::string getProviderName() const override { return "claude_code_sdk"; }
     std::string getVersion() const override;
     std::vector<std::string> getSupportedModels() const override;
+
+    // Single source of model-string resolution (full ids verbatim, aliases mapped).
+    static std::string resolveModelId(const std::string& modelStr);
     
     // Configuration
     bool configure(const std::string& config) override;

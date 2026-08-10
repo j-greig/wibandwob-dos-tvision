@@ -432,10 +432,10 @@ void TGalleryPreview::handleEvent(TEvent& event)
 //  TGalleryWindow
 // ═══════════════════════════════════════════════════
 
-TGalleryWindow::TGalleryWindow(const TRect& bounds, const std::string& aPrimerDir)
+TGalleryWindow::TGalleryWindow(const TRect& bounds, const std::vector<std::string>& aPrimerDirs)
     : TWindowInit(&TWindow::initFrame),
       TWindow(bounds, "ASCII Gallery", wnNoNumber),
-      primerDir(aPrimerDir),
+      primerDirs(aPrimerDirs),
       searchInput(nullptr)
 {
     options |= ofTileable;
@@ -526,21 +526,36 @@ void TGalleryWindow::scanFiles()
     allFiles.clear();
     allPaths.clear();
 
-    DIR* dir = opendir(primerDir.c_str());
-    if (!dir) return;
+    auto displayNameFor = [&](const std::string& dir, const std::string& name) {
+        for (const std::string& existing : allFiles) {
+            if (existing == name) {
+                size_t slash = dir.rfind("/primers");
+                std::string parent = (slash == std::string::npos) ? dir : dir.substr(0, slash);
+                slash = parent.rfind('/');
+                std::string module = (slash == std::string::npos) ? parent : parent.substr(slash + 1);
+                return module + "/" + name;
+            }
+        }
+        return name;
+    };
 
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != nullptr) {
-        if (entry->d_name[0] == '.') continue;
-        std::string name = entry->d_name;
-        if (name.size() < 5) continue;
-        std::string ext = name.substr(name.size() - 4);
-        if (ext != ".txt") continue;
+    for (const std::string& primerDir : primerDirs) {
+        DIR* dir = opendir(primerDir.c_str());
+        if (!dir) continue;
 
-        allFiles.push_back(name);
-        allPaths.push_back(primerDir + "/" + name);
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (entry->d_name[0] == '.') continue;
+            std::string name = entry->d_name;
+            if (name.size() < 5) continue;
+            std::string ext = name.substr(name.size() - 4);
+            if (ext != ".txt") continue;
+
+            allFiles.push_back(displayNameFor(primerDir, name));
+            allPaths.push_back(primerDir + "/" + name);
+        }
+        closedir(dir);
     }
-    closedir(dir);
 
     // Sort alphabetically via index array
     std::vector<size_t> indices(allFiles.size());
@@ -807,8 +822,9 @@ void TGalleryWindow::handleEvent(TEvent& event)
 //  Factory
 // ═══════════════════════════════════════════════════
 
-static std::string galleryFindPrimerDir()
+static std::vector<std::string> galleryFindPrimerDirs()
 {
+    std::vector<std::string> dirs;
     const char* moduleDirs[] = { "modules-private", "modules" };
     for (const char* base : moduleDirs) {
         DIR* dir = opendir(base);
@@ -819,20 +835,24 @@ static std::string galleryFindPrimerDir()
             std::string candidate = std::string(base) + "/" + entry->d_name + "/primers";
             struct stat st;
             if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
-                closedir(dir);
-                return candidate;
+                dirs.push_back(candidate);
             }
         }
         closedir(dir);
     }
+    if (!dirs.empty())
+        return dirs;
+
     struct stat st;
     if (stat("app/primers", &st) == 0 && S_ISDIR(st.st_mode))
-        return "app/primers";
-    return "primers";
+        dirs.push_back("app/primers");
+    else
+        dirs.push_back("primers");
+    return dirs;
 }
 
 TWindow* createAsciiGalleryWindow(const TRect& bounds)
 {
-    std::string primerDir = galleryFindPrimerDir();
-    return new TGalleryWindow(bounds, primerDir);
+    std::vector<std::string> primerDirs = galleryFindPrimerDirs();
+    return new TGalleryWindow(bounds, primerDirs);
 }

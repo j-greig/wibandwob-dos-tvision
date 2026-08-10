@@ -273,8 +273,10 @@ void TWibWobMessageView::rebuildWrappedLines() {
 
     std::string prevSender;
     for (const auto& msg : messages) {
-        // Add blank line between messages from different senders
-        if (!wrappedLines.empty() && !prevSender.empty() && msg.sender != prevSender) {
+        // Add blank line between messages from different senders.
+        // Streamed replies carry an empty sender — treat that as "different"
+        // too, otherwise the next User: line glues onto the reply's last line.
+        if (!wrappedLines.empty() && (msg.sender != prevSender || prevSender.empty())) {
             wrappedLines.push_back({"", "", false});
         }
         prevSender = msg.sender;
