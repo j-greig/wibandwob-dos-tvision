@@ -9,6 +9,18 @@
 // The title gap isn't noticeable since we pass "" as the title.
 typedef TFrame TNoTitleFrame;
 
+// TCGAFrame — chunky MSDOS-style frame: solid block border in the window's
+// accent colour with the title in an inverse white tab, plus working
+// close/zoom hotspots. Falls back to standard TFrame drawing when the CGA
+// chrome variant is off (ThemeManager::cgaChrome()). draw() implemented in
+// frame_animation_window.cpp (needs the viewer classes for accent lookup).
+class TCGAFrame : public TFrame
+{
+public:
+    TCGAFrame(const TRect& r) : TFrame(r) {}
+    virtual void draw() override;
+};
+
 // TGhostFrame — a completely invisible frame for frameless gallery windows.
 //
 // draw() writes nothing, so the 1-char border area is transparent (shows

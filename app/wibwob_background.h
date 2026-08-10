@@ -45,6 +45,11 @@ public:
     virtual void draw() override;
     virtual void handleEvent(TEvent& event) override;
 
+    // MSDOS-style edge rulers: repeating digits along the top row (magenta on
+    // black) and the left column (red on teal), as per the CGA mockups.
+    void setRulers(bool on) { rulers_ = on; drawView(); }
+    bool rulers() const { return rulers_; }
+
     uchar getFg() const { return fgColor; }
     uchar getBg() const { return bgColor; }
     bool  isRgb() const { return useRgb_; }
@@ -56,6 +61,7 @@ private:
     uchar fgColor;
     uchar bgColor;
     bool useRgb_ = false;
+    bool rulers_ = false;
     uint32_t rgbFg_ = 0;
     uint32_t rgbBg_ = 0;
 };

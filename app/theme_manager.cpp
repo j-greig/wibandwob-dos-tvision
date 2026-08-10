@@ -109,3 +109,36 @@ std::string ThemeManager::variantToString(ThemeVariant variant) {
     }
     return "monochrome";
 }
+
+bool& ThemeManager::cgaChrome() {
+    static bool flag = false;
+    return flag;
+}
+
+const TColorRGB* ThemeManager::cgaPalette() {
+    static const TColorRGB pal[16] = {
+        TColorRGB(0x00,0x00,0x00), // 0 Black
+        TColorRGB(0x00,0x00,0xAA), // 1 Blue
+        TColorRGB(0x00,0xAA,0x00), // 2 Green
+        TColorRGB(0x00,0xAA,0xAA), // 3 Cyan
+        TColorRGB(0xAA,0x00,0x00), // 4 Red
+        TColorRGB(0xAA,0x00,0xAA), // 5 Magenta
+        TColorRGB(0xAA,0x55,0x00), // 6 Brown (CGA's special-cased colour)
+        TColorRGB(0xAA,0xAA,0xAA), // 7 Light gray
+        TColorRGB(0x55,0x55,0x55), // 8 Dark gray
+        TColorRGB(0x55,0x55,0xFF), // 9 Light blue
+        TColorRGB(0x55,0xFF,0x55), // 10 Light green
+        TColorRGB(0x55,0xFF,0xFF), // 11 Light cyan
+        TColorRGB(0xFF,0x55,0x55), // 12 Light red
+        TColorRGB(0xFF,0x55,0xFF), // 13 Light magenta
+        TColorRGB(0xFF,0xFF,0x55), // 14 Yellow
+        TColorRGB(0xFF,0xFF,0xFF), // 15 White
+    };
+    return pal;
+}
+
+TColorRGB ThemeManager::cgaColor(int idx) {
+    if (idx < 0) idx = 0;
+    if (idx > 15) idx = 15;
+    return cgaPalette()[idx];
+}

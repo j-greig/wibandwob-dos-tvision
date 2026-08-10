@@ -2547,15 +2547,14 @@ void TWwdosApp::takeScreenshot(bool showDialog)
     "\x0F\x0F\x0F\x70\x0F\x07\x70\x70\x70\x07\x70\x0F\x07\x07\x78\x00" \
     "\x07\x0F\x07\x70\x70\x07\x0F\x70"
 
-// Chrome variant: which application palette styles frames/menus/scrollbars.
-// "monochrome" = the wwdos house grey; "cga" = classic DOS colour chrome.
-static bool g_cgaChrome = false;
+// Chrome variant flag lives in ThemeManager (single source; TCGAFrame reads it too).
+#include "theme_manager.h"
 
 TPalette& TWwdosApp::getPalette() const
 {
     static TPalette mono(cpMonochrome, sizeof(cpMonochrome)-1);
     static TPalette cga(cpAppColor, sizeof(cpAppColor)-1);
-    return g_cgaChrome ? cga : mono;
+    return ThemeManager::cgaChrome() ? cga : mono;
 }
 
 // Build "FIGlet ~F~ont ▶ { categories... | More Fonts... }" submenu item
@@ -3272,10 +3271,12 @@ std::string api_set_window_fg(TWwdosApp& app, const std::string& id, int idx) {
     if (!w) return "err window not found";
     if (auto* fp = ww_get_child_view<FrameFilePlayerView>(w)) {
         fp->setForegroundIndex(idx);
+        if (w->frame) w->frame->drawView();  // frame accent follows content colour
         return "ok";
     }
     if (auto* tv = ww_get_child_view<TTextFileView>(w)) {
         tv->setForegroundIndex(idx);
+        if (w->frame) w->frame->drawView();
         return "ok";
     }
     return "err window has no colourable view";
@@ -3287,10 +3288,12 @@ std::string api_set_window_bg(TWwdosApp& app, const std::string& id, int idx) {
     if (!w) return "err window not found";
     if (auto* fp = ww_get_child_view<FrameFilePlayerView>(w)) {
         fp->setBackgroundIndex(idx);
+        if (w->frame) w->frame->drawView();  // frame accent follows content colour
         return "ok";
     }
     if (auto* tv = ww_get_child_view<TTextFileView>(w)) {
         tv->setBackgroundIndex(idx);
+        if (w->frame) w->frame->drawView();
         return "ok";
     }
     return "err window has no colourable view";
@@ -5291,15 +5294,22 @@ std::string api_set_theme_mode(TWwdosApp& app, const std::string& mode) {
     return "ok";
 }
 
+// TVision global (defined in tview.cpp): the attribute painted over cells
+// under a window shadow. CGA chrome swaps it for solid black.
+extern TColorAttr shadowAttr;
+static const TColorAttr kDefaultShadowAttr = shadowAttr;
+
 std::string api_set_theme_variant(TWwdosApp& app, const std::string& variant) {
     if (variant == "cga") {
-        g_cgaChrome = true;
+        ThemeManager::cgaChrome() = true;
+        shadowAttr = TColorAttr(TColorRGB(0, 0, 0), TColorRGB(0, 0, 0));  // solid black
     } else if (variant == "monochrome" || variant == "dark_pastel") {
-        g_cgaChrome = false;
+        ThemeManager::cgaChrome() = false;
+        shadowAttr = kDefaultShadowAttr;
     } else {
         return "err invalid theme variant (monochrome|dark_pastel|cga)";
     }
-    app.redraw();  // repaint all chrome with the new palette
+    app.redraw();  // repaint all chrome with the new palette + shadows
     return "ok";
 }
 
@@ -5332,6 +5342,13 @@ std::string api_desktop_texture(TWwdosApp& app, const std::string& ch) {
     if (!bg) return "err no TWibWobBackground";
     if (ch.empty()) return "err empty char";
     bg->setTexture(ch[0]);
+    return "ok";
+}
+
+std::string api_desktop_rulers(TWwdosApp& app, bool on) {
+    auto* bg = getWibWobBg(app);
+    if (!bg) return "err no TWibWobBackground";
+    bg->setRulers(on);
     return "ok";
 }
 

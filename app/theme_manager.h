@@ -47,4 +47,13 @@ public:
 
     // Convert variant to string
     static std::string variantToString(ThemeVariant variant);
+
+    // Chrome variant flag: true = classic DOS/CGA chrome (frames, menus,
+    // chunky title-tab frames, solid black shadows). Single source of truth —
+    // getPalette(), TCGAFrame and the shadow logic all consult this.
+    static bool& cgaChrome();
+
+    // Authentic IBM CGA 16-colour palette (single source; index 6 = brown).
+    static const TColorRGB* cgaPalette();
+    static TColorRGB cgaColor(int idx);
 };

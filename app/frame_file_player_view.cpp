@@ -23,25 +23,9 @@
 #include <sstream>
 #include <algorithm>
 
-// Authentic IBM CGA 16-colour palette (index 6 is the famous brown, not olive)
-static const TColorRGB kAnsiBg[16] = {
-    TColorRGB(0x00,0x00,0x00), // 0 Black
-    TColorRGB(0x00,0x00,0xAA), // 1 Blue
-    TColorRGB(0x00,0xAA,0x00), // 2 Green
-    TColorRGB(0x00,0xAA,0xAA), // 3 Cyan
-    TColorRGB(0xAA,0x00,0x00), // 4 Red
-    TColorRGB(0xAA,0x00,0xAA), // 5 Magenta
-    TColorRGB(0xAA,0x55,0x00), // 6 Brown (CGA's special-cased colour)
-    TColorRGB(0xAA,0xAA,0xAA), // 7 Light gray
-    TColorRGB(0x55,0x55,0x55), // 8 Dark gray
-    TColorRGB(0x55,0x55,0xFF), // 9 Light blue
-    TColorRGB(0x55,0xFF,0x55), // 10 Light green
-    TColorRGB(0x55,0xFF,0xFF), // 11 Light cyan
-    TColorRGB(0xFF,0x55,0x55), // 12 Light red
-    TColorRGB(0xFF,0x55,0xFF), // 13 Light magenta
-    TColorRGB(0xFF,0xFF,0x55), // 14 Yellow
-    TColorRGB(0xFF,0xFF,0xFF), // 15 White
-};
+// Authentic IBM CGA 16-colour palette — single source in ThemeManager.
+#include "theme_manager.h"
+static const TColorRGB* kAnsiBg = ThemeManager::cgaPalette();
 
 // Gradient rendering utilities extracted from gradient.cpp
 namespace {

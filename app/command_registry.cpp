@@ -29,6 +29,7 @@ extern std::string api_chat_receive(TWwdosApp& app, const std::string& sender, c
 extern std::string api_wibwob_ask(TWwdosApp& app, const std::string& text);
 extern std::string api_set_window_bg(TWwdosApp& app, const std::string& id, int idx);
 extern std::string api_set_window_fg(TWwdosApp& app, const std::string& id, int idx);
+extern std::string api_desktop_rulers(TWwdosApp& app, bool on);
 extern std::string api_get_chat_history(TWwdosApp& app);
 extern void api_tile(TWwdosApp& app);
 extern void api_close_all(TWwdosApp& app);
@@ -164,6 +165,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_primer", "Open a primer file by name in a viewer window (requires path param, e.g. 'wibwob-faces.txt')", true},
         {"set_window_bg", "Set solid background colour of a viewer window (id + idx params, CGA palette 0-15: 1=blue 6=brown)", true},
         {"set_window_fg", "Set text colour of a viewer window (id + idx params, CGA palette 0-15: 10=phosphor green; -1=auto)", true},
+        {"desktop_rulers", "Toggle MSDOS-style edge rulers on the desktop (on param: 1/0)", true},
         {"open_terminal", "Open a terminal emulator window", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
@@ -537,6 +539,11 @@ std::string exec_registry_command(
         if (id_it == kv.end() || idx_it == kv.end())
             return "err missing id/idx";
         return api_set_window_fg(app, id_it->second, std::atoi(idx_it->second.c_str()));
+    }
+    if (name == "desktop_rulers") {
+        auto on_it = kv.find("on");
+        bool on = (on_it == kv.end()) || (on_it->second == "1" || on_it->second == "true");
+        return api_desktop_rulers(app, on);
     }
     if (name == "paint_cell") {
         auto id_it = kv.find("id");
