@@ -46,6 +46,7 @@
 #include "glitch_engine.h"
 #include "frame_capture.h"
 #include "frame_file_player_view.h"
+#include "disk_library_view.h"
 #include "ascii_image_view.h"
 // Animated blocks view/window
 #include "animated_blocks_view.h"
@@ -258,6 +259,7 @@ const ushort cmOpenTerminal = 214;
 const ushort cmAppLauncher = 232;    // Applications folder browser
 const ushort cmScrambleReply = 233;  // Async Scramble LLM response ready
 const ushort cmAsciiGallery = 234;   // ASCII Art Gallery browser
+const ushort cmDiskLibrary = 301;    // SYMBIENT SHAREWARE LIBRARY floppy launcher
 const ushort cmBackroomsTv = 284;    // Backrooms TV live art window
 
 // Glitch menu commands
@@ -933,6 +935,7 @@ private:
     friend std::string api_get_room_chat_pending(TWwdosApp&);
     friend std::string api_get_room_chat_display_name(TWwdosApp&);
     friend std::string api_take_last_registered_window_id(TWwdosApp&);
+    friend void api_spawn_disks(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_verse(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_mycelium(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_orbit(TWwdosApp&, const TRect* bounds);
@@ -1352,6 +1355,11 @@ void TWwdosApp::handleEvent(TEvent& event)
                     deskTop->insert(w);
                     registerWindow(w);
                 }
+                clearEvent(event);
+                break;
+            }
+            case cmDiskLibrary: {
+                api_spawn_disks(*this, nullptr);
                 clearEvent(event);
                 break;
             }
@@ -2647,6 +2655,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             newLine() +
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
             *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
+            *new TMenuItem("Dis~k~ Library", cmDiskLibrary, kbNoKey) +
             newLine() +
             (TMenuItem&)(
                 *new TSubMenu("~G~ames", kbNoKey) +
@@ -4847,6 +4856,22 @@ static TRect api_centered_bounds(TWwdosApp& app, int width, int height) {
     int left = d.a.x + (dw - width)  / 2;
     int top  = d.a.y + (dh - height) / 2;
     return TRect(left, top, left + width, top + height);
+}
+
+// In-process command execution for views (disk library boots its floppies
+// through this). Main thread only.
+std::string wwdos_exec_command(const std::string& name,
+                               const std::map<std::string, std::string>& kv) {
+    auto* app = dynamic_cast<TWwdosApp*>(TProgram::application);
+    if (!app) return "err no running app";
+    return exec_registry_command(*app, name, kv);
+}
+
+void api_spawn_disks(TWwdosApp& app, const TRect* bounds) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 79, 28);
+    TWindow* w = createDiskLibraryWindow(r);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
 }
 
 void api_spawn_verse(TWwdosApp& app, const TRect* bounds) {

@@ -66,6 +66,14 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   per-window `set_window_bg`/`set_window_fg` (CGA 0-15). Verify via `/state`
   `skin` + `cga_chrome` fields — a set_skin sent in the same burst as window-opens
   can no-op (socket race); check and resend.
+- **Disk Library launcher**: `open_disks` (API) or View → Disk Library — the
+  SYMBIENT SHAREWARE LIBRARY. Each 3.5" floppy = one registry command; Enter or
+  double-click boots it (arrows/Home/End navigate, scrollbar for overflow).
+  Catalogue lives in `TDiskLibraryWindow::populateDisks()`
+  (disk_library_view.cpp): title, label art lines, CGA body/label colours,
+  command + args. Skin disks (DFLAT 1/8 … PIPELINE 4/8) reskin the desktop on
+  boot. Views can execute any registry command in-process via
+  `wwdos_exec_command(name, kv)` (command_registry.h).
 - **Dense skinned scene**: `./scripts/skin_scene.sh [skin]` — 7 overlapping primer
   windows scaled to the live canvas + skin + dialog accents. Matches the Figma-ref
   density; two windows on a sea is a haiku, the refs are a pub argument.

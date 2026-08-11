@@ -29,6 +29,7 @@
 #include "rogue_view.h"
 #include "deep_signal_view.h"
 #include "app_launcher_view.h"
+#include "disk_library_view.h"
 #include "ascii_gallery_view.h"
 #include "scramble_view.h"
 #include "room_chat_view.h"
@@ -81,6 +82,7 @@ extern void api_spawn_rogue(TWwdosApp&, const TRect*);
 extern void api_spawn_deep_signal(TWwdosApp&, const TRect*);
 extern void api_spawn_backrooms_tv(TWwdosApp&, const TRect*);
 extern void api_spawn_app_launcher(TWwdosApp&, const TRect*);
+extern void api_spawn_disks(TWwdosApp&, const TRect*);
 extern void api_spawn_gallery(TWwdosApp&, const TRect*);
 extern void api_spawn_figlet_text(TWwdosApp&, const TRect*,
     const std::string& text, const std::string& font,
@@ -248,6 +250,8 @@ static const char* spawn_backrooms_tv(TWwdosApp& app, const std::map<std::string
     TRect r; api_spawn_backrooms_tv(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_app_launcher(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_app_launcher(app, opt_bounds(kv, r)); return nullptr; }
+static const char* spawn_disks(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
+    TRect r; api_spawn_disks(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_gallery(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_gallery(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_figlet_text(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
@@ -315,6 +319,7 @@ static bool match_rogue(TWindow* w)       { return has_child_view<TRogueView>(w)
 static bool match_deep_signal(TWindow* w) { return has_child_view<TDeepSignalView>(w); }
 static bool match_backrooms_tv(TWindow* w) { return has_child_view<TBackroomsTvView>(w); }
 static bool match_app_launcher(TWindow* w){ return dynamic_cast<TAppLauncherWindow*>(w) != nullptr; }
+static bool match_disks(TWindow* w){ return isDiskLibraryWindow(w); }
 static bool match_gallery(TWindow* w)     { return dynamic_cast<TGalleryWindow*>(w) != nullptr; }
 static bool match_figlet_text(TWindow* w) { return dynamic_cast<TFigletTextWindow*>(w) != nullptr; }
 
@@ -358,6 +363,7 @@ static const WindowTypeSpec k_specs[] = {
     { "deep_signal",       spawn_deep_signal,      match_deep_signal        },
     { "backrooms_tv",      spawn_backrooms_tv,     match_backrooms_tv       },
     { "app_launcher",      spawn_app_launcher,     match_app_launcher       },
+    { "disks",             spawn_disks,            match_disks              },
     { "gallery",           spawn_gallery,          match_gallery            },
     { "figlet_text",       spawn_figlet_text,      match_figlet_text        },
 };

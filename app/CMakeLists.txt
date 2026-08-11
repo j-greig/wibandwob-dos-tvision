@@ -45,6 +45,7 @@ add_executable(wwdos
     rogue_view.cpp
     deep_signal_view.cpp
     app_launcher_view.cpp
+    disk_library_view.cpp
     ascii_gallery_view.cpp
     generative_verse_view.cpp
     generative_orbit_view.cpp
