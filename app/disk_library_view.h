@@ -46,6 +46,10 @@ private:
     int scrollOffset = 0;   // in disk rows
     TScrollBar* vScrollBar;
 
+    // Fixed header: WIBWOB figlet logo + film-sprocket strip (Figma parity)
+    std::vector<std::string> logo_;
+    int headerRows_ = 0;
+
     // Cell geometry: disk art is DISK_W x DISK_H, cell adds padding.
     static const int DISK_W = 22;
     static const int DISK_H = 11;

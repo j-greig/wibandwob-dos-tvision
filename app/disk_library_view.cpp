@@ -15,6 +15,7 @@
 #include "disk_library_view.h"
 #include "theme_manager.h"
 #include "command_registry.h"
+#include "figlet_utils.h"
 
 // ── helpers ────────────────────────────────────────────────
 
@@ -34,6 +35,15 @@ TDiskLibraryView::TDiskLibraryView(const TRect& bounds, TScrollBar* aScrollBar)
     growMode = gfGrowHiX | gfGrowHiY;
     options |= ofSelectable | ofFirstClick;
     eventMask |= evMouseDown | evKeyDown;
+
+    // Figma parity: white outline WIBWOB wordmark over the library floor,
+    // with a film-sprocket strip beneath. figlet at runtime; graceful text
+    // fallback when the binary is missing.
+    logo_ = figlet::renderLines("WIBWOB", "smslant");
+    while (!logo_.empty() && logo_.back().find_first_not_of(' ') == std::string::npos)
+        logo_.pop_back();
+    if (logo_.empty()) logo_.push_back("::  W I B W O B  ::");
+    headerRows_ = (int)logo_.size() + 2;   // logo + sprockets + breathing row
 }
 
 int TDiskLibraryView::cols() const {
@@ -47,7 +57,7 @@ int TDiskLibraryView::rowsTotal() const {
 }
 
 int TDiskLibraryView::visibleRows() const {
-    int v = size.y / CELL_H;
+    int v = (size.y - headerRows_) / CELL_H;
     return v < 1 ? 1 : v;
 }
 
@@ -71,61 +81,79 @@ void TDiskLibraryView::adjustScrollBar() {
 // write-protect hole top-right, white shutter with slot at the bottom.
 void TDiskLibraryView::drawDisk(const DiskDef& d, int x0, int y0, bool selected)
 {
+    // fg/bg pairs on half-block glyphs give the sub-cell shapes: the top
+    // edge is a `▄` row (body fg on library-floor bg), the write-protect
+    // hole is a black `▄` continuing into a full black cell, the sticker
+    // stays clear of the notch column. Floor is the library blue (1).
     TColorAttr body  = cga(15, d.bodyIdx);
+    TColorAttr edge  = cga(d.bodyIdx, 1);        // ▄ body-on-floor
+    TColorAttr notch = cga(0, 1);                // ▄ black-on-floor
     TColorAttr label = cga(d.labelFg, d.labelBg);
     TColorAttr hole  = cga(15, 0);
     TColorAttr shut  = cga(0, 15);
-    TColorAttr slot  = cga(15, d.bodyIdx);
+    TColorAttr arrow = cga(15, d.bodyIdx);
+
+    const int stickerW = DISK_W - 4;             // cols 2..DISK_W-3, symmetric
+    static const char* kLowerHalf = "\xE2\x96\x84";  // ▄
 
     for (int row = 0; row < DISK_H; ++row) {
         int y = y0 + row;
         if (y < 0 || y >= size.y) continue;
         TDrawBuffer b;
-        // base: full-width body shell
-        b.moveChar(0, ' ', body, DISK_W);
 
         if (row == 0) {
-            // top edge: write-protect hole top-right
-            b.moveChar(DISK_W - 2, ' ', hole, 1);
-        } else if (row >= 1 && row <= 6) {
-            // label sticker rows (cols 1..DISK_W-2)
-            b.moveChar(1, ' ', label, DISK_W - 2);
-            int artRow = row - 1;
-            if (artRow < (int)d.art.size()) {
-                const std::string& a = d.art[artRow];
-                int w = displayWidth(a);
-                int ax = 1 + (DISK_W - 2 - w) / 2;
-                if (ax < 1) ax = 1;
-                b.moveStr(ax, TStringView(a.data(), a.size()), label);
-            } else if (row == 6 || (d.art.empty() && row == 3)) {
-                int w = displayWidth(d.title);
-                int tx = 1 + (DISK_W - 2 - w) / 2;
-                if (tx < 1) tx = 1;
-                b.moveStr(tx, TStringView(d.title.data(), d.title.size()), label);
+            // half-block top edge; black ▄ where the write-protect hole cuts in
+            for (int x = 0; x < DISK_W; ++x)
+                b.moveStr(x, kLowerHalf, edge);
+            b.moveStr(DISK_W - 3, kLowerHalf, notch);
+        } else {
+            // base: full-width body shell
+            b.moveChar(0, ' ', body, DISK_W);
+
+            if (row >= 1 && row <= 6) {
+                // label sticker rows (cols 2..DISK_W-3)
+                b.moveChar(2, ' ', label, stickerW);
+                int artRow = row - 1;
+                if (artRow < (int)d.art.size()) {
+                    const std::string& a = d.art[artRow];
+                    int w = displayWidth(a);
+                    int ax = 2 + (stickerW - w) / 2;
+                    if (ax < 2) ax = 2;
+                    b.moveStr(ax, TStringView(a.data(), a.size()), label);
+                } else if (row == 6 || (d.art.empty() && row == 3)) {
+                    int w = displayWidth(d.title);
+                    int tx = 2 + (stickerW - w) / 2;
+                    if (tx < 2) tx = 2;
+                    b.moveStr(tx, TStringView(d.title.data(), d.title.size()), label);
+                }
+                if (row == 1)
+                    b.moveChar(DISK_W - 3, ' ', hole, 1);  // notch over sticker
+            } else if (row >= 8) {
+                // shutter assembly (Figma anatomy, rows 8..10, body-gap row 7
+                // above): thin half-cell outline line, white plate with a
+                // body-coloured slot, white strip at the disk's right edge
+                b.moveStr(4, "\xE2\x96\x90", cga(15, d.bodyIdx));  // ▐ thin line
+                b.moveChar(6, ' ', shut, 11);           // plate, cols 6..16
+                b.moveChar(7, ' ', body, 2);            // slot, full plate height
+                b.moveChar(18, ' ', shut, 3);           // right strip to margin
+                if (row == 9)
+                    b.moveStr(DISK_W - 1, "\xE2\x86\x93", arrow);  // ↓ cue
             }
-        } else if (row >= 8 && row <= 10) {
-            // metal shutter: white block with a body-coloured slot
-            b.moveChar(5, ' ', shut, 12);
-            b.moveChar(7, ' ', slot, 3);
-            if (selected && row == 9)
-                b.moveStr(DISK_W - 2, "\xE2\x86\x93", body);  // ↓ insert cue
+            // clipped bottom-left corner — subtle, one ▀ cell: upper half
+            // stays body, lower half falls away to the floor
+            if (row == DISK_H - 1)
+                b.moveStr(0, "\xE2\x96\x80", cga(d.bodyIdx, 1));
         }
         writeLine(x0, y, DISK_W, 1, b);
     }
 
-    if (selected) {
-        // selection ring in the padding around the disk
-        TColorAttr ring = cga(15, 0);
-        TDrawBuffer top;
-        top.moveChar(0, ' ', ring, DISK_W + 2);
-        writeLine(x0 - 1, y0 - 1, DISK_W + 2, 1, top);
-        writeLine(x0 - 1, y0 + DISK_H, DISK_W + 2, 1, top);
-        for (int y = y0; y < y0 + DISK_H; ++y) {
-            TDrawBuffer side;
-            side.moveChar(0, ' ', ring, 1);
-            writeLine(x0 - 1, y, 1, 1, side);
-            writeLine(x0 + DISK_W, y, 1, 1, side);
-        }
+    if (selected && y0 + DISK_H < size.y) {
+        // constrained selection cue: white underline bar in the padding row
+        // beneath the disk (▀ so it hugs the disk's bottom edge)
+        TDrawBuffer bar;
+        for (int x = 0; x < DISK_W; ++x)
+            bar.moveStr(x, "\xE2\x96\x80", cga(15, 1));
+        writeLine(x0, y0 + DISK_H, DISK_W, 1, bar);
     }
 }
 
@@ -139,13 +167,34 @@ void TDiskLibraryView::draw()
         writeLine(0, y, size.x, 1, b);
     }
 
+    // Fixed header: white WIBWOB wordmark, centred, then the sprocket strip
+    TColorAttr ink = cga(15, 1);
+    for (int i = 0; i < (int)logo_.size() && i < size.y; ++i) {
+        const std::string& l = logo_[i];
+        int w = displayWidth(l);
+        int lx = (size.x - w) / 2;
+        if (lx < 0) lx = 0;
+        TDrawBuffer b;
+        b.moveChar(0, ' ', floor, size.x);
+        b.moveStr(lx, TStringView(l.data(), l.size()), ink);
+        writeLine(0, i, size.x, 1, b);
+    }
+    if ((int)logo_.size() < size.y) {
+        // film sprockets: ▪ every other column, edge to edge
+        TDrawBuffer b;
+        b.moveChar(0, ' ', floor, size.x);
+        for (int x = 1; x < size.x - 1; x += 2)
+            b.moveStr(x, "\xE2\x96\xAA", ink);
+        writeLine(0, (int)logo_.size(), size.x, 1, b);
+    }
+
     int c = cols();
     for (int i = 0; i < (int)disks.size(); ++i) {
         int row = i / c - scrollOffset;
         int col = i % c;
-        if (row < 0 || row * CELL_H + DISK_H > size.y + CELL_H) continue;
+        if (row < 0) continue;
         int x0 = 1 + col * CELL_W + 1;
-        int y0 = row * CELL_H + 1;
+        int y0 = headerRows_ + row * CELL_H;
         if (y0 >= size.y) continue;
         drawDisk(disks[i], x0, y0, i == focused && (state & sfFocused));
     }
@@ -187,8 +236,9 @@ void TDiskLibraryView::handleEvent(TEvent& event)
 
     if (event.what == evMouseDown) {
         TPoint p = makeLocal(event.mouse.where);
+        if (p.y < headerRows_) { clearEvent(event); return; }
         int col = (p.x - 1) / CELL_W;
-        int row = scrollOffset + p.y / CELL_H;
+        int row = scrollOffset + (p.y - headerRows_) / CELL_H;
         int idx = row * cols() + col;
         if (col < cols() && idx >= 0 && idx < (int)disks.size()) {
             if (idx == focused && (event.mouse.eventFlags & meDoubleClick)) {
@@ -225,6 +275,66 @@ TDiskLibraryWindow::TDiskLibraryWindow(const TRect& bounds)
     grid->select();
 }
 
+// ── optional catalogue file ────────────────────────────────
+// `disk_library.cat` in the working directory (repo root) overrides the
+// built-in table — hand-editable, no rebuild. Format, one disk per record:
+//
+//   disk WIBWOB-DOS v1.05          <- starts a record; rest of line = title
+//   art /(o_o)\                    <- 0-4 art lines (UTF-8, centred)
+//   body 2                         <- shell colour, CGA 0-15
+//   label 10 0                     <- label fg bg
+//   boot open_wibwob skin=dflat    <- registry command + optional key=val args
+//
+// Lines starting with # are comments. Unknown keys are ignored.
+static bool loadDiskCatalogue(const char* path, std::vector<DiskDef>& out)
+{
+    FILE* f = fopen(path, "r");
+    if (!f) return false;
+    std::vector<DiskDef> disks;
+    DiskDef cur;
+    bool open = false;
+    char line[512];
+    auto flush = [&]() { if (open) disks.push_back(cur); cur = DiskDef(); open = false; };
+    while (fgets(line, sizeof(line), f)) {
+        std::string s(line);
+        while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+        if (s.empty() || s[0] == '#') continue;
+        size_t sp = s.find(' ');
+        std::string key = s.substr(0, sp);
+        std::string val = (sp == std::string::npos) ? "" : s.substr(sp + 1);
+        if (key == "disk") {
+            flush();
+            cur.title = val;
+            cur.bodyIdx = 7; cur.labelBg = 15; cur.labelFg = 0;
+            open = true;
+        } else if (!open) {
+            continue;
+        } else if (key == "art") {
+            if (cur.art.size() < 5) cur.art.push_back(val);
+        } else if (key == "body") {
+            cur.bodyIdx = atoi(val.c_str());
+        } else if (key == "label") {
+            sscanf(val.c_str(), "%d %d", &cur.labelFg, &cur.labelBg);
+        } else if (key == "boot") {
+            size_t p = val.find(' ');
+            cur.command = val.substr(0, p);
+            while (p != std::string::npos) {
+                size_t q = val.find(' ', p + 1);
+                std::string kv = val.substr(p + 1, q == std::string::npos ? q : q - p - 1);
+                size_t eq = kv.find('=');
+                if (eq != std::string::npos)
+                    cur.args[kv.substr(0, eq)] = kv.substr(eq + 1);
+                p = q;
+            }
+        }
+    }
+    flush();
+    fclose(f);
+    if (disks.empty()) return false;
+    out = disks;
+    return true;
+}
+
 // The library catalogue. Art is hand-set per disk — label stickers are tiny
 // canvases, treat them like it. Colours: CGA idx (bodies love 5/2/4/3/6).
 void TDiskLibraryWindow::populateDisks()
@@ -232,13 +342,16 @@ void TDiskLibraryWindow::populateDisks()
     auto& d = grid->disks;
     d.clear();
 
+    // Hand-editable catalogue wins when present (see loadDiskCatalogue docs)
+    if (loadDiskCatalogue("disk_library.cat", d)) return;
+
     d.push_back({"WIBWOB-DOS v1.05",
         {"", "/(\xE2\x97\x95\xE2\x80\xBF\xE2\x97\x95)\\", ""},
         2, 10, 0, "open_wibwob", {}});
 
-    d.push_back({"<<PAWS OFF!>>",
-        {"SCRAMBLE'S", "", "=^..^="},
-        5, 0, 13, "open_scramble", {}});
+    d.push_back({"",
+        {"SCRAMBLE'S", "<<PAWS OFF!>>", "/\\_/\\", "( o.o )", "/| |\\"},
+        13, 0, 15, "open_scramble", {}});
 
     d.push_back({"WIBBLE.WOBBLE",
         {"", "\xE3\x81\xA4\xE2\x97\x95\xE2\x80\xBF\xE2\x97\x95\xE3\x81\xA4", ""},
@@ -263,6 +376,30 @@ void TDiskLibraryWindow::populateDisks()
     d.push_back({"BACKROOMS.TV",
         {"", "\xE2\x96\x9B\xE2\x96\x9C \xE2\x96\x9B\xE2\x96\x9C", "\xE2\x96\x9F\xE2\x96\x99 \xE2\x96\x9F\xE2\x96\x99"},
         14, 0, 14, "open_backrooms_tv", {}});
+
+    d.push_back({"Ooo!",
+        {"", " _ ", "(\xE2\x97\x8B\xE2\x97\x8B)", " \xE2\x80\xBE "},
+        4, 15, 0, "open_monster_portal", {}});
+
+    d.push_back({"CUBE.EXE",
+        {"a┌───┐b", " │   │", "c└───┘d"},
+        7, 15, 0, "open_cube", {}});
+
+    d.push_back({"Nov/Dec 1992",
+        {"\xE2\x8A\x9E \xE2\x8A\x9E", "", "WIT Lab Notes"},
+        8, 7, 4, "open_text_editor", {}});
+
+    d.push_back({"QUADRA.EXE",
+        {"", "\xE2\x96\x9B\xE2\x96\x9C", "\xE2\x96\x9B\xE2\x96\x9C\xE2\x96\x9B\xE2\x96\x9C"},
+        0, 8, 14, "open_quadra", {}});
+
+    d.push_back({"CIS.HOB maze",
+        {"C┐ ┌I┐S", "└H┘O└B", "W┌─┘A─┐"},
+        8, 0, 11, "open_rogue", {}});
+
+    d.push_back({"WWW",
+        {"", "|WWW|", ""},
+        5, 13, 15, "open_browser", {}});
 
     // ── Skin disks: Symbient *Not* Software, disks 1-4 of 8 ──
     d.push_back({"DFLAT SKIN 1/8",
