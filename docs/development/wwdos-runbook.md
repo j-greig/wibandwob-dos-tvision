@@ -73,7 +73,13 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   (disk_library_view.cpp): title, label art lines, CGA body/label colours,
   command + args. Skin disks (DFLAT 1/8 … PIPELINE 4/8) reskin the desktop on
   boot. Views can execute any registry command in-process via
-  `wwdos_exec_command(name, kv)` (command_registry.h).
+  `wwdos_exec_command(name, kv)` (command_registry.h). Optional
+  `disk_library.cat` in repo root overrides the built-in catalogue
+  (line format documented in disk_library_view.cpp).
+- **Relaunching wwdos**: use `./scripts/relaunch_wwdos.sh` — kills the old
+  process, closes its Ghostty window (tracked in /tmp/wwdos_ghostty_win),
+  spawns fresh with `wait after command` OFF so dead surfaces auto-close.
+  Never leave stray "Process exited" terminals behind.
 - **Dense skinned scene**: `./scripts/skin_scene.sh [skin]` — 7 overlapping primer
   windows scaled to the live canvas + skin + dialog accents. Matches the Figma-ref
   density; two windows on a sea is a haiku, the refs are a pub argument.
