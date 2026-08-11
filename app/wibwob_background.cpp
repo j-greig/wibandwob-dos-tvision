@@ -27,6 +27,18 @@ TWibWobBackground::TWibWobBackground(const TRect& bounds, char aPattern, uchar a
 void TWibWobBackground::setTexture(char ch)
 {
     pattern = ch;
+    patternUtf8_.clear();
+    drawView();
+}
+
+void TWibWobBackground::setTextureUtf8(const std::string& glyph)
+{
+    if (glyph.size() <= 1) {
+        setTexture(glyph.empty() ? ' ' : glyph[0]);
+        return;
+    }
+    patternUtf8_ = glyph;
+    pattern = ' ';  // legacy field: keep sane for preset comparisons
     drawView();
 }
 
@@ -125,7 +137,15 @@ void TWibWobBackground::draw()
     } else {
         color = TColorAttr(fgColor, bgColor);
     }
-    b.moveChar(0, pattern, color, size.x);
+    if (!patternUtf8_.empty()) {
+        // UTF-8 fill glyph (▒ ░ …): build one row of repeated glyphs.
+        std::string row;
+        row.reserve(patternUtf8_.size() * size.x);
+        for (int i = 0; i < size.x; ++i) row += patternUtf8_;
+        b.moveStr(0, row, color);
+    } else {
+        b.moveChar(0, pattern, color, size.x);
+    }
     writeLine(0, 0, size.x, size.y, b);
 
     if (rulers_ && size.x > 2 && size.y > 2) {

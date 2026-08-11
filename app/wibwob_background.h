@@ -37,6 +37,9 @@ public:
     TWibWobBackground(const TRect& bounds, char aPattern, uchar aFg, uchar aBg) noexcept;
 
     void setTexture(char ch);
+    // UTF-8 aware: multi-byte glyphs (▒ ░ etc) render correctly; a single
+    // ASCII byte behaves exactly like setTexture(char).
+    void setTextureUtf8(const std::string& glyph);
     void setColor(uchar fg, uchar bg);
     void setColorRgb(uint32_t fg, uint32_t bg);
     void setPreset(const std::string& name);
@@ -60,6 +63,7 @@ public:
 private:
     uchar fgColor;
     uchar bgColor;
+    std::string patternUtf8_;  // multi-byte fill glyph; wins over `pattern` when set
     bool useRgb_ = false;
     bool rulers_ = false;
     uint32_t rgbFg_ = 0;

@@ -131,6 +131,7 @@ static bool safe_write(int fd, const void* buf, size_t len) {
 #define Uses_TWindow
 #define Uses_TEvent
 #define Uses_TEventQueue
+#define Uses_TScreen
 #include <tvision/tv.h>
 
 #include "paint/paint_window.h"
@@ -365,15 +366,22 @@ bool ApiIpcServer::start(const std::string& path) {
             int r = ::select(fd_listen_ + 1, &rfds, nullptr, nullptr, &tv);
             if (r > 0 && wake_running_) {
                 TEventQueue::wakeUp();
-                // Give the main loop time to accept + handle the command.
-                ::usleep(50 * 1000);
-                // Trailing wake: the screen flushes at the TOP of the next
+                // Trailing wakes: the screen flushes at the TOP of the next
                 // event cycle, so the just-handled command's paint is still
                 // buffered. A same-thread wakeUp() inside poll() can race and
-                // be swallowed; this cross-thread wake reliably forces the
-                // flush cycle — without it, the last command of a burst stays
-                // invisible until the user presses a key.
-                if (wake_running_) TEventQueue::wakeUp();
+                // be swallowed; cross-thread wakes reliably force the flush
+                // cycle. One trailing wake covered small bursts, but the tail
+                // of a 90+-command batch could still end unflushed — so keep
+                // firing until the command stream has been quiet for ~250ms.
+                for (;;) {
+                    ::usleep(50 * 1000);
+                    if (!wake_running_) break;
+                    TEventQueue::wakeUp();
+                    long long now_ms =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch()).count();
+                    if (now_ms - last_cmd_ms_.load() > 250) break;
+                }
             }
         }
     });
@@ -821,6 +829,8 @@ void ApiIpcServer::poll() {
 
     // Track command timestamp for connection status indicator
     last_command_time_ = std::chrono::steady_clock::now();
+    last_cmd_ms_.store(std::chrono::duration_cast<std::chrono::milliseconds>(
+        last_command_time_.time_since_epoch()).count());
     ++total_commands_;
 
     if (resp.size() > 4096)
@@ -840,6 +850,12 @@ void ApiIpcServer::poll() {
     while (::read(fd, drain, sizeof(drain)) > 0) {}
     ::close(fd);
 
+    // Flush NOW, synchronously: handleClient runs on the main thread (from
+    // idle()), so the just-drawn buffer can go straight to the terminal.
+    // The wakeUp() path alone proved unreliable in practice (macOS App Nap /
+    // background-window throttling can swallow the next cycle entirely —
+    // 2026-08: screens stayed stale until a literal F5 keypress).
+    TScreen::flushScreen();
     // Self-wake: TVision flushes the screen at the top of the event cycle,
     // BEFORE idle() runs — so anything this command just drew sits in the
     // buffer until the next cycle. Force that next cycle now, otherwise the

@@ -56,4 +56,25 @@ public:
     // Authentic IBM CGA 16-colour palette (single source; index 6 = brown).
     static const TColorRGB* cgaPalette();
     static TColorRGB cgaColor(int idx);
+
+    // CGA colour as packed 0xRRGGBB (for TWibWobBackground::setColorRgb).
+    static uint32_t cgaRgb(int idx);
+
+    // Active skin name ("" = none). Set by api_set_skin, reported in /state.
+    static std::string& activeSkin();
 };
+
+// A named CGA skin preset — palette recipes decoded from the Figma refs
+// (design/figma-refs/, 2026-08). All colour fields are CGA indices 0-15.
+struct CgaSkin {
+    const char* name;
+    const char* texture;   // desktop fill glyph (UTF-8), "" = solid
+    int deskFg, deskBg;    // desktop dither fg/bg
+    int paperBg, paperFg;  // default viewer-window colours ("paper")
+    int dialogBg, dialogFg;// accent window colours ("dialog")
+};
+
+// Skin registry (single source). nullptr if unknown name.
+const CgaSkin* findCgaSkin(const std::string& name);
+// All skins, for capability listings. Terminated by a {nullptr,...} row.
+const CgaSkin* allCgaSkins();

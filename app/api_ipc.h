@@ -60,6 +60,13 @@ private:
     std::chrono::steady_clock::time_point last_command_time_{};
     int total_commands_ = 0;
 
+    // Cross-thread copy of last_command_time_ for the wake watcher (ms since
+    // steady_clock epoch). The watcher keeps firing trailing wakes until the
+    // command stream has been quiet for a beat — closes the large-burst flush
+    // gap where the tail of a 90+-command batch stayed unpainted until a
+    // keypress.
+    std::atomic<long long> last_cmd_ms_{0};
+
     // Auth helpers
     bool auth_required() const { return !auth_secret_.empty(); }
     std::string generate_nonce();

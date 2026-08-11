@@ -142,3 +142,40 @@ TColorRGB ThemeManager::cgaColor(int idx) {
     if (idx > 15) idx = 15;
     return cgaPalette()[idx];
 }
+
+uint32_t ThemeManager::cgaRgb(int idx) {
+    TColorRGB c = cgaColor(idx);
+    return (uint32_t(c.r) << 16) | (uint32_t(c.g) << 8) | uint32_t(c.b);
+}
+
+std::string& ThemeManager::activeSkin() {
+    static std::string skin;
+    return skin;
+}
+
+// --- CGA skin registry -------------------------------------------------------
+// Recipes decoded from the Figma refs (design/figma-refs/):
+//   dflat    — D-Flat MemoPad: cyan chrome, grey paper, blue dialogs, red
+//              hotkeys, ▒-dithered blue sea. The flagship nostalgia combo.
+//   turbo    — Turbo Pascal IDE: blue desktop, yellow-on-blue editor paper,
+//              grey dialogs, green action buttons.
+//   terra    — Terra Time / GeoGraphics: green continents on blue, yellow
+//              city-lights, cyan chrome.
+//   pipeline — Pipeline (1991): near-black desktop, blue paper, magenta logo
+//              pixels. The moody one.
+static const CgaSkin kSkins[] = {
+    //  name        texture  deskFg deskBg  paperBg paperFg  dlgBg dlgFg
+    { "dflat",      "\xe2\x96\x92", 9, 1,   7, 0,   1, 15 },
+    { "turbo",      "\xe2\x96\x91", 7, 1,   1, 14,  7, 0  },
+    { "terra",      "",             0, 1,   1, 10,  2, 0  },
+    { "pipeline",   "",             8, 0,   0, 9,   0, 13 },
+    { nullptr,      "",             0, 0,   0, 0,   0, 0  },
+};
+
+const CgaSkin* allCgaSkins() { return kSkins; }
+
+const CgaSkin* findCgaSkin(const std::string& name) {
+    for (const CgaSkin* s = kSkins; s->name; ++s)
+        if (name == s->name) return s;
+    return nullptr;
+}

@@ -50,12 +50,27 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   re-discovers on next failure, but a command sent into the gap can silently no-op.
   Verify with `GET /state` (check `windows` matches reality) before trusting a batch.
 - Escape keypress in the chat window **cancels the in-flight LLM request**.
+- `command_registry_test` / `scramble_engine_test` are **bit-rotted**: their stub
+  files lag the registry by ~30 api_* externs (missing figlet/paint/spawn stubs,
+  pre-existing). Fixing means regenerating the stub list, not adding one stub.
 - Windows spawned with no explicit rect use `TWwdosApp::findSpreadRect()` (least-overlap
   placement, added 2026-08). If new spawn paths hardcode rects, route them through it —
   jumbled/obscured windows are a bug, not a vibe.
-- **MSDOS/CGA skin**: `set_theme_variant cga` (real chrome swap) + `desktop_texture ▒` +
-  `desktop_color 8,7` + per-window `set_window_bg`/`set_window_fg` (CGA 0-15; 6=brown,
-  10=phosphor green, -1=auto fg). `monochrome` restores the house grey.
+- **CGA skins (one-shot)**: `set_skin` with `skin` param — `dflat` (D-Flat MemoPad:
+  blue ▒ sea, grey paper, blue dialogs), `turbo` (Turbo Pascal), `terra` (GeoGraphics),
+  `pipeline` (black/blue/magenta), `off` restores house grey. Applies chrome + desktop
+  (authentic CGA **RGB**, immune to terminal palette remapping) + papers all
+  primer/text windows. Recipes: `theme_manager.cpp` kSkins (single source); refs in
+  `design/figma-refs/`. Skins colour **primer/text windows only** — generative app
+  windows keep native palettes (deliberate, per Zilla). Dialog accents stay
+  per-window `set_window_bg`/`set_window_fg` (CGA 0-15). Verify via `/state`
+  `skin` + `cga_chrome` fields — a set_skin sent in the same burst as window-opens
+  can no-op (socket race); check and resend.
+- **Dense skinned scene**: `./scripts/skin_scene.sh [skin]` — 7 overlapping primer
+  windows scaled to the live canvas + skin + dialog accents. Matches the Figma-ref
+  density; two windows on a sea is a haiku, the refs are a pub argument.
+- Legacy manual route still works: `set_theme_variant cga` + `desktop_texture ▒` +
+  `desktop_color fg,bg` (RGB-mapped when CGA chrome on) + per-window colours.
 - `/gallery/arrange` art-installation mode: `frameless+shadowless+padding:0` = chromeless
   glyph blocks. `stamp` pattern `text` spells words in primer-windows (3×5 pixel font,
   one window per lit pixel — magnificent with tiny primers like cave-monster 9×3).
@@ -102,10 +117,17 @@ appearing until a keypress, one of these regressed:
 Symptom key: IPC log all ✓ + `get_state` correct + screen stale + `API IDLE` in the
 status bar = flush problem, not a dead app. F5 repaint reveals everything.
 
-KNOWN GAP (2026-08): the trailing wake covers small bursts but a 90+-command
-burst (e.g. 31 windows + colours) can still finish unflushed — send one F5 (or
-any key) after very large batches, or fix properly: have the watcher thread
-keep firing wakes until poll() reports no work for ~200ms.
+FIXED (2026-08-11), two layers: (a) `handleClient` now calls
+`TScreen::flushScreen()` synchronously after every command (it runs on the main
+thread from idle(), so the just-drawn buffer goes straight out); (b) the watcher
+thread keeps firing trailing wakes until the command stream has been quiet for
+~250ms (closes the large-burst tail). No more F5 after API bursts.
+
+**Screenshot verification trap (macOS App Nap)**: a BACKGROUNDED Ghostty window
+gets its rendering throttled — `screencapture -l<id>` then returns the stale
+backing store, which looks exactly like a flush failure (state correct, pixels
+frozen). It is not one. `osascript -e 'tell application "Ghostty" to activate'`
++ ~1s before every screenshot. Hours were lost to this; do not re-diagnose it.
 
 ## Ghostty AppleScript (launching & driving any TUI binary)
 

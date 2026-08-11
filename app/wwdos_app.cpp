@@ -988,6 +988,7 @@ private:
     friend std::string api_desktop_color(TWwdosApp&, int, int);
     friend std::string api_desktop_gallery(TWwdosApp&, bool);
     friend std::string api_desktop_get(TWwdosApp&);
+    friend std::string api_set_skin(TWwdosApp&, const std::string&);
     bool galleryMode_ = false;
 };
 
@@ -3247,7 +3248,13 @@ std::string api_get_state(TWwdosApp& app) {
              << ",\"text\":\"" << json_escape(entry.text) << "\"}";
         firstChat = false;
     }
-    json << "]}";
+    json << "]";
+    // Chrome truth: theme_variant (reported upstream by the API server) is a
+    // separate enum that never learns about CGA chrome — these two fields are
+    // the real skin state.
+    json << ",\"cga_chrome\":" << (ThemeManager::cgaChrome() ? "true" : "false");
+    json << ",\"skin\":\"" << json_escape(ThemeManager::activeSkin()) << "\"";
+    json << "}";
     return json.str();
 }
 
@@ -5341,7 +5348,7 @@ std::string api_desktop_texture(TWwdosApp& app, const std::string& ch) {
     auto* bg = getWibWobBg(app);
     if (!bg) return "err no TWibWobBackground";
     if (ch.empty()) return "err empty char";
-    bg->setTexture(ch[0]);
+    bg->setTextureUtf8(ch);  // UTF-8 aware — ▒ ░ etc render whole, not first-byte
     return "ok";
 }
 
@@ -5356,7 +5363,56 @@ std::string api_desktop_color(TWwdosApp& app, int fg, int bg_color) {
     auto* bg = getWibWobBg(app);
     if (!bg) return "err no TWibWobBackground";
     if (fg < 0 || fg > 15 || bg_color < 0 || bg_color > 15) return "err color out of range 0-15";
-    bg->setColor(static_cast<uchar>(fg), static_cast<uchar>(bg_color));
+    if (ThemeManager::cgaChrome()) {
+        // Authentic CGA RGB — terminal palettes (Ghostty etc) remap indexed
+        // colours to their own theme, washing the sea to slate. Windows
+        // already paint via cgaPalette(); the desktop must drink from the
+        // same well or the skin falls apart.
+        bg->setColorRgb(ThemeManager::cgaRgb(fg), ThemeManager::cgaRgb(bg_color));
+    } else {
+        bg->setColor(static_cast<uchar>(fg), static_cast<uchar>(bg_color));
+    }
+    return "ok";
+}
+
+// Apply a named CGA skin preset in one shot: chrome variant + solid shadows,
+// desktop texture + colour (authentic CGA RGB), and default paper colours on
+// every colourable window. Dialog-accent colours stay per-window calls
+// (set_window_bg/fg) so scenes can mix paper and dialogs like the refs.
+// "off"/"monochrome" restores the house grey chrome.
+std::string api_set_skin(TWwdosApp& app, const std::string& name) {
+    extern std::string api_set_theme_variant(TWwdosApp&, const std::string&);
+    if (name == "off" || name == "monochrome") {
+        ThemeManager::activeSkin().clear();
+        return api_set_theme_variant(app, "monochrome");
+    }
+    const CgaSkin* s = findCgaSkin(name);
+    if (!s) return "err unknown skin (dflat|turbo|terra|pipeline|off)";
+    api_set_theme_variant(app, "cga");
+    if (auto* bg = getWibWobBg(app)) {
+        bg->setTextureUtf8(s->texture[0] ? std::string(s->texture) : std::string(" "));
+        bg->setColorRgb(ThemeManager::cgaRgb(s->deskFg), ThemeManager::cgaRgb(s->deskBg));
+    }
+    // Paper every colourable window with the skin's defaults.
+    if (TView* start = app.deskTop->first()) {
+        TView* v = start;
+        do {
+            if (auto* w = dynamic_cast<TWindow*>(v)) {
+                if (auto* fp = ww_get_child_view<FrameFilePlayerView>(w)) {
+                    fp->setBackgroundIndex(s->paperBg);
+                    fp->setForegroundIndex(s->paperFg);
+                    if (w->frame) w->frame->drawView();
+                } else if (auto* tv = ww_get_child_view<TTextFileView>(w)) {
+                    tv->setBackgroundIndex(s->paperBg);
+                    tv->setForegroundIndex(s->paperFg);
+                    if (w->frame) w->frame->drawView();
+                }
+            }
+            v = v->next;
+        } while (v != start);
+    }
+    ThemeManager::activeSkin() = name;
+    app.redraw();
     return "ok";
 }
 

@@ -20,6 +20,7 @@ void api_screenshot(TWwdosApp&) {}
 void api_set_pattern_mode(TWwdosApp&, const std::string&) {}
 std::string api_set_theme_mode(TWwdosApp&, const std::string&) { return "ok"; }
 std::string api_set_theme_variant(TWwdosApp&, const std::string&) { return "ok"; }
+std::string api_set_skin(TWwdosApp&, const std::string&) { return "ok"; }
 std::string api_reset_theme(TWwdosApp&) { return "ok"; }
 void api_toggle_scramble(TWwdosApp&) {}
 void api_expand_scramble(TWwdosApp&) {}
