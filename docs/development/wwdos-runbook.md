@@ -95,8 +95,9 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
 
   Registered shaders: `isotower` (painter-algorithm iso voxel city),
   `wibrain` (kaomoji rain), `beastiemelt` (liquefying beastie portrait),
-  `plasma` (sin-interference spelt in ~wobWOB*o0), `yohei-rocks`
-  (tsubuyaki-GLSL port, credited), `tunnel` (square flythrough).
+  `plasma` (sin-interference spelt in ~wobWOB*o0), `wallsofcode` (text raycaster
+  after @KilledByAPixel dwitter 35982 — walls typeset from its own source),
+  `yohei-rocks` (tsubuyaki-GLSL port, credited), `tunnel` (square flythrough).
 
   Add a shader (one entry in kShaders, pick ONE contract):
   - `float fn(u, v, t)` — per-pixel luminance 0..1 (u,v square-normalised)

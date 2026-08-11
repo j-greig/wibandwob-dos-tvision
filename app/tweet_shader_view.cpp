@@ -266,6 +266,55 @@ static void frameWobPlasma(int W, int H, float t, float* lum, char* ch)
         }
 }
 
+// ── shader: WALLS.OF.CODE — text raycaster, after @KilledByAPixel ──
+// Port of dwitter.net/d/35982 ("Walls of Code"): a raycasting corridor
+// whose walls are typeset from source code — the original renders text
+// instead of pixels, so an ASCII grid is its natural habitat. The wall
+// text here is the dwitter itself (self-referential, as is proper).
+static void frameWallsOfCode(int W, int H, float t, float* lum, char* ch)
+{
+    static const char* code =
+        "for(c.width|=A=128;A;T+=.1)for(X=A/(e=64/T)-T,i=(X+t^T)%5>0||"
+        "(--A,T=1,20);i--;x.fillText(code[(X+t)*30&T+i],A*15,560-(i-9)*e))"
+        "x.font=e+'px\"'";
+    const int codeLen = (int)std::strlen(code);
+    for (int i = 0; i < W * H; ++i) { lum[i] = 0.f; ch[i] = 0; }
+    auto put = [&](int x, int y, float l, char c) {
+        if (x >= 0 && x < W && y >= 0 && y < H && l > lum[y * W + x])
+            { lum[y * W + x] = l; ch[y * W + x] = c; }
+    };
+    int mid = H / 2;
+    float move = t * 2.5f;
+    for (int a = 0; a < W; ++a) {
+        float slope = ((float)a - W * 0.5f) / (W * 0.5f);
+        for (float T = 1.f; T < 48.f; T += 0.1f) {
+            float X = T * slope * 1.2f + move;
+            int cell = ((int)std::floor(X)) ^ ((int)T);
+            if ((cell % 5 + 5) % 5 == 0) {
+                // wall: column of code glyphs, perspective height, near=bright
+                int e = (int)((float)H * 0.9f / T); if (e < 1) e = 1;
+                float l = 1.4f / (1.f + T * 0.28f); if (l > 1) l = 1;
+                // ~20 stacked glyphs per wall whatever its height, like the
+                // original — near walls get vertical runs of one character,
+                // i.e. GIANT letters
+                int perGlyph = (2 * e) / 20; if (perGlyph < 1) perGlyph = 1;
+                for (int r = -e; r <= e; ++r) {
+                    int gRow = (r + e) / perGlyph;
+                    int gi = (((int)(X * 3.f) + gRow) % codeLen + codeLen) % codeLen;
+                    put(a, mid + r, l, code[gi]);
+                }
+                break;
+            }
+            // floor text: receding dim glyphs below the horizon
+            int fy = mid + (int)((float)H * 0.5f / T * 0.9f) + 1;
+            if (fy < H) {
+                int gi = (((int)(X * 7.f) + (int)T) % codeLen + codeLen) % codeLen;
+                put(a, fy, 0.30f / (1.f + T * 0.15f) + 0.06f, code[gi]);
+            }
+        }
+    }
+}
+
 // ── registry ───────────────────────────────────────────────
 struct ShaderDef {
     const char* name;
@@ -278,10 +327,11 @@ static const ShaderDef kShaders[] = {
     { "wibrain",     nullptr,     nullptr,       frameWibRain },
     { "beastiemelt", nullptr,     nullptr,       frameBeastieMelt },
     { "plasma",      nullptr,     nullptr,       frameWobPlasma },
+    { "wallsofcode", nullptr,     nullptr,       frameWallsOfCode },
     { "yohei-rocks", shade,       nullptr,       nullptr },
     { "tunnel",      shadeTunnel, nullptr,       nullptr },
 };
-static const int kShaderCount = 6;
+static const int kShaderCount = 7;
 
 static const char* kRamp = " .:-=+*#%@";
 

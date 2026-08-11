@@ -129,7 +129,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"set_theme_variant", "Set chrome theme variant: monochrome (house grey) | cga (classic DOS colour) | dark_pastel", true},
         {"set_skin", "Apply a named CGA skin preset in one shot (skin param: dflat|turbo|terra|pipeline|phosphor|hercules|paper|midnight|off) — chrome, desktop, window paper colours", true},
         {"open_disks", "Open the SYMBIENT SHAREWARE LIBRARY — floppy-disk launcher, each disk boots an app (double-click/Enter)", false},
-        {"open_shader", "Open SHADER.SYS — pluggable ASCII shader host (shader param: isotower|wibrain|beastiemelt|plasma|yohei-rocks|tunnel; N cycles, P phosphor, space pauses)", false},
+        {"open_shader", "Open SHADER.SYS — pluggable ASCII shader host (shader param: isotower|wibrain|beastiemelt|plasma|wallsofcode|yohei-rocks|tunnel; N cycles, P phosphor, space pauses)", false},
         {"reset_theme", "Reset theme to default (monochrome + light)", false},
         {"open_scramble", "Toggle Scramble cat overlay", false},
         {"scramble_expand", "Toggle Scramble between smol and tall mode", false},
