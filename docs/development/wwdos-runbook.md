@@ -80,6 +80,12 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   process, closes its Ghostty window (tracked in /tmp/wwdos_ghostty_win),
   spawns fresh with `wait after command` OFF so dead surfaces auto-close.
   Never leave stray "Process exited" terminals behind.
+- **MONO.SHDR**: `open_shader` / View → Mono Shader / the MONO.SHDR disk —
+  ASCII port of a @YoheiNishitsuji tsubuyaki-GLSL raymarcher (space pauses,
+  P cycles phosphor). Porting lesson baked into tweet_shader_view.cpp: GLSL
+  `vec*mat3` is a row-vector multiply (rotation by -angle), and overflow
+  must be clamped like GPUs do silently. Prototype shaders offline in numpy
+  against a reference frame BEFORE the C++ build loop — it is 10x faster.
 - **Dense skinned scene**: `./scripts/skin_scene.sh [skin]` — 7 overlapping primer
   windows scaled to the live canvas + skin + dialog accents. Matches the Figma-ref
   density; two windows on a sea is a haiku, the refs are a pub argument.
