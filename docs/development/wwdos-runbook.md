@@ -80,7 +80,7 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   process, closes its Ghostty window (tracked in /tmp/wwdos_ghostty_win),
   spawns fresh with `wait after command` OFF so dead surfaces auto-close.
   Never leave stray "Process exited" terminals behind.
-- **MONO.SHDR**: `open_shader` / View → Mono Shader / the MONO.SHDR disk —
+- **SHADER.SYS**: `open_shader` (shader param: isotower|wibrain|beastiemelt|plasma|yohei-rocks|tunnel) / View → Mono Shader / the library disk —
   ASCII port of a @YoheiNishitsuji tsubuyaki-GLSL raymarcher (space pauses,
   P cycles phosphor). Porting lesson baked into tweet_shader_view.cpp: GLSL
   `vec*mat3` is a row-vector multiply (rotation by -angle), and overflow

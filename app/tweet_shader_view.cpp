@@ -27,6 +27,7 @@
 #include "theme_manager.h"
 
 #include <cmath>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -158,18 +159,129 @@ static float shadeTunnel(float u, float v, float t) {
     return lum < 0 ? 0 : (lum > 1 ? 1 : lum);
 }
 
+// ── shader: WIB.RAIN — kaomoji rain with phosphor tails ──
+static void frameWibRain(int W, int H, float t, float* lum, char* ch)
+{
+    for (int i = 0; i < W * H; ++i) { lum[i] = 0.f; ch[i] = 0; }
+    static const char* faces[] = { "(o_o)", "(^_^)", "(>_<)", "(;_;)", "(*_*)",
+                                   "(@_@)", "(u_u)", "(T_T)", "\\(^o^)/" };
+    const int nf = 9;
+    auto put = [&](int x, int y, float l, char c) {
+        if (x >= 0 && x < W && y >= 0 && y < H) { lum[y * W + x] = l; ch[y * W + x] = c; }
+    };
+    int streams = W / 3;
+    for (int k = 0; k < streams; ++k) {
+        float hx = std::sin(k * 127.1f) * 311.7f; hx -= std::floor(hx);
+        float hs = std::sin(k * 269.5f) * 183.3f; hs -= std::floor(hs);
+        int x = (int)(hx * W);
+        float speed = 3.f + hs * 9.f;
+        float span = (float)(H + 14);
+        float yy = std::fmod(t * speed + hs * 97.f, span) - 7.f;
+        int y = (int)yy;
+        const char* f = faces[k % nf];
+        int fl = (int)std::strlen(f);
+        // face at head, bright
+        for (int c = 0; c < fl; ++c) put(x - fl / 2 + c, y, 1.0f, f[c]);
+        // tail above: fading single chars sampled from the face
+        for (int tl = 1; tl < 7; ++tl)
+            put(x, y - tl, 0.55f - tl * 0.07f, f[(tl * 2) % fl]);
+    }
+}
+
+// ── shader: BEASTIE.MELT — a giant kaomoji beastie liquefying ──
+static void frameBeastieMelt(int W, int H, float t, float* lum, char* ch)
+{
+    for (int i = 0; i < W * H; ++i) { lum[i] = 0.f; ch[i] = 0; }
+    static const char* art[] = {
+        "    ________________    ",
+        "   /                \\   ",
+        "  /  (@)      (@)    \\  ",
+        " |        __          | ",
+        " |    \\__/  \\__/     | ",
+        " |   \\    ~~    /     | ",
+        "  \\   \\________/     /  ",
+        "   \\________________/   ",
+        "     |  |      |  |     ",
+    };
+    const int rows = 9, artW = 24;
+    auto put = [&](int x, int y, float l, char c) {
+        if (x >= 0 && x < W && y >= 0 && y < H && c != ' ')
+            { lum[y * W + x] = l; ch[y * W + x] = c; }
+    };
+    // background: sparse static
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            float hh = std::sin(x * 12.99f + y * 78.23f + std::floor(t * 3.f)) * 437.58f;
+            hh -= std::floor(hh);
+            if (hh > 0.985f) { lum[y * W + x] = 0.18f; ch[y * W + x] = '.'; }
+        }
+    int scale = (W / artW < (H - 6) / rows) ? W / artW : (H - 6) / rows;
+    if (scale < 1) scale = 1; if (scale > 3) scale = 3;
+    int aw = artW * scale, ahh = rows * scale;
+    int ox = (W - aw) / 2, oy = (H - ahh) / 2 - 2;
+    for (int r = 0; r < rows; ++r) {
+        const char* line = art[r];
+        int len = (int)std::strlen(line);
+        for (int sy = 0; sy < scale; ++sy) {
+            int y = oy + r * scale + sy;
+            // the melt: each output row slides sideways on its own sine
+            int wob = (int)(std::sin(t * 1.7f + y * 0.35f) * (2.f + y * 0.06f));
+            for (int cidx = 0; cidx < len; ++cidx) {
+                char cc = line[cidx];
+                if (cc == ' ') continue;
+                for (int sx = 0; sx < scale; ++sx) {
+                    float l = 0.85f + 0.15f * std::sin(t * 3.f + cidx * 0.4f);
+                    put(ox + cidx * scale + sx + wob, y, l, cc);
+                }
+            }
+        }
+    }
+    // drips: chars stretch downward off the chin
+    for (int d = 0; d < 12; ++d) {
+        float hd = std::sin(d * 91.7f) * 271.3f; hd -= std::floor(hd);
+        int x = ox + (int)(hd * aw);
+        float fall = std::fmod(t * (1.5f + hd * 3.f) + hd * 31.f, (float)(H / 2));
+        int y0 = oy + ahh;
+        for (int f = 0; f < (int)fall; ++f)
+            put(x, y0 + f, 0.5f - f * 0.02f, f % 3 ? '|' : '~');
+    }
+}
+
+// ── shader: WOB.PLASMA — demoscene plasma that spells itself in wibwob ──
+static void frameWobPlasma(int W, int H, float t, float* lum, char* ch)
+{
+    static const char* alpha = "~wobWOB*o0";
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            float fx = (float)x / W * 6.28f, fy = (float)y / H * 6.28f;
+            float v = std::sin(fx * 1.7f + t)
+                    + std::sin((fy + t) * 1.1f)
+                    + std::sin((fx + fy + t * 0.7f) * 0.9f)
+                    + std::sin(std::sqrt(fx * fx + fy * fy) * 2.3f - t * 1.3f);
+            float l = 0.5f + v * 0.125f;                    // 0..1-ish
+            float phase = 0.5f + 0.5f * std::sin(v * 1.9f + t * 0.5f);
+            int gi = (int)(phase * 9.99f);
+            lum[y * W + x] = l < 0 ? 0 : (l > 1 ? 1 : l);
+            ch[y * W + x] = alpha[gi];
+        }
+}
+
 // ── registry ───────────────────────────────────────────────
 struct ShaderDef {
     const char* name;
     float (*fn)(float, float, float);                 // per-pixel, or null
-    void (*frame)(int, int, float, float*);           // full-frame, or null
+    void (*frame)(int, int, float, float*);           // full-frame lum, or null
+    void (*frameG)(int, int, float, float*, char*);   // full-frame lum+glyphs, or null
 };
 static const ShaderDef kShaders[] = {
-    { "isotower",    nullptr,     frameIsoTower },
-    { "yohei-rocks", shade,       nullptr },
-    { "tunnel",      shadeTunnel, nullptr },
+    { "isotower",    nullptr,     frameIsoTower, nullptr },
+    { "wibrain",     nullptr,     nullptr,       frameWibRain },
+    { "beastiemelt", nullptr,     nullptr,       frameBeastieMelt },
+    { "plasma",      nullptr,     nullptr,       frameWobPlasma },
+    { "yohei-rocks", shade,       nullptr,       nullptr },
+    { "tunnel",      shadeTunnel, nullptr,       nullptr },
 };
-static const int kShaderCount = 3;
+static const int kShaderCount = 6;
 
 static const char* kRamp = " .:-=+*#%@";
 
@@ -219,18 +331,27 @@ void TTweetShaderView::draw()
     float N = (float)(W > 2*H ? W : 2*H);
 
     static std::vector<float> fbuf;
+    static std::vector<char> gbuf;
     const ShaderDef& sh = kShaders[shaderIdx];
     if (sh.frame) {
         fbuf.assign((size_t)W * H, 0.f);
         sh.frame(W, H, t, fbuf.data());
+    } else if (sh.frameG) {
+        fbuf.assign((size_t)W * H, 0.f);
+        gbuf.assign((size_t)W * H, 0);
+        sh.frameG(W, H, t, fbuf.data(), gbuf.data());
     }
 
     for (int y = 0; y < H; ++y) {
         TDrawBuffer b;
         for (int x = 0; x < W; ++x) {
             float lum;
+            char glyph = 0;
             if (sh.frame) {
                 lum = fbuf[(size_t)y * W + x];
+            } else if (sh.frameG) {
+                lum = fbuf[(size_t)y * W + x];
+                glyph = gbuf[(size_t)y * W + x];
             } else {
                 // FC.yx/r quirk of the original: swap axes going in
                 float u = (float)((H - 1 - y) * 2) / N;
@@ -240,7 +361,7 @@ void TTweetShaderView::draw()
             }
             int idx = (int)(lum * 9.999f);
             if (idx < 0) idx = 0; if (idx > 9) idx = 9;
-            char ch = kRamp[idx];
+            char ch = glyph ? glyph : kRamp[idx];
             // faint cells get the dim grey, bright cells the phosphor
             b.moveChar(x, ch, idx >= 3 ? ink : dim, 1);
         }
