@@ -47,6 +47,7 @@
 #include "frame_capture.h"
 #include "frame_file_player_view.h"
 #include "disk_library_view.h"
+#include "tweet_shader_view.h"
 #include "ascii_image_view.h"
 // Animated blocks view/window
 #include "animated_blocks_view.h"
@@ -260,6 +261,7 @@ const ushort cmAppLauncher = 232;    // Applications folder browser
 const ushort cmScrambleReply = 233;  // Async Scramble LLM response ready
 const ushort cmAsciiGallery = 234;   // ASCII Art Gallery browser
 const ushort cmDiskLibrary = 301;    // SYMBIENT SHAREWARE LIBRARY floppy launcher
+const ushort cmTweetShader = 302;    // MONO.SHDR tsubuyaki-GLSL port
 const ushort cmBackroomsTv = 284;    // Backrooms TV live art window
 
 // Glitch menu commands
@@ -936,6 +938,7 @@ private:
     friend std::string api_get_room_chat_display_name(TWwdosApp&);
     friend std::string api_take_last_registered_window_id(TWwdosApp&);
     friend void api_spawn_disks(TWwdosApp&, const TRect* bounds);
+    friend void api_spawn_shader(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_verse(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_mycelium(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_orbit(TWwdosApp&, const TRect* bounds);
@@ -1355,6 +1358,11 @@ void TWwdosApp::handleEvent(TEvent& event)
                     deskTop->insert(w);
                     registerWindow(w);
                 }
+                clearEvent(event);
+                break;
+            }
+            case cmTweetShader: {
+                api_spawn_shader(*this, nullptr);
                 clearEvent(event);
                 break;
             }
@@ -2652,6 +2660,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("Monster Ve~r~se (Generative)", cmMonsterVerse, kbNoKey) +
             *new TMenuItem("Monster Cam (Emo~j~i)", cmMonsterCam, kbNoKey) +
             *new TMenuItem("~B~ackrooms TV", cmBackroomsTv, kbNoKey) +
+            *new TMenuItem("Mono S~h~ader (Generative)", cmTweetShader, kbNoKey) +
             newLine() +
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
             *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
@@ -4865,6 +4874,13 @@ std::string wwdos_exec_command(const std::string& name,
     auto* app = dynamic_cast<TWwdosApp*>(TProgram::application);
     if (!app) return "err no running app";
     return exec_registry_command(*app, name, kv);
+}
+
+void api_spawn_shader(TWwdosApp& app, const TRect* bounds) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 92, 32);
+    TWindow* w = createTweetShaderWindow(r);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
 }
 
 void api_spawn_disks(TWwdosApp& app, const TRect* bounds) {

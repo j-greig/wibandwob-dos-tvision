@@ -401,6 +401,10 @@ void TDiskLibraryWindow::populateDisks()
         {"", "|WWW|", ""},
         5, 13, 15, "open_browser", {}});
 
+    d.push_back({"MONO.SHDR",
+        {"\xE3\x81\xA4\xE3\x81\xB6\xE3\x82\x84\xE3\x81\x8DGLSL", ".:=+*#%@", "47 rays"},
+        8, 0, 15, "open_shader", {}});
+
     // ── Skin disks: Symbient *Not* Software, disks 1-4 of 8 ──
     d.push_back({"DFLAT SKIN 1/8",
         {"Symbient", "*Not*", "Software"},
