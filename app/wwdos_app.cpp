@@ -5412,7 +5412,7 @@ std::string api_set_skin(TWwdosApp& app, const std::string& name) {
         return api_set_theme_variant(app, "monochrome");
     }
     const CgaSkin* s = findCgaSkin(name);
-    if (!s) return "err unknown skin (dflat|turbo|terra|pipeline|off)";
+    if (!s) return "err unknown skin (dflat|turbo|terra|pipeline|phosphor|hercules|paper|midnight|off)";
     api_set_theme_variant(app, "cga");
     if (auto* bg = getWibWobBg(app)) {
         bg->setTextureUtf8(s->texture[0] ? std::string(s->texture) : std::string(" "));

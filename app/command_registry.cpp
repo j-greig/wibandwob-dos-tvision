@@ -126,7 +126,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"pattern_mode", "Set pattern mode: continuous or tiled", false},
         {"set_theme_mode", "Set theme mode: light or dark", true},
         {"set_theme_variant", "Set chrome theme variant: monochrome (house grey) | cga (classic DOS colour) | dark_pastel", true},
-        {"set_skin", "Apply a named CGA skin preset in one shot (skin param: dflat|turbo|terra|pipeline|off) — chrome, desktop, window paper colours", true},
+        {"set_skin", "Apply a named CGA skin preset in one shot (skin param: dflat|turbo|terra|pipeline|phosphor|hercules|paper|midnight|off) — chrome, desktop, window paper colours", true},
         {"open_disks", "Open the SYMBIENT SHAREWARE LIBRARY — floppy-disk launcher, each disk boots an app (double-click/Enter)", false},
         {"reset_theme", "Reset theme to default (monochrome + light)", false},
         {"open_scramble", "Toggle Scramble cat overlay", false},

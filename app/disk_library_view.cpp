@@ -280,6 +280,22 @@ void TDiskLibraryWindow::populateDisks()
     d.push_back({"PIPELINE SKIN 4/8",
         {"Symbient", "*Not*", "Software"},
         0, 15, 4, "set_skin", {{"skin", "pipeline"}}});
+
+    d.push_back({"PHOSPHOR SKIN 5/8",
+        {"Symbient", "*Not*", "Software"},
+        2, 0, 10, "set_skin", {{"skin", "phosphor"}}});
+
+    d.push_back({"HERCULES SKIN 6/8",
+        {"Symbient", "*Not*", "Software"},
+        6, 0, 14, "set_skin", {{"skin", "hercules"}}});
+
+    d.push_back({"PAPER SKIN 7/8",
+        {"Symbient", "*Not*", "Software"},
+        7, 15, 0, "set_skin", {{"skin", "paper"}}});
+
+    d.push_back({"MIDNIGHT SKIN 8/8",
+        {"Symbient", "*Not*", "Software"},
+        8, 0, 11, "set_skin", {{"skin", "midnight"}}});
 }
 
 TWindow* createDiskLibraryWindow(const TRect& bounds)
