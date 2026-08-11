@@ -80,12 +80,38 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   process, closes its Ghostty window (tracked in /tmp/wwdos_ghostty_win),
   spawns fresh with `wait after command` OFF so dead surfaces auto-close.
   Never leave stray "Process exited" terminals behind.
-- **SHADER.SYS**: `open_shader` (shader param: isotower|wibrain|beastiemelt|plasma|yohei-rocks|tunnel) / View → Mono Shader / the library disk —
-  ASCII port of a @YoheiNishitsuji tsubuyaki-GLSL raymarcher (space pauses,
-  P cycles phosphor). Porting lesson baked into tweet_shader_view.cpp: GLSL
-  `vec*mat3` is a row-vector multiply (rotation by -angle), and overflow
-  must be clamped like GPUs do silently. Prototype shaders offline in numpy
-  against a reference frame BEFORE the C++ build loop — it is 10x faster.
+- **SHADER.SYS — the ASCII shader host** (tweet_shader_view.cpp)
+
+  Open it:
+  - API: `POST /menu/command {"command":"open_shader","args":{"shader":"wibrain"}}`
+    (omit `shader` for the default, isotower; also accepts x/y/w/h via the
+    `shader` window type)
+  - Menu: View → Mono Shader (Generative)
+  - Library: boot the SHADER.SYS disk (opens isotower)
+
+  Drive it (keys, window focused):
+  - `N` / Tab — next shader · `P` — phosphor (white/green/amber/cyan) ·
+    space — pause/resume. Active shader name shows bottom-left.
+
+  Registered shaders: `isotower` (painter-algorithm iso voxel city),
+  `wibrain` (kaomoji rain), `beastiemelt` (liquefying beastie portrait),
+  `plasma` (sin-interference spelt in ~wobWOB*o0), `yohei-rocks`
+  (tsubuyaki-GLSL port, credited), `tunnel` (square flythrough).
+
+  Add a shader (one entry in kShaders, pick ONE contract):
+  - `float fn(u, v, t)` — per-pixel luminance 0..1 (u,v square-normalised)
+  - `void frame(W, H, t, float* lum)` — full-frame luminance
+  - `void frameG(W, H, t, float* lum, char* glyphs)` — luminance + your own
+    ASCII glyph per cell (0 = fall back to the ramp " .:-=+*#%@")
+  Then add the name to the open_shader capability string in
+  command_registry.cpp. Luminance <0.3 renders dim grey, ≥0.3 phosphor.
+
+  Porting lessons (learned porting yohei-rocks): GLSL `vec*mat3` is a
+  ROW-vector multiply (rotation by -angle); float overflow must be clamped
+  like GPUs do silently; prototype in numpy against a reference frame
+  BEFORE entering the C++ build loop — 10x faster iteration. And for
+  isometric anything, painter-algorithm projection beats raymarching
+  repeated SDFs (tile-local fields tunnel across cell borders).
 - **Dense skinned scene**: `./scripts/skin_scene.sh [skin]` — 7 overlapping primer
   windows scaled to the live canvas + skin + dialog accents. Matches the Figma-ref
   density; two windows on a sea is a haiku, the refs are a pub argument.
