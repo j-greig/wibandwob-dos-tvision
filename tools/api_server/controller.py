@@ -164,6 +164,8 @@ class Controller:
                     # Update theme state from C++
                     self._state.theme_mode = state_data.get("theme_mode", "light")
                     self._state.theme_variant = state_data.get("theme_variant", "monochrome")
+                    self._state.cga_chrome = state_data.get("cga_chrome", False)
+                    self._state.skin = state_data.get("skin", "")
 
                     # Update windows list with real IDs from C++
                     new_windows = []

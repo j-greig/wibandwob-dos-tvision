@@ -226,6 +226,8 @@ class AppStateModel(BaseModel):
     pattern_mode: str
     theme_mode: str
     theme_variant: str
+    cga_chrome: bool = False
+    skin: str = ""
     windows: List[WindowState]
     canvas: CanvasInfo
     desktop: DesktopInfo

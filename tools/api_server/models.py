@@ -72,6 +72,8 @@ class AppState:
     pattern_mode: str = "continuous"  # or "tiled"
     theme_mode: str = "light"  # or "dark"
     theme_variant: str = "monochrome"  # or "dark_pastel"
+    cga_chrome: bool = False  # true when CGA skin chrome is active (set_theme_variant cga / set_skin)
+    skin: str = ""  # active named skin ("dflat"|"turbo"|"terra"|"pipeline"|"")
     windows: List[Window] = field(default_factory=list)
     next_z: int = 1
     last_workspace: Optional[str] = None
