@@ -938,7 +938,7 @@ private:
     friend std::string api_get_room_chat_display_name(TWwdosApp&);
     friend std::string api_take_last_registered_window_id(TWwdosApp&);
     friend void api_spawn_disks(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_shader(TWwdosApp&, const TRect* bounds);
+    friend void api_spawn_shader(TWwdosApp&, const TRect* bounds, const std::string& shader);
     friend void api_spawn_verse(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_mycelium(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_orbit(TWwdosApp&, const TRect* bounds);
@@ -1362,7 +1362,7 @@ void TWwdosApp::handleEvent(TEvent& event)
                 break;
             }
             case cmTweetShader: {
-                api_spawn_shader(*this, nullptr);
+                api_spawn_shader(*this, nullptr, "");
                 clearEvent(event);
                 break;
             }
@@ -4876,9 +4876,9 @@ std::string wwdos_exec_command(const std::string& name,
     return exec_registry_command(*app, name, kv);
 }
 
-void api_spawn_shader(TWwdosApp& app, const TRect* bounds) {
+void api_spawn_shader(TWwdosApp& app, const TRect* bounds, const std::string& shader) {
     TRect r = bounds ? *bounds : api_centered_bounds(app, 92, 32);
-    TWindow* w = createTweetShaderWindow(r);
+    TWindow* w = createTweetShaderWindow(r, shader);
     app.deskTop->insert(w);
     app.registerWindow(w);
 }

@@ -86,14 +86,110 @@ static float shade(float u, float v, float t) {
     return o < 0 ? 0 : (o > 1 ? 1 : o);
 }
 
+// ── shader: ISO.TOWER — painter-algorithm isometric voxel field ──
+// No raymarching: project each column of a breathing heightfield with the
+// classic 2:1 iso transform, draw back-to-front (painter), three facet
+// tones: top ▓ bright, sun face mid, shade face dark. Crisp by construction.
+static void frameIsoTower(int W, int H, float t, float* out)
+{
+    for (int i = 0; i < W * H; ++i) out[i] = 0.f;
+    const int tw = 6, th = 3;          // tile half-extent in cells
+    const int hstep = 1;               // rows per height unit
+    int G = (W / (2 * tw)) + (H / th) + 6;
+
+    auto plot = [&](int x, int y, float l) {
+        if (x >= 0 && x < W && y >= 0 && y < H) out[y * W + x] = l;
+    };
+
+    int midX = W / 2;
+    int topY = -G;   // pull the grid up so it fills the window
+
+    for (int sdiag = 0; sdiag <= 2 * G; ++sdiag) {          // back to front
+        for (int i = 0; i <= sdiag; ++i) {
+            int j = sdiag - i;
+            if (i > G || j > G) continue;
+            // a CITY, not a landmass: ~40% of cells are empty street, so
+            // each tower reads as its own object. Heights breathe with t;
+            // cap brightness scales with height for depth.
+            float cell = std::sin(i * 12.9898f + j * 78.233f) * 43758.5453f;
+            cell -= std::floor(cell);                     // hash 0..1
+            if (cell < 0.42f) continue;                   // street gap
+            float hf = 2.f + 5.f * cell
+                     + 2.5f * std::sin(t * 0.8f + cell * 6.28f + (i + j) * 0.3f);
+            int h = (int)hf; if (h < 1) h = 1;
+            int ox = midX + (i - j) * tw;
+            int oy = topY + (i + j) * th - h * hstep + H / 2;
+
+            // column faces first (they sit under the cap): straight prisms
+            int faceTop = oy + th;
+            int faceH = h * hstep + th;
+            for (int f = 0; f < faceH; ++f) {
+                for (int c = 1; c <= tw; ++c) {
+                    // left = sun, right = shade; edges taper with the diamond
+                    plot(ox - c, faceTop + f, 0.50f);
+                    plot(ox + c - 1, faceTop + f, 0.22f);
+                }
+            }
+            // top cap: solid diamond; higher towers glow brighter
+            float capLum = 0.55f + 0.05f * (float)h;
+            if (capLum > 0.98f) capLum = 0.98f;
+            for (int r = -th; r <= th; ++r) {
+                int span = tw * (th - (r < 0 ? -r : r)) / th;
+                for (int c = -span; c < span; ++c)
+                    plot(ox + c, oy + r, capLum);
+            }
+
+        }
+    }
+}
+
+// ── shader: SQ.TUNNEL — flying down a glowing square tunnel ──
+static float shadeTunnel(float u, float v, float t) {
+    float x = (u - 0.5f) * 2.f, y = (v - 0.5f) * 2.f;
+    float ax = std::fabs(x), ay = std::fabs(y);
+    float m = ax > ay ? ax : ay;              // square radius
+    if (m < 1e-4f) m = 1e-4f;
+    float depth = 1.f / m + t * 3.f;          // fly forward
+    float ang = std::atan2(y, x);
+    float wall = std::sin(depth * 2.f) * std::cos(ang * 8.f + t);
+    float rings = 0.5f + 0.5f * std::sin(depth * 3.1415f);
+    float lum = rings * 0.6f + 0.4f * std::fabs(wall);
+    lum *= m;                                  // darken toward the far centre
+    return lum < 0 ? 0 : (lum > 1 ? 1 : lum);
+}
+
+// ── registry ───────────────────────────────────────────────
+struct ShaderDef {
+    const char* name;
+    float (*fn)(float, float, float);                 // per-pixel, or null
+    void (*frame)(int, int, float, float*);           // full-frame, or null
+};
+static const ShaderDef kShaders[] = {
+    { "isotower",    nullptr,     frameIsoTower },
+    { "yohei-rocks", shade,       nullptr },
+    { "tunnel",      shadeTunnel, nullptr },
+};
+static const int kShaderCount = 3;
+
 static const char* kRamp = " .:-=+*#%@";
 
 static const int kPhosphorIdx[4] = { 15, 10, 14, 11 };  // white green amber cyan
 
 } // namespace
 
-TTweetShaderView::TTweetShaderView(const TRect& bounds, unsigned aPeriodMs)
-    : TView(bounds), periodMs(aPeriodMs)
+int shaderCount() { return kShaderCount; }
+const char* shaderName(int idx) {
+    return (idx >= 0 && idx < kShaderCount) ? kShaders[idx].name : "";
+}
+int findShaderIndex(const std::string& name) {
+    for (int i = 0; i < kShaderCount; ++i)
+        if (name == kShaders[i].name) return i;
+    return -1;
+}
+
+TTweetShaderView::TTweetShaderView(const TRect& bounds, int aShaderIdx, unsigned aPeriodMs)
+    : TView(bounds), periodMs(aPeriodMs),
+      shaderIdx(aShaderIdx >= 0 && aShaderIdx < kShaderCount ? aShaderIdx : 0)
 {
     options |= ofSelectable;
     // gfGrowHiX|HiY: bottom-right corner follows a window resize while the
@@ -122,14 +218,26 @@ void TTweetShaderView::draw()
     // runs on a square canvas — normalise both axes by the same N.
     float N = (float)(W > 2*H ? W : 2*H);
 
+    static std::vector<float> fbuf;
+    const ShaderDef& sh = kShaders[shaderIdx];
+    if (sh.frame) {
+        fbuf.assign((size_t)W * H, 0.f);
+        sh.frame(W, H, t, fbuf.data());
+    }
+
     for (int y = 0; y < H; ++y) {
         TDrawBuffer b;
         for (int x = 0; x < W; ++x) {
-            // FC.yx/r quirk of the original: swap axes going in
-            float u = (float)((H - 1 - y) * 2) / N;
-            float v = (float)x / N;
-            float lum = shade(u, v, t);
-            lum = std::pow(lum, 1.6f);   // gamma: keep texture in the glow
+            float lum;
+            if (sh.frame) {
+                lum = fbuf[(size_t)y * W + x];
+            } else {
+                // FC.yx/r quirk of the original: swap axes going in
+                float u = (float)((H - 1 - y) * 2) / N;
+                float v = (float)x / N;
+                lum = sh.fn(u, v, t);
+                if (sh.fn == shade) lum = std::pow(lum, 1.6f);  // rocks gamma
+            }
             int idx = (int)(lum * 9.999f);
             if (idx < 0) idx = 0; if (idx > 9) idx = 9;
             char ch = kRamp[idx];
@@ -137,6 +245,14 @@ void TTweetShaderView::draw()
             b.moveChar(x, ch, idx >= 3 ? ink : dim, 1);
         }
         writeLine(0, y, W, 1, b);
+    }
+    // shader name tag, bottom-left, dim
+    {
+        TDrawBuffer tag;
+        std::string label = std::string(" ") + kShaders[shaderIdx].name + " [N] ";
+        TColorAttr tagA = TColorAttr(ThemeManager::cgaColor(8), ThemeManager::cgaColor(0));
+        tag.moveStr(0, TStringView(label.data(), label.size()), tagA);
+        writeLine(0, H - 1, (int)label.size() < W ? (int)label.size() : W, 1, tag);
     }
 }
 
@@ -155,6 +271,8 @@ void TTweetShaderView::handleEvent(TEvent& ev)
         switch (ch) {
             case ' ': if (timerId) stopTimer(); else startTimer(); handled = true; break;
             case 'p': case 'P': phosphor = (phosphor + 1) % 4; handled = true; break;
+            case 'n': case 'N': case '\t':
+                shaderIdx = (shaderIdx + 1) % kShaderCount; frame = 0; handled = true; break;
             default: break;
         }
         if (handled) { drawView(); clearEvent(ev); }
@@ -174,20 +292,22 @@ void TTweetShaderView::setState(ushort aState, Boolean enable)
 namespace {
 class TTweetShaderWindow : public TWindow {
 public:
-    TTweetShaderWindow(const TRect& bounds)
+    TTweetShaderWindow(const TRect& bounds, int shaderIdx)
         : TWindowInit(&TTweetShaderWindow::initFrame),
-          TWindow(bounds, "MONO.SHDR \xE2\x80\x94 \xE3\x81\xA4\xE3\x81\xB6\xE3\x82\x84\xE3\x81\x8DGLSL port", wnNoNumber)
+          TWindow(bounds, "SHADER.SYS", wnNoNumber)
     {
         flags = wfMove | wfGrow | wfClose | wfZoom;
         growMode = gfGrowAll;
         TRect r = getExtent();
         r.grow(-1, -1);
-        insert(new TTweetShaderView(r));
+        insert(new TTweetShaderView(r, shaderIdx));
     }
 };
 } // namespace
 
-TWindow* createTweetShaderWindow(const TRect& bounds)
+TWindow* createTweetShaderWindow(const TRect& bounds, const std::string& name)
 {
-    return new TTweetShaderWindow(bounds);
+    int idx = name.empty() ? 0 : findShaderIndex(name);
+    if (idx < 0) idx = 0;
+    return new TTweetShaderWindow(bounds, idx);
 }

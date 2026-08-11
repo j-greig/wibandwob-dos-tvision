@@ -84,7 +84,7 @@ extern void api_spawn_deep_signal(TWwdosApp&, const TRect*);
 extern void api_spawn_backrooms_tv(TWwdosApp&, const TRect*);
 extern void api_spawn_app_launcher(TWwdosApp&, const TRect*);
 extern void api_spawn_disks(TWwdosApp&, const TRect*);
-extern void api_spawn_shader(TWwdosApp&, const TRect*);
+extern void api_spawn_shader(TWwdosApp&, const TRect*, const std::string&);
 extern void api_spawn_gallery(TWwdosApp&, const TRect*);
 extern void api_spawn_figlet_text(TWwdosApp&, const TRect*,
     const std::string& text, const std::string& font,
@@ -255,7 +255,8 @@ static const char* spawn_app_launcher(TWwdosApp& app, const std::map<std::string
 static const char* spawn_disks(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_disks(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_shader(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
-    TRect r; api_spawn_shader(app, opt_bounds(kv, r)); return nullptr; }
+    TRect r; auto it = kv.find("shader");
+    api_spawn_shader(app, opt_bounds(kv, r), it != kv.end() ? it->second : ""); return nullptr; }
 static const char* spawn_gallery(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_gallery(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_figlet_text(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
