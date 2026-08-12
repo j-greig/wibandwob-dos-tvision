@@ -46,6 +46,15 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
 - `text_view` windows render **transparent** (invisible on empty desktop) — use
   `open_primer` (frame_player) or `ascii` types for art. Zilla: avoid transparent editor.
 - The generic `ascii` window type ignores `props.path` — it plays its own animation.
+- **Workspaces round-trip fully** (2026-08-12): skin, desktop UTF-8 texture +
+  RGB colours, per-window bg/fg overrides, shader name, frameless flags all
+  serialise and restore. `save_workspace` takes optional `path` param.
+  Historic saves with `preset:"custom"` used to restore nothing (dead
+  branch) — fixed, old files load with explicit fields. Loader passes ALL
+  props keys to registry spawns, so parameterised types survive. Known
+  remaining gaps (agent audit 2026-08-12): editor/browser/paint/game inner
+  state not serialised; scramble display mode saved nowhere; theme_mode is a
+  no-op; registry tests still bit-rotted (52 stubs, fix list in audit).
 - **After relaunching wwdos, the API server's cached socket may be stale.** It
   re-discovers on next failure, but a command sent into the gap can silently no-op.
   Verify with `GET /state` (check `windows` matches reality) before trusting a batch.

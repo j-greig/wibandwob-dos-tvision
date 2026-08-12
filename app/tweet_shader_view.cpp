@@ -476,6 +476,20 @@ public:
 };
 } // namespace
 
+std::string shaderWindowShaderName(TWindow* w)
+{
+    if (!w) return "";
+    TView* start = w->first();
+    if (!start) return "";
+    TView* v = start;
+    do {
+        if (auto* sv = dynamic_cast<TTweetShaderView*>(v))
+            return shaderName(sv->currentShader());
+        v = v->next;
+    } while (v != start);
+    return "";
+}
+
 TWindow* createTweetShaderWindow(const TRect& bounds, const std::string& name)
 {
     int idx = name.empty() ? 0 : findShaderIndex(name);

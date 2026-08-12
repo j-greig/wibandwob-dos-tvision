@@ -42,6 +42,8 @@ private:
     int frame {0};
     int phosphor {0};   // 0 white, 1 green, 2 amber, 3 cyan
     int shaderIdx {0};
+public:
+    int currentShader() const { return shaderIdx; }
 };
 
 class TWindow;
@@ -51,5 +53,7 @@ TWindow* createTweetShaderWindow(const TRect& bounds,
 int shaderCount();
 const char* shaderName(int idx);
 int findShaderIndex(const std::string& name);   // -1 if unknown
+// Workspace serialisation: shader name of a shader window ("" if not one)
+std::string shaderWindowShaderName(TWindow* w);
 
 #endif // TWEET_SHADER_VIEW_H

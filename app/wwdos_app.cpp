@@ -3694,7 +3694,8 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
         return false;
     }
 
-    // Extract globals.patternMode
+    // Extract globals.patternMode + skin (skin FIRST: it repaints chrome and
+    // desktop; per-window colours are restored later from each window's props)
     bool continuous = USE_CONTINUOUS_PATTERN;
     size_t globalsPos = data.find("\"globals\"");
     if (globalsPos != std::string::npos) {
@@ -3703,6 +3704,11 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
             std::string pm;
             if (parseKeyedString(data, pos+1, "patternMode", pm))
                 continuous = (pm == "continuous");
+            std::string skinName;
+            if (parseKeyedString(data, pos+1, "skin", skinName)) {
+                extern std::string api_set_skin(TWwdosApp&, const std::string&);
+                api_set_skin(*this, skinName.empty() ? "off" : skinName);
+            }
         }
     }
 
@@ -3712,17 +3718,28 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
         size_t pos = data.find('{', deskPos);
         if (pos != std::string::npos) {
             std::string preset;
-            if (parseKeyedString(data, pos+1, "preset", preset)) {
-                api_desktop_preset(*this, preset);
-            } else {
-                // Fall back to individual fields
-                std::string ch;
-                int fg = -1, bg = -1;
-                if (parseKeyedString(data, pos+1, "char", ch) && !ch.empty()) {
+            bool presetApplied = false;
+            if (parseKeyedString(data, pos+1, "preset", preset)
+                && !preset.empty() && preset != "custom") {
+                presetApplied = (api_desktop_preset(*this, preset) == "ok");
+            }
+            if (!presetApplied) {
+                // Explicit fields (historic saves wrote preset:"custom" which
+                // used to dead-end here and restore nothing)
+                std::string ch, chU;
+                if (parseKeyedString(data, pos+1, "charUtf8", chU) && !chU.empty())
+                    api_desktop_texture(*this, chU);
+                else if (parseKeyedString(data, pos+1, "char", ch) && !ch.empty())
                     api_desktop_texture(*this, ch);
-                }
-                if (parseKeyedNumber(data, pos+1, "fg", fg) && parseKeyedNumber(data, pos+1, "bg", bg)) {
-                    api_desktop_color(*this, fg, bg);
+                int rgbFg = -1, rgbBg = -1;
+                if (parseKeyedNumber(data, pos+1, "rgbFg", rgbFg)
+                    && parseKeyedNumber(data, pos+1, "rgbBg", rgbBg)) {
+                    if (auto* dbg = dynamic_cast<TWibWobBackground*>(deskTop->background))
+                        dbg->setColorRgb((uint32_t)rgbFg, (uint32_t)rgbBg);
+                } else {
+                    int fg = -1, bgc = -1;
+                    if (parseKeyedNumber(data, pos+1, "fg", fg) && parseKeyedNumber(data, pos+1, "bg", bgc))
+                        api_desktop_color(*this, fg, bgc);
                 }
             }
             bool gallery = false;
@@ -3849,6 +3866,7 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
             }
             continue;
         } else if (type == "frame_player") {
+            // (colour restore for this branch happens below via propsColours)
             std::string path; unsigned pms = 300;
             bool frameless = false, shadowless = false;
             size_t propsPos = obj.find("\"props\"");
@@ -3863,7 +3881,36 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
                     parseKeyedBool(obj, brace+1, "shadowless", shadowless);
                 }
             }
-            if (!path.empty()) openAnimationFilePath(path, bounds, frameless, shadowless, title);
+            if (!path.empty()) {
+                const std::vector<TWindow*> before = captureWindows();
+                openAnimationFilePath(path, bounds, frameless, shadowless, title);
+                // restore saved per-window colours (bgIdx/fgIdx props)
+                int bgi = -999, fgi = -999;
+                if (propsPos != std::string::npos) {
+                    size_t brace = obj.find('{', propsPos);
+                    if (brace != std::string::npos) {
+                        parseKeyedNumber(obj, brace+1, "bgIdx", bgi);
+                        parseKeyedNumber(obj, brace+1, "fgIdx", fgi);
+                    }
+                }
+                if (bgi != -999 || fgi != -999) {
+                    for (TWindow* cand : captureWindows()) {
+                        bool existed = false;
+                        for (TWindow* prior : before) if (prior == cand) { existed = true; break; }
+                        if (existed) continue;
+                        if (auto* fp = ww_get_child_view<FrameFilePlayerView>(cand)) {
+                            if (bgi != -999) fp->setBackgroundIndex(bgi);
+                            if (fgi != -999) fp->setForegroundIndex(fgi);
+                            if (cand->frame) cand->frame->drawView();
+                        } else if (auto* tv = ww_get_child_view<TTextFileView>(cand)) {
+                            if (bgi != -999) tv->setBackgroundIndex(bgi);
+                            if (fgi != -999) tv->setForegroundIndex(fgi);
+                            if (cand->frame) cand->frame->drawView();
+                        }
+                        break;
+                    }
+                }
+            }
             continue; // openAnimationFilePath handles insert + register
         } else if (type == "text_view") {
             std::string path;
@@ -3873,7 +3920,32 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
                 if (brace != std::string::npos)
                     parseKeyedString(obj, brace+1, "path", path);
             }
-            if (!path.empty()) { api_open_text_view_path(*this, path, &bounds); continue; }
+            if (!path.empty()) {
+                const std::vector<TWindow*> before = captureWindows();
+                api_open_text_view_path(*this, path, &bounds);
+                int bgi = -999, fgi = -999;
+                if (propsPos != std::string::npos) {
+                    size_t brace = obj.find('{', propsPos);
+                    if (brace != std::string::npos) {
+                        parseKeyedNumber(obj, brace+1, "bgIdx", bgi);
+                        parseKeyedNumber(obj, brace+1, "fgIdx", fgi);
+                    }
+                }
+                if (bgi != -999 || fgi != -999) {
+                    for (TWindow* cand : captureWindows()) {
+                        bool existed = false;
+                        for (TWindow* prior : before) if (prior == cand) { existed = true; break; }
+                        if (existed) continue;
+                        if (auto* tv = ww_get_child_view<TTextFileView>(cand)) {
+                            if (bgi != -999) tv->setBackgroundIndex(bgi);
+                            if (fgi != -999) tv->setForegroundIndex(fgi);
+                            if (cand->frame) cand->frame->drawView();
+                        }
+                        break;
+                    }
+                }
+            }
+            continue;   // empty path used to fall through to a null-deref zoom
         } else if (type == "gallery") {
             int tabIndex = 0;
             std::string searchText;
@@ -3896,6 +3968,32 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
             kv["w"] = std::to_string(w);
             kv["h"] = std::to_string(h);
             if (!title.empty()) kv["title"] = title;
+            // Copy every scalar props key into kv so registry spawns receive
+            // their args (shader name, gradient kind, future types) — the old
+            // x/y/w/h-only kv silently degraded every parameterised type.
+            {
+                size_t propsPos = obj.find("\"props\"");
+                if (propsPos != std::string::npos) {
+                    size_t brace = obj.find('{', propsPos);
+                    size_t end = (brace != std::string::npos) ? obj.find('}', brace) : std::string::npos;
+                    if (brace != std::string::npos && end != std::string::npos) {
+                        std::string pb = obj.substr(brace + 1, end - brace - 1);
+                        size_t q = 0;
+                        while ((q = pb.find('"', q)) != std::string::npos) {
+                            size_t q2 = pb.find('"', q + 1);
+                            if (q2 == std::string::npos) break;
+                            std::string key = pb.substr(q + 1, q2 - q - 1);
+                            std::string sval; int nval = 0;
+                            if (parseKeyedString(pb, 0, key.c_str(), sval))
+                                kv.emplace(key, sval);
+                            else if (parseKeyedNumber(pb, 0, key.c_str(), nval))
+                                kv.emplace(key, std::to_string(nval));
+                            size_t colon = pb.find(':', q2);
+                            q = (colon == std::string::npos) ? q2 + 1 : colon + 1;
+                        }
+                    }
+                }
+            }
             const char* err = spec->spawn(*this, kv);
             if (err) continue;
 
@@ -3973,6 +4071,32 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
             kv["w"] = std::to_string(w);
             kv["h"] = std::to_string(h);
             if (!title.empty()) kv["title"] = title;
+            // Copy every scalar props key into kv so registry spawns receive
+            // their args (shader name, gradient kind, future types) — the old
+            // x/y/w/h-only kv silently degraded every parameterised type.
+            {
+                size_t propsPos = obj.find("\"props\"");
+                if (propsPos != std::string::npos) {
+                    size_t brace = obj.find('{', propsPos);
+                    size_t end = (brace != std::string::npos) ? obj.find('}', brace) : std::string::npos;
+                    if (brace != std::string::npos && end != std::string::npos) {
+                        std::string pb = obj.substr(brace + 1, end - brace - 1);
+                        size_t q = 0;
+                        while ((q = pb.find('"', q)) != std::string::npos) {
+                            size_t q2 = pb.find('"', q + 1);
+                            if (q2 == std::string::npos) break;
+                            std::string key = pb.substr(q + 1, q2 - q - 1);
+                            std::string sval; int nval = 0;
+                            if (parseKeyedString(pb, 0, key.c_str(), sval))
+                                kv.emplace(key, sval);
+                            else if (parseKeyedNumber(pb, 0, key.c_str(), nval))
+                                kv.emplace(key, std::to_string(nval));
+                            size_t colon = pb.find(':', q2);
+                            q = (colon == std::string::npos) ? q2 + 1 : colon + 1;
+                        }
+                    }
+                }
+            }
             const char* err = spec->spawn(*this, kv);
             if (err) continue;
 
@@ -4066,7 +4190,8 @@ std::string TWwdosApp::buildWorkspaceJson()
     json += "  \"app\": \"test_pattern\",\n";
     json += std::string("  \"timestamp\": \"") + ts + "\",\n";
     json += "  \"screen\": { \"width\": " + std::to_string(sw) + ", \"height\": " + std::to_string(sh) + " },\n";
-    json += std::string("  \"globals\": { \"patternMode\": \"") + (USE_CONTINUOUS_PATTERN ? "continuous" : "tiled") + "\" },\n";
+    json += std::string("  \"globals\": { \"patternMode\": \"") + (USE_CONTINUOUS_PATTERN ? "continuous" : "tiled")
+          + "\", \"skin\": \"" + json_escape(ThemeManager::activeSkin()) + "\" },\n";
 
     // Desktop state
     {
@@ -4081,8 +4206,16 @@ std::string TWwdosApp::buildWorkspaceJson()
             json += "\", ";
             json += "\"fg\": " + std::to_string((int)bg->getFg()) + ", ";
             json += "\"bg\": " + std::to_string((int)bg->getBg()) + ", ";
-            json += std::string("\"gallery\": ") + (galleryMode_ ? "true" : "false") + ", ";
-            json += "\"preset\": \"" + bg->getPresetName() + "\"";
+            if (!bg->getPatternUtf8().empty())
+                json += "\"charUtf8\": \"" + json_escape(bg->getPatternUtf8()) + "\", ";
+            if (bg->isRgb()) {
+                json += "\"rgbFg\": " + std::to_string(bg->getRgbFg()) + ", ";
+                json += "\"rgbBg\": " + std::to_string(bg->getRgbBg()) + ", ";
+            }
+            json += std::string("\"gallery\": ") + (galleryMode_ ? "true" : "false");
+            std::string presetName = bg->getPresetName();
+            if (presetName != "custom")
+                json += ", \"preset\": \"" + presetName + "\"";
             json += " },\n";
         }
     }
@@ -4108,12 +4241,25 @@ std::string TWwdosApp::buildWorkspaceJson()
         if (type == "test_pattern") {
             props = "{}"; // Pattern mode is global in MVP
         } else if (type == "frame_player") {
+            // (colour restore for this branch happens below via propsColours)
             // TFrameAnimationWindow stores the path directly — use its getter
             if (auto *faw = dynamic_cast<TFrameAnimationWindow*>(w)) {
-                const std::string& fp = faw->getFilePath();
-                if (!fp.empty())
-                    props = "{\"path\": \"" + json_escape(fp) + "\"}";
+                props = "{\"path\": \"" + json_escape(faw->getFilePath()) + "\"";
+                if (auto* fp = ww_get_child_view<FrameFilePlayerView>(w)) {
+                    props += ", \"bgIdx\": " + std::to_string(fp->backgroundIndex());
+                    props += ", \"fgIdx\": " + std::to_string(fp->foregroundIndex());
+                } else if (auto* tv = ww_get_child_view<TTextFileView>(w)) {
+                    // some frame_players host a TTextFileView (single-frame
+                    // text) — same dual-cast set_window_bg uses
+                    props += ", \"bgIdx\": " + std::to_string(tv->backgroundIndex());
+                    props += ", \"fgIdx\": " + std::to_string(tv->foregroundIndex());
+                }
+                props += std::string(", \"frameless\": ") + (faw->isFrameless() ? "true" : "false");
+                props += std::string(", \"shadowless\": ") + ((w->state & sfShadow) ? "false" : "true");
+                props += "}";
             }
+        } else if (type == "shader") {
+            props = "{\"shader\": \"" + json_escape(shaderWindowShaderName(w)) + "\"}";
         } else if (type == "gradient") {
             // Keep concrete gradient subtype in props for backward compatibility.
             TView *cStart = w->first();
@@ -4134,9 +4280,12 @@ std::string TWwdosApp::buildWorkspaceJson()
             }
         } else if (type == "text_view") {
             if (auto *ttw = dynamic_cast<TTransparentTextWindow*>(w)) {
-                const std::string& fp = ttw->getFilePath();
-                if (!fp.empty())
-                    props = "{\"path\": \"" + json_escape(fp) + "\"}";
+                props = "{\"path\": \"" + json_escape(ttw->getFilePath()) + "\"";
+                if (auto* tv = ww_get_child_view<TTextFileView>(w)) {
+                    props += ", \"bgIdx\": " + std::to_string(tv->backgroundIndex());
+                    props += ", \"fgIdx\": " + std::to_string(tv->foregroundIndex());
+                }
+                props += "}";
             }
         } else if (type == "gallery") {
             if (auto *gallery = dynamic_cast<TGalleryWindow*>(w)) {
@@ -4185,6 +4334,7 @@ std::string TWwdosApp::buildWorkspaceJson()
         if (title && *title) {
             titleValue = title;
         } else if (type == "frame_player") {
+            // (colour restore for this branch happens below via propsColours)
             if (auto *faw = dynamic_cast<TFrameAnimationWindow*>(w)) {
                 const std::string& fp = faw->getFilePath();
                 if (!fp.empty()) {

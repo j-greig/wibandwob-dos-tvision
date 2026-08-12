@@ -59,6 +59,7 @@ public:
     uint32_t getRgbFg() const { return rgbFg_; }
     uint32_t getRgbBg() const { return rgbBg_; }
     char  getPattern() const { return pattern; }
+    const std::string& getPatternUtf8() const { return patternUtf8_; }
 
 private:
     uchar fgColor;

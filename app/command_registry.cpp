@@ -122,7 +122,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"cascade", "Cascade all windows on desktop", false},
         {"tile", "Tile all windows on desktop", false},
         {"close_all", "Close all windows", false},
-        {"save_workspace", "Save current workspace", false},
+        {"save_workspace", "Save current workspace (optional path param; default workspaces/last_workspace.json + timestamped snapshot)", false},
         {"open_workspace", "Open workspace from a path", true},
         {"screenshot", "Capture screen to a text snapshot", false},
         {"pattern_mode", "Set pattern mode: continuous or tiled", false},
@@ -250,6 +250,11 @@ std::string exec_registry_command(
         return "ok";
     }
     if (name == "save_workspace") {
+        auto pit = kv.find("path");
+        if (pit != kv.end() && !pit->second.empty()) {
+            extern bool api_save_workspace_path(TWwdosApp&, const std::string&);
+            return api_save_workspace_path(app, pit->second) ? "ok" : "err save failed";
+        }
         api_save_workspace(app);
         return "ok";
     }

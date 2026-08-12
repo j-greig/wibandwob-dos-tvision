@@ -63,6 +63,7 @@ void TWibWobBackground::setPreset(const std::string& name)
     for (auto& p : getDesktopPresets()) {
         if (name == p.name) {
             pattern = p.pattern;
+            patternUtf8_.clear();   // presets are single-byte; stale ▒ lingered
             fgColor = p.fg;
             bgColor = p.bg;
             useRgb_ = p.useRgb;
