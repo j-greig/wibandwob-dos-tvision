@@ -564,13 +564,13 @@ private:
 
         switch (auth.mode()) {
             case AuthMode::ClaudeCode:
-                fg = TColorRGB(0, 160, 0);       // green
+                fg = ThemeManager::cgaColor(ThemeManager::fgIndex(SkinRole::Ok));
                 break;
             case AuthMode::ApiKey:
-                fg = TColorRGB(180, 140, 0);      // amber
+                fg = ThemeManager::cgaColor(ThemeManager::fgIndex(SkinRole::Accent));
                 break;
             case AuthMode::NoAuth:
-                fg = TColorRGB(180, 50, 50);      // red
+                fg = ThemeManager::cgaColor(ThemeManager::fgIndex(SkinRole::Warn));
                 break;
         }
 
@@ -602,13 +602,13 @@ private:
         const char* label;
 
         if (status.api_active) {
-            fg = TColorRGB(0, 160, 0);       // green
+            fg = ThemeManager::cgaColor(ThemeManager::fgIndex(SkinRole::Ok));
             label = "API ON";
         } else if (status.listening) {
-            fg = TColorRGB(120, 120, 120);    // grey
+            fg = ThemeManager::cgaColor(ThemeManager::fgIndex(SkinRole::Dim));
             label = "API IDLE";
         } else {
-            fg = TColorRGB(180, 50, 50);      // red
+            fg = ThemeManager::cgaColor(ThemeManager::fgIndex(SkinRole::Warn));
             label = "API OFF";
         }
 
@@ -5728,6 +5728,39 @@ std::string api_desktop_color(TWwdosApp& app, int fg, int bg_color) {
     return "ok";
 }
 
+// ── Terminal palette programming (OSC 4) — the DOS DAC registers ─────
+// Indexed colours (0x07-style attrs everywhere) render through the
+// TERMINAL's 16 ANSI slots — Ghostty's "black" is #2A2A2A, which is why
+// legacy views looked grey on dark skins no matter what we patched.
+// The canon fix: set_skin reprograms the slots to authentic CGA RGB
+// (mono skins get luminance-mapped ramps — swapping the monitor, not
+// the app). Every indexed draw in every view then obeys the skin.
+static void emitTerminalPalette(const CgaSkin* sk)
+{
+    std::string out;
+    char seq[48];
+    for (int i = 0; i < 16; ++i) {
+        uint32_t rgb = ThemeManager::cgaRgb(i);
+        if (sk) {
+            int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+            int lum = (r * 299 + g * 587 + b * 114) / 1000;
+            if (std::string(sk->name) == "phosphor")
+                rgb = ((uint32_t)(lum / 4) << 16) | ((uint32_t)lum << 8) | (uint32_t)(lum / 4);
+            else if (std::string(sk->name) == "hercules")
+                rgb = ((uint32_t)lum << 16) | ((uint32_t)(lum * 7 / 10) << 8);
+        }
+        std::snprintf(seq, sizeof seq, "\033]4;%d;#%06X\033\\", i, rgb);
+        out += seq;
+    }
+    ::write(STDOUT_FILENO, out.data(), out.size());
+}
+
+static void resetTerminalPalette()
+{
+    static const char kReset[] = "\033]104\033\\";
+    ::write(STDOUT_FILENO, kReset, sizeof(kReset) - 1);
+}
+
 // Apply a named CGA skin preset in one shot: chrome variant + solid shadows,
 // desktop texture + colour (authentic CGA RGB), and default paper colours on
 // every colourable window. Dialog-accent colours stay per-window calls
@@ -5738,6 +5771,7 @@ std::string api_set_skin(TWwdosApp& app, const std::string& name) {
     if (name == "off" || name == "monochrome") {
         ThemeManager::activeSkin().clear();
         std::remove(".wwdos_skin");
+        resetTerminalPalette();
         return api_set_theme_variant(app, "monochrome");
     }
     const CgaSkin* s = findCgaSkin(name);
@@ -5766,6 +5800,7 @@ std::string api_set_skin(TWwdosApp& app, const std::string& name) {
         } while (v != start);
     }
     ThemeManager::activeSkin() = name;
+    emitTerminalPalette(s);   // reprogram the terminal's 16 ANSI slots
     app.redraw();
     // persist for relaunch (constructor reads .wwdos_skin at boot)
     { std::ofstream sk(".wwdos_skin", std::ios::trunc); if (sk) sk << name << "\n"; }

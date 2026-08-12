@@ -225,7 +225,17 @@ static void resolveRole(const CgaSkin& s, SkinRole r, int& fg, int& bg) {
             int lum = (c.r * 299 + c.g * 587 + c.b * 114) / 1000;
             fg = lum > 128 ? 0 : 15; bg = s.deskBg; break;
         }
-        case SkinRole::Ok:     fg = 10; bg = s.paperBg; break;
+        case SkinRole::Ok: {
+            // per-skin healthy colour: monochrome-ish skins use their own
+            // light ink instead of universal green
+            std::string n = s.name;
+            if      (n == "midnight") fg = 11;   // light cyan
+            else if (n == "pipeline") fg = 9;    // light blue
+            else if (n == "hercules") fg = 14;   // amber
+            else if (n == "phosphor") fg = 10;   // green (native)
+            else                      fg = 10;
+            bg = s.paperBg; break;
+        }
         case SkinRole::Warn:   fg = 12; bg = s.paperBg; break;
         case SkinRole::Shadow: fg = 0;  bg = 0; break;
     }

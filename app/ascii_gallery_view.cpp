@@ -15,6 +15,7 @@
 #include <tvision/tv.h>
 
 #include "ascii_gallery_view.h"
+#include "theme_manager.h"
 #include <algorithm>
 #include <cstring>
 #include <dirent.h>
@@ -59,11 +60,11 @@ bool TGalleryTabBar::matchesTab(int tabIndex, char firstChar)
 void TGalleryTabBar::draw()
 {
     TDrawBuffer b;
-    TColorAttr normalAttr = {TColorRGB(0xAA, 0xAA, 0xAA), TColorRGB(0x20, 0x20, 0x20)};
-    TColorAttr selectedAttr = {TColorRGB(0xFF, 0xFF, 0xFF), TColorRGB(0x00, 0x70, 0x70)};
-    TColorAttr numAttr = {TColorRGB(0xFF, 0xFF, 0x00), TColorRGB(0x20, 0x20, 0x20)};
-    TColorAttr numSelAttr = {TColorRGB(0xFF, 0xFF, 0x00), TColorRGB(0x00, 0x70, 0x70)};
-    TColorAttr findAttr = {TColorRGB(0xFF, 0xCC, 0x00), TColorRGB(0x00, 0x70, 0x70)};
+    TColorAttr normalAttr = ThemeManager::attr(SkinRole::Bar);
+    TColorAttr selectedAttr = ThemeManager::attr(SkinRole::BarSel);
+    TColorAttr numAttr = ThemeManager::attr(SkinRole::Bar);
+    TColorAttr numSelAttr = ThemeManager::attr(SkinRole::BarSel);
+    TColorAttr findAttr = ThemeManager::attr(SkinRole::BarSel);
 
     b.moveChar(0, ' ', normalAttr, size.x);
 
@@ -161,8 +162,8 @@ void TGalleryFileList::ensureFocusVisible()
 
 void TGalleryFileList::draw()
 {
-    TColorAttr normalAttr = {TColorRGB(0xCC, 0xCC, 0xCC), TColorRGB(0x10, 0x10, 0x10)};
-    TColorAttr focusedAttr = {TColorRGB(0xFF, 0xFF, 0xFF), TColorRGB(0x00, 0x50, 0x80)};
+    TColorAttr normalAttr = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr focusedAttr = ThemeManager::attr(SkinRole::Dialog);
 
     for (int y = 0; y < size.y; y++) {
         TDrawBuffer b;
@@ -338,8 +339,8 @@ void TGalleryPreview::loadFile(const std::string& path)
 
 void TGalleryPreview::draw()
 {
-    TColorAttr textAttr = {TColorRGB(0xDD, 0xDD, 0xDD), TColorRGB(0x00, 0x00, 0x00)};
-    TColorAttr emptyAttr = {TColorRGB(0x40, 0x40, 0x40), TColorRGB(0x00, 0x00, 0x00)};
+    TColorAttr textAttr = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr emptyAttr = ThemeManager::attr(SkinRole::Dim);
 
     for (int y = 0; y < size.y; y++) {
         TDrawBuffer b;

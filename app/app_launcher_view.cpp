@@ -13,6 +13,7 @@
 #include <tvision/tv.h>
 
 #include "app_launcher_view.h"
+#include "theme_manager.h"
 #include <algorithm>
 #include <cstring>
 
@@ -52,8 +53,8 @@ void TCategoryBar::draw()
 {
     TDrawBuffer buf;
 
-    TColorAttr normal = TColorAttr(TColorRGB(180, 180, 180), TColorRGB(30, 30, 40));
-    TColorAttr sel    = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 80, 160));
+    TColorAttr normal = ThemeManager::attr(SkinRole::Bar);
+    TColorAttr sel    = ThemeManager::attr(SkinRole::BarSel);
 
     buf.moveChar(0, ' ', normal, size.x);
 
@@ -198,15 +199,15 @@ void TAppGridView::draw()
 {
     TDrawBuffer buf;
 
-    TColorAttr bgAttr     = TColorAttr(TColorRGB(40, 40, 50),   TColorRGB(20, 20, 28));
-    TColorAttr nameAttr   = TColorAttr(TColorRGB(200, 200, 210), TColorRGB(20, 20, 28));
-    TColorAttr iconAttr   = TColorAttr(TColorRGB(100, 180, 255), TColorRGB(20, 20, 28));
-    TColorAttr descAttr   = TColorAttr(TColorRGB(120, 120, 130), TColorRGB(20, 20, 28));
+    TColorAttr bgAttr     = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr nameAttr   = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr iconAttr   = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr descAttr   = ThemeManager::attr(SkinRole::Dim);
 
-    TColorAttr focBg      = TColorAttr(TColorRGB(40, 40, 50),   TColorRGB(0, 60, 130));
-    TColorAttr focName    = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 60, 130));
-    TColorAttr focIcon    = TColorAttr(TColorRGB(130, 210, 255), TColorRGB(0, 60, 130));
-    TColorAttr focDesc    = TColorAttr(TColorRGB(200, 200, 220), TColorRGB(0, 60, 130));
+    TColorAttr focBg      = ThemeManager::attr(SkinRole::Dialog);
+    TColorAttr focName    = ThemeManager::attr(SkinRole::Dialog);
+    TColorAttr focIcon    = ThemeManager::attr(SkinRole::Dialog);
+    TColorAttr focDesc    = ThemeManager::attr(SkinRole::Dialog);
 
     int c = cols();
 

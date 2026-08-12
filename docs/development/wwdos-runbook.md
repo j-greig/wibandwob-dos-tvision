@@ -65,6 +65,11 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
 - Windows spawned with no explicit rect use `TWwdosApp::findSpreadRect()` (least-overlap
   placement, added 2026-08). If new spawn paths hardcode rects, route them through it —
   jumbled/obscured windows are a bug, not a vibe.
+- **Theming canon**: views take colours from `ThemeManager::attr(SkinRole)`
+  (Paper/Dialog/Bar/Dim/Accent/Floor/Frame*/Ok/Warn...), never hand-rolled
+  TColorRGB/0x07 attrs — see docs/development/theming-roles.md for the role
+  vocabulary, derivations and the content-vs-affordance rule. New skins are
+  one kSkins row; every role derives.
 - **CGA skins (one-shot)**: `set_skin` with `skin` param — `dflat` (D-Flat MemoPad:
   blue ▒ sea, grey paper, blue dialogs), `turbo` (Turbo Pascal), `terra` (GeoGraphics),
   `pipeline` (black/blue/magenta), `off` restores house grey. The active skin persists across relaunches

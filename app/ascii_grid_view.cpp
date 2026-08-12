@@ -8,6 +8,7 @@
 #define Uses_TWindow
 #define Uses_TText
 #include <tvision/tv.h>
+#include "theme_manager.h"
 
 TAsciiGridView::TAsciiGridView(const TRect &bounds, int gridW, int gridH)
     : TView(bounds), gw(gridW), gh(gridH)
@@ -23,7 +24,7 @@ void TAsciiGridView::resizeGrid(int gridW, int gridH)
     gh = std::max(1, gridH);
     glyphs.assign(gw * gh, std::string(1, ' '));
     flags.assign(gw * gh, 0);
-    attrs.assign(gw * gh, TColorAttr(0x07));
+    attrs.assign(gw * gh, ThemeManager::attr(SkinRole::Paper));
 }
 
 void TAsciiGridView::clear(TColorAttr attr, char ch)
@@ -82,7 +83,7 @@ void TAsciiGridView::draw()
         // Pad remainder if view wider than grid
         for (int x = W; x < size.x; ++x) {
             b.putChar(x, ' ');
-            b.putAttribute(x, TColorAttr(0x07));
+            b.putAttribute(x, ThemeManager::attr(SkinRole::Paper));
         }
         writeLine(0, y, size.x, 1, b);
     }
@@ -90,7 +91,7 @@ void TAsciiGridView::draw()
     for (int y = H; y < size.y; ++y) {
         for (int x = 0; x < size.x; ++x) {
             b.putChar(x, ' ');
-            b.putAttribute(x, TColorAttr(0x07));
+            b.putAttribute(x, ThemeManager::attr(SkinRole::Paper));
         }
         writeLine(0, y, size.x, 1, b);
     }
@@ -106,7 +107,7 @@ TWindow* createAsciiGridDemoWindow(const TRect &bounds)
     int gw = std::max(10, c.b.x - c.a.x);
     int gh = std::max(5, c.b.y - c.a.y);
     auto *grid = new TAsciiGridView(c, gw, gh);
-    grid->clear(TColorAttr(0x07), ' ');
+    grid->clear(ThemeManager::attr(SkinRole::Paper), ' ');
     // Draw provided ASCII/emoji art, character by character.
     const char *art[] = {
         "    ,=''=.   ",
@@ -127,7 +128,7 @@ TWindow* createAsciiGridDemoWindow(const TRect &bounds)
             size_t len = TText::next(TStringView(line.c_str() + p, line.size() - p));
             if (len == 0) break;
             std::string g = line.substr(p, len);
-            grid->putGlyph(x, startY + li, g, TColorAttr(0x07));
+            grid->putGlyph(x, startY + li, g, ThemeManager::attr(SkinRole::Paper));
             size_t wcols = TText::width(TStringView(g.c_str(), g.size()));
             x += (int)std::max<size_t>(1, wcols);
             p += len;

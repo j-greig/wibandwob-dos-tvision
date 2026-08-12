@@ -10,6 +10,7 @@
 #include "text_editor_view.h"
 #include "text_wrap.h"
 #include "figlet_utils.h"
+#include "theme_manager.h"
 
 #define Uses_TWindow
 #define Uses_TFrame
@@ -44,8 +45,8 @@ TTextEditorView::TTextEditorView(const TRect &bounds)
     
     lines.push_back("");
     
-    normalColor = TColorAttr(TColorRGB(220, 220, 220), TColorRGB(0, 0, 0));
-    selectedColor = TColorAttr(TColorRGB(255, 255, 255), TColorRGB(0, 100, 200));
+    normalColor = ThemeManager::attr(SkinRole::Paper);
+    selectedColor = ThemeManager::attr(SkinRole::Dialog);
 
     rebuildVisualMap();
 }

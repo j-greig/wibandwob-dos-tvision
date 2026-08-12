@@ -1,4 +1,5 @@
 #include "generative_lab_view.h"
+#include "theme_manager.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -355,8 +356,7 @@ public:
 
     virtual void draw() override {
         TDrawBuffer b;
-        static const TColorAttr kPrev =
-            TColorAttr(TColorRGB(0x00, 0x00, 0x00), TColorRGB(0xFF, 0xFF, 0xFF));
+        TColorAttr kPrev = ThemeManager::attr(SkinRole::BarSel);
         for (int row = 0; row < size.y; ++row) {
             b.moveChar(0, ' ', kPrev, size.x);
             int idx = delta.y + row;
@@ -830,20 +830,14 @@ void TGenerativeLabView::draw() {
 
     TDrawBuffer buf;
 
-    static const TColorAttr kBg =
-        TColorAttr(TColorRGB(0xCC, 0xCC, 0xCC), TColorRGB(0x00, 0x00, 0x00));
-    static const TColorAttr kBarBg =
-        TColorAttr(TColorRGB(0x88, 0x88, 0x88), TColorRGB(0x1A, 0x1A, 0x1A));
-    static const TColorAttr kBarLabel =
-        TColorAttr(TColorRGB(0xFF, 0xFF, 0xFF), TColorRGB(0x1A, 0x1A, 0x1A));
-    static const TColorAttr kBarDim =
-        TColorAttr(TColorRGB(0x99, 0x99, 0x99), TColorRGB(0x1A, 0x1A, 0x1A));
-    static const TColorAttr kBtnBg =
-        TColorAttr(TColorRGB(0xBB, 0xBB, 0xBB), TColorRGB(0x33, 0x33, 0x33));
-    static const TColorAttr kBtnActive =
-        TColorAttr(TColorRGB(0xFF, 0xFF, 0x00), TColorRGB(0x33, 0x33, 0x33));
-    static const TColorAttr kFlash =
-        TColorAttr(TColorRGB(0x00, 0xFF, 0x66), TColorRGB(0x1A, 0x1A, 0x1A));
+    TColorAttr kBg = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr kBarBg = ThemeManager::attr(SkinRole::Bar);
+    TColorAttr kBarLabel = ThemeManager::attr(SkinRole::Bar);
+    TColorAttr kBarDim = ThemeManager::attr(SkinRole::Dim);
+    TColorAttr kBtnBg = ThemeManager::attr(SkinRole::Bar);
+    TColorAttr kBtnActive = ThemeManager::attr(SkinRole::Dialog);
+    // Flash keeps its semantic green, placed on the Bar background.
+    TColorAttr kFlash = ThemeManager::attrIdx(10 /*green*/, ThemeManager::bgIndex(SkinRole::Bar));
 
     auto blankRow = [&](int y) {
         buf.moveChar(0, ' ', kBg, W);
