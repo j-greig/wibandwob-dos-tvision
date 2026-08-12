@@ -56,3 +56,7 @@ scratch/
 workspaces/*
 !workspaces/.gitkeep
 modules-private/
+
+# runtime state / user-local catalogue
+.wwdos_skin
+disk_library.cat

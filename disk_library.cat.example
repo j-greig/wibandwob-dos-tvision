@@ -1,0 +1,177 @@
+# disk_library.cat — SYMBIENT SHAREWARE LIBRARY catalogue
+# Copy this file to `disk_library.cat` (repo root) and edit freely: when it
+# exists it REPLACES the built-in catalogue, no rebuild needed. Reopen the
+# library window to reload.
+#
+# Format, one disk per record:
+#   disk <title shown on the sticker's last line>
+#   art <up to 5 label art lines, UTF-8, centred>
+#   body <shell colour, CGA 0-15: 0 blk 1 blu 2 grn 3 cyn 4 red 5 mag
+#         6 brown 7 grey 8 dkgrey 9-15 bright variants>
+#   label <fg> <bg>       sticker text/background colours
+#   boot <command> [key=value ...]   any registry command
+#
+# Commands worth booting: open_wibwob open_scramble open_verse open_life
+# open_mycelium new_paint_canvas open_gallery open_backrooms_tv open_quadra
+# open_rogue open_browser open_disks open_shader shader=isotower|wibrain|
+# beastiemelt|plasma|wallsofcode|yohei-rocks|tunnel set_skin skin=dflat|
+# turbo|terra|pipeline|phosphor|hercules|paper|midnight|off
+
+disk WIBWOB-DOS v1.05
+art
+art /(◕‿◕)\
+body 2
+label 0 10
+boot open_wibwob
+
+disk
+art SCRAMBLE'S
+art <<PAWS OFF!>>
+art /\_/\
+art ( o.o )
+art /| |\
+body 13
+label 15 0
+boot open_scramble
+
+disk WIBBLE.WOBBLE
+art
+art つ◕‿◕つ
+body 4
+label 1 15
+boot open_verse
+
+disk LIFE.EXE
+art
+art . ■ .
+art ■ ■ ■
+body 3
+label 10 0
+boot open_life
+
+disk MYCELIUM.SYS
+art
+art .~.~.
+art ~'~'~
+body 6
+label 15 8
+boot open_mycelium
+
+disk PAINT.EXE
+art
+art ♥ ░▒▓
+body 13
+label 4 15
+boot new_paint_canvas
+
+disk GALLERY.LIB
+art
+art [▣][▣]
+body 1
+label 0 7
+boot open_gallery
+
+disk BACKROOMS.TV
+art
+art ▛▜ ▛▜
+art ▟▙ ▟▙
+body 14
+label 14 0
+boot open_backrooms_tv
+
+disk SHADER.SYS
+art ◢◤ iso
+art .:=+*#%@
+art N cycles
+body 8
+label 15 0
+boot open_shader shader=isotower
+
+disk Ooo!
+art
+art  _
+art (○○)
+art  ‾
+body 4
+label 0 15
+boot open_monster_portal
+
+disk CUBE.EXE
+art a┌───┐b
+art  │   │
+art c└───┘d
+body 7
+label 0 15
+boot open_cube
+
+disk QUADRA.EXE
+art
+art ▛▜
+art ▛▜▛▜
+body 0
+label 14 8
+boot open_quadra
+
+disk DFLAT SKIN 1/8
+art Symbient
+art *Not*
+art Software
+body 7
+label 4 15
+boot set_skin skin=dflat
+
+disk TURBO SKIN 2/8
+art Symbient
+art *Not*
+art Software
+body 1
+label 4 15
+boot set_skin skin=turbo
+
+disk TERRA SKIN 3/8
+art Symbient
+art *Not*
+art Software
+body 2
+label 4 15
+boot set_skin skin=terra
+
+disk PIPELINE SKIN 4/8
+art Symbient
+art *Not*
+art Software
+body 0
+label 4 15
+boot set_skin skin=pipeline
+
+disk PHOSPHOR SKIN 5/8
+art Symbient
+art *Not*
+art Software
+body 2
+label 10 0
+boot set_skin skin=phosphor
+
+disk HERCULES SKIN 6/8
+art Symbient
+art *Not*
+art Software
+body 6
+label 14 0
+boot set_skin skin=hercules
+
+disk PAPER SKIN 7/8
+art Symbient
+art *Not*
+art Software
+body 7
+label 0 15
+boot set_skin skin=paper
+
+disk MIDNIGHT SKIN 8/8
+art Symbient
+art *Not*
+art Software
+body 8
+label 11 0
+boot set_skin skin=midnight

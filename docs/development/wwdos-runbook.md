@@ -58,7 +58,9 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   jumbled/obscured windows are a bug, not a vibe.
 - **CGA skins (one-shot)**: `set_skin` with `skin` param — `dflat` (D-Flat MemoPad:
   blue ▒ sea, grey paper, blue dialogs), `turbo` (Turbo Pascal), `terra` (GeoGraphics),
-  `pipeline` (black/blue/magenta), `off` restores house grey. Applies chrome + desktop
+  `pipeline` (black/blue/magenta), `off` restores house grey. The active skin persists across relaunches
+  via `.wwdos_skin` (written by set_skin, read at boot, gitignored).
+  Applies chrome + desktop
   (authentic CGA **RGB**, immune to terminal palette remapping) + papers all
   primer/text windows. Recipes: `theme_manager.cpp` kSkins (single source); refs in
   `design/figma-refs/`. Skins colour **primer/text windows only** — generative app
@@ -74,8 +76,9 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   command + args. Skin disks (DFLAT 1/8 … PIPELINE 4/8) reskin the desktop on
   boot. Views can execute any registry command in-process via
   `wwdos_exec_command(name, kv)` (command_registry.h). Optional
-  `disk_library.cat` in repo root overrides the built-in catalogue
-  (line format documented in disk_library_view.cpp).
+  `disk_library.cat` in repo root overrides the built-in catalogue —
+  copy `disk_library.cat.example` and edit (format documented in both;
+  gitignored, no rebuild, reopen the window to reload).
 - **Relaunching wwdos**: use `./scripts/relaunch_wwdos.sh` — kills the old
   process, closes its Ghostty window (tracked in /tmp/wwdos_ghostty_win),
   spawns fresh with `wait after command` OFF so dead surfaces auto-close.

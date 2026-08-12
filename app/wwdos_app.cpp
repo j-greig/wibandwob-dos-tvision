@@ -1038,6 +1038,18 @@ TWwdosApp::TWwdosApp() :
         fprintf(stderr, "[wibwob] IPC server started on %s\n", sockPath.c_str());
     }
 
+    // Restore the last active skin (written by api_set_skin) — a reskinned
+    // desktop shouldn't revert to house grey just because it relaunched.
+    {
+        std::ifstream sk(".wwdos_skin");
+        std::string skinName;
+        if (sk && std::getline(sk, skinName) && !skinName.empty()) {
+            extern std::string api_set_skin(TWwdosApp&, const std::string&);
+            fprintf(stderr, "[wibwob] Restoring skin: %s\n", skinName.c_str());
+            api_set_skin(*this, skinName);
+        }
+    }
+
     // Auto-restore layout from env var (room deployment).
     const char* layoutPath = std::getenv("WIBWOB_LAYOUT_PATH");
     if (layoutPath && layoutPath[0] != '\0') {
@@ -5425,6 +5437,7 @@ std::string api_set_skin(TWwdosApp& app, const std::string& name) {
     extern std::string api_set_theme_variant(TWwdosApp&, const std::string&);
     if (name == "off" || name == "monochrome") {
         ThemeManager::activeSkin().clear();
+        std::remove(".wwdos_skin");
         return api_set_theme_variant(app, "monochrome");
     }
     const CgaSkin* s = findCgaSkin(name);
@@ -5454,6 +5467,8 @@ std::string api_set_skin(TWwdosApp& app, const std::string& name) {
     }
     ThemeManager::activeSkin() = name;
     app.redraw();
+    // persist for relaunch (constructor reads .wwdos_skin at boot)
+    { std::ofstream sk(".wwdos_skin", std::ios::trunc); if (sk) sk << name << "\n"; }
     return "ok";
 }
 
