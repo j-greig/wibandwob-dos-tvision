@@ -124,6 +124,7 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 // #include "mech_window.h" // deferred feature; header not present yet
 #include <sstream>
 #include <fstream>
+#include <chrono>
 #include <string>
 #include <cstdlib>
 #include <ctime>
@@ -996,6 +997,18 @@ private:
     friend std::string api_desktop_get(TWwdosApp&);
     friend std::string api_set_skin(TWwdosApp&, const std::string&);
     bool galleryMode_ = false;
+
+    // ── screensaver: idle timeout → fullscreen shader, any input wakes ──
+    friend std::string api_screensaver(TWwdosApp&, const std::string&, int);
+    TWindow* saverWin_ = nullptr;
+    long long lastInputMs_ = 0;
+    int saverTimeoutMins_ = 10;      // 0 disables
+    void activateScreensaver();
+    void dismissScreensaver();
+    static long long wwNowMs() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
 };
 
 // Static member definition
@@ -1080,6 +1093,17 @@ TWwdosApp::TWwdosApp() :
 
 void TWwdosApp::handleEvent(TEvent& event)
 {
+    // Screensaver: real input resets the idle clock; if the saver is up,
+    // the waking event is swallowed (before TApplication sees it).
+    if (event.what == evKeyDown || event.what == evMouseDown) {
+        lastInputMs_ = wwNowMs();
+        if (saverWin_) {
+            dismissScreensaver();
+            clearEvent(event);
+            return;
+        }
+    }
+
     TApplication::handleEvent(event);
     
     if (event.what == evCommand)
@@ -2931,6 +2955,12 @@ void TWwdosApp::idle()
 
     // Poll IPC server for incoming API commands
     if (ipcServer) ipcServer->poll();
+
+    // Screensaver idle check (lastInputMs_ seeds at first idle pass)
+    if (lastInputMs_ == 0) lastInputMs_ = wwNowMs();
+    if (saverTimeoutMins_ > 0 && !saverWin_ &&
+        wwNowMs() - lastInputMs_ > (long long)saverTimeoutMins_ * 60000LL)
+        activateScreensaver();
     // Poll Scramble async LLM calls (non-blocking)
     scrambleEngine.poll();
 
@@ -4893,6 +4923,43 @@ void api_spawn_shader(TWwdosApp& app, const TRect* bounds, const std::string& sh
     TWindow* w = createTweetShaderWindow(r, shader);
     app.deskTop->insert(w);
     app.registerWindow(w);
+}
+
+void TWwdosApp::activateScreensaver()
+{
+    if (saverWin_) return;
+    // random resident, seeded by the clock
+    int idx = (int)(wwNowMs() / 1000 % (long long)shaderCount());
+    TRect r = deskTop->getExtent();
+    TWindow* w = createTweetShaderWindow(r, shaderName(idx));
+    w->flags = 0;                       // no move/grow/close — input wakes instead
+    deskTop->insert(w);
+    saverWin_ = w;
+    fprintf(stderr, "[saver] on (%s)\n", shaderName(idx));
+}
+
+void TWwdosApp::dismissScreensaver()
+{
+    if (!saverWin_) return;
+    TWindow* w = saverWin_;
+    saverWin_ = nullptr;
+    w->flags |= wfClose;
+    w->close();
+    fprintf(stderr, "[saver] off\n");
+}
+
+// action: now | off | on (arm) ; minutes > 0 sets the timeout (0 = disable)
+std::string api_screensaver(TWwdosApp& app, const std::string& action, int minutes)
+{
+    if (minutes >= 0) app.saverTimeoutMins_ = minutes;
+    if (action == "now") { app.activateScreensaver(); return "ok"; }
+    if (action == "off") { app.dismissScreensaver(); app.saverTimeoutMins_ = 0; return "ok"; }
+    if (action == "on" || action.empty()) {
+        if (app.saverTimeoutMins_ == 0) app.saverTimeoutMins_ = 10;
+        app.lastInputMs_ = TWwdosApp::wwNowMs();
+        return "ok";
+    }
+    return "err unknown action (now|on|off)";
 }
 
 void api_spawn_disks(TWwdosApp& app, const TRect* bounds) {

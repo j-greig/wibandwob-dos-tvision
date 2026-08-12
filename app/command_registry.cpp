@@ -42,6 +42,7 @@ extern std::string api_set_theme_variant(TWwdosApp& app, const std::string& vari
 extern std::string api_set_skin(TWwdosApp& app, const std::string& name);
 extern void api_spawn_disks(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_shader(TWwdosApp& app, const TRect* bounds, const std::string& shader);
+extern std::string api_screensaver(TWwdosApp& app, const std::string& action, int minutes);
 extern std::string api_reset_theme(TWwdosApp& app);
 extern std::string api_window_shadow(TWwdosApp& app, const std::string& id, bool on);
 extern std::string api_window_title(TWwdosApp& app, const std::string& id, const std::string& title);
@@ -129,6 +130,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"set_theme_variant", "Set chrome theme variant: monochrome (house grey) | cga (classic DOS colour) | dark_pastel", true},
         {"set_skin", "Apply a named CGA skin preset in one shot (skin param: dflat|turbo|terra|pipeline|phosphor|hercules|paper|midnight|off) — chrome, desktop, window paper colours", true},
         {"open_disks", "Open the SYMBIENT SHAREWARE LIBRARY — floppy-disk launcher, each disk boots an app (double-click/Enter)", false},
+        {"screensaver", "Screensaver control (action param: now|on|off; minutes param sets idle timeout, 0 disables; default 10min → fullscreen random shader, any key wakes)", false},
         {"open_shader", "Open SHADER.SYS — pluggable ASCII shader host (shader param: isotower|wibrain|beastiemelt|plasma|wallsofcode|yohei-rocks|tunnel; N cycles, P phosphor, space pauses)", false},
         {"reset_theme", "Reset theme to default (monochrome + light)", false},
         {"open_scramble", "Toggle Scramble cat overlay", false},
@@ -278,6 +280,12 @@ std::string exec_registry_command(
         if (it == kv.end() || it->second.empty())
             return "err missing variant";
         return api_set_theme_variant(app, it->second);
+    }
+    if (name == "screensaver") {
+        auto ai = kv.find("action");
+        auto mi = kv.find("minutes");
+        return api_screensaver(app, ai != kv.end() ? ai->second : "on",
+                               mi != kv.end() ? std::atoi(mi->second.c_str()) : -1);
     }
     if (name == "open_shader") {
         auto it = kv.find("shader");

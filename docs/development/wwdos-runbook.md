@@ -116,6 +116,10 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   BEFORE entering the C++ build loop — 10x faster iteration. And for
   isometric anything, painter-algorithm projection beats raymarching
   repeated SDFs (tile-local fields tunnel across cell borders).
+- **Screensaver**: idle 10min → fullscreen random SHADER.SYS resident; any
+  key/mouse wakes (the waking event is swallowed). `screensaver` command:
+  `action` now|on|off, `minutes` sets the timeout (0 disables). IPC
+  commands do NOT reset the idle clock — only real input does.
 - **Dense skinned scene**: `./scripts/skin_scene.sh [skin]` — 7 overlapping primer
   windows scaled to the live canvas + skin + dialog accents. Matches the Figma-ref
   density; two windows on a sea is a haiku, the refs are a pub argument.
