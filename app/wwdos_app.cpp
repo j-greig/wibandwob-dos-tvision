@@ -47,6 +47,7 @@
 #include "frame_capture.h"
 #include "frame_file_player_view.h"
 #include "disk_library_view.h"
+#include "theme_manager.h"
 #include "tweet_shader_view.h"
 #include "ascii_image_view.h"
 // Animated blocks view/window
@@ -394,6 +395,19 @@ class TCustomStatusLine;
 /*---------------------------------------------------------*/
 /* TCustomMenuBar - Menu bar with animated kaomoji        */
 /*---------------------------------------------------------*/
+
+// Skin-aware bar colours: when the active skin defines a menuAttr, menus and
+// the status line wear it (authentic CGA RGB); otherwise classic black-on-white.
+static bool skinBarAttr(TColorAttr& out, bool selected)
+{
+    const CgaSkin* sk = findCgaSkin(ThemeManager::activeSkin());
+    if (!sk || sk->menuAttr < 0) return false;
+    int fg = sk->menuAttr & 0x0F, bg = (sk->menuAttr >> 4) & 0x0F;
+    if (selected) { int t = fg; fg = bg; bg = t; }
+    out = TColorAttr(ThemeManager::cgaColor(fg), ThemeManager::cgaColor(bg));
+    return true;
+}
+
 class TCustomMenuBar : public TMenuBar
 {
 public:
@@ -422,8 +436,16 @@ public:
         TColorRGB trueWhite(255, 255, 255);
 
         switch(index) {
-            case 1:  case 3:  case 4:  case 6:
+            case 1:  case 3:  case 4:  case 6: {
+                TColorAttr skinAttr;
+                if (skinBarAttr(skinAttr, false)) return skinAttr;
                 return TColorAttr(trueBlack, trueWhite);
+            }
+            case 2:  case 5: {
+                TColorAttr skinAttr;
+                if (skinBarAttr(skinAttr, true)) return skinAttr;
+                return TMenuBar::mapColor(index);
+            }
             default:
                 return TMenuBar::mapColor(index);
         }
@@ -522,8 +544,11 @@ public:
         
         // Status line uses different indices than menu bar
         switch(index) {
-            case 1:  case 2:  case 3:  case 4:
+            case 1:  case 2:  case 3:  case 4: {
+                TColorAttr skinAttr;
+                if (skinBarAttr(skinAttr, false)) return skinAttr;
                 return TColorAttr(trueBlack, trueWhite);
+            }
             default:
                 return TStatusLine::mapColor(index);
         }
@@ -2617,7 +2642,42 @@ TPalette& TWwdosApp::getPalette() const
 {
     static TPalette mono(cpMonochrome, sizeof(cpMonochrome)-1);
     static TPalette cga(cpAppColor, sizeof(cpAppColor)-1);
-    return ThemeManager::cgaChrome() ? cga : mono;
+    if (!ThemeManager::cgaChrome()) return mono;
+
+    // Skin-aware chrome: dark skins patch the classic app palette so window
+    // frames, scrollbars and menus match the room instead of wearing the
+    // daylight slate everywhere (Zilla, 2026-08-12).
+    const CgaSkin* sk = findCgaSkin(ThemeManager::activeSkin());
+    if (!sk || sk->framePassive < 0) return cga;
+
+    static TPalette skinned(cpAppColor, sizeof(cpAppColor)-1);
+    static std::string patchedFor;
+    if (patchedFor != sk->name) {
+        char buf[sizeof(cpAppColor)];
+        std::memcpy(buf, cpAppColor, sizeof(cpAppColor));  // incl. NUL
+        auto put = [&](int entry, int attr) {
+            // palette entries are 1-based positions in the attr string
+            if (entry >= 1 && entry < (int)sizeof(cpAppColor) - 0)
+                buf[entry - 1] = (char)attr;
+        };
+        int fp = sk->framePassive, fa = sk->frameActive, mn = sk->menuAttr;
+        int mnSel = ((mn & 0x0F) << 4) | ((mn >> 4) & 0x0F);   // inverse for selection
+        // menus + status line (entries 2..7)
+        for (int e = 2; e <= 7; ++e) put(e, (e == 5 || e == 6) ? mnSel : mn);
+        // three window palettes + gray dialog: frame passive/active/icon,
+        // scrollbar page/controls
+        const int groups[4] = { 8, 16, 24, 32 };
+        for (int g : groups) {
+            put(g + 0, fp);        // frame passive
+            put(g + 1, fa);        // frame active
+            put(g + 2, fa);        // frame icon
+            put(g + 3, fp);        // scrollbar page
+            put(g + 4, fa);        // scrollbar controls
+        }
+        skinned = TPalette(buf, sizeof(cpAppColor)-1);
+        patchedFor = sk->name;
+    }
+    return skinned;
 }
 
 // Build "FIGlet ~F~ont ▶ { categories... | More Fonts... }" submenu item

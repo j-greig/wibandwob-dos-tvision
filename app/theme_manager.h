@@ -72,6 +72,10 @@ struct CgaSkin {
     int deskFg, deskBg;    // desktop dither fg/bg
     int paperBg, paperFg;  // default viewer-window colours ("paper")
     int dialogBg, dialogFg;// accent window colours ("dialog")
+    // Chrome (window frames / menus) as BIOS attr bytes (bg<<4|fg), -1 =
+    // keep the classic cpAppColor chrome. Dark skins NEED these — otherwise
+    // midnight wears daylight window borders.
+    int framePassive, frameActive, menuAttr;
 };
 
 // Skin registry (single source). nullptr if unknown name.

@@ -164,16 +164,16 @@ std::string& ThemeManager::activeSkin() {
 //   pipeline — Pipeline (1991): near-black desktop, blue paper, magenta logo
 //              pixels. The moody one.
 static const CgaSkin kSkins[] = {
-    //  name        texture  deskFg deskBg  paperBg paperFg  dlgBg dlgFg
-    { "dflat",      "\xe2\x96\x92", 9, 1,   7, 0,   1, 15 },
-    { "turbo",      "\xe2\x96\x91", 7, 1,   1, 14,  7, 0  },
-    { "terra",      "",             0, 1,   1, 10,  2, 0  },
-    { "pipeline",   "",             8, 0,   0, 9,   0, 13 },
-    { "phosphor",   "",             2, 0,   0, 10,  2, 0  },
-    { "hercules",   "\xe2\x96\x91", 6, 0,   0, 14,  6, 0  },
-    { "paper",      "\xe2\x96\x91", 8, 7,   15, 0,  3, 0  },
-    { "midnight",   "\xc2\xb7",      8, 0,   0, 11,  1, 15 },
-    { nullptr,      "",             0, 0,   0, 0,   0, 0  },
+    //  name        texture  deskFg deskBg  paper   dialog  chrome: passive active menu
+    { "dflat",      "\xe2\x96\x92", 9, 1,   7, 0,   1, 15,  -1,   -1,   -1   },
+    { "turbo",      "\xe2\x96\x91", 7, 1,   1, 14,  7, 0,   -1,   -1,   -1   },
+    { "terra",      "",             0, 1,   1, 10,  2, 0,   -1,   -1,   -1   },
+    { "pipeline",   "",             8, 0,   0, 9,   0, 13,  0x08, 0x09, 0x09 },
+    { "phosphor",   "",             2, 0,   0, 10,  2, 0,   0x02, 0x0A, 0x0A },
+    { "hercules",   "\xe2\x96\x91", 6, 0,   0, 14,  6, 0,   0x06, 0x0E, 0x0E },
+    { "paper",      "\xe2\x96\x91", 8, 7,   15, 0,  3, 0,   -1,   -1,   -1   },
+    { "midnight",   "\xc2\xb7",      8, 0,   0, 11,  1, 15,  0x08, 0x0B, 0x0B },
+    { nullptr,      "",             0, 0,   0, 0,   0, 0,   -1,   -1,   -1   },
 };
 
 const CgaSkin* allCgaSkins() { return kSkins; }
