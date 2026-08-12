@@ -263,6 +263,7 @@ const ushort cmScrambleReply = 233;  // Async Scramble LLM response ready
 const ushort cmAsciiGallery = 234;   // ASCII Art Gallery browser
 const ushort cmDiskLibrary = 301;    // SYMBIENT SHAREWARE LIBRARY floppy launcher
 const ushort cmTweetShader = 302;    // MONO.SHDR tsubuyaki-GLSL port
+const ushort cmSkinBase = 310;       // 310..318: skins menu (order matches kMenuSkinNames)
 const ushort cmBackroomsTv = 284;    // Backrooms TV live art window
 
 // Glitch menu commands
@@ -1111,6 +1112,15 @@ void TWwdosApp::handleEvent(TEvent& event)
         // Handle font selection from Edit → FIGlet Font → Category submenus
         // (range check before switch — can't use case for ranges)
         ushort cmd = event.message.command;
+        if (cmd >= cmSkinBase && cmd <= cmSkinBase + 8) {
+            static const char* kMenuSkinNames[9] = {
+                "dflat", "turbo", "terra", "pipeline", "phosphor",
+                "hercules", "paper", "midnight", "off" };
+            extern std::string api_set_skin(TWwdosApp&, const std::string&);
+            api_set_skin(*this, kMenuSkinNames[cmd - cmSkinBase]);
+            clearEvent(event);
+            return;
+        }
         if (cmd >= cmFigletCatFontBase && cmd < cmFigletCatFontBase + 200) {
             TFigletTextWindow* fw = dynamic_cast<TFigletTextWindow*>(
                 deskTop->current);
@@ -2701,6 +2711,19 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
             *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
             *new TMenuItem("Dis~k~ Library", cmDiskLibrary, kbNoKey) +
+            (TMenuItem&)(
+                *new TSubMenu("S~k~ins", kbNoKey) +
+                    *new TMenuItem("~D~flat (D-Flat blue)", cmSkinBase + 0, kbNoKey) +
+                    *new TMenuItem("~T~urbo (Turbo Pascal)", cmSkinBase + 1, kbNoKey) +
+                    *new TMenuItem("T~e~rra (GeoGraphics)", cmSkinBase + 2, kbNoKey) +
+                    *new TMenuItem("~P~ipeline (moody)", cmSkinBase + 3, kbNoKey) +
+                    *new TMenuItem("P~h~osphor (green mono)", cmSkinBase + 4, kbNoKey) +
+                    *new TMenuItem("He~r~cules (amber)", cmSkinBase + 5, kbNoKey) +
+                    *new TMenuItem("P~a~per (daylight)", cmSkinBase + 6, kbNoKey) +
+                    *new TMenuItem("~M~idnight (dim stars)", cmSkinBase + 7, kbNoKey) +
+                    newLine() +
+                    *new TMenuItem("~O~ff (house grey)", cmSkinBase + 8, kbNoKey)
+            ) +
             newLine() +
             (TMenuItem&)(
                 *new TSubMenu("~G~ames", kbNoKey) +
