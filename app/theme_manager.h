@@ -5,6 +5,9 @@
 #define Uses_TColorAttr
 #include <tvision/tv.h>
 
+// Semantic skin roles (defined below CgaSkin; forward-declared for the API)
+enum class SkinRole;
+
 // Theme modes: light or dark (auto mode deferred to future PR)
 enum class ThemeMode {
     Light,
@@ -62,6 +65,24 @@ public:
 
     // Active skin name ("" = none). Set by api_set_skin, reported in /state.
     static std::string& activeSkin();
+
+    // ── SkinRole API (enum defined below struct CgaSkin) ──
+    // Active skin row, or nullptr when none/chrome off.
+    static const struct CgaSkin* skin();
+    // attr(): safe everywhere — house default when unskinned.
+    static TColorAttr attr(SkinRole role);
+    // tryAttr(): true only when a skin is active — for mapColor overrides
+    // that must fall through to TVision's own mapping.
+    static bool tryAttr(SkinRole role, TColorAttr& out);
+    // Packed BIOS byte (bg<<4|fg) for palette-string patching.
+    static unsigned char bios(SkinRole role);
+    // Raw CGA indices / RGB for index- and RGB-taking APIs.
+    static int fgIndex(SkinRole role);
+    static int bgIndex(SkinRole role);
+    static uint32_t rgbFgRole(SkinRole role);
+    static uint32_t rgbBgRole(SkinRole role);
+    // The canonical cga(fg,bg) helper every view used to reinvent.
+    static TColorAttr attrIdx(int fg, int bg);
 };
 
 // A named CGA skin preset — palette recipes decoded from the Figma refs
@@ -76,6 +97,28 @@ struct CgaSkin {
     // keep the classic cpAppColor chrome. Dark skins NEED these — otherwise
     // midnight wears daylight window borders.
     int framePassive, frameActive, menuAttr;
+};
+
+// ── Semantic skin roles ──────────────────────────────────────────────
+// One vocabulary, one resolver (docs/development/theming-roles.md).
+// Views ask for a role; the resolver derives colours from the active
+// CgaSkin row, with documented fallbacks when a field is -1 or no skin
+// is active. Rule of thumb: UI affordance = role; depicted thing = content.
+enum class SkinRole {
+    Desk,          // desktop dither cell
+    Paper,         // default viewer window body
+    Dialog,        // accent window body
+    Bar,           // menu/status bars, normal
+    BarSel,        // menu/status bars, selected
+    FramePassive,  // unfocused window border
+    FrameActive,   // focused window border
+    Dim,           // hint/secondary text on Paper
+    Accent,        // highlight ink on Paper
+    Floor,         // chromeless room interior (library, gallery)
+    FloorInk,      // primary ink on Floor
+    Ok,            // healthy indicator
+    Warn,          // warning indicator
+    Shadow,        // window drop shadow
 };
 
 // Skin registry (single source). nullptr if unknown name.

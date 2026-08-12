@@ -1,4 +1,5 @@
 #include "mech_grid.h"
+#include "theme_manager.h"
 
 #define Uses_TKeys
 #define Uses_TDrawBuffer
@@ -118,7 +119,8 @@ TColorAttr TMechGrid::mapColor(uchar index) noexcept {
     TColorRGB trueWhite(255, 255, 255);
     
     // Map to WHITE ON BLACK (white text, black background) for proper mech display
-    return TColorAttr(trueWhite, trueBlack);
+    TColorAttr a; if (ThemeManager::tryAttr(SkinRole::Paper, a)) return a;
+        return TColorAttr(trueWhite, trueBlack);
 }
 
 void TMechGrid::setGridSize(int rows, int cols) {

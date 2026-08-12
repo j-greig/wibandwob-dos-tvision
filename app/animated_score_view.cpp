@@ -17,6 +17,7 @@
 /*---------------------------------------------------------*/
 
 #include "animated_score_view.h"
+#include "theme_manager.h"
 
 #define Uses_TWindow
 #define Uses_TFrame
@@ -170,10 +171,11 @@ void TAnimatedScoreView::draw() {
     TDrawBuffer b;
     auto put = [&](int y, const std::string &line) {
         // Move CStr with current textAttr; then pad to end with spaces
-        TAttrPair ap{textAttr, textAttr};
+        TColorAttr eff = effAttr();
+        TAttrPair ap{eff, eff};
         ushort written = b.moveCStr(0, line.c_str(), ap, W);
         if (written < (ushort)W)
-            b.moveChar(written, ' ', textAttr, (ushort)(W - written));
+            b.moveChar(written, ' ', eff, (ushort)(W - written));
         writeLine(0, y, W, 1, b);
     };
 
@@ -430,7 +432,7 @@ void TAnimatedScoreView::setBackgroundRGB(uchar r, uchar g, uchar b)
 {
     // Keep foreground light for readability; background is dynamic.
     TColorRGB fg(0xFF, 0xFF, 0xFF);
-    textAttr = TColorAttr(fg, TColorRGB(r,g,b));
+    textAttr = TColorAttr(fg, TColorRGB(r,g,b)); customText_ = true;
 }
 
 void TAnimatedScoreView::cycleBackground(int delta)
@@ -443,7 +445,7 @@ void TAnimatedScoreView::cycleBackground(int delta)
     // Compute simple perceived brightness to pick FG
     int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114; // 0..~255000
     TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
-    textAttr = TColorAttr(fg, bg);
+    textAttr = TColorAttr(fg, bg); customText_ = true;
 }
 
 void TAnimatedScoreView::setBackgroundIndex(int idx)
@@ -453,7 +455,7 @@ void TAnimatedScoreView::setBackgroundIndex(int idx)
     const TColorRGB &bg = kAnsiBg[bgIndex];
     int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
     TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
-    textAttr = TColorAttr(fg, bg);
+    textAttr = TColorAttr(fg, bg); customText_ = true;
 }
 
 bool TAnimatedScoreView::openBackgroundPaletteDialog()
@@ -537,4 +539,10 @@ static ushort runBgPaletteDialog(int &index)
     if (code != cmCancel) index = grid->selected;
     TObject::destroy(d);
     return code;
+}
+
+TColorAttr TAnimatedScoreView::effAttr() const
+{
+    if (customText_) return textAttr;
+    return ThemeManager::attr(SkinRole::Paper);
 }

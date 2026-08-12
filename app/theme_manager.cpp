@@ -183,3 +183,103 @@ const CgaSkin* findCgaSkin(const std::string& name) {
         if (name == s->name) return s;
     return nullptr;
 }
+
+// ── SkinRole resolver ─────────────────────────────────────────────────
+// One switch, documented derivations (docs/development/theming-roles.md).
+
+const CgaSkin* ThemeManager::skin() {
+    if (!cgaChrome()) return nullptr;
+    return findCgaSkin(activeSkin());
+}
+
+// Resolve role → CGA index pair for a specific skin row.
+static void resolveRole(const CgaSkin& s, SkinRole r, int& fg, int& bg) {
+    switch (r) {
+        case SkinRole::Desk:   fg = s.deskFg;   bg = s.deskBg;   break;
+        case SkinRole::Paper:  fg = s.paperFg;  bg = s.paperBg;  break;
+        case SkinRole::Dialog: fg = s.dialogFg; bg = s.dialogBg; break;
+        case SkinRole::Bar:
+            if (s.menuAttr >= 0) { fg = s.menuAttr & 0x0F; bg = (s.menuAttr >> 4) & 0x0F; }
+            else { fg = 0; bg = 15; }
+            break;
+        case SkinRole::BarSel: {
+            int f, b; resolveRole(s, SkinRole::Bar, f, b);
+            fg = b; bg = f; break;
+        }
+        case SkinRole::FramePassive:
+            if (s.framePassive >= 0) { fg = s.framePassive & 0x0F; bg = (s.framePassive >> 4) & 0x0F; }
+            else { fg = s.paperFg; bg = s.paperBg; }
+            break;
+        case SkinRole::FrameActive:
+            if (s.frameActive >= 0) { fg = s.frameActive & 0x0F; bg = (s.frameActive >> 4) & 0x0F; }
+            else { fg = s.dialogFg; bg = s.dialogBg; }
+            break;
+        case SkinRole::Dim:    fg = 8;  bg = s.paperBg; break;
+        case SkinRole::Accent: fg = (s.dialogFg != s.paperBg) ? s.dialogFg
+                                    : (s.frameActive >= 0 ? (s.frameActive & 0x0F) : 15);
+                               bg = s.paperBg; break;
+        case SkinRole::Floor:  fg = s.deskFg; bg = s.deskBg; break;
+        case SkinRole::FloorInk: {
+            // luminance pick against the floor bg
+            TColorRGB c = ThemeManager::cgaColor(s.deskBg);
+            int lum = (c.r * 299 + c.g * 587 + c.b * 114) / 1000;
+            fg = lum > 128 ? 0 : 15; bg = s.deskBg; break;
+        }
+        case SkinRole::Ok:     fg = 10; bg = s.paperBg; break;
+        case SkinRole::Warn:   fg = 12; bg = s.paperBg; break;
+        case SkinRole::Shadow: fg = 0;  bg = 0; break;
+    }
+}
+
+// House defaults when no skin is active (classic monochrome-era look).
+static void houseRole(SkinRole r, int& fg, int& bg) {
+    switch (r) {
+        case SkinRole::Bar: case SkinRole::BarSel: fg = 0; bg = 15; break;
+        case SkinRole::Dim:    fg = 8;  bg = 0;  break;
+        case SkinRole::Accent: fg = 15; bg = 0;  break;
+        case SkinRole::Floor:  fg = 9;  bg = 1;  break;   // the classic library blue
+        case SkinRole::FloorInk: fg = 15; bg = 1; break;
+        case SkinRole::Ok:     fg = 10; bg = 0;  break;
+        case SkinRole::Warn:   fg = 12; bg = 0;  break;
+        case SkinRole::Shadow: fg = 0;  bg = 0;  break;
+        case SkinRole::Dialog: fg = 15; bg = 1;  break;
+        case SkinRole::FramePassive: case SkinRole::FrameActive:
+        case SkinRole::Desk: case SkinRole::Paper:
+        default:               fg = 7;  bg = 0;  break;
+    }
+}
+
+static void roleIndices(SkinRole r, int& fg, int& bg) {
+    if (const CgaSkin* s = ThemeManager::skin()) resolveRole(*s, r, fg, bg);
+    else houseRole(r, fg, bg);
+}
+
+TColorAttr ThemeManager::attr(SkinRole role) {
+    int fg, bg; roleIndices(role, fg, bg);
+    return TColorAttr(cgaColor(fg), cgaColor(bg));
+}
+
+bool ThemeManager::tryAttr(SkinRole role, TColorAttr& out) {
+    const CgaSkin* s = skin();
+    if (!s) return false;
+    // Bar roles only claim the pixels when the skin defines chrome
+    if ((role == SkinRole::Bar || role == SkinRole::BarSel) && s->menuAttr < 0)
+        return false;
+    int fg, bg; resolveRole(*s, role, fg, bg);
+    out = TColorAttr(cgaColor(fg), cgaColor(bg));
+    return true;
+}
+
+unsigned char ThemeManager::bios(SkinRole role) {
+    int fg, bg; roleIndices(role, fg, bg);
+    return (unsigned char)(((bg & 0x0F) << 4) | (fg & 0x0F));
+}
+
+int ThemeManager::fgIndex(SkinRole role) { int f, b; roleIndices(role, f, b); return f; }
+int ThemeManager::bgIndex(SkinRole role) { int f, b; roleIndices(role, f, b); return b; }
+uint32_t ThemeManager::rgbFgRole(SkinRole role) { return cgaRgb(fgIndex(role)); }
+uint32_t ThemeManager::rgbBgRole(SkinRole role) { return cgaRgb(bgIndex(role)); }
+
+TColorAttr ThemeManager::attrIdx(int fg, int bg) {
+    return TColorAttr(cgaColor(fg), cgaColor(bg));
+}

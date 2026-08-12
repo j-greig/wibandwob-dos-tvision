@@ -26,8 +26,11 @@ void TCGAFrame::draw()
     const int w = size.x, h = size.y;
     if (w <= 0 || h <= 0) return;
 
-    // Accent colour: follow the content view's explicit fg, else white.
-    TColorRGB accent = TColorRGB(0xFF, 0xFF, 0xFF);
+    // Accent colour: follow the content view's explicit fg, else the
+    // skin's frame role (active/passive by focus).
+    bool active = win && (win->state & sfActive);
+    TColorRGB accent = ThemeManager::cgaColor(ThemeManager::fgIndex(
+        active ? SkinRole::FrameActive : SkinRole::FramePassive));
     if (win) {
         TView* start = win->first();
         TView* v = start;
@@ -48,8 +51,7 @@ void TCGAFrame::draw()
 
     // Mockup style: uniform bright frames regardless of focus.
     TColorAttr frameAttr(accent, accent);              // solid block colour
-    TColorAttr tabAttr(TColorRGB(0x00, 0x00, 0x00),    // black text ...
-                       TColorRGB(0xFF, 0xFF, 0xFF));   // ... on white tab
+    TColorAttr tabAttr = ThemeManager::attr(SkinRole::Bar);  // skin bar colours
 
     TDrawBuffer b;
 

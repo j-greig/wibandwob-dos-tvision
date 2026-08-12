@@ -1,4 +1,5 @@
 #include "figlet_text_view.h"
+#include "theme_manager.h"
 #include "figlet_utils.h"
 #include "ui/ui_helpers.h"
 
@@ -34,8 +35,8 @@ TFigletTextView::TFigletTextView(const TRect& bounds, const std::string& text,
     : TView(bounds),
       text_(text),
       font_(font),
-      fgColor_(0xFF, 0xFF, 0xFF),
-      bgColor_(0x00, 0x00, 0x00)
+      fgColor_(ThemeManager::cgaColor(ThemeManager::fgIndex(SkinRole::Paper))),
+      bgColor_(ThemeManager::cgaColor(ThemeManager::bgIndex(SkinRole::Paper)))
 {
     growMode = gfGrowHiX | gfGrowHiY;
     eventMask |= evMouseDown;

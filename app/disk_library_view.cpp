@@ -19,9 +19,8 @@
 
 // ── helpers ────────────────────────────────────────────────
 
-static TColorAttr cga(int fg, int bg) {
-    return TColorAttr(ThemeManager::cgaColor(fg), ThemeManager::cgaColor(bg));
-}
+static TColorAttr cga(int fg, int bg) { return ThemeManager::attrIdx(fg, bg); }
+static int floorBgIdx() { return ThemeManager::bgIndex(SkinRole::Floor); }
 
 static int displayWidth(const std::string& s) {
     return (int)TText::width(TStringView(s.data(), s.size()));
@@ -86,8 +85,8 @@ void TDiskLibraryView::drawDisk(const DiskDef& d, int x0, int y0, bool selected)
     // hole is a black `▄` continuing into a full black cell, the sticker
     // stays clear of the notch column. Floor is the library blue (1).
     TColorAttr body  = cga(15, d.bodyIdx);
-    TColorAttr edge  = cga(d.bodyIdx, 1);        // ▄ body-on-floor
-    TColorAttr notch = cga(0, 1);                // ▄ black-on-floor
+    TColorAttr edge  = cga(d.bodyIdx, floorBgIdx());  // ▄ body-on-floor
+    TColorAttr notch = cga(0, floorBgIdx());          // ▄ black-on-floor
     TColorAttr label = cga(d.labelFg, d.labelBg);
     TColorAttr hole  = cga(15, 0);
     TColorAttr shut  = cga(0, 15);
@@ -142,7 +141,7 @@ void TDiskLibraryView::drawDisk(const DiskDef& d, int x0, int y0, bool selected)
             // clipped bottom-left corner — subtle, one ▀ cell: upper half
             // stays body, lower half falls away to the floor
             if (row == DISK_H - 1)
-                b.moveStr(0, "\xE2\x96\x80", cga(d.bodyIdx, 1));
+                b.moveStr(0, "\xE2\x96\x80", cga(d.bodyIdx, floorBgIdx()));
         }
         writeLine(x0, y, DISK_W, 1, b);
     }
@@ -152,7 +151,7 @@ void TDiskLibraryView::drawDisk(const DiskDef& d, int x0, int y0, bool selected)
         // beneath the disk (▀ so it hugs the disk's bottom edge)
         TDrawBuffer bar;
         for (int x = 0; x < DISK_W; ++x)
-            bar.moveStr(x, "\xE2\x96\x80", cga(15, 1));
+            bar.moveStr(x, "\xE2\x96\x80", ThemeManager::attr(SkinRole::FloorInk));
         writeLine(x0, y0 + DISK_H, DISK_W, 1, bar);
     }
 }
@@ -160,7 +159,7 @@ void TDiskLibraryView::drawDisk(const DiskDef& d, int x0, int y0, bool selected)
 void TDiskLibraryView::draw()
 {
     // Library floor: CGA blue like the ref's window interior
-    TColorAttr floor = cga(9, 1);
+    TColorAttr floor = ThemeManager::attr(SkinRole::Floor);
     for (int y = 0; y < size.y; ++y) {
         TDrawBuffer b;
         b.moveChar(0, ' ', floor, size.x);
@@ -168,7 +167,7 @@ void TDiskLibraryView::draw()
     }
 
     // Fixed header: white WIBWOB wordmark, centred, then the sprocket strip
-    TColorAttr ink = cga(15, 1);
+    TColorAttr ink = ThemeManager::attr(SkinRole::FloorInk);
     for (int i = 0; i < (int)logo_.size() && i < size.y; ++i) {
         const std::string& l = logo_[i];
         int w = displayWidth(l);

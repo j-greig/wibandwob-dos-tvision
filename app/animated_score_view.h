@@ -39,7 +39,7 @@ public:
 
     // Optional external control: set foreground/background colors.
     // If not called, defaults to light gray on black.
-    void setTextColors(const TColorAttr &attr) { textAttr = attr; drawView(); }
+    void setTextColors(const TColorAttr &attr) { textAttr = attr; customText_ = true; drawView(); }
     void setBackgroundRGB(uchar r, uchar g, uchar b);
     void cycleBackground(int delta = 1);
     void setBackgroundIndex(int idx);
@@ -57,6 +57,10 @@ private:
 
     // Rendering colors (normal + highlighted are the same for this view).
     TColorAttr textAttr { TColorAttr{0x07} }; // default BIOS 0x07 (light gray on black)
+    bool customText_ = false;   // true once user/API sets colours explicitly
+    // Effective attr: skin Paper unless customised (kills the grey-slab-on-
+    // dark-skin problem, Zilla 2026-08-12)
+    TColorAttr effAttr() const;
     int bgIndex {0}; // index into built-in ANSI-like BG palette
 };
 

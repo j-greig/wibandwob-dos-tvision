@@ -373,8 +373,7 @@ void TTweetShaderView::draw()
     float t = frame * 0.066f;
     TColorAttr ink = TColorAttr(ThemeManager::cgaColor(kPhosphorIdx[phosphor]),
                                 ThemeManager::cgaColor(0));
-    TColorAttr dim = TColorAttr(ThemeManager::cgaColor(8),
-                                ThemeManager::cgaColor(0));
+    TColorAttr dim = ThemeManager::attr(SkinRole::Dim);
 
     // Square-ish sampling: a cell is ~2x taller than wide, and the original
     // runs on a square canvas — normalise both axes by the same N.
@@ -421,7 +420,7 @@ void TTweetShaderView::draw()
     {
         TDrawBuffer tag;
         std::string label = std::string(" ") + kShaders[shaderIdx].name + " [N] ";
-        TColorAttr tagA = TColorAttr(ThemeManager::cgaColor(8), ThemeManager::cgaColor(0));
+        TColorAttr tagA = ThemeManager::attr(SkinRole::Dim);
         tag.moveStr(0, TStringView(label.data(), label.size()), tagA);
         writeLine(0, H - 1, (int)label.size() < W ? (int)label.size() : W, 1, tag);
     }

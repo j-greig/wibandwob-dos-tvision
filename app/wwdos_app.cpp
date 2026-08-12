@@ -396,18 +396,6 @@ class TCustomStatusLine;
 /* TCustomMenuBar - Menu bar with animated kaomoji        */
 /*---------------------------------------------------------*/
 
-// Skin-aware bar colours: when the active skin defines a menuAttr, menus and
-// the status line wear it (authentic CGA RGB); otherwise classic black-on-white.
-static bool skinBarAttr(TColorAttr& out, bool selected)
-{
-    const CgaSkin* sk = findCgaSkin(ThemeManager::activeSkin());
-    if (!sk || sk->menuAttr < 0) return false;
-    int fg = sk->menuAttr & 0x0F, bg = (sk->menuAttr >> 4) & 0x0F;
-    if (selected) { int t = fg; fg = bg; bg = t; }
-    out = TColorAttr(ThemeManager::cgaColor(fg), ThemeManager::cgaColor(bg));
-    return true;
-}
-
 class TCustomMenuBar : public TMenuBar
 {
 public:
@@ -438,12 +426,12 @@ public:
         switch(index) {
             case 1:  case 3:  case 4:  case 6: {
                 TColorAttr skinAttr;
-                if (skinBarAttr(skinAttr, false)) return skinAttr;
+                if (ThemeManager::tryAttr(SkinRole::Bar, skinAttr)) return skinAttr;
                 return TColorAttr(trueBlack, trueWhite);
             }
             case 2:  case 5: {
                 TColorAttr skinAttr;
-                if (skinBarAttr(skinAttr, true)) return skinAttr;
+                if (ThemeManager::tryAttr(SkinRole::BarSel, skinAttr)) return skinAttr;
                 return TMenuBar::mapColor(index);
             }
             default:
@@ -546,7 +534,7 @@ public:
         switch(index) {
             case 1:  case 2:  case 3:  case 4: {
                 TColorAttr skinAttr;
-                if (skinBarAttr(skinAttr, false)) return skinAttr;
+                if (ThemeManager::tryAttr(SkinRole::Bar, skinAttr)) return skinAttr;
                 return TColorAttr(trueBlack, trueWhite);
             }
             default:
@@ -566,6 +554,11 @@ private:
     {
         const AuthConfig& auth = AuthConfig::instance();
         TColorRGB bg(255, 255, 255);
+        {
+            TColorAttr barA;
+            if (ThemeManager::tryAttr(SkinRole::Bar, barA))
+                bg = ThemeManager::cgaColor(ThemeManager::bgIndex(SkinRole::Bar));
+        }
         TColorRGB fg;
         const char* label = auth.modeName();  // "LLM AUTH" / "LLM KEY" / "LLM OFF"
 
@@ -600,6 +593,11 @@ private:
 
         // Build indicator string and pick colour
         TColorRGB bg(255, 255, 255);
+        {
+            TColorAttr barA;
+            if (ThemeManager::tryAttr(SkinRole::Bar, barA))
+                bg = ThemeManager::cgaColor(ThemeManager::bgIndex(SkinRole::Bar));
+        }
         TColorRGB fg;
         const char* label;
 
@@ -2660,8 +2658,10 @@ TPalette& TWwdosApp::getPalette() const
             if (entry >= 1 && entry < (int)sizeof(cpAppColor) - 0)
                 buf[entry - 1] = (char)attr;
         };
-        int fp = sk->framePassive, fa = sk->frameActive, mn = sk->menuAttr;
-        int mnSel = ((mn & 0x0F) << 4) | ((mn >> 4) & 0x0F);   // inverse for selection
+        int fp = ThemeManager::bios(SkinRole::FramePassive);
+        int fa = ThemeManager::bios(SkinRole::FrameActive);
+        int mn = ThemeManager::bios(SkinRole::Bar);
+        int mnSel = ThemeManager::bios(SkinRole::BarSel);
         // menus + status line (entries 2..7)
         for (int e = 2; e <= 7; ++e) put(e, (e == 5 || e == 6) ? mnSel : mn);
         // three window palettes + gray dialog: frame passive/active/icon,
