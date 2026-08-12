@@ -1,0 +1,13 @@
+# The timekeeper is a shapeshifter, the --- below denote breaks in the ascii art with each shape being a different form of the timekeeper.
+   ╭∞∞∞∞╮     
+  ╱ ◕┃◕  ╲    
+ ╱   ┃    ╲   
+│  NOW±∞  │   
+ ╲   ┃   ╱    
+  ╲ ═══ ╱     
+   ╰───╯      
+---
+╭∩∩╮ 
+(◑‿◑)
+ ││  
+ ╱╲  

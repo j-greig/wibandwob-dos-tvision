@@ -1,0 +1,27 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                             NORTON COMMANDER                                 ║
+║  File  Edit  View  Mark  Commands  Options                   F1 Help F10 Quit ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║╔═══════════════════════════════════╦═══════════════════════════════════════╗║
+║║ C:\                     Name      ║ C:\NC              Name               ║║
+║║ ┌─────────────────────────────────┐║ ┌─────────────────────────────────────┐║║
+║║ │DOS                           EXE│║ │datex                             COM││║
+║║ │NC                            COM│║ │dbview                            EXE││║
+║║ │autoexec.bat                   SYS│║ │arc_exit                          COM││║
+║║ │command.com                    COM│║ │nc_exit                           DOC││║
+║║ │config.sys                     SYS│║ │ncclean                           EXE││║
+║║ │Io.sys                         SYS│║ │ncedit                            EXE││║
+║║ │Msdos.sys                      SYS│║ │fish                              NSS││║
+║║ │wina20.386                     386│║ │flip                              NSS││║
+║║ └─────────────────────────────────┘║ └─────────────────────────────────────┘║║
+║║                                   ║                                       ║║
+║╚═══════════════════════════════════╩═══════════════════════════════════════╝║
+║wina20.386          9349  5-31-94  6:22a║..              ▲UP►─DIR▼ 7-21-17  3:31p║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║C:\NC>                                                                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+ F1Help  F2Menu  F3View  F4Edit  F5Copy  F6RenMov F7Mkdir F8Delete F9PullDn F10Quit
+
+The classic dual-pane file manager interface that defined an era of computing.
+Two symmetrical panels showing directory contents with status bars and function keys.
+The clean lines and systematic organization of information in perfect balance.

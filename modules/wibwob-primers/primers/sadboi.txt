@@ -1,0 +1,12 @@
+# this creature has a sad eye `⌣` and mouth `⌢` but its facial features can be flipped to be happy, or swapped to emoji like 👁️ or 🪩 for eyes or 👄 or 🫦 for the mouth or any other ascii char suggestive of face parts
+
+  ╭╮  ╭╮
+ ╭╯╰──╯╰╮
+ │      │
+ │ ⌣⌢⌣
+ ╰┬────┬╯
+╭─┤▓▒░ ├─╮
+│ │▓▒░ │ │
+│ ╰────╯ │
+│ ╱    ╲ │
+╰╱      ╲╯

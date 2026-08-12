@@ -1,0 +1,39 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ File  Edit  Search  Options  Window                                    Help  ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ ┌─────────────────────────────────────────────────────────────────────────┐  ║
+║ │ AUTOEXEC.BAT                                                    Modified │  ║
+║ └─────────────────────────────────────────────────────────────────────────┘  ║
+║ ┌─────────────────────────────────────────────────────────────────────────┐  ║
+║ │ @ECHO OFF                                                               │  ║
+║ │ PATH C:\DOS;C:\WINDOWS;C:\UTILITY                                       │  ║
+║ │ SET TEMP=C:\TEMP                                                        │  ║
+║ │ SET PROMPT=$P$G                                                         │  ║
+║ │ CLS                                                                     │  ║
+║ │ ECHO Loading system...                                                  │  ║
+║ │ ECHO.                                                                   │  ║
+║ │ REM *** Network Configuration ***                                       │  ║
+║ │ CALL C:\NETWARE\STARTNET.BAT                                            │  ║
+║ │ ECHO Network initialized.                                               │  ║
+║ │ ECHO.                                                                   │  ║
+║ │ REM *** Load TSR Programs ***                                           │  ║
+║ │ LOADHIGH C:\UTILITY\MOUSE.COM                                           │  ║
+║ │ LOADHIGH C:\UTILITY\DOSKEY.COM                                          │  ║
+║ │ ECHO TSR programs loaded.                                               │  ║
+║ │ ECHO.                                                                   │  ║
+║ │ REM *** Set Environment Variables ***                                   │  ║
+║ │ SET EDITOR=C:\UTILITY\EDIT.COM                                          │  ║
+║ │ SET DIRCMD=/O /P                                                        │  ║
+║ │ ECHO Environment configured.                                            │  ║
+║ │ ECHO.                                                                   │  ║
+║ │ ECHO System ready.                                                      │  ║
+║ │ ECHO Type HELP for assistance.                                          │  ║
+║ │ ■                                                                       │  ║
+║ └─────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                              ║
+║ Line 23  Col 1   F1=Help F2=Save F3=Open F4=Exit F5=Search F6=Replace       ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+The simple text editor interface with clean lines and essential functionality.
+System configuration files and batch scripts revealed in monospace clarity.
+The foundation of all computing: pure text manipulation with keyboard shortcuts.

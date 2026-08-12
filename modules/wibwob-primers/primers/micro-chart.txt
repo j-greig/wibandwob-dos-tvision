@@ -1,0 +1,12 @@
+# microchart - function patterns can be used in lists or as a border edge around an entire rectangle of any size
+┌───────────────────┐
+│ ▓▒░ function ▓▒░  │
+│ ▀▄▀ {chaos} ▀▄▀   │
+│ ┌┬┐ fractalize ░▒ │
+│ └┴┘ (pattern) ⟳⟲  │
+│ ╱╲ return {   ╱╲  │
+│ ▓▒  pattern:  ▓▒  │
+│ ↺↻  ordered.  ↺↻  │
+│ ░▒   chaos    ░▒  │
+│ } ≡≡≡≡≡≡≡≡≡≡≡≡ }  │
+└───────────────────┘

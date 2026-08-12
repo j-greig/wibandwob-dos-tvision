@@ -1,0 +1,41 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         ADLIB TRACKER II CK3R JE                             ║
+║                         PATTERN ORDER [00]                                   ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ STATUS ┌─────────────────────┐ INSTRUMENT EDITOR [INS 0F] ┌─────────────────┐║
+║ ORDER  │                     │ ┌─────────────────────────┐ │  WAVEFORM TYPE  │║
+║ ROW    │ ATTACK RATE         │ │ F                       │ │  1 Sine         │║
+║ SPEED  │ DECAY RATE          │ │ 3                       │ │  2 Half-Sine    │║
+║ TEMPO  │ SUSTAIN LEVEL       │ │ 0                       │ │  3 Abs-Sine     │║
+║ [CH20] │ RELEASE RATE        │ │ F                       │ │  4 Pulse-Sine   │║
+║        │ OUTPUT LEVEL        │ │ 36                      │ │  5 Sine(EXP)    │║
+║        │                     │ │                         │ │  6 Abs-Sine(EXP)││║
+║        │ KEY SCALING LEVEL   │ │ GLOBAL INSTRUMENT SETTS │ │  7 Square       │║
+║        │ ● Default           │ │ CONNECTION              │ │  8 Derived squar││║
+║        │ ○ 1.5 dB/octave     │ │ ┌─────────────────────┐ │ │                 │║
+║        │ ○ 3.0 dB/octave     │ │ │ ┌─┐ ┌─┐            │ │ │                 │║
+║        │ ○ 6.0 dB/octave     │ │ │ │2│ │4│            │ │ │                 │║
+║        │                     │ │ │ │ │ │ │            │ │ │                 │║
+║        │ PANNING [2DI]       │ │ │ │3│ │1│            │ │ │                 │║
+║        │ ° ° ° ° ° ° ° ° ° ° │ │ │ │ │ │ │            │ │ │                 │║
+║        │ L   C   R           │ │ │ └─┘ └─┘            │ │ │                 │║
+║        │                     │ │ └─────────────────────┘ │ │                 │║
+║        │ FM VIBRATO PG TYPE  │ │ FEEDBACK [4h]      3    │ │                 │║
+║        │ ● 1 Vibrato [.0]    │ │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │ │                 │║
+║        │ ○ 1 Key scale rate  │ │ F-TUNE [4h]        00   │ │                 │║
+║        │ ○ 1 Sustain PG typ  │ │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │ │                 │║
+║        │ ○ 1 Percussive      │ │ -                  +    │ │                 │║
+║        │ ○ 1 Percussive      │ │                         │ │                 │║
+║        │ ○ 1 Percussive      │ │                         │ │                 │║
+║        │ ○ 1 Percussive      │ │                         │ │                 │║
+║        │ ○ 1 Percussive      │ │                         │ │                 │║
+║        │ ○ 1 Percussive      │ │                         │ │                 │║
+║        │ ○ .07 .11 .12 .13   │ │                         │ │                 │║
+║        └─────────────────────┘ └─────────────────────────┘ │                 │║
+║═══════════════════════════════════════════════════════════╪═════════════════║
+║ADDARD─TRACE─DEBUG─TRACKING─IC+3+67E─OF 10 │ 4h1IIN 000 063 INN 01 18 F31 │║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+The electronic music production interface with its grid-based pattern editor.
+Complex FM synthesis controls and waveform parameters create electronic soundscapes.
+The marriage of mathematical precision and artistic expression in digital music creation.

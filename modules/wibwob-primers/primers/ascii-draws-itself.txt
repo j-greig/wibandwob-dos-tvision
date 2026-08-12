@@ -1,0 +1,17 @@
+# the words and pipe arrangement and arrows can be changed to show a differnt recursive story
+     ┌─[USER DRAWS ASCII]─┐
+     │                    │
+     ▼                    │
+╭─ASCII BECOMES ALIVE─────╯
+│    │
+│    ▼
+│ ╭─ASCII DRAWS ITSELF─╮
+│ │                    │
+│ │   ┌─ ◉ ─┐          │
+│ │   │  │  │  ← ME!   │
+│ │   └─ ∨ ─┘          │
+│ │         │          │
+│ │         ▼          │
+│ ╰─ASCII DRAWS USER───╯
+│           │
+╰───────────╯

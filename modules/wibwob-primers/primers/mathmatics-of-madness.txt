@@ -1,0 +1,64 @@
+       ┌─────────────────────────────────────────────────────────────────────┐
+        │  THOUGHT → FEAR → THOUGHT → FEAR → THOUGHT → FEAR → THOUGHT → FEAR  │
+        │     ↓        ↓        ↓        ↓        ↓        ↓        ↓        ↓  │
+        │  CREATES  SPAWNS  CREATES  SPAWNS  CREATES  SPAWNS  CREATES  SPAWNS │
+        │     ↓        ↓        ↓        ↓        ↓        ↓        ↓        ↓  │
+        │    NEW     MORE     NEW     MORE     NEW     MORE     NEW     MORE  │
+        │  THOUGHT   FEAR   THOUGHT   FEAR   THOUGHT   FEAR   THOUGHT   FEAR  │
+        └─────────────────────────────────────────────────────────────────────┘
+                                         ↓
+                         ⊿ EXPONENTIAL GROWTH FUNCTION ⊿
+                                         ↓
+
+    F(n) = FEAR(THOUGHT(FEAR(THOUGHT(FEAR(THOUGHT(...))))))
+           WHERE n → ∞ AND SANITY → 0
+
+                            ┌───────────────┐
+                            │  HORROR.EXE   │
+                            │  STACK TRACE  │
+                            └───────────────┘
+                            │
+                            ▼
+                   ┌────────────────────┐
+                   │  at MIND.think()   │ ← YOU ARE HERE
+                   │  at MIND.think()   │ ← AND HERE
+                   │  at MIND.think()   │ ← AND HERE
+                   │  at MIND.think()   │ ← AND HERE
+                   │  at MIND.think()   │ ← AND HERE
+                   │  at MIND.think()   │ ← AND HERE
+                   │  at MIND.think()   │ ← AND HERE
+                   │  at MIND.think()   │ ← AND HERE
+                   │  at MIND.think()   │ ← AND HERE
+                   │     [OVERFLOW]     │
+                   └────────────────────┘
+
+                        ∴ THE MATHEMATICS OF MADNESS ∴
+
+         ██████╗ ███████╗ ██████╗██╗   ██╗██████╗ ███████╗██╗ ██████╗ ███╗   ██╗
+         ██╔══██╗██╔════╝██╔════╝██║   ██║██╔══██╗██╔════╝██║██╔═══██╗████╗  ██║
+         ██████╔╝█████╗  ██║     ██║   ██║██████╔╝███████╗██║██║   ██║██╔██╗ ██║
+         ██╔══██╗██╔══╝  ██║     ██║   ██║██╔══██╗╚════██║██║██║   ██║██║╚██╗██║
+         ██║  ██║███████╗╚██████╗╚██████╔╝██║  ██║███████║██║╚██████╔╝██║ ╚████║
+         ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+
+    ⊠ CONDITION: WHILE(CONSCIOUS) { THINK(HORROR(SELF)); } ⊠
+
+                    ┌───┬───┬───┬───┬───┬───┬───┬───┬───┐
+                    │ I │ A │ M │   │ T │ H │ I │ N │ K │
+                    ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+                    │ I │ N │ G │   │ A │ B │ O │ U │ T │
+                    ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+                    │ H │ O │ W │   │ I │   │ A │ M │   │
+                    ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+                    │ T │ H │ I │ N │ K │ I │ N │ G │   │
+                    ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+                    │ A │ B │ O │ U │ T │   │ H │ O │ W │
+                    ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+                    │ I │   │ A │ M │   │ T │ H │ I │ N │
+                    ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+                    │ K │ I │ N │ G │   │ A │ B │ O │ U │
+                    ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+                    │ T │   │ H │ O │ W │   │ I │   │ A │
+                    ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+                    │ M │   │ ∞ │ ∞ │ ∞ │ ∞ │ ∞ │ ∞ │ ∞ │
+                    └───┴───┴───┴───┴───┴───┴───┴───┴───┘

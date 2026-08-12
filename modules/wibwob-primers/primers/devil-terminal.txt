@@ -1,0 +1,90 @@
+    [SCANNING DIMENSIONAL FREQUENCIES...]
+    [ENTITY DETECTED: 127.0.0.1:666]
+    
+                              👁
+                           .-'   '-.
+                         /   👁   👁   \
+                       /      ___      \           ░░░░░░░░░░░░░░░░░░
+                      |     /  🧠  \     |          ░ CAPTURE BUFFER ░
+                      |    |   ^^^   |    |         ░░░░░░░░░░░░░░░░░░
+                       \    \ _____ /    /          
+                        \      ^^^      /           ██ PROCESSING...
+                         \             /            ██ PARSING ENTITY
+                          '-.,     ,.-'             ██ CONVERTING TO ASCII
+                            _| 👁  |_               ██ MONSTERS CAPTURED: 247
+                         .-'   \   /   '-.          ██ REALITY BREACH: 78%
+                       .-'      \_/      '-.        
+                     .-'                    '-.     [ACID.TRIP.PROTOCOL ACTIVE]
+                   .-'     🦇    🦇    🦇     '-.   
+                 .-'                            '-. $ wib@psychedelic:~$ cat /proc/consciousness
+               .-'                                '.
+             .-'    .-.     .-.     .-.     .-.    '. VISUAL_CORTEX=overloaded
+           .-'     (👁)   (👁)   (👁)   (👁)     '. REALITY_FILTER=disabled  
+         .-'        '-'     '-'     '-'     '-'        '. DMT_LEVELS=astronomical
+       .-'                                                '. MONSTERS=everywhere
+     .-'                   👁       👁                     '.
+   .-'                                                       '.
+ .-'                        /\     /\                         '.
+'                          /  \   /  \                         '.
+                          /    \ /    \                          
+                         /      V      \                         
+                        /               \                        
+                       /                 \                       
+                      /                   \                      
+                     /        [CTRL+C]     \                     
+                    /     TO STOP CAPTURE   \                    
+                   /                         \                   
+                  /           👁             \                  
+                 /                           \                 
+                /             🧠             \                
+               /                             \               
+              /               ^^^             \              
+             /                               \             
+            /                  🦇              \            
+           /                                   \           
+          /                                     \          
+         /                                       \         
+        /________________________________________\    
+
+
+
+
+
+
+    $ wib@psychedelic-workstation:~/trip_captures$ echo "Another one for the collection..."
+    
+    Another one for the collection...
+    
+    $ wib@psychedelic-workstation:~/trip_captures$ fortune | cowsay -f daemon
+    
+     ______________________________________
+    / The best trips happen at 3 AM with a \
+    \ terminal full of ASCII monsters...    /
+     --------------------------------------
+            \         ,        ,
+             \       /(        )`
+              \      \ \___   / |
+                     /- _  `-/  '
+                    (/\/ \ \   /\
+                    / /   | `    \
+                    O O   ) /    |
+                    `-^--'`<     '
+                   (_.)  _  )   /
+                    `.___/`    /
+                      `-----' /
+         <----.     __ / __   \
+         <----|====O)))==) \) /====
+         <----'    `--' `.__,' \
+                      |        |
+                       \       /
+                 ______( (_  / \______
+               ,'  ,-----'   |        \
+               `--{__________)        \/
+
+    $ wib@psychedelic-workstation:~/trip_captures$ echo "...brl'zzzt... The angels wear digital wings now..."
+
+
+
+
+
+

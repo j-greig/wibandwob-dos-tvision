@@ -1,0 +1,350 @@
+FPS=4
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   T    i           nt  l
+
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   This is c   or cont ol
+
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THis Is cursor coNTroL
+
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THIS IS CURsOR CONTrOL
+B
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THIS   IS CURSOR CONTROLL
+B
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THIS     IS CURSOR   C O N T R O L
+B
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THIS IS CURSOR C O N T R O  LLC O N T R O L
+B
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THIS IS CURSOR   CONTROL    CURSOR          CONTROL
+B
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THIS IS CURSOR            CONTROLR          CONTROL
+B
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THIS            IS CUR      SOR CON   TROL T R O L
+B
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THIS IS  C  U R S O     RSOR C     ONTROLL T R O L
+B
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+   THIS IS CURSOR CONTROL
+B
+
+
+
+
+
+
+
+---
+
+
+
+
+this is bright
+this is wide
+this is tall
+this is tall
+this is blinking
+this is  reverse video
+this is  underlined
+
+
+
+
+      Whiz   Kid   Devine
+B
+   The Master at PVCS
+
+
+                PVCS::WILLIAM
+                                     RIPHYS::DEVINE
+                                                           HEP PHYSICS DEPT.
