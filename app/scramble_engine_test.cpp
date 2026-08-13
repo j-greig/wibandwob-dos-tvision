@@ -24,6 +24,9 @@ std::string api_set_skin(TWwdosApp&, const std::string&) { return "ok"; }
 void api_spawn_disks(TWwdosApp&, const TRect*) {}
 void api_spawn_shader(TWwdosApp&, const TRect*, const std::string&) {}
 std::string api_screensaver(TWwdosApp&, const std::string&, int) { return "ok"; }
+std::string api_list_skins(TWwdosApp&) { return "{}"; }
+std::string api_reload_skins(TWwdosApp&) { return "ok"; }
+std::string api_skin_save(TWwdosApp&, const std::string&) { return "ok"; }
 std::string api_reset_theme(TWwdosApp&) { return "ok"; }
 void api_toggle_scramble(TWwdosApp&) {}
 void api_expand_scramble(TWwdosApp&) {}

@@ -154,33 +154,60 @@ std::string& ThemeManager::activeSkin() {
 }
 
 // --- CGA skin registry -------------------------------------------------------
-// Recipes decoded from the Figma refs (design/figma-refs/):
-//   dflat    — D-Flat MemoPad: cyan chrome, grey paper, blue dialogs, red
-//              hotkeys, ▒-dithered blue sea. The flagship nostalgia combo.
-//   turbo    — Turbo Pascal IDE: blue desktop, yellow-on-blue editor paper,
-//              grey dialogs, green action buttons.
-//   terra    — Terra Time / GeoGraphics: green continents on blue, yellow
-//              city-lights, cyan chrome.
-//   pipeline — Pipeline (1991): near-black desktop, blue paper, magenta logo
-//              pixels. The moody one.
-static const CgaSkin kSkins[] = {
-    //  name        texture  deskFg deskBg  paper   dialog  chrome: passive active menu
-    { "dflat",      "\xe2\x96\x92", 9, 1,   7, 0,   1, 15,  -1,   -1,   -1   },
-    { "turbo",      "\xe2\x96\x91", 7, 1,   1, 14,  7, 0,   -1,   -1,   -1   },
-    { "terra",      "",             0, 1,   1, 10,  2, 0,   -1,   -1,   -1   },
-    { "pipeline",   "",             8, 0,   0, 9,   0, 13,  0x08, 0x09, 0x09 },
-    { "phosphor",   "",             2, 0,   0, 10,  2, 0,   0x02, 0x0A, 0x0A },
-    { "hercules",   "\xe2\x96\x91", 6, 0,   0, 14,  6, 0,   0x06, 0x0E, 0x0E },
-    { "paper",      "\xe2\x96\x91", 8, 7,   15, 0,  3, 0,   -1,   -1,   -1   },
-    { "midnight",   "\xc2\xb7",      8, 0,   0, 11,  1, 15,  0x08, 0x0B, 0x0B },
-    { nullptr,      "",             0, 0,   0, 0,   0, 0,   -1,   -1,   -1   },
-};
+// Built-ins seeded programmatically; skins/*.skin files loaded at runtime
+// shadow (by name) or extend them. Recipes decoded from the Figma refs
+// (design/figma-refs/): dflat, turbo, terra, pipeline + the mono set.
+static CgaSkin mkSkin(const char* name, const char* tex,
+                      int dFg, int dBg, int pBg, int pFg, int dlBg, int dlFg,
+                      int fp = -1, int fa = -1, int mn = -1) {
+    CgaSkin s;
+    s.name = name; s.texture = tex;
+    s.deskFg = dFg; s.deskBg = dBg;
+    s.paperBg = pBg; s.paperFg = pFg;
+    s.dialogBg = dlBg; s.dialogFg = dlFg;
+    s.framePassive = fp; s.frameActive = fa; s.menuAttr = mn;
+    s.builtin = true;
+    return s;
+}
 
-const CgaSkin* allCgaSkins() { return kSkins; }
+// luminance-mapped mono ramp for a whole terminal palette (green/amber CRTs)
+static void monoRamp(CgaSkin& s, bool amber) {
+    for (int i = 0; i < 16; ++i) {
+        TColorRGB c = ThemeManager::cgaColor(i);
+        int lum = (c.r * 299 + c.g * 587 + c.b * 114) / 1000;
+        s.termPal[i] = amber
+            ? ((uint32_t)lum << 16) | ((uint32_t)(lum * 7 / 10) << 8)
+            : ((uint32_t)(lum / 4) << 16) | ((uint32_t)lum << 8) | (uint32_t)(lum / 4);
+    }
+}
+
+static std::vector<CgaSkin> buildBuiltinSkins() {
+    std::vector<CgaSkin> v;
+    v.push_back(mkSkin("dflat",    "\xe2\x96\x92", 9, 1, 7, 0,  1, 15));
+    v.push_back(mkSkin("turbo",    "\xe2\x96\x91", 7, 1, 1, 14, 7, 0));
+    v.push_back(mkSkin("terra",    "",             0, 1, 1, 10, 2, 0));
+    v.push_back(mkSkin("pipeline", "",             8, 0, 0, 9,  0, 13, 0x08, 0x09, 0x09));
+    v.back().okFg = 9;
+    v.push_back(mkSkin("phosphor", "",             2, 0, 0, 10, 2, 0,  0x02, 0x0A, 0x0A));
+    v.back().okFg = 10; monoRamp(v.back(), false);
+    v.push_back(mkSkin("hercules", "\xe2\x96\x91", 6, 0, 0, 14, 6, 0,  0x06, 0x0E, 0x0E));
+    v.back().okFg = 14; monoRamp(v.back(), true);
+    v.push_back(mkSkin("paper",    "\xe2\x96\x91", 8, 7, 15, 0, 3, 0));
+    v.push_back(mkSkin("midnight", "\xc2\xb7",      8, 0, 0, 11, 1, 15, 0x08, 0x0B, 0x0B));
+    v.back().okFg = 11;
+    return v;
+}
+
+static std::vector<CgaSkin>& skinRegistry() {
+    static std::vector<CgaSkin> reg = buildBuiltinSkins();
+    return reg;
+}
+
+const std::vector<CgaSkin>& allCgaSkins() { return skinRegistry(); }
 
 const CgaSkin* findCgaSkin(const std::string& name) {
-    for (const CgaSkin* s = kSkins; s->name; ++s)
-        if (name == s->name) return s;
+    for (const CgaSkin& s : skinRegistry())
+        if (s.name == name) return &s;
     return nullptr;
 }
 
@@ -214,29 +241,23 @@ static void resolveRole(const CgaSkin& s, SkinRole r, int& fg, int& bg) {
             if (s.frameActive >= 0) { fg = s.frameActive & 0x0F; bg = (s.frameActive >> 4) & 0x0F; }
             else { fg = s.dialogFg; bg = s.dialogBg; }
             break;
-        case SkinRole::Dim:    fg = 8;  bg = s.paperBg; break;
-        case SkinRole::Accent: fg = (s.dialogFg != s.paperBg) ? s.dialogFg
+        case SkinRole::Dim:    fg = s.dimFg >= 0 ? s.dimFg : 8;  bg = s.paperBg; break;
+        case SkinRole::Accent: fg = s.accentFg >= 0 ? s.accentFg
+                                    : (s.dialogFg != s.paperBg) ? s.dialogFg
                                     : (s.frameActive >= 0 ? (s.frameActive & 0x0F) : 15);
                                bg = s.paperBg; break;
-        case SkinRole::Floor:  fg = s.deskFg; bg = s.deskBg; break;
+        case SkinRole::Floor:
+            fg = s.floorFg >= 0 ? s.floorFg : s.deskFg;
+            bg = s.floorBg >= 0 ? s.floorBg : s.deskBg; break;
         case SkinRole::FloorInk: {
             // luminance pick against the floor bg
-            TColorRGB c = ThemeManager::cgaColor(s.deskBg);
+            int fbg = s.floorBg >= 0 ? s.floorBg : s.deskBg;
+            TColorRGB c = ThemeManager::cgaColor(fbg);
             int lum = (c.r * 299 + c.g * 587 + c.b * 114) / 1000;
-            fg = lum > 128 ? 0 : 15; bg = s.deskBg; break;
+            fg = lum > 128 ? 0 : 15; bg = fbg; break;
         }
-        case SkinRole::Ok: {
-            // per-skin healthy colour: monochrome-ish skins use their own
-            // light ink instead of universal green
-            std::string n = s.name;
-            if      (n == "midnight") fg = 11;   // light cyan
-            else if (n == "pipeline") fg = 9;    // light blue
-            else if (n == "hercules") fg = 14;   // amber
-            else if (n == "phosphor") fg = 10;   // green (native)
-            else                      fg = 10;
-            bg = s.paperBg; break;
-        }
-        case SkinRole::Warn:   fg = 12; bg = s.paperBg; break;
+        case SkinRole::Ok:     fg = s.okFg >= 0 ? s.okFg : 10; bg = s.paperBg; break;
+        case SkinRole::Warn:   fg = s.warnFg >= 0 ? s.warnFg : 12; bg = s.paperBg; break;
         case SkinRole::Shadow: fg = 0;  bg = 0; break;
     }
 }
@@ -292,4 +313,124 @@ uint32_t ThemeManager::rgbBgRole(SkinRole role) { return cgaRgb(bgIndex(role)); 
 
 TColorAttr ThemeManager::attrIdx(int fg, int bg) {
     return TColorAttr(cgaColor(fg), cgaColor(bg));
+}
+
+// ── skin files: parse / load / save ──────────────────────────────────
+#include <dirent.h>
+#include <fstream>
+#include <cstdio>
+
+static int parseIntTok(const std::string& t) {
+    if (t.rfind("0x", 0) == 0 || t.rfind("0X", 0) == 0)
+        return (int)strtol(t.c_str(), nullptr, 16);
+    return atoi(t.c_str());
+}
+
+bool parseSkinFile(const std::string& path, CgaSkin& out) {
+    std::ifstream in(path);
+    if (!in) return false;
+    CgaSkin s;   // defaults + kPalDerive palette
+    bool named = false;
+    std::string line;
+    while (std::getline(in, line)) {
+        // strip comments + trailing ws
+        size_t hash = line.find('#');
+        if (hash != std::string::npos) line = line.substr(0, hash);
+        while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r'))
+            line.pop_back();
+        if (line.empty()) continue;
+        // tokenize
+        std::vector<std::string> tok;
+        size_t p = 0;
+        while (p < line.size()) {
+            while (p < line.size() && (line[p] == ' ' || line[p] == '\t')) ++p;
+            size_t q = p;
+            while (q < line.size() && line[q] != ' ' && line[q] != '\t') ++q;
+            if (q > p) tok.push_back(line.substr(p, q - p));
+            p = q;
+        }
+        if (tok.empty()) continue;
+        const std::string& k = tok[0];
+        auto iv = [&](size_t i) { return i < tok.size() ? parseIntTok(tok[i]) : -1; };
+        if      (k == "name" && tok.size() > 1)   { s.name = tok[1]; named = true; }
+        else if (k == "texture" && tok.size() > 1) s.texture = tok[1];
+        else if (k == "desk")   { s.deskFg = iv(1);  s.deskBg = iv(2); }
+        else if (k == "paper")  { s.paperBg = iv(1); s.paperFg = iv(2); }
+        else if (k == "dialog") { s.dialogBg = iv(1); s.dialogFg = iv(2); }
+        else if (k == "framePassive") s.framePassive = iv(1);
+        else if (k == "frameActive")  s.frameActive = iv(1);
+        else if (k == "menu")   s.menuAttr = iv(1);
+        else if (k == "dim")    s.dimFg = iv(1);
+        else if (k == "accent") s.accentFg = iv(1);
+        else if (k == "floor")  { s.floorFg = iv(1); s.floorBg = iv(2); }
+        else if (k == "ok")     s.okFg = iv(1);
+        else if (k == "warn")   s.warnFg = iv(1);
+        else if (k.rfind("pal", 0) == 0 && tok.size() > 1 && tok[1][0] == '#') {
+            int slot = atoi(k.c_str() + 3);
+            if (slot >= 0 && slot < 16)
+                s.termPal[slot] = (uint32_t)strtol(tok[1].c_str() + 1, nullptr, 16);
+        }
+        // unknown keys ignored (forward compatibility)
+    }
+    if (!named) return false;
+    out = s;
+    return true;
+}
+
+int loadUserSkins(const std::string& dir) {
+    DIR* d = opendir(dir.c_str());
+    if (!d) return 0;
+    int loaded = 0;
+    struct dirent* e;
+    while ((e = readdir(d)) != nullptr) {
+        std::string fn = e->d_name;
+        if (fn.size() < 6 || fn.substr(fn.size() - 5) != ".skin") continue;
+        CgaSkin s;
+        if (!parseSkinFile(dir + "/" + fn, s)) continue;
+        // shadow same-name entry (built-in or earlier user skin) or append
+        bool replaced = false;
+        for (CgaSkin& existing : skinRegistry()) {
+            if (existing.name == s.name) {
+                bool wasBuiltin = existing.builtin;
+                existing = s;
+                existing.builtin = wasBuiltin;  // remember its origin
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) skinRegistry().push_back(s);
+        ++loaded;
+        fprintf(stderr, "[skins] loaded %s/%s\n", dir.c_str(), fn.c_str());
+    }
+    closedir(d);
+    return loaded;
+}
+
+bool saveSkinFile(const CgaSkin& s, const std::string& path) {
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) return false;
+    out << "# " << s.name << ".skin — written by skin_save\n";
+    out << "name " << s.name << "\n";
+    if (!s.texture.empty()) out << "texture " << s.texture << "\n";
+    out << "desk "   << s.deskFg  << " " << s.deskBg  << "\n";
+    out << "paper "  << s.paperBg << " " << s.paperFg << "\n";
+    out << "dialog " << s.dialogBg << " " << s.dialogFg << "\n";
+    char hx[16];
+    auto attr = [&](const char* k, int v) {
+        if (v >= 0) { snprintf(hx, sizeof hx, "0x%02X", v); out << k << " " << hx << "\n"; }
+    };
+    attr("framePassive", s.framePassive);
+    attr("frameActive",  s.frameActive);
+    attr("menu",         s.menuAttr);
+    if (s.dimFg >= 0)    out << "dim "    << s.dimFg    << "\n";
+    if (s.accentFg >= 0) out << "accent " << s.accentFg << "\n";
+    if (s.floorFg >= 0)  out << "floor "  << s.floorFg  << " " << s.floorBg << "\n";
+    if (s.okFg >= 0)     out << "ok "     << s.okFg     << "\n";
+    if (s.warnFg >= 0)   out << "warn "   << s.warnFg   << "\n";
+    for (int i = 0; i < 16; ++i)
+        if (s.termPal[i] != CgaSkin::kPalDerive) {
+            snprintf(hx, sizeof hx, "#%06X", s.termPal[i]);
+            out << "pal" << i << " " << hx << "\n";
+        }
+    return out.good();
 }

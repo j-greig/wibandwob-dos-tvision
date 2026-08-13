@@ -85,18 +85,32 @@ public:
     static TColorAttr attrIdx(int fg, int bg);
 };
 
-// A named CGA skin preset — palette recipes decoded from the Figma refs
-// (design/figma-refs/, 2026-08). All colour fields are CGA indices 0-15.
+#include <vector>
+
+// A named CGA skin — built-in (kSkins seeds) or loaded from skins/*.skin
+// files at runtime (user skins shadow built-ins by name). Colour fields are
+// CGA indices 0-15; -1 = derive (docs/development/theming-roles.md).
 struct CgaSkin {
-    const char* name;
-    const char* texture;   // desktop fill glyph (UTF-8), "" = solid
-    int deskFg, deskBg;    // desktop dither fg/bg
-    int paperBg, paperFg;  // default viewer-window colours ("paper")
-    int dialogBg, dialogFg;// accent window colours ("dialog")
+    std::string name;
+    std::string texture;   // desktop fill glyph (UTF-8), "" = solid
+    int deskFg = 7, deskBg = 0;      // desktop dither fg/bg
+    int paperBg = 7, paperFg = 0;    // default viewer-window colours ("paper")
+    int dialogBg = 1, dialogFg = 15; // accent window colours ("dialog")
     // Chrome (window frames / menus) as BIOS attr bytes (bg<<4|fg), -1 =
-    // keep the classic cpAppColor chrome. Dark skins NEED these — otherwise
-    // midnight wears daylight window borders.
-    int framePassive, frameActive, menuAttr;
+    // keep the classic cpAppColor chrome. Dark skins NEED these.
+    int framePassive = -1, frameActive = -1, menuAttr = -1;
+    // Optional role inks, -1 = derive (see resolver)
+    int dimFg = -1, accentFg = -1;
+    int floorFg = -1, floorBg = -1;
+    int okFg = -1, warnFg = -1;
+    // Terminal ANSI palette (OSC 4) per slot, 0xRRGGBB. kPalDerive = use
+    // authentic CGA. A skin file remapping these swaps the whole monitor.
+    static const uint32_t kPalDerive = 0xFF000000u;
+    uint32_t termPal[16] = { kPalDerive, kPalDerive, kPalDerive, kPalDerive,
+                             kPalDerive, kPalDerive, kPalDerive, kPalDerive,
+                             kPalDerive, kPalDerive, kPalDerive, kPalDerive,
+                             kPalDerive, kPalDerive, kPalDerive, kPalDerive };
+    bool builtin = false;
 };
 
 // ── Semantic skin roles ──────────────────────────────────────────────
@@ -121,7 +135,16 @@ enum class SkinRole {
     Shadow,        // window drop shadow
 };
 
-// Skin registry (single source). nullptr if unknown name.
+// Skin registry (single source: built-ins + loaded skins/*.skin files).
+// nullptr if unknown name. User skins shadow built-ins by name.
 const CgaSkin* findCgaSkin(const std::string& name);
-// All skins, for capability listings. Terminated by a {nullptr,...} row.
-const CgaSkin* allCgaSkins();
+const std::vector<CgaSkin>& allCgaSkins();
+
+// Hot skin files. loadUserSkins parses every skins/*.skin in `dir`,
+// replacing same-name registry entries (built-ins can be shadowed) or
+// appending new ones; returns the number of files loaded. saveSkinFile
+// writes a registry-format .skin file. parseSkinFile fills `out` from one
+// file (key-value lines; unknown keys ignored; see skins/README.md).
+int  loadUserSkins(const std::string& dir);
+bool parseSkinFile(const std::string& path, CgaSkin& out);
+bool saveSkinFile(const CgaSkin& s, const std::string& path);

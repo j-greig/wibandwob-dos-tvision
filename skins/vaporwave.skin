@@ -1,0 +1,50 @@
+# vaporwave.skin — sunset neon grid, cyan/magenta on a deep purple-black void
+name vaporwave
+
+# solid-ish dither, one glyph — soft haze rather than a busy pattern
+texture ▒
+
+# desktop: hot pink dither over the purple-black void
+desk 13 0
+
+# paper (default window body): void bg, aqua-cyan ink — the "screen glow" read
+paper 0 11
+
+# dialog (accent window body): dark violet bg, cream ink — a warmer accent pane
+dialog 1 14
+
+# chrome: dark by design, this is a night skin — must be set explicitly
+# framePassive: violet-on-violet, understated
+framePassive 24
+# frameActive: magenta bg, white ink — the window that has focus pops
+frameActive 95
+# menu: void bg, hot pink ink — matches the desktop dither
+menu 13
+
+dim 8
+accent 11
+
+# floor (chromeless room interior) matches desktop dither
+floor 13 1
+
+ok 10
+warn 12
+
+# full palette remap — THE monitor swap. CGA indices kept semantically
+# (0=black..15=white) but retinted onto a vaporwave neon-pastel ramp.
+pal0 #0D0221
+pal1 #2E1760
+pal2 #05FFA1
+pal3 #01CDFE
+pal4 #FF71CE
+pal5 #B967FF
+pal6 #FF8B8B
+pal7 #C9B8FF
+pal8 #4B2E83
+pal9 #01CDFE
+pal10 #05FFA1
+pal11 #7DFFEA
+pal12 #FF71CE
+pal13 #FF9AE3
+pal14 #FFF7B2
+pal15 #FFF8F0

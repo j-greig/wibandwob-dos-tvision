@@ -1075,8 +1075,10 @@ TWwdosApp::TWwdosApp() :
         fprintf(stderr, "[wibwob] IPC server started on %s\n", sockPath.c_str());
     }
 
-    // Restore the last active skin (written by api_set_skin) — a reskinned
-    // desktop shouldn't revert to house grey just because it relaunched.
+    // Load user skin files (skins/*.skin shadow/extend built-ins), then
+    // restore the last active skin — a reskinned desktop shouldn't revert
+    // to house grey just because it relaunched.
+    loadUserSkins("skins");
     {
         std::ifstream sk(".wwdos_skin");
         std::string skinName;
@@ -1135,6 +1137,12 @@ void TWwdosApp::handleEvent(TEvent& event)
         // Handle font selection from Edit → FIGlet Font → Category submenus
         // (range check before switch — can't use case for ranges)
         ushort cmd = event.message.command;
+        if (cmd == cmSkinBase + 9) {
+            extern std::string api_reload_skins(TWwdosApp&);
+            api_reload_skins(*this);
+            clearEvent(event);
+            return;
+        }
         if (cmd >= cmSkinBase && cmd <= cmSkinBase + 8) {
             static const char* kMenuSkinNames[9] = {
                 "dflat", "turbo", "terra", "pipeline", "phosphor",
@@ -2782,7 +2790,8 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("P~a~per (daylight)", cmSkinBase + 6, kbNoKey) +
                     *new TMenuItem("~M~idnight (dim stars)", cmSkinBase + 7, kbNoKey) +
                     newLine() +
-                    *new TMenuItem("~O~ff (house grey)", cmSkinBase + 8, kbNoKey)
+                    *new TMenuItem("~O~ff (house grey)", cmSkinBase + 8, kbNoKey) +
+                    *new TMenuItem("Re~l~oad Skin Files", cmSkinBase + 9, kbNoKey)
             ) +
             newLine() +
             (TMenuItem&)(
@@ -5195,6 +5204,41 @@ std::string api_screensaver(TWwdosApp& app, const std::string& action, int minut
     return "err unknown action (now|on|off)";
 }
 
+std::string api_list_skins(TWwdosApp& app) {
+    (void)app;
+    std::string json = "{\"skins\":[";
+    bool first = true;
+    for (const CgaSkin& s : allCgaSkins()) {
+        if (!first) json += ",";
+        json += "{\"name\":\"" + json_escape(s.name) + "\",\"builtin\":"
+              + (s.builtin ? "true" : "false") + "}";
+        first = false;
+    }
+    json += "],\"active\":\"" + json_escape(ThemeManager::activeSkin()) + "\"}";
+    return json;
+}
+
+std::string api_reload_skins(TWwdosApp& app) {
+    int n = loadUserSkins("skins");
+    // re-apply the active skin so edits take effect immediately
+    if (!ThemeManager::activeSkin().empty()) {
+        extern std::string api_set_skin(TWwdosApp&, const std::string&);
+        api_set_skin(app, ThemeManager::activeSkin());
+    }
+    return "ok loaded " + std::to_string(n);
+}
+
+std::string api_skin_save(TWwdosApp& app, const std::string& name) {
+    (void)app;
+    std::string target = name.empty() ? ThemeManager::activeSkin() : name;
+    if (target.empty()) return "err no active skin and no name given";
+    const CgaSkin* s = findCgaSkin(target);
+    if (!s) return "err unknown skin";
+    mkdir("skins", 0755);
+    std::string path = "skins/" + target + ".skin";
+    return saveSkinFile(*s, path) ? ("ok " + path) : "err write failed";
+}
+
 void api_spawn_disks(TWwdosApp& app, const TRect* bounds) {
     TRect r = bounds ? *bounds : api_centered_bounds(app, 79, 28);
     TWindow* w = createDiskLibraryWindow(r);
@@ -5740,15 +5784,8 @@ static void emitTerminalPalette(const CgaSkin* sk)
     std::string out;
     char seq[48];
     for (int i = 0; i < 16; ++i) {
-        uint32_t rgb = ThemeManager::cgaRgb(i);
-        if (sk) {
-            int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
-            int lum = (r * 299 + g * 587 + b * 114) / 1000;
-            if (std::string(sk->name) == "phosphor")
-                rgb = ((uint32_t)(lum / 4) << 16) | ((uint32_t)lum << 8) | (uint32_t)(lum / 4);
-            else if (std::string(sk->name) == "hercules")
-                rgb = ((uint32_t)lum << 16) | ((uint32_t)(lum * 7 / 10) << 8);
-        }
+        uint32_t rgb = (sk && sk->termPal[i] != CgaSkin::kPalDerive)
+                     ? sk->termPal[i] : ThemeManager::cgaRgb(i);
         std::snprintf(seq, sizeof seq, "\033]4;%d;#%06X\033\\", i, rgb);
         out += seq;
     }
@@ -5775,10 +5812,14 @@ std::string api_set_skin(TWwdosApp& app, const std::string& name) {
         return api_set_theme_variant(app, "monochrome");
     }
     const CgaSkin* s = findCgaSkin(name);
-    if (!s) return "err unknown skin (dflat|turbo|terra|pipeline|phosphor|hercules|paper|midnight|off)";
+    if (!s) {
+        loadUserSkins("skins");   // maybe it was just written — hot path
+        s = findCgaSkin(name);
+    }
+    if (!s) return "err unknown skin (list_skins for the registry; skins/*.skin hot-load)";
     api_set_theme_variant(app, "cga");
     if (auto* bg = getWibWobBg(app)) {
-        bg->setTextureUtf8(s->texture[0] ? std::string(s->texture) : std::string(" "));
+        bg->setTextureUtf8(s->texture.empty() ? std::string(" ") : s->texture);
         bg->setColorRgb(ThemeManager::cgaRgb(s->deskFg), ThemeManager::cgaRgb(s->deskBg));
     }
     // Paper every colourable window with the skin's defaults.

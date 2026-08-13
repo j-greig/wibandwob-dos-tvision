@@ -1,0 +1,45 @@
+# amber-crt.skin — single-tube amber terminal, warm Wyse-glow on black
+name amber-crt
+
+# faint scanline-ish dither, sparse dot rather than solid dither
+texture ·
+
+# desktop: yellow-slot (brightest amber) dither over black
+desk 14 0
+
+# paper: black bg, white-slot (hottest amber) ink — the tube's brightest text
+paper 0 15
+
+# dialog: dark-grey-slot bg (deep amber-black), yellow-slot ink — accent pane
+dialog 8 14
+
+# chrome explicit — dark skin
+framePassive 134
+frameActive 15
+menu 143
+
+dim 8
+accent 15
+floor 14 0
+
+ok 10
+warn 12
+
+# single-hue ramp: black through amber, no other hue anywhere in the monitor.
+# every CGA slot lands somewhere on #1A0F00 .. #FFB000.
+pal0 #1A0F00
+pal1 #3D2400
+pal2 #5C3600
+pal3 #7A4800
+pal4 #996000
+pal5 #B87200
+pal6 #CC7F00
+pal7 #D68A00
+pal8 #2E1A00
+pal9 #8F5400
+pal10 #A66200
+pal11 #BE7000
+pal12 #D67E00
+pal13 #E68C00
+pal14 #FFA500
+pal15 #FFB000

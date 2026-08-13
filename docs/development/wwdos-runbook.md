@@ -70,6 +70,16 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   TColorRGB/0x07 attrs — see docs/development/theming-roles.md for the role
   vocabulary, derivations and the content-vs-affordance rule. New skins are
   one kSkins row; every role derives.
+- **Skins are hot files**: `skins/*.skin` (key=value, spec in skins/README.md)
+  load at boot and shadow built-ins by name; `set_skin` auto-reloads on
+  unknown names so a freshly written file applies immediately. `list_skins`
+  (JSON registry), `reload_skins` (re-read + re-apply active, also View →
+  Skins → Reload Skin Files), `skin_save name=x` (persist a skin to file).
+  A .skin file can remap all 16 terminal palette slots (pal0..pal15) — a
+  whole monitor in a text file. Starter pack: vaporwave, gameboy, amber-crt,
+  bloodmoon, seafoam, c64.
+- **Relaunches auto-save**: scripts/relaunch_wwdos.sh writes
+  workspaces/pre_relaunch.json before killing — never eat a composition.
 - **CGA skins (one-shot)**: `set_skin` with `skin` param — `dflat` (D-Flat MemoPad:
   blue ▒ sea, grey paper, blue dialogs), `turbo` (Turbo Pascal), `terra` (GeoGraphics),
   `pipeline` (black/blue/magenta), `off` restores house grey. The active skin persists across relaunches

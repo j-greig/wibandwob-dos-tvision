@@ -10,6 +10,13 @@
 # unquoted id fails silently, which is how strays piled up. Never again.
 set -u
 
+# Auto-save the live layout before killing — a relaunch must NEVER eat a
+# human's composition (learned 2026-08-13, sorry Zilla). Best-effort: if the
+# API is down there is nothing to save anyway.
+curl -s -m 3 -X POST http://localhost:8089/menu/command \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"save_workspace","args":{"path":"workspaces/pre_relaunch.json"}}' >/dev/null 2>&1
+
 pkill -f "build/app/wwdos" 2>/dev/null
 sleep 1
 
