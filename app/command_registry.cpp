@@ -40,6 +40,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"reload_skins", "Re-read skins/*.skin files (shadow built-ins by name) and re-apply the active skin", false},
         {"skin_save", "Write a skin to skins/<name>.skin (name param; default = active skin) — persist a novel skin", false},
         {"open_disks", "Open the SYMBIENT SHAREWARE LIBRARY — floppy-disk launcher, each disk boots an app (double-click/Enter)", false},
+        {"open_tuiforge", "Open TUIFORGE.DSK — viewer for ~/Repos/tuiforge/renders grids (path param: scene name like 'kevart/cat3d' or absolute dir; no path = corpus picker list, Enter/double-click boots a render; art keeps authentic CGA colours under any skin)", false},
         {"screensaver", "Screensaver control (action param: now|on|off; minutes param sets idle timeout, 0 disables; default 10min → fullscreen random shader, any key wakes)", false},
         {"open_shader", "Open SHADER.SYS — pluggable ASCII shader host (shader param: isotower|wibrain|beastiemelt|plasma|wallsofcode|yohei-rocks|tunnel; N cycles, P phosphor, space pauses)", false},
         {"reset_theme", "Reset theme to default (monochrome + light)", false},
@@ -216,6 +217,16 @@ std::string exec_registry_command(
     }
     if (name == "open_disks") {
         api_spawn_disks(app, nullptr);
+        return "ok";
+    }
+    if (name == "open_tuiforge") {
+        // Param is "path" (or "render") ONLY — never alias "name": the IPC
+        // transport injects name=<command> into every payload, so a "name"
+        // alias reads back the command's own name as a render path.
+        auto it = kv.find("path");
+        if (it == kv.end() || it->second.empty()) it = kv.find("render");
+        api_spawn_tuiforge(app, nullptr,
+                           it != kv.end() ? it->second : std::string());
         return "ok";
     }
     if (name == "list_skins") return api_list_skins(app);

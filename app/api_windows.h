@@ -30,6 +30,9 @@ void api_spawn_browser(TWwdosApp&, const TRect* bounds);
 void api_spawn_wibwob(TWwdosApp&, const TRect* bounds);
 void api_spawn_terminal(TWwdosApp&, const TRect* bounds);
 void api_spawn_disks(TWwdosApp&, const TRect* bounds);
+// TUIFORGE.DSK: pathOrName "" = picker window; else resolve a render
+// (corpus-relative name or absolute path) and open it sized to its grid.
+void api_spawn_tuiforge(TWwdosApp&, const TRect* bounds, const std::string& pathOrName);
 void api_spawn_shader(TWwdosApp&, const TRect* bounds, const std::string& shader);
 void api_spawn_verse(TWwdosApp&, const TRect* bounds);
 void api_spawn_mycelium(TWwdosApp&, const TRect* bounds);

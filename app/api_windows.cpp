@@ -42,6 +42,7 @@
 #include "windows/frame_animation_window.h"
 #include "window_type_registry.h"
 #include "command_registry.h"
+#include "tuiforge_view.h"
 #include "text_editor_view.h"
 #include "browser_view.h"
 #include "tweet_shader_view.h"
@@ -573,6 +574,38 @@ void api_spawn_shader(TWwdosApp& app, const TRect* bounds, const std::string& sh
 void api_spawn_disks(TWwdosApp& app, const TRect* bounds) {
     TRect r = bounds ? *bounds : api_centered_bounds(app, 79, 28);
     TWindow* w = createDiskLibraryWindow(r);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
+}
+
+void api_spawn_tuiforge(TWwdosApp& app, const TRect* bounds,
+                        const std::string& pathOrName) {
+    TWindow* w = nullptr;
+    if (pathOrName.empty()) {
+        // No render named: open the corpus picker.
+        TRect r = bounds ? *bounds : app.findSpreadRect(64, 30);
+        w = new TTuiforgePickerWindow(r);
+    } else {
+        std::string dir = resolveTuiforgeDir(pathOrName);
+        TuiforgeGrid g = loadTuiforgeGrid(dir.empty() ? pathOrName : dir);
+        // Title = the scene name, not the "default" leaf.
+        std::string title = pathOrName;
+        size_t slash = title.find_last_of('/');
+        if (slash != std::string::npos && title.substr(slash + 1) == "default")
+            title = title.substr(0, slash);
+        slash = title.find_last_of('/');
+        // keep one path segment of context (kevart/cat3d stays whole)
+        if (title.size() > 40 && slash != std::string::npos)
+            title = title.substr(slash + 1);
+        // Window sized to the grid (+frame), spread not stacked; clamp to
+        // the desktop — the view scrolls when a 50-row portrait overflows.
+        TRect d = app.deskTop->getExtent();
+        int ww = std::min(g.width + 2, d.b.x - d.a.x);
+        int wh = std::min(g.height() + 2, d.b.y - d.a.y);
+        TRect r = bounds ? *bounds
+                         : app.findSpreadRect(std::max(10, ww), std::max(6, wh));
+        w = new TTuiforgeWindow(r, title, std::move(g));
+    }
     app.deskTop->insert(w);
     app.registerWindow(w);
 }

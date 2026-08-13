@@ -1652,8 +1652,10 @@ void TWwdosApp::openAnimationFilePath(const std::string& filePath)
     
     // Auto-size window to file content
     TRect bounds = calculateWindowBounds(filePath);
-    // Create and insert window with selected file
-    TFrameAnimationWindow* window = new TFrameAnimationWindow(bounds, "", filePath);
+    // Create and insert window with selected file. The computed title was
+    // historically dropped ("" passed instead) leaving a bare gap in the
+    // top frame — the filename belongs in the title tab (Zilla 2026-08-13).
+    TFrameAnimationWindow* window = new TFrameAnimationWindow(bounds, title.str().c_str(), filePath);
     deskTop->insert(window);
     registerWindow(window);
 }
@@ -1661,8 +1663,15 @@ void TWwdosApp::openAnimationFilePath(const std::string& filePath)
 void TWwdosApp::openAnimationFilePath(const std::string& filePath, const TRect& bounds, bool frameless, bool shadowless, const std::string& title)
 {
     windowNumber++;
-    // Create and insert window with provided bounds
-    TFrameAnimationWindow* window = new TFrameAnimationWindow(bounds, title.c_str(), filePath, frameless, shadowless);
+    // Empty title = derive from filename — a titleless text window leaves a
+    // bare gap in the top frame (frameless windows skip this: no frame,
+    // nowhere for a title to live).
+    std::string t = title;
+    if (t.empty() && !frameless) {
+        size_t lastSlash = filePath.find_last_of("/\\");
+        t = (lastSlash != std::string::npos) ? filePath.substr(lastSlash + 1) : filePath;
+    }
+    TFrameAnimationWindow* window = new TFrameAnimationWindow(bounds, t.c_str(), filePath, frameless, shadowless);
     deskTop->insert(window);
     registerWindow(window);
 }

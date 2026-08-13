@@ -39,6 +39,7 @@
 #include "tvterm_view.h"
 #include "backrooms_tv_view.h"
 #include "figlet_text_view.h"
+#include "tuiforge_view.h"
 
 // tvision for TRect
 #define Uses_TRect
@@ -233,6 +234,11 @@ static const char* spawn_app_launcher(TWwdosApp& app, const std::map<std::string
     TRect r; api_spawn_app_launcher(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_disks(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_disks(app, opt_bounds(kv, r)); return nullptr; }
+static const char* spawn_tuiforge(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
+    TRect r; auto it = kv.find("path");
+    api_spawn_tuiforge(app, opt_bounds(kv, r),
+                       it != kv.end() ? it->second : std::string());
+    return nullptr; }
 static const char* spawn_shader(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; auto it = kv.find("shader");
     api_spawn_shader(app, opt_bounds(kv, r), it != kv.end() ? it->second : ""); return nullptr; }
@@ -304,6 +310,9 @@ static bool match_deep_signal(TWindow* w) { return has_child_view<TDeepSignalVie
 static bool match_backrooms_tv(TWindow* w) { return has_child_view<TBackroomsTvView>(w); }
 static bool match_app_launcher(TWindow* w){ return dynamic_cast<TAppLauncherWindow*>(w) != nullptr; }
 static bool match_disks(TWindow* w){ return isDiskLibraryWindow(w); }
+static bool match_tuiforge(TWindow* w){
+    return dynamic_cast<TTuiforgeWindow*>(w) != nullptr
+        || dynamic_cast<TTuiforgePickerWindow*>(w) != nullptr; }
 static bool match_shader(TWindow* w){ return dynamic_cast<TTweetShaderView*>(w ? w->first() : nullptr) != nullptr || (w && w->title && std::string(w->title).rfind("MONO.SHDR",0)==0); }
 static bool match_gallery(TWindow* w)     { return dynamic_cast<TGalleryWindow*>(w) != nullptr; }
 static bool match_figlet_text(TWindow* w) { return dynamic_cast<TFigletTextWindow*>(w) != nullptr; }
@@ -349,6 +358,7 @@ static const WindowTypeSpec k_specs[] = {
     { "backrooms_tv",      spawn_backrooms_tv,     match_backrooms_tv       },
     { "app_launcher",      spawn_app_launcher,     match_app_launcher       },
     { "disks",             spawn_disks,            match_disks              },
+    { "tuiforge",          spawn_tuiforge,         match_tuiforge           },
     { "shader",            spawn_shader,           match_shader             },
     { "gallery",           spawn_gallery,          match_gallery            },
     { "figlet_text",       spawn_figlet_text,      match_figlet_text        },

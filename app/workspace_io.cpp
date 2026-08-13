@@ -45,6 +45,7 @@
 #include "window_type_registry.h"
 #include "tweet_shader_view.h"
 #include "ascii_gallery_view.h"
+#include "tuiforge_view.h"
 #include "figlet_text_view.h"
 #include "room_chat_view.h"
 #include "wibwob_background.h"
@@ -885,6 +886,11 @@ std::string TWwdosApp::buildWorkspaceJson()
                 props += std::string(", \"shadowless\": ") + ((w->state & sfShadow) ? "false" : "true");
                 props += "}";
             }
+        } else if (type == "tuiforge") {
+            // Viewer windows reload their render by dir; the picker
+            // serialises with no path and respawns as a picker.
+            if (auto* tw = dynamic_cast<TTuiforgeWindow*>(w))
+                props = "{\"path\": \"" + json_escape(tw->renderDir()) + "\"}";
         } else if (type == "shader") {
             props = "{\"shader\": \"" + json_escape(shaderWindowShaderName(w)) + "\"}";
         } else if (type == "gradient") {
