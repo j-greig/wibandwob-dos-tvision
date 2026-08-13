@@ -376,3 +376,15 @@ spawns fell back to defaults. Now ALL scalar props forward generically
 (minus reserved keys). If a new type's arg "doesn't arrive", check the
 enum + Literal lists in `tools/api_server/models.py` and `schemas.py` —
 they must both name the type or the request 422s before reaching C++.
+
+### Gotcha: TView::setTimer returns 0 before the window is on the desktop
+`setTimer` walks the owner chain to TProgram — called inside a window
+constructor (pre `deskTop->insert`) it silently returns 0 and the timer
+never exists. Defer timer start to first expose: `setState(sfExposed)`
+override, see TTuiforgeWindow. Symptom: animation "paused at power-on".
+
+### TUIFORGE.TV
+`{"command":"open_tuiforge","args":{"path":"tv"}}` — one window auto-cycling
+the shuffled corpus every 8s. Space pauses, N skips, banner bottom-left
+names the station. Serialises as path "tv" (workspaces respawn the channel,
+not a still). First hang: `workspaces/everywhen-wing.json`.

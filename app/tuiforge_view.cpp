@@ -14,6 +14,7 @@
 #define Uses_TEvent
 #define Uses_TRect
 #define Uses_TFrame
+#define Uses_TText
 #include <tvision/tv.h>
 
 #include "tuiforge_view.h"
@@ -174,7 +175,51 @@ TTuiforgeView::TTuiforgeView(const TRect& bounds, TuiforgeGrid&& grid)
 {
     growMode = gfGrowHiX | gfGrowHiY;   // resize with window, never translate
     options |= ofSelectable;
-    eventMask |= evKeyDown;
+    eventMask |= evKeyDown | evBroadcast;
+}
+
+TTuiforgeView::~TTuiforgeView()
+{
+    if (timerId_) killTimer(timerId_);
+}
+
+void TTuiforgeView::startChannel(int periodMs)
+{
+    playlist_ = listTuiforgeRenders();
+    if (playlist_.empty()) {
+        grid_.error = "no corpus at " + tuiforgeRoot();
+        return;
+    }
+    // Shuffle once per power-on — a fixed LCG keeps startup deterministic
+    // per corpus size while still feeling like channel-surfing.
+    unsigned s = (unsigned)playlist_.size() * 2654435761u;
+    for (size_t i = playlist_.size() - 1; i > 0; --i) {
+        s = s * 1664525u + 1013904223u;
+        std::swap(playlist_[i], playlist_[s % (i + 1)]);
+    }
+    channel_ = true;
+    periodMs_ = periodMs;
+    station_ = 0;
+    tuneNext();
+    timerId_ = setTimer((uint)periodMs_, periodMs_);
+}
+
+void TTuiforgeView::tuneNext()
+{
+    if (playlist_.empty()) return;
+    const std::string& name = playlist_[station_ % playlist_.size()];
+    ++station_;
+    std::string dir = resolveTuiforgeDir(name);
+    TuiforgeGrid g = loadTuiforgeGrid(dir.empty() ? name : dir);
+    if (g.ok()) {
+        grid_ = std::move(g);
+        scrollX_ = scrollY_ = 0;
+        // Centre landscapes vertically inside a portrait-sized set (and
+        // vice versa horizontally) so every render sits framed, not cornered.
+        if (grid_.height() < size.y) scrollY_ = -(size.y - grid_.height()) / 2;
+        if (grid_.width < size.x)    scrollX_ = -(size.x - grid_.width) / 2;
+        drawView();
+    }
 }
 
 void TTuiforgeView::clampScroll() {
@@ -214,10 +259,45 @@ void TTuiforgeView::draw() {
         b.moveStr(0, msg.substr(0, (size_t)size.x), err);
         writeLine(0, 0, (short)std::min((int)msg.size(), (int)size.x), 1, b);
     }
+    if (channel_ && size.y > 1) {
+        // Channel banner, bottom-left: what's playing + transport state.
+        std::string name = grid_.dir;
+        size_t root = tuiforgeRoot().size();
+        if (name.size() > root + 1) name = name.substr(root + 1);
+        if (name.size() > 8 && name.compare(name.size() - 8, 8, "/default") == 0)
+            name = name.substr(0, name.size() - 8);
+        std::string banner = " \xE2\x96\xB6 " + name +
+            (timerId_ ? " " : " [paused] ");   // ▶ name
+        int cells = (int)TText::width(TStringView(banner));
+        cells = std::min(cells, (int)size.x);
+        TDrawBuffer b;
+        TColorAttr on(TColorRGB(0x000000), TColorRGB(0x55FFFF));
+        b.moveChar(0, ' ', on, cells);
+        b.moveStr(0, banner, on);
+        writeLine(0, (short)(size.y - 1), (short)cells, 1, b);
+    }
 }
 
 void TTuiforgeView::handleEvent(TEvent& event) {
     TView::handleEvent(event);
+    if (channel_ && event.what == evBroadcast &&
+        event.message.command == cmTimerExpired &&
+        event.message.infoPtr == timerId_ && timerId_ != 0) {
+        tuneNext();
+        clearEvent(event);
+        return;
+    }
+    if (channel_ && event.what == evKeyDown) {
+        char c = (char)event.keyDown.charScan.charCode;
+        if (c == ' ') {                       // pause / resume
+            if (timerId_) { killTimer(timerId_); timerId_ = 0; }
+            else timerId_ = setTimer((uint)periodMs_, periodMs_);
+            drawView(); clearEvent(event); return;
+        }
+        if (c == 'n' || c == 'N') {           // skip to next station
+            tuneNext(); clearEvent(event); return;
+        }
+    }
     if (event.what != evKeyDown) return;
     int px = scrollX_, py = scrollY_;
     switch (event.keyDown.keyCode) {
@@ -237,14 +317,30 @@ void TTuiforgeView::handleEvent(TEvent& event) {
 }
 
 TTuiforgeWindow::TTuiforgeWindow(const TRect& bounds, const std::string& title,
-                                 TuiforgeGrid&& grid)
+                                 TuiforgeGrid&& grid, bool channel)
     : TWindowInit(&TTuiforgeWindow::initFrame),
       TWindow(bounds, title.c_str(), wnNoNumber),
-      renderDir_(grid.dir)
+      renderDir_(channel ? "tv" : grid.dir)
 {
     TRect r = getExtent();
     r.grow(-1, -1);
-    insert(new TTuiforgeView(r, std::move(grid)));
+    auto* v = new TTuiforgeView(r, std::move(grid));
+    insert(v);
+    channelPending_ = channel;
+    // NOTE: startChannel() cannot run here — TView::setTimer walks the
+    // owner chain to TProgram and the window isn't on the desktop yet, so
+    // it silently returns 0 (the "[paused] at power-on" bug). setState
+    // powers on once the desktop exposes us.
+}
+
+void TTuiforgeWindow::setState(ushort aState, Boolean enable)
+{
+    TWindow::setState(aState, enable);
+    if (channelPending_ && (aState & sfExposed) && enable) {
+        channelPending_ = false;
+        if (auto* v = dynamic_cast<TTuiforgeView*>(first()))
+            v->startChannel();
+    }
 }
 
 /*------------------------  picker  -------------------------*/

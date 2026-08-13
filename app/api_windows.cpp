@@ -581,7 +581,11 @@ void api_spawn_disks(TWwdosApp& app, const TRect* bounds) {
 void api_spawn_tuiforge(TWwdosApp& app, const TRect* bounds,
                         const std::string& pathOrName) {
     TWindow* w = nullptr;
-    if (pathOrName.empty()) {
+    if (pathOrName == "tv") {
+        // TUIFORGE.TV — dead channel that tunes itself through the corpus.
+        TRect r = bounds ? *bounds : app.findSpreadRect(82, 52);
+        w = new TTuiforgeWindow(r, "TUIFORGE.TV", TuiforgeGrid{}, true);
+    } else if (pathOrName.empty()) {
         // No render named: open the corpus picker.
         TRect r = bounds ? *bounds : app.findSpreadRect(64, 30);
         w = new TTuiforgePickerWindow(r);

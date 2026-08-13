@@ -59,6 +59,7 @@ std::vector<std::string> listTuiforgeRenders();
 class TTuiforgeView : public TView {
 public:
     TTuiforgeView(const TRect& bounds, TuiforgeGrid&& grid);
+    ~TTuiforgeView();
 
     virtual void draw() override;
     virtual void handleEvent(TEvent& event) override;
@@ -66,23 +67,43 @@ public:
 
     const TuiforgeGrid& grid() const { return grid_; }
 
+    // TUIFORGE.TV — dead channel that tunes itself: auto-cycles the whole
+    // corpus on a timer, shuffled once per power-on. Space pauses, N skips,
+    // channel banner bottom-left names what's playing.
+    void startChannel(int periodMs = 8000);
+    bool isChannel() const { return channel_; }
+
 private:
     TuiforgeGrid grid_;
     int scrollX_ = 0, scrollY_ = 0;
     void clampScroll();
+
+    bool channel_ = false;
+    std::vector<std::string> playlist_;
+    size_t station_ = 0;
+    TTimerId timerId_ = 0;
+    int periodMs_ = 8000;
+    void tuneNext();
 };
 
 class TTuiforgeWindow : public TWindow {
 public:
     // Auto-sizes to the grid (clamped to owner) and spreads via the app's
     // placement when inserted through the open_tuiforge command.
+    // channel=true powers on TUIFORGE.TV (grid ignored; corpus auto-cycles).
     TTuiforgeWindow(const TRect& bounds, const std::string& title,
-                    TuiforgeGrid&& grid);
+                    TuiforgeGrid&& grid, bool channel = false);
 
+    // "tv" for channel windows — workspaces respawn the channel, not a still.
     const std::string& renderDir() const { return renderDir_; }
+
+    // Channel power-on happens at first expose — see setState (timers need
+    // the owner chain up to TProgram, absent during construction).
+    virtual void setState(ushort aState, Boolean enable) override;
 
 private:
     std::string renderDir_;
+    bool channelPending_ = false;
 };
 
 /*---------------------------  picker  ----------------------*/
