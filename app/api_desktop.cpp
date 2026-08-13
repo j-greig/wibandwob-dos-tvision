@@ -168,14 +168,25 @@ std::string api_desktop_color(TWwdosApp& app, int fg, int bg_color) {
 // The canon fix: set_skin reprograms the slots to authentic CGA RGB
 // (mono skins get luminance-mapped ramps — swapping the monitor, not
 // the app). Every indexed draw in every view then obeys the skin.
+// Resolve index i to the colour a skin actually WANTS it to look like: its
+// termPal override when set, else authentic CGA. Single source shared by
+// emitTerminalPalette (indexed/terminal-slot rendering) and the desktop's
+// setColorRgb paint below (true-colour rendering — bypasses terminal slots
+// entirely, so it must bake the override in directly or the OSC4 remap has
+// no effect on it at all: skin reports correctly via /state, desktop pixels
+// silently stay authentic-CGA. Bug found + fixed 2026-08-13, see runbook).
+static uint32_t skinRgb(const CgaSkin* sk, int idx)
+{
+    return (sk && sk->termPal[idx] != CgaSkin::kPalDerive)
+         ? sk->termPal[idx] : ThemeManager::cgaRgb(idx);
+}
+
 static void emitTerminalPalette(const CgaSkin* sk)
 {
     std::string out;
     char seq[48];
     for (int i = 0; i < 16; ++i) {
-        uint32_t rgb = (sk && sk->termPal[i] != CgaSkin::kPalDerive)
-                     ? sk->termPal[i] : ThemeManager::cgaRgb(i);
-        std::snprintf(seq, sizeof seq, "\033]4;%d;#%06X\033\\", i, rgb);
+        std::snprintf(seq, sizeof seq, "\033]4;%d;#%06X\033\\", i, skinRgb(sk, i));
         out += seq;
     }
     ::write(STDOUT_FILENO, out.data(), out.size());
@@ -209,7 +220,7 @@ std::string api_set_skin(TWwdosApp& app, const std::string& name) {
     api_set_theme_variant(app, "cga");
     if (auto* bg = getWibWobBg(app)) {
         bg->setTextureUtf8(s->texture.empty() ? std::string(" ") : s->texture);
-        bg->setColorRgb(ThemeManager::cgaRgb(s->deskFg), ThemeManager::cgaRgb(s->deskBg));
+        bg->setColorRgb(skinRgb(s, s->deskFg), skinRgb(s, s->deskBg));
     }
     // Paper every colourable window, distributing the skin's paper
     // VARIANTS round-robin — the refs' richness is several window

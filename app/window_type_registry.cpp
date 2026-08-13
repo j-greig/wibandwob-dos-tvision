@@ -212,7 +212,23 @@ static const char* spawn_rogue(TWwdosApp& app, const std::map<std::string,std::s
 static const char* spawn_deep_signal(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_deep_signal(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_backrooms_tv(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
-    TRect r; api_spawn_backrooms_tv(app, opt_bounds(kv, r)); return nullptr; }
+    // Never fall through to the modal config-dialog overload here — this is
+    // the API-driven create_window path (POST /windows) and a blocking
+    // dialog with no keyboard input wedges the whole IPC accept loop. See
+    // the matching fix + comment in command_registry.cpp's open_backrooms_tv.
+    TRect r; const TRect* pr = opt_bounds(kv, r);
+    BackroomsChannel ch;
+    auto theme_it = kv.find("theme");
+    auto turns_it = kv.find("turns");
+    auto primers_it = kv.find("primers");
+    auto model_it = kv.find("model");
+    if (theme_it != kv.end()) ch.theme = theme_it->second;
+    if (turns_it != kv.end()) ch.turns = std::atoi(turns_it->second.c_str());
+    if (primers_it != kv.end()) ch.primers = primers_it->second;
+    if (model_it != kv.end()) ch.model = model_it->second;
+    if (ch.turns < 1) ch.turns = 1;
+    api_spawn_backrooms_tv(app, pr, &ch);
+    return nullptr; }
 static const char* spawn_app_launcher(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_app_launcher(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_disks(TWwdosApp& app, const std::map<std::string,std::string>& kv) {

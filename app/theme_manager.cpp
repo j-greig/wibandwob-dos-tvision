@@ -339,9 +339,19 @@ bool parseSkinFile(const std::string& path, CgaSkin& out) {
     bool named = false;
     std::string line;
     while (std::getline(in, line)) {
-        // strip comments + trailing ws
-        size_t hash = line.find('#');
-        if (hash != std::string::npos) line = line.substr(0, hash);
+        // Strip whole-line comments only — '#' is also the RGB-hex sigil
+        // used by palN entries ("pal1 #40318D"), so a naive line.find('#')
+        // here truncates every palette override in every skin file down to
+        // just its key, silently. termPal[] then stays kPalDerive forever:
+        // set_skin reports the skin correctly (/state) but OSC4 remap and
+        // the desktop's true-colour paint both fall back to authentic CGA
+        // — exactly the "skin active but pixels stay default" bug (found
+        // + fixed 2026-08-13, see runbook). Only treat '#' as a comment
+        // when it opens the line (mirrors every comment actually written
+        // in skins/*.skin — none are inline).
+        size_t firstNonSpace = line.find_first_not_of(" \t");
+        if (firstNonSpace != std::string::npos && line[firstNonSpace] == '#')
+            line.clear();
         while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r'))
             line.pop_back();
         if (line.empty()) continue;

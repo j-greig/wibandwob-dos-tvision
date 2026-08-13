@@ -347,23 +347,26 @@ std::string exec_registry_command(
         return "ok";
     }
     if (name == "open_backrooms_tv") {
-        // Parse optional channel params from kv
+        // Parse optional channel params from kv. The API path must never
+        // fall through to the modal config dialog (api_spawn_backrooms_tv's
+        // nullptr-channel overload) — that dialog blocks TVision's main
+        // event loop waiting for keyboard input that a headless/API caller
+        // can never supply, which wedges the IPC accept loop for every
+        // command that follows (see runbook gotcha: "open_backrooms_tv
+        // hangs the socket"). The interactive menu (cmBackroomsTv in
+        // wwdos_app.cpp) has its own independent dialog-showing code path,
+        // so this one is free to always use BackroomsChannel's defaults.
         auto theme_it = kv.find("theme");
         auto turns_it = kv.find("turns");
         auto primers_it = kv.find("primers");
         auto model_it = kv.find("model");
-        if (theme_it != kv.end()) {
-            BackroomsChannel ch;
-            ch.theme = theme_it->second;
-            if (turns_it != kv.end()) ch.turns = std::atoi(turns_it->second.c_str());
-            if (primers_it != kv.end()) ch.primers = primers_it->second;
-            if (model_it != kv.end()) ch.model = model_it->second;
-            if (ch.turns < 1) ch.turns = 1;
-            api_spawn_backrooms_tv(app, nullptr, &ch);
-        } else {
-            // No theme — show dialog (menu path)
-            api_spawn_backrooms_tv(app, nullptr);
-        }
+        BackroomsChannel ch; // defaults: theme="make art", turns=3, model="sonnet"
+        if (theme_it != kv.end()) ch.theme = theme_it->second;
+        if (turns_it != kv.end()) ch.turns = std::atoi(turns_it->second.c_str());
+        if (primers_it != kv.end()) ch.primers = primers_it->second;
+        if (model_it != kv.end()) ch.model = model_it->second;
+        if (ch.turns < 1) ch.turns = 1;
+        api_spawn_backrooms_tv(app, nullptr, &ch);
         return "ok";
     }
     if (name == "open_monster_verse") {

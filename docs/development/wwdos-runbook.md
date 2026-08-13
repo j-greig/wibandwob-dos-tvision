@@ -259,3 +259,79 @@ screencapture -x -o -l<ID> /tmp/shot.png
 
 Screenshot after every batch of API calls — `ok:true` from the API does not mean
 pixels changed (see socket-race gotcha above).
+
+## `open_backrooms_tv` wedges the IPC socket if it shows a dialog (fixed 2026-08-13)
+
+Symptom: a big block of unrelated `/menu/command` calls all return
+`{"ok":true,...,"result":null}` with **no matching log line at all** in the
+app's stderr (`[ipc] exec_command name=X` prints, `result:` never does) —
+and every command after the poisoned one fails the same way, forever, even
+though the process is still alive and `/health` still answers. Looks exactly
+like a dispatch bug (wrong overload, duplicate symbol) but isn't one.
+
+Root cause: `command_registry.cpp`'s `open_backrooms_tv` handler and
+`window_type_registry.cpp`'s `create_window` spawn for `backrooms_tv` both
+had a "no theme param → show the config dialog" fallback
+(`api_spawn_backrooms_tv(app, bounds)`, the nullptr-channel overload in
+`api_windows.cpp`). That overload calls `showBackroomsTvDialog()` — a MODAL
+dialog requiring a button click. A headless/API caller can never click it,
+so it blocks TVision's main event loop inside `TDialog::execView()`
+indefinitely. The IPC accept loop only gets serviced by rare, partial
+re-entrant `idle()` calls from inside that modal loop (which is how one or
+two commands right after the poisoned one can appear to still work) before
+it stops accepting connections altogether — new `connect()`s get refused.
+
+Fix: the API dispatch paths must never fall through to the dialog-showing
+overload. Always build a `BackroomsChannel` with sane defaults (theme=
+"make art", turns=3, model="sonnet") from `kv` and call the 3-arg
+`api_spawn_backrooms_tv(app, bounds, &ch)` overload. The interactive menu
+(`cmBackroomsTv` in `wwdos_app.cpp`) has its own independent
+dialog-showing code path — it's unaffected and still shows the dialog for
+real keyboard users. **Lesson: any command surface reachable from
+`/menu/command` or `create_window` must never be able to reach a modal
+`execView()` call — audit every `showXDialog()` call for a caller that has
+no way to supply the click.**
+
+## Skin `#RRGGBB` values were silently eaten by comment-stripping (fixed 2026-08-13)
+
+Symptom: `set_skin c64` reports success, `/state` shows `"skin":"c64"`, but
+desktop and terminal pixels stay authentic-CGA colours — never the skin's
+actual custom palette (e.g. c64's `pal1 #40318D` should turn the desktop
+that Commodore blue; it stayed generic CGA blue instead). Every custom skin
+was affected, not just c64.
+
+Root cause: `parseSkinFile()` in `theme_manager.cpp` stripped comments with
+a naive `line.find('#')` — but `#RRGGBB` is also the value syntax for
+`palN` lines (`pal1 #40318D`). That truncated every `palN #RRGGBB` line
+down to just `palN`, so `tok.size() > 1` failed and `termPal[]` was never
+populated — it silently stayed `kPalDerive` (authentic CGA) for every skin,
+forever. Fixed: only treat `#` as a comment when it's the first non-blank
+character of the line (matches every comment actually written in
+`skins/*.skin` — none are inline).
+
+A second, compounding bug: even with `termPal[]` populated correctly, the
+desktop's `TWibWobBackground::setColorRgb()` paints true 24-bit RGB
+directly — it does **not** go through the terminal's indexed ANSI slots,
+so the OSC4 palette remap (`emitTerminalPalette`) has zero effect on it.
+`api_set_skin` was passing `ThemeManager::cgaRgb(idx)` (always authentic
+CGA) instead of the skin's actual `termPal[idx]` override. Fixed by adding
+`skinRgb(sk, idx)` in `api_desktop.cpp` (mirrors `emitTerminalPalette`'s own
+derive-or-override logic) and using it for both the terminal palette emit
+and the desktop's `setColorRgb` call — single source, no more drift.
+
+**Lesson: "skin reports correctly in `/state`" is not evidence pixels
+changed — sample an actual screenshot pixel.** `/state` and `desktop_get`
+both only echo the CGA *index*, not the resolved RGB actually painted.
+
+## Browser content view: neutral ground, not skin paper (fixed 2026-08-13)
+
+`TBrowserContentView` (the fetched-page pane in `open_browser`) used to
+paint with `getColor(1)` — the skin's tinted `Paper` colour (cyan/blue/
+green paper variants), which reads badly for prose. Fixed in
+`browser_view.cpp`: a `neutralContentAttr()` helper luminance-tests the
+skin's `Paper` role bg (via `ThemeManager::bgIndex(SkinRole::Paper)` +
+`cgaColor()` — **not** `(uint8_t)ThemeManager::attr(...)`, which returns an
+RGB-built `TColorAttr` and does not carry a BIOS nibble byte to extract)
+and picks plain white-bg/black-ink or black-bg/white-ink. Only the content
+view goes neutral — window chrome (title/URL/status bars) stays skinned as
+normal.

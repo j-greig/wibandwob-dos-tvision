@@ -7,6 +7,7 @@
 
 #include "browser_view.h"
 #include "text_wrap.h"
+#include "theme_manager.h"
 
 #define Uses_TKeys
 #define Uses_TDrawBuffer
@@ -46,6 +47,24 @@ TBrowserContentView::TBrowserContentView(const TRect& bounds, TScrollBar* hScrol
 }
 
 namespace {
+
+// Page content must read on a NEUTRAL ground — never the skin's tinted
+// paper (cyan/blue/green paper variants look "mental" for reading text,
+// per Zilla 2026-08-13). Pick plain white-bg/black-ink or black-bg/
+// white-ink by luminance-testing the skin's Paper role, rather than using
+// the skin's own paper colours directly. Chrome (title/URL/status bars)
+// stays skinned as normal — only this content view goes neutral.
+TColorAttr neutralContentAttr() {
+    // ThemeManager::attr() builds an RGB TColorAttr, not a BIOS-byte one —
+    // extracting a nibble via (uint8_t)paper (the parseAnsiLine convention
+    // below, which is valid for genuine BIOS-attr values) does NOT recover
+    // the paper bg index from it. Go straight to the raw CGA index instead.
+    int bgIdx = ThemeManager::bgIndex(SkinRole::Paper);
+    TColorRGB c = ThemeManager::cgaColor(bgIdx);
+    int lum = (c.r * 299 + c.g * 587 + c.b * 114) / 1000;
+    return lum > 128 ? ThemeManager::attrIdx(0, 15)   // light paper -> white bg, black ink
+                      : ThemeManager::attrIdx(15, 0);  // dark paper  -> black bg, white ink
+}
 
 struct AnsiRgbState {
     TColorRGB fg {255, 255, 255};
@@ -268,7 +287,7 @@ static std::string flattenMarkdownLinks(const std::string &in) {
 
 void TBrowserContentView::draw() {
     TDrawBuffer buf;
-    TColorAttr normalColor = getColor(1);
+    TColorAttr normalColor = neutralContentAttr();
 
     int totalLines = static_cast<int>(styledLines.size());
 
@@ -350,7 +369,7 @@ std::string TBrowserContentView::getPlainText() const {
 void TBrowserContentView::rebuildWrappedLines() {
     styledLines.clear();
     for (const auto& line : sourceLines) {
-        styledLines.push_back(parseAnsiLine(line, getColor(1)));
+        styledLines.push_back(parseAnsiLine(line, neutralContentAttr()));
     }
     setLimit(size.x, static_cast<int>(styledLines.size()));
     if (vScrollBar)
