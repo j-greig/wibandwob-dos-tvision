@@ -5702,23 +5702,34 @@ std::string api_set_skin(TWwdosApp& app, const std::string& name) {
         bg->setTextureUtf8(s->texture.empty() ? std::string(" ") : s->texture);
         bg->setColorRgb(ThemeManager::cgaRgb(s->deskFg), ThemeManager::cgaRgb(s->deskBg));
     }
-    // Paper every colourable window with the skin's defaults.
-    if (TView* start = app.deskTop->first()) {
-        TView* v = start;
-        do {
-            if (auto* w = dynamic_cast<TWindow*>(v)) {
-                if (auto* fp = ww_get_child_view<FrameFilePlayerView>(w)) {
-                    fp->setBackgroundIndex(s->paperBg);
-                    fp->setForegroundIndex(s->paperFg);
-                    if (w->frame) w->frame->drawView();
-                } else if (auto* tv = ww_get_child_view<TTextFileView>(w)) {
-                    tv->setBackgroundIndex(s->paperBg);
-                    tv->setForegroundIndex(s->paperFg);
-                    if (w->frame) w->frame->drawView();
+    // Paper every colourable window, distributing the skin's paper
+    // VARIANTS round-robin — the refs' richness is several window
+    // identities per scheme, not one uniform paper (Zilla, 2026-08-13).
+    {
+        std::vector<std::pair<int,int>> papers;
+        papers.push_back({s->paperBg, s->paperFg});
+        for (auto& pv : s->paperVariants) papers.push_back(pv);
+        int wi = 0;
+        if (TView* start = app.deskTop->first()) {
+            TView* v = start;
+            do {
+                if (auto* w = dynamic_cast<TWindow*>(v)) {
+                    auto& p = papers[wi % papers.size()];
+                    if (auto* fp = ww_get_child_view<FrameFilePlayerView>(w)) {
+                        fp->setBackgroundIndex(p.first);
+                        fp->setForegroundIndex(p.second);
+                        if (w->frame) w->frame->drawView();
+                        ++wi;
+                    } else if (auto* tv = ww_get_child_view<TTextFileView>(w)) {
+                        tv->setBackgroundIndex(p.first);
+                        tv->setForegroundIndex(p.second);
+                        if (w->frame) w->frame->drawView();
+                        ++wi;
+                    }
                 }
-            }
-            v = v->next;
-        } while (v != start);
+                v = v->next;
+            } while (v != start);
+        }
     }
     ThemeManager::activeSkin() = name;
     emitTerminalPalette(s);   // reprogram the terminal's 16 ANSI slots

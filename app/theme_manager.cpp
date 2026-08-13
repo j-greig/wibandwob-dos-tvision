@@ -186,7 +186,12 @@ static std::vector<CgaSkin> buildBuiltinSkins() {
     v.push_back(mkSkin("dflat",    "\xe2\x96\x92", 9, 1, 7, 0,  1, 15));
     v.back().chunkyFrames = true;   // the Figma mock look stays on its home skin
     v.push_back(mkSkin("turbo",    "\xe2\x96\x91", 7, 1, 1, 14, 7, 0));
+    v.back().paperVariants = { {3, 0}, {7, 1} };   // teal inner panel, grey card w/ blue ink
+    v.back().accentFg = 2;                          // green buttons/hotkeys
+    v.back().okFg = 2;
     v.push_back(mkSkin("terra",    "",             0, 1, 1, 10, 2, 0));
+    v.back().paperVariants = { {2, 0}, {7, 1} };
+    v.back().accentFg = 14;
     v.push_back(mkSkin("pipeline", "",             8, 0, 0, 9,  0, 13, 0x08, 0x09, 0x09));
     v.back().okFg = 9;
     v.push_back(mkSkin("phosphor", "",             2, 0, 0, 10, 2, 0,  0x02, 0x0A, 0x0A));
@@ -357,6 +362,8 @@ bool parseSkinFile(const std::string& path, CgaSkin& out) {
         else if (k == "texture" && tok.size() > 1) s.texture = tok[1];
         else if (k == "desk")   { s.deskFg = iv(1);  s.deskBg = iv(2); }
         else if (k == "paper")  { s.paperBg = iv(1); s.paperFg = iv(2); }
+        else if ((k == "paper2" || k == "paper3" || k == "paper4") && tok.size() > 2)
+            s.paperVariants.push_back({iv(1), iv(2)});
         else if (k == "dialog") { s.dialogBg = iv(1); s.dialogFg = iv(2); }
         else if (k == "framePassive") s.framePassive = iv(1);
         else if (k == "frameActive")  s.frameActive = iv(1);
@@ -416,6 +423,10 @@ bool saveSkinFile(const CgaSkin& s, const std::string& path) {
     if (!s.texture.empty()) out << "texture " << s.texture << "\n";
     out << "desk "   << s.deskFg  << " " << s.deskBg  << "\n";
     out << "paper "  << s.paperBg << " " << s.paperFg << "\n";
+    for (size_t i = 0; i < s.paperVariants.size() && i < 3; ++i)
+        out << "paper" << (i + 2) << " " << s.paperVariants[i].first
+            << " " << s.paperVariants[i].second << "\n";
+
     out << "dialog " << s.dialogBg << " " << s.dialogFg << "\n";
     char hx[16];
     auto attr = [&](const char* k, int v) {

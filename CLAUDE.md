@@ -26,6 +26,8 @@ docs, and stray windows. Concretely:
 - Verify visually, always: screenshot after driving the TUI; `ok:true` ≠ pixels
   changed. **Activate the Ghostty window first** — backgrounded terminals nap
   and screencapture returns stale pixels (runbook § event-loop wake).
+  **Test at large terminal size** (~2400x1360; relaunch script sizes it) —
+  small canvases lie about layouts, density and composition.
 - Leave every session with the repo better than you found it.
 
 **Repo disambiguation** — two similarly-named repos, easy to conflate:

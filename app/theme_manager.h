@@ -103,6 +103,10 @@ struct CgaSkin {
     int dimFg = -1, accentFg = -1;
     int floorFg = -1, floorBg = -1;
     int okFg = -1, warnFg = -1;
+    // Paper VARIANTS beyond the primary paper (canon rule 1: 3-4 window
+    // colour identities per scheme — see theming-roles.md §canon).
+    // Pairs of (bg, fg); set_skin distributes round-robin.
+    std::vector<std::pair<int,int>> paperVariants;
     // Chunky solid-block frames (the Figma D-Flat look). Default false:
     // thin classic single-line frames (Zilla prefers them, 2026-08-13).
     bool chunkyFrames = false;

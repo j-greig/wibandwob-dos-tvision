@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "app": "test_pattern",
+  "timestamp": "2026-08-13T11:54:36",
+  "screen": { "width": 99, "height": 33 },
+  "globals": { "patternMode": "continuous", "skin": "oilfield" },
+  "desktop": { "char": " ", "fg": 7, "bg": 1, "charUtf8": "░", "rgbFg": 5592405, "rgbBg": 0, "gallery": false },
+  "windows": [
+    {
+      "id": "w1",
+      "type": "frame_player",
+      "title": "BOHRUNG",
+      "bounds": { "x": 76, "y": 16, "w": 22, "h": 15 },
+      "zoomed": false,
+      "props": {"path": "modules/wibwob-primers/primers/bods.txt", "bgIdx": 0, "fgIdx": 10, "frameless": false, "shadowless": false}
+    },
+    {
+      "id": "w2",
+      "type": "frame_player",
+      "title": "Schiff 1",
+      "bounds": { "x": 56, "y": 20, "w": 18, "h": 11 },
+      "zoomed": false,
+      "props": {"path": "modules/wibwob-primers/primers/ascii-draws-itself.txt", "bgIdx": 6, "fgIdx": 15, "frameless": false, "shadowless": false}
+    },
+    {
+      "id": "w3",
+      "type": "frame_player",
+      "title": "Standort 2",
+      "bounds": { "x": 80, "y": 2, "w": 18, "h": 12 },
+      "zoomed": false,
+      "props": {"path": "modules/wibwob-primers/primers/20260227T122948_lone-peak_s15737.txt", "bgIdx": 7, "fgIdx": 1, "frameless": false, "shadowless": false}
+    },
+    {
+      "id": "w4",
+      "type": "frame_player",
+      "title": "Standort 1",
+      "bounds": { "x": 58, "y": 2, "w": 20, "h": 12 },
+      "zoomed": false,
+      "props": {"path": "modules/wibwob-primers/primers/20260227T122719_twin-peaks_s6052.txt", "bgIdx": 7, "fgIdx": 1, "frameless": false, "shadowless": false}
+    },
+    {
+      "id": "w5",
+      "type": "frame_player",
+      "title": "TERRA-TIME",
+      "bounds": { "x": 2, "y": 2, "w": 52, "h": 18 },
+      "zoomed": false,
+      "props": {"path": "modules/wibwob-primers/primers/20260227T121931_ridge-valley_s45853.txt", "bgIdx": 1, "fgIdx": 10, "frameless": false, "shadowless": false}
+    }
+  ],
+  "focusedIndex": 0
+}

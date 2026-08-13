@@ -51,4 +51,14 @@ tell application "Ghostty"
     activate window w
 end tell
 EOF
-echo "wwdos relaunched (stray sweep done)"
+# Size the window LARGE (Zilla 2026-08-13: test at ~2x for realistic
+# window real estate; screenshots at small sizes lie about layouts)
+sleep 1
+osascript <<'EOF2' 2>/dev/null
+tell application "System Events" to tell process "Ghostty"
+    set position of front window to {60, 40}
+    set size of front window to {2400, 1360}
+end tell
+EOF2
+
+echo "wwdos relaunched (stray sweep done, sized 2400x1360)"
