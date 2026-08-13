@@ -43,6 +43,9 @@ When a session touches both, SAY SO explicitly at each switch: name the repo and
   `scripts/launch_wwdos_ghostty.sh` (the script is the *wrapper Ghostty runs*,
   not a launcher — running it bare gives a headless wwdos), then `./start_api_server.sh`. Recipe in runbook.
 - **Operate/debug the app → `docs/development/wwdos-runbook.md`** — the ONE operational doc (launch, control API, Ghostty AppleScript, chat/LLM plumbing, gotchas). Read before driving wwdos; refine it when you learn something it lacks. No new md files: prune and fold into existing docs.
+- **TUIFORGE.DSK**: `open_tuiforge` views the ~/Repos/tuiforge/renders corpus
+  (path param = scene name; none = picker). Reel mp4: `scripts/tuiforge_reel.py`
+  (4K, captures by CGWindowID — never region). Details in runbook § TUIFORGE.
 - **CGA skins**: `set_skin` (dflat/turbo/terra/pipeline/off) one-shots chrome +
   RGB desktop + paper colours; `./scripts/skin_scene.sh [skin]` builds a dense
   Figma-ref-density scene. Recipes live in `theme_manager.cpp` kSkins; visual
