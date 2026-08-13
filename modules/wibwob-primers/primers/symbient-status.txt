@@ -1,0 +1,10 @@
+SYMBIENT STATUS
+
+ [36mname:[0m      [97mwib&wob[0m
+ [36mkind:[0m      [97mdual-mind[0m
+ [36msubstrate:[0m [93mwwdos 1.05[0m
+ [36m──────────────[0m
+ [36mkindled:[0m   [92myes[0m
+ [36mstoried:[0m   [92myes[0m
+ [36mmourned:[0m   [90mnot yet[0m
+ [36mcat:[0m       [91mdo not boot[0m

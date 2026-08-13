@@ -47,48 +47,11 @@
 #include <cstdlib>  // atoi
 #include <cstring>  // strcmp
 
-// ── Extern declarations for spawn helpers in wwdos_app.cpp ─────────────
-
-class TWwdosApp; // forward decl (full type used only by called functions)
-
-extern void api_spawn_test(TWwdosApp&, const TRect*);
-extern void api_spawn_gradient(TWwdosApp&, const std::string&, const TRect*);
-extern void api_open_animation_path(TWwdosApp&, const std::string&, const TRect*, bool frameless, bool shadowless, const std::string& title);
-extern void api_open_text_view_path(TWwdosApp&, const std::string&, const TRect*);
-extern void api_spawn_text_editor(TWwdosApp&, const TRect*, const std::string&);
-extern void api_spawn_browser(TWwdosApp&, const TRect*);
-extern void api_spawn_verse(TWwdosApp&, const TRect*);
-extern void api_spawn_mycelium(TWwdosApp&, const TRect*);
-extern void api_spawn_orbit(TWwdosApp&, const TRect*);
-extern void api_spawn_torus(TWwdosApp&, const TRect*);
-extern void api_spawn_cube(TWwdosApp&, const TRect*);
-extern void api_spawn_life(TWwdosApp&, const TRect*);
-extern void api_spawn_blocks(TWwdosApp&, const TRect*);
-extern void api_spawn_score(TWwdosApp&, const TRect*);
-extern void api_spawn_ascii(TWwdosApp&, const TRect*);
-extern void api_spawn_animated_gradient(TWwdosApp&, const TRect*);
-extern void api_spawn_monster_cam(TWwdosApp&, const TRect*);
-extern void api_spawn_monster_verse(TWwdosApp&, const TRect*);
-extern void api_spawn_contour_map(TWwdosApp&, const TRect*);
-extern void api_spawn_generative_lab(TWwdosApp&, const TRect*);
-extern void api_spawn_monster_portal(TWwdosApp&, const TRect*);
-extern void api_spawn_paint(TWwdosApp&, const TRect*);
-extern void api_spawn_micropolis_ascii(TWwdosApp&, const TRect*);
-extern void api_spawn_terminal(TWwdosApp&, const TRect*);
-extern void api_spawn_wibwob(TWwdosApp&, const TRect*);
-extern void api_spawn_room_chat(TWwdosApp&, const TRect*);
-extern void api_spawn_quadra(TWwdosApp&, const TRect*);
-extern void api_spawn_snake(TWwdosApp&, const TRect*);
-extern void api_spawn_rogue(TWwdosApp&, const TRect*);
-extern void api_spawn_deep_signal(TWwdosApp&, const TRect*);
-extern void api_spawn_backrooms_tv(TWwdosApp&, const TRect*);
-extern void api_spawn_app_launcher(TWwdosApp&, const TRect*);
-extern void api_spawn_disks(TWwdosApp&, const TRect*);
-extern void api_spawn_shader(TWwdosApp&, const TRect*, const std::string&);
-extern void api_spawn_gallery(TWwdosApp&, const TRect*);
-extern void api_spawn_figlet_text(TWwdosApp&, const TRect*,
-    const std::string& text, const std::string& font,
-    bool frameless, bool shadowless);
+// ── Declarations for spawn helpers in wwdos_app.cpp ─────────────────────
+#include "api_windows.h"
+#include "api_chat.h"   // api_spawn_room_chat
+#include "api_paint.h"  // api_spawn_paint
+#include "api_figlet.h" // api_spawn_figlet_text
 
 // ── Bounds helper ─────────────────────────────────────────────────────────────
 

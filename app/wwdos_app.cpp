@@ -606,6 +606,59 @@ TWwdosApp::TWwdosApp() :
     }
 }
 
+std::string TWwdosApp::registerWindow(TWindow* w, bool emit_event) {
+    if (!w) return std::string();
+    auto it = winToId.find(w);
+    if (it != winToId.end()) {
+        lastRegisteredWindowId_ = it->second;
+        return it->second;
+    }
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "w%d", apiIdCounter++);
+    std::string id(buf);
+    winToId[w] = id;
+    idToWin[id] = w;
+    lastRegisteredWindowId_ = id;
+    // Notify event subscribers that state has changed.
+    if (emit_event && ipcServer) {
+        std::string payload = std::string("{\"id\":\"") + id + "\"}";
+        ipcServer->publish_event("state_changed", payload);
+    }
+    return id;
+}
+
+TWindow* TWwdosApp::findWindowById(const std::string& id) {
+    // Scan desktop to discover unregistered windows and purge stale entries.
+    // Must scan first so stale pointers are removed before we return one.
+    // IMPORTANT: do NOT clear existing maps — that would reassign IDs for
+    // already-known windows and cause multiplayer desync.
+    std::vector<TWindow*> activeWins;
+    TView *start = deskTop->first();
+    if (start) {
+        TView *v = start;
+        do {
+            TWindow *w = dynamic_cast<TWindow*>(v);
+            if (w) {
+                activeWins.push_back(w);
+                if (winToId.find(w) == winToId.end()) {
+                    // Unregistered window — give it a stable ID without firing an event.
+                    char buf[32];
+                    std::snprintf(buf, sizeof(buf), "w%d", apiIdCounter++);
+                    std::string new_id(buf);
+                    winToId[w] = new_id;
+                    idToWin[new_id] = w;
+                }
+            }
+            v = v->next;
+        } while (v != start);
+    }
+    // Purge stale entries (windows closed since last scan).
+    syncWindowRegistry(activeWins);
+    auto it = idToWin.find(id);
+    if (it != idToWin.end()) return it->second;
+    return nullptr;
+}
+
 void TWwdosApp::handleEvent(TEvent& event)
 {
     // Screensaver: real input resets the idle clock; if the saver is up,
@@ -928,11 +981,13 @@ void TWwdosApp::handleEvent(TEvent& event)
                 break;
             }
             case cmTweetShader: {
+                extern void api_spawn_shader(TWwdosApp&, const TRect* bounds, const std::string& shader);
                 api_spawn_shader(*this, nullptr, "");
                 clearEvent(event);
                 break;
             }
             case cmDiskLibrary: {
+                extern void api_spawn_disks(TWwdosApp&, const TRect* bounds);
                 api_spawn_disks(*this, nullptr);
                 clearEvent(event);
                 break;
@@ -953,6 +1008,7 @@ void TWwdosApp::handleEvent(TEvent& event)
             }
             case cmCtxGalleryToggle:
             case cmDeskGallery: {
+                extern std::string api_desktop_gallery(TWwdosApp&, bool);
                 api_desktop_gallery(*this, !galleryMode_);
                 clearEvent(event);
                 break;
@@ -1330,6 +1386,9 @@ void TWwdosApp::handleEvent(TEvent& event)
                 break;
             }
             case cmNewFigletText: {
+                extern void api_spawn_figlet_text(TWwdosApp&, const TRect*,
+                    const std::string& text, const std::string& font,
+                    bool frameless, bool shadowless);
                 api_spawn_figlet_text(*this, nullptr, "Hello", "standard", false, false);
                 clearEvent(event);
                 break;
@@ -2606,7 +2665,7 @@ void api_spawn_gradient(TWwdosApp& app, const std::string& kind, const TRect* bo
 
 void api_open_text_view_path(TWwdosApp& app, const std::string& path, const TRect* bounds) {
     if (path.empty()) return;
-    app.windowNumber++;
+    int wn = app.nextWindowNumber();
     size_t lastSlash = path.find_last_of("/\\");
     std::string baseName = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
     std::string title = baseName + " (Transparent)";
@@ -2614,7 +2673,7 @@ void api_open_text_view_path(TWwdosApp& app, const std::string& path, const TRec
     if (bounds && (bounds->b.x - bounds->a.x) > 0 && (bounds->b.y - bounds->a.y) > 0) {
         r = *bounds;
     } else {
-        int offset = (app.windowNumber - 1) % 10;
+        int offset = (wn - 1) % 10;
         r = TRect(2 + offset * 2, 1 + offset, 82 + offset * 2, 25 + offset);
     }
     TTransparentTextWindow* window = new TTransparentTextWindow(r, title, path);
@@ -2638,17 +2697,17 @@ void api_toggle_scramble(TWwdosApp& app) { app.cycleScramble(); }
 void api_expand_scramble(TWwdosApp& app) { app.cycleScramble(); }
 
 std::string api_scramble_say(TWwdosApp& app, const std::string& text) {
-    if (!app.scrambleWindow) return "err scramble not open";
+    if (!app.scrambleWin()) return "err scramble not open";
     // Simulate user sending a message — same as onSubmit
-    auto* msgView = app.scrambleWindow->getMessageView();
+    auto* msgView = app.scrambleWin()->getMessageView();
     if (msgView) msgView->addMessage("you", text);
 
     // Use async path — response arrives via cmScrambleReply event
     std::string syncResult;
-    bool isAsync = app.scrambleEngine.askAsync(text, syncResult,
+    bool isAsync = app.scramble().askAsync(text, syncResult,
         [&app](const std::string& response) {
             // Queue for event-loop delivery (never drawView from idle)
-            app.pendingScrambleReply = response.empty() ? "(no response from model — try again)" : response;
+            app.setPendingScrambleReply(response.empty() ? "(no response from model — try again)" : response);
             TEvent event;
             event.what = evCommand;
             event.message.command = cmScrambleReply;
@@ -2658,15 +2717,15 @@ std::string api_scramble_say(TWwdosApp& app, const std::string& text) {
 
     if (!isAsync) {
         // Slash command or fallback — deliver immediately
-        app.pendingScrambleReply = syncResult.empty() ? "(no response from model — try again)" : syncResult;
+        app.setPendingScrambleReply(syncResult.empty() ? "(no response from model — try again)" : syncResult);
         app.deliverScrambleReply();
-        return app.pendingScrambleReply.empty() ? syncResult : syncResult;
+        return syncResult;
     }
 
     return "*thinking* /ᐠ｡ꞈ｡ᐟ\\";  // Async started — response will arrive via event
 }
 std::string api_scramble_pet(TWwdosApp& app) {
-    if (!app.scrambleWindow) return "err scramble not open";
+    if (!app.scrambleWin()) return "err scramble not open";
 
     static const char* petReactions[] = {
         "...fine. /ᐠ- -ᐟ\\",
@@ -2677,19 +2736,19 @@ std::string api_scramble_pet(TWwdosApp& app) {
     };
     std::string response = petReactions[std::rand() % 5];
 
-    if (app.scrambleWindow->getView()) {
-        app.scrambleWindow->getView()->setPose(spDefault);
-        app.scrambleWindow->getView()->say(response);
+    if (app.scrambleWin()->getView()) {
+        app.scrambleWin()->getView()->setPose(spDefault);
+        app.scrambleWin()->getView()->say(response);
     }
-    auto* msgView = app.scrambleWindow->getMessageView();
+    auto* msgView = app.scrambleWin()->getMessageView();
     if (msgView) msgView->addMessage("scramble", response);
     return response;
 }
 
 std::string api_chat_receive(TWwdosApp& app, const std::string& sender, const std::string& text) {
     // Display a remote chat message in Scramble without AI processing.
-    if (!app.scrambleWindow) return "err scramble not open";
-    auto* msgView = app.scrambleWindow->getMessageView();
+    if (!app.scrambleWin()) return "err scramble not open";
+    auto* msgView = app.scrambleWin()->getMessageView();
     if (!msgView) return "err no message view";
     msgView->addMessage(sender, text);
     return "ok";
@@ -2791,9 +2850,7 @@ bool api_open_workspace_path(TWwdosApp& app, const std::string& path) {
 void api_screenshot(TWwdosApp& app) { app.takeScreenshot(false); }
 
 std::string api_take_last_registered_window_id(TWwdosApp& app) {
-    std::string out = app.lastRegisteredWindowId_;
-    app.lastRegisteredWindowId_.clear();
-    return out;
+    return app.takeLastRegisteredWindowId();
 }
 
 static const char* windowTypeName(TWindow* w) {
@@ -2823,19 +2880,7 @@ std::string api_get_state(TWwdosApp& app) {
 
     // Purge registry entries for windows that have been closed (stale pointers).
     // Only purge; never clear — existing live windows keep their stable IDs.
-    {
-        auto it = app.winToId.begin();
-        while (it != app.winToId.end()) {
-            bool alive = false;
-            for (auto* aw : activeWins) { if (aw == it->first) { alive = true; break; } }
-            if (!alive) {
-                app.idToWin.erase(it->second);
-                it = app.winToId.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
+    app.syncWindowRegistry(activeWins);
 
     std::stringstream json;
     json << "{\"windows\":[";
@@ -2882,7 +2927,7 @@ std::string api_get_state(TWwdosApp& app) {
     // Append chat_log for multiplayer relay bridge
     json << ",\"chat_log\":[";
     bool firstChat = true;
-    for (const auto& entry : app.chatLog_) {
+    for (const auto& entry : app.chatLog()) {
         if (!firstChat) json << ",";
         json << "{\"seq\":" << entry.seq
              << ",\"sender\":\"" << json_escape(entry.sender) << "\""
@@ -2943,10 +2988,7 @@ std::string api_move_window(TWwdosApp& app, const std::string& id, int x, int y)
     newBounds.move(x - newBounds.a.x, y - newBounds.a.y);
     w->locate(newBounds);
 
-    if (app.ipcServer) {
-        std::string payload = std::string("{\"id\":\"") + id + "\"}";
-        app.ipcServer->publish_event("state_changed", payload);
-    }
+    app.publishEvent("state_changed", std::string("{\"id\":\"") + id + "\"}");
     return "{\"success\":true}";
 }
 
@@ -2959,10 +3001,7 @@ std::string api_resize_window(TWwdosApp& app, const std::string& id, int width, 
     newBounds.b.y = newBounds.a.y + height;
     w->locate(newBounds);
 
-    if (app.ipcServer) {
-        std::string payload = std::string("{\"id\":\"") + id + "\"}";
-        app.ipcServer->publish_event("state_changed", payload);
-    }
+    app.publishEvent("state_changed", std::string("{\"id\":\"") + id + "\"}");
     return "{\"success\":true}";
 }
 
@@ -3019,13 +3058,12 @@ std::string api_close_window(TWwdosApp& app, const std::string& id) {
         return "{\"error\":\"Close failed\"}";
 
     // Remove from registry after successful removal.
-    app.winToId.erase(w);
-    app.idToWin.erase(id);
+    app.forgetWindow(w, id);
 
-    if (app.ipcServer) {
+    {
         std::string payload = std::string("{\"id\":\"") + id + "\"}";
-        app.ipcServer->publish_event("window_closed", payload);
-        app.ipcServer->publish_event("state_changed", payload);
+        app.publishEvent("window_closed", payload);
+        app.publishEvent("state_changed", payload);
     }
 
     return "{\"success\":true}";
@@ -3263,6 +3301,10 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
     if (deskPos != std::string::npos) {
         size_t pos = data.find('{', deskPos);
         if (pos != std::string::npos) {
+            extern std::string api_desktop_preset(TWwdosApp&, const std::string&);
+            extern std::string api_desktop_texture(TWwdosApp&, const std::string&);
+            extern std::string api_desktop_color(TWwdosApp&, int, int);
+            extern std::string api_desktop_gallery(TWwdosApp&, bool);
             std::string preset;
             bool presetApplied = false;
             if (parseKeyedString(data, pos+1, "preset", preset)
@@ -3582,6 +3624,10 @@ bool TWwdosApp::loadWorkspaceFromFile(const std::string& path)
             }
             if (ftText.empty()) ftText = "Hello";
             TRect r(x, y, x + w, y + h);
+            extern void api_spawn_figlet_text(TWwdosApp&, const TRect*,
+                const std::string& text, const std::string& font,
+                bool frameless, bool shadowless);
+            extern std::string api_figlet_set_color(TWwdosApp&, const std::string& id, const std::string& fg, const std::string& bg);
             api_spawn_figlet_text(*this, &r, ftText, ftFont, ftFrameless, ftShadowless);
             // Find the newly spawned window
             TView *vv = deskTop->first();
@@ -4670,12 +4716,12 @@ void TWwdosApp::dismissScreensaver()
 // action: now | off | on (arm) ; minutes > 0 sets the timeout (0 = disable)
 std::string api_screensaver(TWwdosApp& app, const std::string& action, int minutes)
 {
-    if (minutes >= 0) app.saverTimeoutMins_ = minutes;
+    if (minutes >= 0) app.setSaverTimeoutMins(minutes);
     if (action == "now") { app.activateScreensaver(); return "ok"; }
-    if (action == "off") { app.dismissScreensaver(); app.saverTimeoutMins_ = 0; return "ok"; }
+    if (action == "off") { app.dismissScreensaver(); app.setSaverTimeoutMins(0); return "ok"; }
     if (action == "on" || action.empty()) {
-        if (app.saverTimeoutMins_ == 0) app.saverTimeoutMins_ = 10;
-        app.lastInputMs_ = TWwdosApp::wwNowMs();
+        if (app.saverTimeoutMins() == 0) app.setSaverTimeoutMins(10);
+        app.noteInput();
         return "ok";
     }
     return "err unknown action (now|on|off)";
@@ -5085,8 +5131,7 @@ std::string api_gallery_list(TWwdosApp& app, const std::string& tab) {
 
 void api_spawn_wibwob(TWwdosApp& app, const TRect* bounds) {
     TRect r = bounds ? *bounds : app.findSpreadRect(80, 27);
-    app.windowNumber++;
-    std::string title = "Wib&Wob Chat " + std::to_string(app.windowNumber);
+    std::string title = "Wib&Wob Chat " + std::to_string(app.nextWindowNumber());
     TWindow* w = createWibWobWindow(r, title);
     if (w) {
         app.deskTop->insert(w);
@@ -5119,8 +5164,9 @@ static TWibWobTerminalWindow* find_terminal_by_zorder(TWwdosApp& app) {
 std::string api_terminal_write(TWwdosApp& app, const std::string& text, const std::string& window_id) {
     TWibWobTerminalWindow* termWin = nullptr;
     if (!window_id.empty()) {
-        auto it = app.idToWin.find(window_id);
-        if (it != app.idToWin.end())
+        const auto& ids = app.windowIds();
+        auto it = ids.find(window_id);
+        if (it != ids.end())
             termWin = dynamic_cast<TWibWobTerminalWindow*>(it->second);
         if (!termWin) return "err window not found or not a terminal";
     } else {
@@ -5134,8 +5180,9 @@ std::string api_terminal_write(TWwdosApp& app, const std::string& text, const st
 std::string api_terminal_read(TWwdosApp& app, const std::string& window_id) {
     TWibWobTerminalWindow* termWin = nullptr;
     if (!window_id.empty()) {
-        auto it = app.idToWin.find(window_id);
-        if (it != app.idToWin.end())
+        const auto& ids = app.windowIds();
+        auto it = ids.find(window_id);
+        if (it != ids.end())
             termWin = dynamic_cast<TWibWobTerminalWindow*>(it->second);
         if (!termWin) return "err window not found or not a terminal";
     } else {
@@ -5339,7 +5386,7 @@ std::string api_set_skin(TWwdosApp& app, const std::string& name) {
 std::string api_desktop_gallery(TWwdosApp& app, bool on) {
     if (!app.menuBar || !app.statusLine) return "err no chrome views";
 
-    app.galleryMode_ = on;
+    app.setGalleryMode(on);
     app.menuBar->setState(sfVisible, !on);
     app.statusLine->setState(sfVisible, !on);
 
@@ -5368,7 +5415,7 @@ std::string api_desktop_get(TWwdosApp& app) {
     json += "\",";
     json += "\"fg\":" + std::to_string((int)bg->getFg()) + ",";
     json += "\"bg\":" + std::to_string((int)bg->getBg()) + ",";
-    json += "\"gallery\":" + std::string(app.galleryMode_ ? "true" : "false") + ",";
+    json += "\"gallery\":" + std::string(app.galleryMode() ? "true" : "false") + ",";
     json += "\"preset\":\"" + bg->getPresetName() + "\"";
     json += "}";
     return json;

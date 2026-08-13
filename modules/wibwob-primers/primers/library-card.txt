@@ -1,0 +1,8 @@
+LIBRARY CARD
+
+ [34mdisk:[0m  [97mSHADER.SYS[0m
+ [34mout:[0m   [93m7 residents[0m
+ [34mdue:[0m   [93mnever[0m
+ [34m────────────[0m
+ [34mfines:[0m [91m<<PAWS OFF!>>[0m
+ [34mstamp:[0m [92m=^..^=[0m

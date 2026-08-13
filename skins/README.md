@@ -85,3 +85,20 @@ Notes:
 | `bloodmoon.skin` | Near-black ritual reds with bone-white cutting through — sparse `∴` dither, deepest of the six. |
 | `seafoam.skin`   | Pale aquatic daylight — light skin, no chrome overrides, authentic CGA cyan/brown do the work unaided. |
 | `c64.skin`       | Commodore 64 tribute — classic light-blue-on-blue boot screen, authentic VIC-II 16-colour palette. |
+
+## Paper variants (canon rule: several window identities per scheme)
+
+```
+paper2 <bg> <fg>    # extra window identities; set_skin distributes
+paper3 <bg> <fg>    # round-robin across colourable windows
+paper4 <bg> <fg>
+frames chunky       # opt into the fat Figma-style block frames
+```
+
+## Polychrome interiors
+
+Primer/text files may contain ANSI SGR sequences (`ESC[34m` etc) — the
+viewers render them as coloured runs (SGR→CGA, bright via 90s/bold).
+Plain files pay nothing. See modules/wibwob-primers/primers/
+standort-card.txt for the grammar: labels one colour, values another,
+alarms red.

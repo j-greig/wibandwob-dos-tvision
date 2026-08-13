@@ -57,41 +57,112 @@ public:
         return ipcServer ? ipcServer->getConnectionStatus() : ApiIpcServer::ConnectionStatus{};
     }
 
-private:
+    // ── API surface (stage 4 friend-ectomy) ─────────────────────────────
+    // The members below were private and reached only via the ~60
+    // `friend api_*` declarations that used to sit at the bottom of this
+    // class. Now that the api_* free functions in wwdos_app.cpp are no
+    // longer friends (bar the one survivor below), they call these public
+    // members/accessors instead. Signatures of the api_* functions are
+    // unchanged — only their bodies moved from raw private-member access
+    // to this surface.
+
     void newTestWindow();
     void newTestWindow(const TRect& bounds);
     void newGradientWindow(TGradientWindow::GradientType type);
     void newGradientWindow(TGradientWindow::GradientType type, const TRect& bounds);
-    // void newMechWindow();
-    void newDonutWindow();
     void newBrowserWindow();
     void newBrowserWindow(const TRect& bounds);
+    void openAnimationFilePath(const std::string& path);
+    void openAnimationFilePath(const std::string& path, const TRect& bounds, bool frameless = false, bool shadowless = false, const std::string& title = "");
+    bool openWorkspacePath(const std::string& path);
+    void cascade();
+    void tile();
+    void closeAll();
+    void takeScreenshot(bool showDialog = true);
+    bool saveWorkspacePath(const std::string& path);
+    TRect calculateWindowBounds(const std::string& filePath);
+    // Place a w×h window where it overlaps existing windows the least, so
+    // successive spawns spread across the desktop instead of stacking.
+    TRect findSpreadRect(int w, int h);
+
+    // Window registry (winToId/idToWin) — register/find/forget by id.
+    std::string registerWindow(TWindow* w, bool emit_event = true);
+    TWindow* findWindowById(const std::string& id);
+    // Drop a single window from the id registry (used by api_close_window).
+    void forgetWindow(TWindow* w, const std::string& id) {
+        winToId.erase(w);
+        idToWin.erase(id);
+    }
+    // Purge registry entries for windows no longer present in activeWins,
+    // without reassigning ids for windows that are still alive.
+    void syncWindowRegistry(const std::vector<TWindow*>& activeWins) {
+        auto it = winToId.begin();
+        while (it != winToId.end()) {
+            bool alive = false;
+            for (auto* aw : activeWins) { if (aw == it->first) { alive = true; break; } }
+            if (!alive) {
+                idToWin.erase(it->second);
+                it = winToId.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    // Read-only view of the id→window map (e.g. direct lookup without the
+    // registry-sync side effects that findWindowById performs).
+    const std::map<std::string, TWindow*>& windowIds() const { return idToWin; }
+    // windowNumber++ as a single call — returns the post-increment value.
+    int nextWindowNumber() { return ++windowNumber; }
+    // Consume (read + clear) the id of the most recently registered window.
+    std::string takeLastRegisteredWindowId() {
+        std::string out = lastRegisteredWindowId_;
+        lastRegisteredWindowId_.clear();
+        return out;
+    }
+    // Fire-and-forget IPC event publish; no-ops if the server isn't up.
+    void publishEvent(const char* name, const std::string& payload) {
+        if (ipcServer) ipcServer->publish_event(name, payload);
+    }
+
+    // Scramble cat overlay accessors.
+    ScrambleEngine& scramble() { return scrambleEngine; }
+    TScrambleWindow* scrambleWin() const { return scrambleWindow; }
+    void setPendingScrambleReply(const std::string& s) { pendingScrambleReply = s; }
+    void cycleScramble();
+    void deliverScrambleReply();
+
+    // Chat log for multiplayer relay (outgoing messages from local Scramble).
+    struct ChatEntry { int seq; std::string sender; std::string text; };
+    std::deque<ChatEntry>& chatLog() { return chatLog_; }
+
+    // Desktop texture & gallery mode.
+    bool galleryMode() const { return galleryMode_; }
+    void setGalleryMode(bool on) { galleryMode_ = on; }
+
+    // Screensaver.
+    void activateScreensaver();
+    void dismissScreensaver();
+    int saverTimeoutMins() const { return saverTimeoutMins_; }
+    void setSaverTimeoutMins(int mins) { saverTimeoutMins_ = mins; }
+    void noteInput() { lastInputMs_ = wwNowMs(); }
+
+private:
+    // void newMechWindow();
+    void newDonutWindow();
     void newWibWobWindow();
     void newWibWobTestWindowA();
     void newWibWobTestWindowB();
     void newWibWobTestWindowC();
     void newRoomChatWindow();
     void openAnimationFile();
-    void openAnimationFilePath(const std::string& path);
-    void openAnimationFilePath(const std::string& path, const TRect& bounds, bool frameless = false, bool shadowless = false, const std::string& title = "");
     void openTransparentTextFile();
     void openMonodrawFile(const char* fileName);
     void openWorkspace();
-    bool openWorkspacePath(const std::string& path);
-    void cascade();
-    void tile();
-    void closeAll();
-    void takeScreenshot(bool showDialog = true);
-    void setPatternMode(bool continuous);
     void showApiKeyDialog();
     void saveWorkspace();
     void saveWorkspaceAs();
     void manageWorkspaces();
-    bool saveWorkspacePath(const std::string& path);
-    TRect calculateWindowBounds(const std::string& filePath);
-    // Place a w×h window where it overlaps existing windows the least, so
-    // successive spawns spread across the desktop instead of stacking.
-    TRect findSpreadRect(int w, int h);
+    void setPatternMode(bool continuous);
     std::string buildWorkspaceJson();
     bool loadWorkspaceFromFile(const std::string& path);
 public:
@@ -115,9 +186,7 @@ private:
     ScrambleEngine scrambleEngine;
     std::string pendingScrambleReply;  // Queued async response for event-loop delivery
     ScrambleDisplayState scrambleState;
-    void cycleScramble();
     void wireScrambleInput();
-    void deliverScrambleReply();
 
     // Runtime API key (shared across all chat windows)
     static std::string runtimeApiKey;
@@ -126,7 +195,6 @@ private:
     friend std::string getAppRuntimeApiKey();
 
     // Chat log for multiplayer relay (outgoing messages from local Scramble)
-    struct ChatEntry { int seq; std::string sender; std::string text; };
     std::deque<ChatEntry> chatLog_;
     int chatSeq_ = 0;
     static constexpr int kChatLogMax = 50;
@@ -137,180 +205,15 @@ private:
     std::map<std::string, TWindow*> idToWin;
     std::string lastRegisteredWindowId_;
 
-    std::string registerWindow(TWindow* w, bool emit_event = true) {
-        if (!w) return std::string();
-        auto it = winToId.find(w);
-        if (it != winToId.end()) {
-            lastRegisteredWindowId_ = it->second;
-            return it->second;
-        }
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "w%d", apiIdCounter++);
-        std::string id(buf);
-        winToId[w] = id;
-        idToWin[id] = w;
-        lastRegisteredWindowId_ = id;
-        // Notify event subscribers that state has changed.
-        if (emit_event && ipcServer) {
-            std::string payload = std::string("{\"id\":\"") + id + "\"}";
-            ipcServer->publish_event("state_changed", payload);
-        }
-        return id;
-    }
-
-    TWindow* findWindowById(const std::string& id) {
-        // Scan desktop to discover unregistered windows and purge stale entries.
-        // Must scan first so stale pointers are removed before we return one.
-        // IMPORTANT: do NOT clear existing maps — that would reassign IDs for
-        // already-known windows and cause multiplayer desync.
-        std::vector<TWindow*> activeWins;
-        TView *start = deskTop->first();
-        if (start) {
-            TView *v = start;
-            do {
-                TWindow *w = dynamic_cast<TWindow*>(v);
-                if (w) {
-                    activeWins.push_back(w);
-                    if (winToId.find(w) == winToId.end()) {
-                        // Unregistered window — give it a stable ID without firing an event.
-                        char buf[32];
-                        std::snprintf(buf, sizeof(buf), "w%d", apiIdCounter++);
-                        std::string new_id(buf);
-                        winToId[w] = new_id;
-                        idToWin[new_id] = w;
-                    }
-                }
-                v = v->next;
-            } while (v != start);
-        }
-        // Purge stale entries (windows closed since last scan).
-        {
-            auto it = winToId.begin();
-            while (it != winToId.end()) {
-                bool alive = false;
-                for (auto* aw : activeWins) { if (aw == it->first) { alive = true; break; } }
-                if (!alive) {
-                    idToWin.erase(it->second);
-                    it = winToId.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-        }
-        auto it = idToWin.find(id);
-        if (it != idToWin.end()) return it->second;
-        return nullptr;
-    }
-
     // IPC server
     ApiIpcServer* ipcServer = nullptr;
 
-    // Friend API helper functions implemented below to bridge IPC calls.
-    friend void api_spawn_test(TWwdosApp&);
-    friend void api_spawn_gradient(TWwdosApp&, const std::string&);
-    friend void api_open_animation_path(TWwdosApp&, const std::string&);
-    friend void api_open_text_view_path(TWwdosApp&, const std::string&, const TRect* bounds);
-    friend void api_spawn_test(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_gradient(TWwdosApp&, const std::string&, const TRect* bounds);
-    friend void api_open_animation_path(TWwdosApp&, const std::string&, const TRect* bounds, bool frameless, bool shadowless, const std::string& title);
-    friend void api_cascade(TWwdosApp&);
-    friend void api_toggle_scramble(TWwdosApp&);
-    friend void api_expand_scramble(TWwdosApp&);
-    friend std::string api_scramble_say(TWwdosApp&, const std::string&);
-    friend std::string api_scramble_pet(TWwdosApp&);
-    friend std::string api_chat_receive(TWwdosApp&, const std::string&, const std::string&);
-    friend void api_tile(TWwdosApp&);
-    friend void api_close_all(TWwdosApp&);
-    friend void api_set_pattern_mode(TWwdosApp&, const std::string&);
-    friend void api_save_workspace(TWwdosApp&);
-    friend bool api_save_workspace_path(TWwdosApp&, const std::string&);
-    friend bool api_open_workspace_path(TWwdosApp&, const std::string&);
-    friend void api_screenshot(TWwdosApp&);
-    friend std::string api_get_state(TWwdosApp&);
-    friend std::string api_move_window(TWwdosApp&, const std::string&, int, int);
-    friend std::string api_set_window_bg(TWwdosApp&, const std::string&, int);
-    friend std::string api_set_window_fg(TWwdosApp&, const std::string&, int);
-    friend std::string api_resize_window(TWwdosApp&, const std::string&, int, int);
-    friend std::string api_focus_window(TWwdosApp&, const std::string&);
-    friend std::string api_raise_window(TWwdosApp&, const std::string&);
-    friend std::string api_lower_window(TWwdosApp&, const std::string&);
-    friend std::string api_close_window(TWwdosApp&, const std::string&);
-    friend std::string api_get_canvas_size(TWwdosApp&);
-    friend void api_spawn_text_editor(TWwdosApp&, const TRect* bounds, const std::string& title);
-    friend void api_spawn_browser(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_room_chat(TWwdosApp&, const TRect* bounds);
-    friend std::string api_room_chat_receive(TWwdosApp&, const std::string& sender, const std::string& text, const std::string& ts);
-    friend std::string api_room_presence(TWwdosApp&, const std::string& participants_json);
-    friend std::string api_get_room_chat_pending(TWwdosApp&);
-    friend std::string api_get_room_chat_display_name(TWwdosApp&);
-    friend std::string api_take_last_registered_window_id(TWwdosApp&);
-    friend void api_spawn_disks(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_shader(TWwdosApp&, const TRect* bounds, const std::string& shader);
-    friend void api_spawn_verse(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_mycelium(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_orbit(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_torus(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_cube(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_life(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_blocks(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_score(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_ascii(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_animated_gradient(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_monster_cam(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_contour_map(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_generative_lab(TWwdosApp&, const TRect* bounds);
-    friend TGenerativeLabView* api_find_gen_lab_view(TWwdosApp&, const std::string&);
-    friend void api_spawn_backrooms_tv(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_backrooms_tv(TWwdosApp&, const TRect* bounds, const BackroomsChannel* ch);
-    friend void api_spawn_monster_verse(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_monster_portal(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_micropolis_ascii(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_quadra(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_snake(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_rogue(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_deep_signal(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_app_launcher(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_gallery(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_figlet_text(TWwdosApp&, const TRect*,
-        const std::string& text, const std::string& font,
-        bool frameless, bool shadowless);
-    friend void api_spawn_figlet_text_at(TWwdosApp&,
-        const std::string& text, const std::string& font, int x, int y,
-        bool frameless, bool shadowless);
-    friend std::string api_figlet_set_text(TWwdosApp&, const std::string& id, const std::string& text);
-    friend std::string api_figlet_set_font(TWwdosApp&, const std::string& id, const std::string& font);
-    friend std::string api_figlet_set_color(TWwdosApp&, const std::string& id, const std::string& fg, const std::string& bg);
-    friend std::string api_gallery_list(TWwdosApp&, const std::string& tab);
-    friend void api_spawn_terminal(TWwdosApp&, const TRect* bounds);
-    friend void api_spawn_wibwob(TWwdosApp&, const TRect* bounds);
-    friend std::string api_terminal_write(TWwdosApp&, const std::string& text, const std::string& window_id);
-    friend std::string api_terminal_read(TWwdosApp&, const std::string& window_id);
-    friend void api_spawn_paint(TWwdosApp&, const TRect* bounds);
-    friend TPaintCanvasView* api_find_paint_canvas(TWwdosApp&, const std::string&);
-    friend std::string api_browser_fetch(TWwdosApp&, const std::string& url);
-    friend std::string api_send_text(TWwdosApp&, const std::string&, const std::string&,
-                                     const std::string&, const std::string&);
-    friend std::string api_send_figlet(TWwdosApp&, const std::string&, const std::string&,
-                                       const std::string&, int, const std::string&);
-    // Per-window toggles
-    friend std::string api_window_shadow(TWwdosApp&, const std::string&, bool);
-    friend std::string api_window_title(TWwdosApp&, const std::string&, const std::string&);
-    // Desktop texture & gallery mode
-    friend std::string api_desktop_preset(TWwdosApp&, const std::string&);
-    friend std::string api_desktop_texture(TWwdosApp&, const std::string&);
-    friend std::string api_desktop_color(TWwdosApp&, int, int);
-    friend std::string api_desktop_gallery(TWwdosApp&, bool);
-    friend std::string api_desktop_get(TWwdosApp&);
-    friend std::string api_set_skin(TWwdosApp&, const std::string&);
     bool galleryMode_ = false;
 
     // ── screensaver: idle timeout → fullscreen shader, any input wakes ──
-    friend std::string api_screensaver(TWwdosApp&, const std::string&, int);
     TWindow* saverWin_ = nullptr;
     long long lastInputMs_ = 0;
     int saverTimeoutMins_ = 10;      // 0 disables
-    void activateScreensaver();
-    void dismissScreensaver();
     static long long wwNowMs() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();

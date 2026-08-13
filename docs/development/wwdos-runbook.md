@@ -70,6 +70,10 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   TColorRGB/0x07 attrs — see docs/development/theming-roles.md for the role
   vocabulary, derivations and the content-vs-affordance rule. New skins are
   one kSkins row; every role derives.
+- **Polychrome primers**: text/primer files may embed ANSI SGR (ESC[..m)
+  — both viewers render coloured runs (escape-gated; plain files
+  unaffected). Canon grammar in theming-roles.md; demo cards
+  standort-card.txt / bohrung-menu.txt / symbient-status.txt.
 - **Skins are hot files**: `skins/*.skin` (key=value, spec in skins/README.md)
   load at boot and shadow built-ins by name; `set_skin` auto-reloads on
   unknown names so a freshly written file applies immediately. `list_skins`
