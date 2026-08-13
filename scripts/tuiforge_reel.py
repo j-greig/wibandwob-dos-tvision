@@ -178,13 +178,19 @@ def main():
 
     # Encode at the ACHIEVED capture rate (screencapture costs ~0.5s a
     # frame, so requested fps overstates reality and the video plays fast).
+    # 4K/lanczos/crf16: retina frames are ~4936px wide and dense ASCII text
+    # dies under double-downscaling — encode tall (2160) so the only
+    # downscale is the platform's own. A 1920 cut of a 299-col terminal
+    # gives ~6px per glyph and reads as fuzz (learned 2026-08-13; the 1920
+    # tweet was deleted and reposted in 4K).
     real_fps = max(1.0, frame / (time.time() - t0))
     print(f"{frame} frames captured ({real_fps:.2f} fps achieved); encoding …")
     subprocess.run([
         "ffmpeg", "-y", "-framerate", f"{real_fps:.3f}",
         "-i", f"{frames_dir}/f%05d.png",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        "-vf", "scale=1920:-2,setsar=1", args.out,
+        "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+        "-pix_fmt", "yuv420p",
+        "-vf", "scale=-2:2160:flags=lanczos,setsar=1", args.out,
     ], check=True, capture_output=True)
     print(f"reel: {args.out}")
 
