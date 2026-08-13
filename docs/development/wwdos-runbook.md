@@ -335,3 +335,44 @@ RGB-built `TColorAttr` and does not carry a BIOS nibble byte to extract)
 and picks plain white-bg/black-ink or black-bg/white-ink. Only the content
 view goes neutral — window chrome (title/URL/status bars) stays skinned as
 normal.
+
+## TUIFORGE.DSK — tuiforge render viewer (added 2026-08-13)
+
+`open_tuiforge` views the `~/Repos/tuiforge/renders` corpus (~559 pieces):
+`tui.txt` (UTF-8 glyph grid) + `tui.fg`/`tui.bg` (one hex CGA digit per
+cell). 80 cols; 25-row landscape, 50-row portrait. Rendered in authentic
+CGA RGB — skins cannot recolour the art (same rule as the gallery).
+
+- `{"command":"open_tuiforge","args":{"path":"kevart/cat3d"}}` — path is a
+  corpus-relative scene name or absolute dir; `/default` is appended when
+  the target has no `tui.txt` of its own. **No `path` = corpus picker**
+  (Enter / double-click boots a render).
+- Placement via `findSpreadRect`, window sized to grid, arrows/PgUp/PgDn
+  scroll portraits that overflow. `renderDir` serialises into workspaces.
+- Exhibition reel: `python3 scripts/tuiforge_reel.py` (`--test` = 6-render
+  smoke) spawns a staggered salon wall while capturing frames, encodes mp4
+  at the achieved capture rate (~3fps — `screencapture` costs ~0.5s/frame).
+
+### Gotcha: IPC payloads always carry `name=<command>`
+Every `/menu/command` → IPC payload includes `name` (the command's own
+name) and `actor`. A command param must NEVER be aliased as `name` — the
+first `open_tuiforge` picker spawned as a 10x6 runt because `kv["name"]`
+resolved to the string "open_tuiforge" and was treated as a render path.
+Reserved transport keys: `type,title,x,y,w,h,name,actor`.
+
+### Gotcha: record video by CGWindowID, never by screen region
+`screencapture -R x,y,w,h` grabs whatever pixels occupy that region — if
+Ghostty loses frontmost mid-recording (human uses the machine), the video
+swallows other apps including private windows. This happened; the cut was
+binned before publishing. Always `screencapture -l <CGWindowID>` (find the
+👻 window via Quartz `CGWindowListCopyWindowInfo`); it can only ever see
+the target window. `tuiforge_reel.py` refuses to run when multiple 👻
+windows exist (strays) — sweep first via `scripts/relaunch_wwdos.sh` logic.
+
+### Gotcha: `POST /windows` props were whitelisted per-type
+`controller.create_window` used to forward only known props (gradient,
+frame_player path). Any new window type's props silently vanished →
+spawns fell back to defaults. Now ALL scalar props forward generically
+(minus reserved keys). If a new type's arg "doesn't arrive", check the
+enum + Literal lists in `tools/api_server/models.py` and `schemas.py` —
+they must both name the type or the request 422s before reaching C++.
