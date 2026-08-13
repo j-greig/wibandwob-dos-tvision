@@ -25,6 +25,9 @@
 
 // Authentic IBM CGA 16-colour palette — single source in ThemeManager.
 #include "theme_manager.h"
+
+#define Uses_TText
+#include <tvision/tv.h>
 static const TColorRGB* kAnsiBg = ThemeManager::cgaPalette();
 
 // Gradient rendering utilities extracted from gradient.cpp
@@ -252,6 +255,72 @@ void FrameFilePlayerView::loadAndIndex(const std::string &path) {
     loadOk = true;
 }
 
+
+// ── ANSI SGR rendering (polychrome interiors, theming canon rule 2) ──
+// The era's own answer to coloured text: ESC[...m sequences. Plain files
+// never pay for this — draw() only takes the ANSI path when the frame
+// data contains an escape byte. SGR order (30-37) maps to CGA indices.
+static int sgrBaseToCga(int c) {
+    static const int map[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };  // blk red grn yel blu mag cyn wht
+    return (c >= 0 && c < 8) ? map[c] : 7;
+}
+
+// Renders `line` (may contain ESC[..m) at x, deriving attrs from `base`.
+// Clips at width W by VISIBLE cells, not bytes.
+static void moveStrAnsi(TDrawBuffer& buf, int x, const char* p, size_t len,
+                        TColorAttr base, int W) {
+    int fg = -1, bg = -1;      // -1 = inherit base
+    bool bold = false;
+    size_t i = 0;
+    std::string run;
+    auto flush = [&]() {
+        if (run.empty()) return;
+        TColorAttr a = base;
+        if (fg >= 0) {
+            int f = fg + (bold && fg < 8 ? 8 : 0);
+            setFore(a, ThemeManager::cgaColor(f));
+        }
+        if (bg >= 0) setBack(a, ThemeManager::cgaColor(bg));
+        buf.moveStr(x, run, a);
+        x += (int)TText::width(TStringView(run.data(), run.size()));
+        run.clear();
+    };
+    while (i < len && x < W) {
+        if (p[i] == '\x1b' && i + 1 < len && p[i+1] == '[') {
+            flush();
+            size_t j = i + 2; int val = 0; bool has = false;
+            std::vector<int> codes;
+            while (j < len) {
+                char c = p[j];
+                if (c >= '0' && c <= '9') { val = val * 10 + (c - '0'); has = true; ++j; }
+                else if (c == ';') { codes.push_back(has ? val : 0); val = 0; has = false; ++j; }
+                else break;
+            }
+            if (j < len && p[j] == 'm') {
+                codes.push_back(has ? val : 0);
+                for (int c : codes) {
+                    if      (c == 0)  { fg = -1; bg = -1; bold = false; }
+                    else if (c == 1)  bold = true;
+                    else if (c == 22) bold = false;
+                    else if (c >= 30 && c <= 37) fg = sgrBaseToCga(c - 30);
+                    else if (c >= 90 && c <= 97) fg = sgrBaseToCga(c - 90) + 8;
+                    else if (c == 39) fg = -1;
+                    else if (c >= 40 && c <= 47) bg = sgrBaseToCga(c - 40);
+                    else if (c >= 100 && c <= 107) bg = sgrBaseToCga(c - 100) + 8;
+                    else if (c == 49) bg = -1;
+                }
+                i = j + 1;
+            } else {
+                i = j;   // malformed: drop the sequence bytes
+            }
+            continue;
+        }
+        run += p[i];
+        ++i;
+    }
+    flush();
+}
+
 void FrameFilePlayerView::draw() {
     TDrawBuffer buf;
     const int W = size.x, H = size.y;
@@ -293,7 +362,14 @@ void FrameFilePlayerView::draw() {
             std::string line(fileData.data() + p, fileData.data() + p + n);
             
             // For solid/transparent, use safe text rendering
-            if (bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
+            bool hasAnsi = line.find('\x1b') != std::string::npos;
+            if (hasAnsi) {
+                // polychrome: SGR sequences colour runs within the line
+                // (re-read the FULL logical line — byte clip above cut escapes)
+                std::string full(fileData.data() + p, fileData.data() + pureEnd);
+                TColorAttr attr = getBackgroundAttr(bgConfig, 0, y, W, H);
+                moveStrAnsi(buf, 0, full.data(), full.size(), attr, W);
+            } else if (bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
                 TColorAttr attr = getBackgroundAttr(bgConfig, 0, y, W, H);
                 buf.moveStr(0, line.c_str(), attr);
             } else {
@@ -424,7 +500,13 @@ void TTextFileView::draw()
             const std::string& line = lines[lineIndex];
             
             // For solid colors and transparency, use efficient text rendering
-            if (bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
+            bool hasAnsi = line.find('\x1b') != std::string::npos;
+            if (hasAnsi) {
+                // polychrome interiors: SGR runs (theming canon rule 2)
+                TColorAttr attr = getBackgroundAttr(bgConfig, 0, y, viewWidth, viewHeight);
+                buf.moveChar(0, ' ', attr, viewWidth);
+                moveStrAnsi(buf, 0, line.data(), line.size(), attr, viewWidth);
+            } else if (bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
                 TColorAttr attr = getBackgroundAttr(bgConfig, 0, y, viewWidth, viewHeight);
                 TAttrPair attrs{attr, attr};
                 ushort written = buf.moveCStr(0, line.c_str(), attrs, viewWidth);

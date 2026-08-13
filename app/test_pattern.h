@@ -12,6 +12,12 @@
 #define Uses_TColorAttr
 #include <tvision/tv.h>
 
+// Configuration - Toggle pattern display mode
+// true  = Continuous mode (pattern flows like text, wraps at line ends creating diagonals)
+// false = Tiled mode (pattern resets at start of each line, crops at edges)
+// Defined (non-static) in wwdos_app.cpp.
+extern bool USE_CONTINUOUS_PATTERN;
+
 class TTestPattern
 {
 public:
