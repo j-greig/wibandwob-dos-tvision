@@ -388,3 +388,9 @@ override, see TTuiforgeWindow. Symptom: animation "paused at power-on".
 the shuffled corpus every 8s. Space pauses, N skips, banner bottom-left
 names the station. Serialises as path "tv" (workspaces respawn the channel,
 not a still). First hang: `workspaces/everywhen-wing.json`.
+
+### open_home
+`{"command":"open_home"}` loads the HEMISPHERES hang
+(`workspaces/hemispheres.json`): Wib art column west, Wob systems east,
+core spine centre (chat / disk library / TUIFORGE.TV). The canonical
+"at home" layout — iterate the json, keep the command.

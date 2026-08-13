@@ -40,7 +40,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"reload_skins", "Re-read skins/*.skin files (shadow built-ins by name) and re-apply the active skin", false},
         {"skin_save", "Write a skin to skins/<name>.skin (name param; default = active skin) — persist a novel skin", false},
         {"open_disks", "Open the SYMBIENT SHAREWARE LIBRARY — floppy-disk launcher, each disk boots an app (double-click/Enter)", false},
-        {"open_tuiforge", "Open TUIFORGE.DSK — viewer for ~/Repos/tuiforge/renders grids (path param: scene name like 'kevart/cat3d' or absolute dir; no path = corpus picker list, Enter/double-click boots a render; art keeps authentic CGA colours under any skin)", false},
+        {"open_tuiforge", "Open TUIFORGE.DSK — viewer for ~/Repos/tuiforge/renders grids (path param: scene name like 'kevart/cat3d' or absolute dir; no path = corpus picker list, Enter/double-click boots a render; art keeps authentic CGA colours under any skin; path=tv boots TUIFORGE.TV, a self-tuning corpus channel)", false},
+        {"open_home", "Load the HEMISPHERES home layout — Wib art column west, Wob systems east, core spine centre (chat / disks / TUIFORGE.TV). Loads workspaces/hemispheres.json", false},
         {"screensaver", "Screensaver control (action param: now|on|off; minutes param sets idle timeout, 0 disables; default 10min → fullscreen random shader, any key wakes)", false},
         {"open_shader", "Open SHADER.SYS — pluggable ASCII shader host (shader param: isotower|wibrain|beastiemelt|plasma|wallsofcode|yohei-rocks|tunnel; N cycles, P phosphor, space pauses)", false},
         {"reset_theme", "Reset theme to default (monochrome + light)", false},
@@ -228,6 +229,11 @@ std::string exec_registry_command(
         api_spawn_tuiforge(app, nullptr,
                            it != kv.end() ? it->second : std::string());
         return "ok";
+    }
+    if (name == "open_home") {
+        // The hemispheres hang: one word, whole house.
+        return api_open_workspace_path(app, "workspaces/hemispheres.json")
+                   ? "ok" : "err home layout missing (workspaces/hemispheres.json)";
     }
     if (name == "list_skins") return api_list_skins(app);
     if (name == "reload_skins") return api_reload_skins(app);
