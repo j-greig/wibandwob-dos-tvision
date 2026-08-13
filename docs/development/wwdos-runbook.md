@@ -70,6 +70,14 @@ or `/tmp/wibwob_$WIBWOB_INSTANCE.sock`). Full endpoint list: `tools/api_server/R
   TColorRGB/0x07 attrs — see docs/development/theming-roles.md for the role
   vocabulary, derivations and the content-vs-affordance rule. New skins are
   one kSkins row; every role derives.
+- **OPEN BUG (2026-08-13, post-split)**: skin terminal-palette remap (OSC 4)
+  and possibly the desktop RGB paint intermittently fail after api_set_skin
+  moved to api_desktop.cpp — /state reports the skin but pal slots stay
+  default (c64 desktop samples Ghostty-default bg, not #40318D). Worked
+  pre-split same day. Differential evidence in session log; suspect the
+  moved emitTerminalPalette/set_skin path or redraw ordering. Investigate
+  fresh: instrument the OSC write (bytes + fd), verify TWibWobBackground
+  setColorRgb actually runs, test with printf-to-tty bypass.
 - **Polychrome primers**: text/primer files may embed ANSI SGR (ESC[..m)
   — both viewers render coloured runs (escape-gated; plain files
   unaffected). Canon grammar in theming-roles.md; demo cards

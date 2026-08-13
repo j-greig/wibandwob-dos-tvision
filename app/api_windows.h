@@ -8,8 +8,13 @@
 
 class TWwdosApp;
 class TRect;
+class TWindow;
 struct BackroomsChannel;
 class TGenerativeLabView;
+
+// Shared with wwdos_app.cpp (buildWorkspaceJson) — promoted to external
+// linkage rather than duplicated (monolith split stage 6e).
+const char* windowTypeName(TWindow* w);
 
 // ── spawn / open ─────────────────────────────────────────────────────────
 void api_spawn_test(TWwdosApp&);
