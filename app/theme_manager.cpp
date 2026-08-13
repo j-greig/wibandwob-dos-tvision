@@ -184,6 +184,7 @@ static void monoRamp(CgaSkin& s, bool amber) {
 static std::vector<CgaSkin> buildBuiltinSkins() {
     std::vector<CgaSkin> v;
     v.push_back(mkSkin("dflat",    "\xe2\x96\x92", 9, 1, 7, 0,  1, 15));
+    v.back().chunkyFrames = true;   // the Figma mock look stays on its home skin
     v.push_back(mkSkin("turbo",    "\xe2\x96\x91", 7, 1, 1, 14, 7, 0));
     v.push_back(mkSkin("terra",    "",             0, 1, 1, 10, 2, 0));
     v.push_back(mkSkin("pipeline", "",             8, 0, 0, 9,  0, 13, 0x08, 0x09, 0x09));
@@ -365,6 +366,7 @@ bool parseSkinFile(const std::string& path, CgaSkin& out) {
         else if (k == "floor")  { s.floorFg = iv(1); s.floorBg = iv(2); }
         else if (k == "ok")     s.okFg = iv(1);
         else if (k == "warn")   s.warnFg = iv(1);
+        else if (k == "frames" && tok.size() > 1) s.chunkyFrames = (tok[1] == "chunky");
         else if (k.rfind("pal", 0) == 0 && tok.size() > 1 && tok[1][0] == '#') {
             int slot = atoi(k.c_str() + 3);
             if (slot >= 0 && slot < 16)
@@ -427,6 +429,7 @@ bool saveSkinFile(const CgaSkin& s, const std::string& path) {
     if (s.floorFg >= 0)  out << "floor "  << s.floorFg  << " " << s.floorBg << "\n";
     if (s.okFg >= 0)     out << "ok "     << s.okFg     << "\n";
     if (s.warnFg >= 0)   out << "warn "   << s.warnFg   << "\n";
+    if (s.chunkyFrames)  out << "frames chunky\n";
     for (int i = 0; i < 16; ++i)
         if (s.termPal[i] != CgaSkin::kPalDerive) {
             snprintf(hx, sizeof hx, "#%06X", s.termPal[i]);

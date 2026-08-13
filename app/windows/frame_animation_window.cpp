@@ -21,6 +21,15 @@ void TCGAFrame::draw()
         TFrame::draw();
         return;
     }
+    // Thin frames by default; chunky block borders only when the skin
+    // opts in (chunkyFrames / `frames chunky` in a .skin file).
+    {
+        const CgaSkin* sk = ThemeManager::skin();
+        if (!sk || !sk->chunkyFrames) {
+            TFrame::draw();
+            return;
+        }
+    }
 
     auto* win = (TWindow*)owner;
     const int w = size.x, h = size.y;

@@ -103,6 +103,9 @@ struct CgaSkin {
     int dimFg = -1, accentFg = -1;
     int floorFg = -1, floorBg = -1;
     int okFg = -1, warnFg = -1;
+    // Chunky solid-block frames (the Figma D-Flat look). Default false:
+    // thin classic single-line frames (Zilla prefers them, 2026-08-13).
+    bool chunkyFrames = false;
     // Terminal ANSI palette (OSC 4) per slot, 0xRRGGBB. kPalDerive = use
     // authentic CGA. A skin file remapping these swaps the whole monitor.
     static const uint32_t kPalDerive = 0xFF000000u;

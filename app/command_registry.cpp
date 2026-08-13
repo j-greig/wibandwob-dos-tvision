@@ -175,8 +175,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},
         {"open_gallery", "Open the ASCII Art Gallery browser with tabbed primer explorer", false},
-        {"gallery_list", "List available primer filenames (optional tab param: 1/#-C, 2/D-L, 3/M, 4/N-S, 5/T-Z, 6/Find with search param)", false},
-        {"open_primer", "Open a primer file by name in a viewer window (requires path param, e.g. 'wibwob-faces.txt')", true},
+        {"gallery_list", "List available primer filenames (optional tab param: tab param 1-5: 1/#-C 2/D-L 3/M 4/N-S 5/T-Z)", false},
+        {"open_primer", "Open a primer in a viewer window (path required; optional x/y/w/h, frameless, shadowless, title)", true},
         {"set_window_bg", "Set solid background colour of a viewer window (id + idx params, CGA palette 0-15: 1=blue 6=brown)", true},
         {"set_window_fg", "Set text colour of a viewer window (id + idx params, CGA palette 0-15: 10=phosphor green; -1=auto)", true},
         {"desktop_rulers", "Toggle MSDOS-style edge rulers on the desktop (on param: 1/0)", true},
@@ -300,7 +300,14 @@ std::string exec_registry_command(
     }
     if (name == "open_shader") {
         auto it = kv.find("shader");
-        api_spawn_shader(app, nullptr, it != kv.end() ? it->second : "");
+        TRect r; const TRect* pr = nullptr;
+        auto xi = kv.find("x"), yi = kv.find("y"), wi = kv.find("w"), hi = kv.find("h");
+        if (xi != kv.end() && yi != kv.end() && wi != kv.end() && hi != kv.end()) {
+            int x = std::atoi(xi->second.c_str()), y = std::atoi(yi->second.c_str());
+            int w = std::atoi(wi->second.c_str()), h = std::atoi(hi->second.c_str());
+            r = TRect(x, y, x + w, y + h); pr = &r;
+        }
+        api_spawn_shader(app, pr, it != kv.end() ? it->second : "");
         return "ok";
     }
     if (name == "open_disks") {
