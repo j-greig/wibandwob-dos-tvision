@@ -40,8 +40,7 @@ docs, and stray windows. Concretely:
   here. Never improvise the cast (a Zarvox/Whisper miscast AND a silent
   fallback each got a published piece deleted). Narration is POETRY, not
   commentary; one voice at a time, sparse; never name the voices in the
-  published copy (extradiegetic). Tweet copy: deadpan detail, not tidy
-  parallel cleverness.
+  published copy (extradiegetic).
 
 **Repo disambiguation** — two similarly-named repos, easy to conflate:
 - `wibandwob-dos-tvision` (THIS repo): C++ / Turbo Vision — the wwdos TUI app, control API :8089, vintage demos
