@@ -5,6 +5,7 @@
 #pragma once
 
 #include <string>
+#include <map>
 
 class TWwdosApp;
 class TRect;
@@ -33,6 +34,11 @@ void api_spawn_disks(TWwdosApp&, const TRect* bounds);
 // TUIFORGE.DSK: pathOrName "" = picker window; else resolve a render
 // (corpus-relative name or absolute path) and open it sized to its grid.
 void api_spawn_tuiforge(TWwdosApp&, const TRect* bounds, const std::string& pathOrName);
+
+// window_mosaic: spawn a pixel-art figure from a character map, one window
+// per non-'.' cell ("fat pixels"). One command replaces dozens of fragile
+// per-window MCP calls. Returns a result string ("ok spawned N windows").
+std::string api_window_mosaic(TWwdosApp&, const std::map<std::string, std::string>& kv);
 void api_spawn_shader(TWwdosApp&, const TRect* bounds, const std::string& shader);
 void api_spawn_verse(TWwdosApp&, const TRect* bounds);
 void api_spawn_mycelium(TWwdosApp&, const TRect* bounds);

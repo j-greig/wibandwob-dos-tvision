@@ -1,0 +1,13 @@
+{
+  "title": "SCRAMBLE, RECURSIVE (fat pixel mosaic no. 1)",
+  "medium": "114 windows as pixels, one command",
+  "date": "2026-08-13",
+  "replay": [
+    {"command": "close_all"},
+    {"command": "set_skin", "args": {"skin": "midnight"}},
+    {"command": "window_mosaic", "args": {
+      "map": "..#.........#..|.##.........##.|.#############.|.#o#########o#.|.#############.|.####*###*####.|..###########..|..###########..|.#############+|.#############+|..##..##..##...",
+      "x": "90", "y": "10", "cw": "8", "ch": "4"}}
+  ],
+  "note": "The score IS the artwork. First performance crashed the app after the curtain call (IPC died mid-burst, process followed); the image survived as a death mask + this score."
+}

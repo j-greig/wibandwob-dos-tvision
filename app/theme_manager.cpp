@@ -321,6 +321,18 @@ TColorAttr ThemeManager::attrIdx(int fg, int bg) {
     return TColorAttr(cgaColor(fg), cgaColor(bg));
 }
 
+bool ThemeManager::neutralContentLight() {
+    // Luminance-test the skin's Paper bg: light paper -> light ground.
+    TColorRGB c = cgaColor(bgIndex(SkinRole::Paper));
+    return (c.r * 299 + c.g * 587 + c.b * 114) / 1000 > 128;
+}
+
+TColorAttr ThemeManager::neutralContent() {
+    // Reading surfaces are neutral under EVERY skin: plain black-on-white
+    // or white-on-black, never the skin's tinted paper.
+    return neutralContentLight() ? attrIdx(0, 15) : attrIdx(15, 0);
+}
+
 // ── skin files: parse / load / save ──────────────────────────────────
 #include <dirent.h>
 #include <fstream>

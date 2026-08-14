@@ -1,0 +1,923 @@
+{
+  "version": 1,
+  "app": "test_pattern",
+  "timestamp": "2026-08-14T11:52:48",
+  "screen": { "width": 299, "height": 76 },
+  "globals": { "patternMode": "continuous", "skin": "midnight" },
+  "desktop": { "char": " ", "fg": 7, "bg": 1, "charUtf8": "·", "rgbFg": 5592405, "rgbBg": 0, "gallery": false },
+  "windows": [
+    {
+      "id": "w1",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 178, "y": 50, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w2",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 170, "y": 50, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w3",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 146, "y": 50, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w4",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 138, "y": 50, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w5",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 114, "y": 50, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w6",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 50, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w7",
+      "type": "torus",
+      "title": "",
+      "bounds": { "x": 202, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {}
+    },
+    {
+      "id": "w8",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 194, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w9",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 186, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w10",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 178, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w11",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 170, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w12",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 162, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w13",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 154, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w14",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 146, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w15",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 138, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w16",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 130, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w17",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 122, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w18",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 114, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w19",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w20",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 98, "y": 46, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w21",
+      "type": "torus",
+      "title": "",
+      "bounds": { "x": 202, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {}
+    },
+    {
+      "id": "w22",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 194, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w23",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 186, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w24",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 178, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w25",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 170, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w26",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 162, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w27",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 154, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w28",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 146, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w29",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 138, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w30",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 130, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w31",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 122, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w32",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 114, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w33",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w34",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 98, "y": 42, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w35",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 186, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w36",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 178, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w37",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 170, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w38",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 162, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w39",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 154, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w40",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 146, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w41",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 138, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w42",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 130, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w43",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 122, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w44",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 114, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w45",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 38, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w46",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 186, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w47",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 178, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w48",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 170, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w49",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 162, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w50",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 154, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w51",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 146, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w52",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 138, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w53",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 130, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w54",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 122, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w55",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 114, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w56",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 34, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w57",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 194, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w58",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 186, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w59",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 178, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w60",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 170, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w61",
+      "type": "blocks",
+      "title": "Animated Blocks",
+      "bounds": { "x": 162, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {}
+    },
+    {
+      "id": "w62",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 154, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w63",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 146, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w64",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 138, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w65",
+      "type": "blocks",
+      "title": "Animated Blocks",
+      "bounds": { "x": 130, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {}
+    },
+    {
+      "id": "w66",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 122, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w67",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 114, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w68",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w69",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 98, "y": 30, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w70",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 194, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w71",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 186, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w72",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 178, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w73",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 170, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w74",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 162, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w75",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 154, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w76",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 146, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w77",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 138, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w78",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 130, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w79",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 122, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w80",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 114, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w81",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w82",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 98, "y": 26, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w83",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 194, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w84",
+      "type": "cube",
+      "title": "",
+      "bounds": { "x": 186, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {}
+    },
+    {
+      "id": "w85",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 178, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w86",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 170, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w87",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 162, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w88",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 154, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w89",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 146, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w90",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 138, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w91",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 130, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w92",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 122, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w93",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 114, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w94",
+      "type": "cube",
+      "title": "",
+      "bounds": { "x": 106, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {}
+    },
+    {
+      "id": "w95",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 98, "y": 22, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w96",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 194, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w97",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 186, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w98",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 178, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w99",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 170, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w100",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 162, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w101",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 154, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w102",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 146, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w103",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 138, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w104",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 130, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w105",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 122, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w106",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 114, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w107",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w108",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 98, "y": 18, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w109",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 194, "y": 14, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w110",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 186, "y": 14, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w111",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 14, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w112",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 98, "y": 14, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w113",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 186, "y": 10, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    },
+    {
+      "id": "w114",
+      "type": "gradient",
+      "title": "",
+      "bounds": { "x": 106, "y": 10, "w": 8, "h": 4 },
+      "zoomed": false,
+      "props": {"gradientType": "horizontal"}
+    }
+  ],
+  "focusedIndex": 0
+}

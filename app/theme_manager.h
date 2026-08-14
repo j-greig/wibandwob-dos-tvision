@@ -83,6 +83,17 @@ public:
     static uint32_t rgbBgRole(SkinRole role);
     // The canonical cga(fg,bg) helper every view used to reinvent.
     static TColorAttr attrIdx(int fg, int bg);
+
+    // Neutral reading ground for long-form content (chat logs, browser
+    // pages): luminance-tests the skin's Paper bg and returns plain
+    // black-ink-on-white or white-ink-on-black. NEVER the skin's tinted
+    // paper — reading surfaces stay neutral under every skin (canon,
+    // Zilla 2026-08-13: "should be neutral / works with all colour skins").
+    static TColorAttr neutralContent();
+    // true = neutral ground is light (black ink on white); accent inks on
+    // the neutral ground should key off this (e.g. errors: dark red on
+    // light, bright red on dark).
+    static bool neutralContentLight();
 };
 
 #include <vector>

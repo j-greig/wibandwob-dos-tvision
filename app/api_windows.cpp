@@ -28,6 +28,7 @@
 #include <ctime>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <tuple>
 
 #include "api_windows.h"
 #include "api_paint.h"
@@ -576,6 +577,83 @@ void api_spawn_disks(TWwdosApp& app, const TRect* bounds) {
     TWindow* w = createDiskLibraryWindow(r);
     app.deskTop->insert(w);
     app.registerWindow(w);
+}
+
+std::string api_window_mosaic(TWwdosApp& app,
+                              const std::map<std::string, std::string>& kv) {
+    // map: rows separated by '|'. '.' or ' ' = empty cell; any other char
+    // spawns a window whose type comes from the pigment table below (or
+    // the single override in kv["type"]). Fat-pixel drawing surface:
+    //   {"command":"window_mosaic","args":{
+    //     "map":".XX....XX.|.X#X..X#X.|X###oo###X",
+    //     "x":"40","y":"8","cw":"8","ch":"4"}}
+    auto it = kv.find("map");
+    if (it == kv.end() || it->second.empty()) return "err missing map";
+    const std::string& map = it->second;
+
+    auto num = [&kv](const char* k, int dflt) {
+        auto i = kv.find(k);
+        return i != kv.end() ? std::atoi(i->second.c_str()) : dflt;
+    };
+    int x0 = num("x", 4), y0 = num("y", 2);
+    int cw = std::max(2, num("cw", 6));   // cell size in desktop cells
+    int ch = std::max(2, num("ch", 3));
+
+    // Pigment table: char -> (type, extra kv). Deliberately coarse — a
+    // mosaic reads by tone at a distance, the pigment gives it texture.
+    auto pigment = [](char c) -> std::pair<const char*, const char*> {
+        switch (c) {
+            case '#': return {"gradient", "horizontal"};
+            case '@': return {"gradient", "radial"};
+            case 'g': return {"gradient", "vertical"};
+            case 'd': return {"gradient", "diagonal"};
+            case '*': return {"blocks",   nullptr};
+            case 'o': return {"cube",     nullptr};
+            case '+': return {"torus",    nullptr};
+            case '%': return {"life",     nullptr};
+            case '~': return {"shader",   nullptr};
+            case 't': return {"test_pattern", nullptr};
+            default:  return {"gradient", "horizontal"};
+        }
+    };
+    auto typeOverride = kv.find("type");
+
+    // Parse rows and spawn. Hard cap keeps a fat-fingered map from
+    // spawning a thousand windows.
+    const int kMaxPixels = 160;
+    int spawned = 0, row = 0;
+    size_t pos = 0;
+    while (pos <= map.size()) {
+        size_t bar = map.find('|', pos);
+        std::string line = map.substr(pos, bar == std::string::npos
+                                               ? std::string::npos : bar - pos);
+        for (size_t col = 0; col < line.size(); ++col) {
+            char c = line[col];
+            if (c == '.' || c == ' ') continue;
+            if (spawned >= kMaxPixels)
+                return "ok spawned " + std::to_string(spawned) +
+                       " windows (map truncated at cap)";
+            const char* type; const char* grad;
+            std::tie(type, grad) = pigment(c);
+            if (typeOverride != kv.end() && !typeOverride->second.empty())
+                type = typeOverride->second.c_str();
+            const WindowTypeSpec* spec = find_window_type_by_name(type);
+            if (!spec || !spec->spawn) continue;
+            std::map<std::string, std::string> skv;
+            int px = x0 + (int)col * cw, py = y0 + row * ch;
+            skv["x"] = std::to_string(px);
+            skv["y"] = std::to_string(py);
+            skv["w"] = std::to_string(cw);
+            skv["h"] = std::to_string(ch);
+            if (grad) skv["gradient"] = grad;
+            spec->spawn(app, skv);
+            ++spawned;
+        }
+        if (bar == std::string::npos) break;
+        pos = bar + 1;
+        ++row;
+    }
+    return "ok spawned " + std::to_string(spawned) + " windows";
 }
 
 void api_spawn_tuiforge(TWwdosApp& app, const TRect* bounds,
