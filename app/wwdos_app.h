@@ -40,6 +40,11 @@ struct BackroomsChannel;
 /*---------------------------------------------------------*/
 /* TWwdosApp - Main application class               */
 /*---------------------------------------------------------*/
+// Screensaver default idle timeout, minutes. SINGLE SOURCE — the member
+// default below and api_screensaver's re-arm branch both drink from here
+// (Zilla 2026-08-14: 10 was firing mid-work, annoying; 0 disables).
+constexpr int kDefaultSaverTimeoutMins = 20;
+
 class TWwdosApp : public TApplication
 {
 public:
@@ -213,7 +218,7 @@ private:
     // ── screensaver: idle timeout → fullscreen shader, any input wakes ──
     TWindow* saverWin_ = nullptr;
     long long lastInputMs_ = 0;
-    int saverTimeoutMins_ = 10;      // 0 disables
+    int saverTimeoutMins_ = kDefaultSaverTimeoutMins;   // 0 disables
     static long long wwNowMs() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();

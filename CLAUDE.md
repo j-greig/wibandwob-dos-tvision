@@ -24,7 +24,11 @@ docs, and stray windows. Concretely:
 - New windows must spread, not stack: placement goes through `findSpreadRect()`;
   arrange art with `/gallery/arrange`, not uniform tiles.
 - Verify visually, always: screenshot after driving the TUI; `ok:true` ≠ pixels
-  changed. **Activate the Ghostty window first** — backgrounded terminals nap
+  changed. **This includes ART**: before calling any composition, reel, or
+  performance done, extract and LOOK at at least one representative frame —
+  command success says nothing about whether the art actually reads
+  (a 40x14 window once cropped an 80x25 cat into abstract mush; nobody
+  checked; Zilla had to show us our own artwork). **Activate the Ghostty window first** — backgrounded terminals nap
   and screencapture returns stale pixels (runbook § event-loop wake).
   **Test at large terminal size** (~2400x1360; relaunch script sizes it) —
   small canvases lie about layouts, density and composition.

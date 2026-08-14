@@ -234,19 +234,38 @@ void TTuiforgeView::changeBounds(const TRect& bounds) {
 
 void TTuiforgeView::draw() {
     TColorAttr voidAttr(TColorRGB(0x000000), TColorRGB(0x000000));
+    // FIT MODE: a window smaller than the grid must NEVER blind-crop the
+    // art into an unreadable corner (Zilla 2026-08-14: "so tightly cropped
+    // you can't see what it is"). Nearest-neighbour downsample instead —
+    // the WHOLE artwork always reads, fat-pixel style, at any window size.
+    // Windows >= grid keep exact 1:1 cells with scroll.
+    bool fit = grid_.ok() && (size.x < grid_.width || size.y < grid_.height());
     for (int y = 0; y < size.y; ++y) {
         TDrawBuffer b;
         b.moveChar(0, ' ', voidAttr, size.x);
-        int gy = y + scrollY_;
-        if (gy >= 0 && gy < grid_.height()) {
-            const auto& row = grid_.rows[(size_t)gy];
+        if (fit) {
+            int gy = (int)((long long)y * grid_.height() / size.y);
+            const auto& row = grid_.rows[(size_t)std::min(gy, grid_.height() - 1)];
             for (int x = 0; x < size.x; ++x) {
-                int gx = x + scrollX_;
-                if (gx < 0 || gx >= (int)row.size()) continue;
+                int gx = (int)((long long)x * grid_.width / size.x);
+                if (gx >= (int)row.size()) continue;
                 const TuiforgeCell& c = row[(size_t)gx];
                 TColorAttr a(TColorRGB(ThemeManager::cgaRgb(c.fg)),
                              TColorRGB(ThemeManager::cgaRgb(c.bg)));
                 b.moveStr((ushort)x, c.glyph, a);
+            }
+        } else {
+            int gy = y + scrollY_;
+            if (gy >= 0 && gy < grid_.height()) {
+                const auto& row = grid_.rows[(size_t)gy];
+                for (int x = 0; x < size.x; ++x) {
+                    int gx = x + scrollX_;
+                    if (gx < 0 || gx >= (int)row.size()) continue;
+                    const TuiforgeCell& c = row[(size_t)gx];
+                    TColorAttr a(TColorRGB(ThemeManager::cgaRgb(c.fg)),
+                                 TColorRGB(ThemeManager::cgaRgb(c.bg)));
+                    b.moveStr((ushort)x, c.glyph, a);
+                }
             }
         }
         writeLine(0, (short)y, (short)size.x, 1, b);

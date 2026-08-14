@@ -54,7 +54,7 @@ std::string api_screensaver(TWwdosApp& app, const std::string& action, int minut
         return "ok";
     }
     if (action == "on" || action.empty()) {
-        if (app.saverTimeoutMins() == 0) app.setSaverTimeoutMins(10);
+        if (app.saverTimeoutMins() == 0) app.setSaverTimeoutMins(kDefaultSaverTimeoutMins);
         app.noteInput();
         return "ok";
     }
