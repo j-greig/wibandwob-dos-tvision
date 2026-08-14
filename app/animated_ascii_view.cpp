@@ -5,6 +5,7 @@
 /*---------------------------------------------------------*/
 
 #include "animated_ascii_view.h"
+#include "theme_manager.h"
 
 #define Uses_TWindow
 #define Uses_TEvent
@@ -218,7 +219,7 @@ void TAnimatedAsciiView::draw() {
     // Clear the screen with light grey background
     TDrawBuffer buf;
     for (int y = 0; y < H; ++y) {
-        buf.moveChar(0, ' ', TColorAttr(0x70), W); // Light grey background (white on black reversed)
+        buf.moveChar(0, ' ', ThemeManager::attr(SkinRole::Paper), W); // Light grey background (white on black reversed)
         writeLine(0, y, W, 1, buf);
     }
     
@@ -229,7 +230,7 @@ void TAnimatedAsciiView::draw() {
         // Only draw if Y position is within bounds
         if (y >= 0 && y < H) {
             // Monochrome: black text on light grey background for all content
-            TColorAttr attr = TColorAttr(0x07); // Black on light grey (0x07 = light grey bg, black fg)
+            TColorAttr attr = ThemeManager::attr(SkinRole::Paper); // Black on light grey (0x07 = light grey bg, black fg)
             
             // Apply horizontal offset and draw the line
             int startX = animLine.offsetX;

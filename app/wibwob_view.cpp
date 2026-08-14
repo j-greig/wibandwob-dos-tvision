@@ -12,6 +12,7 @@
 #include "llm/base/auth_config.h"
 #include "llm/providers/claude_code_sdk_provider.h"  // For SDK streaming
 #include "llm/base/path_search.h"
+#include "theme_manager.h"
 
 #define Uses_TKeys
 #define Uses_TDrawBuffer
@@ -69,8 +70,13 @@ TWibWobMessageView::TWibWobMessageView(const TRect& bounds, TScrollBar* hScroll,
 
 void TWibWobMessageView::draw() {
     TDrawBuffer buf;
-    TColorAttr normalColor = getColor(1);
-    TColorAttr errorColor = getColor(4);
+    // Chat log is a READING surface: neutral ground under every skin
+    // (canon — the red paper-variant slab was horrid, Zilla 2026-08-13).
+    TColorAttr normalColor = ThemeManager::neutralContent();
+    // Errors: red ink on the SAME neutral ground.
+    TColorAttr errorColor = ThemeManager::neutralContentLight()
+                                ? ThemeManager::attrIdx(4, 15)
+                                : ThemeManager::attrIdx(12, 0);
 
     int totalLines = static_cast<int>(wrappedLines.size());
 
@@ -273,8 +279,10 @@ void TWibWobMessageView::rebuildWrappedLines() {
 
     std::string prevSender;
     for (const auto& msg : messages) {
-        // Add blank line between messages from different senders
-        if (!wrappedLines.empty() && !prevSender.empty() && msg.sender != prevSender) {
+        // Add blank line between messages from different senders.
+        // Streamed replies carry an empty sender — treat that as "different"
+        // too, otherwise the next User: line glues onto the reply's last line.
+        if (!wrappedLines.empty() && (msg.sender != prevSender || prevSender.empty())) {
             wrappedLines.push_back({"", "", false});
         }
         prevSender = msg.sender;
@@ -345,7 +353,13 @@ void TWibWobInputView::drawStatus() {
 
 void TWibWobInputView::drawInputLine() {
     TDrawBuffer buf;
-    TColorAttr inputColor = (state & sfFocused) ? getColor(6) : getColor(1);
+    // Input rides the same neutral ground as the log; focus brightens the
+    // ink via the skin's accent rather than a palette slot.
+    TColorAttr inputColor = (state & sfFocused)
+        ? (ThemeManager::neutralContentLight()
+               ? ThemeManager::attrIdx(1, 15)    // blue ink on white
+               : ThemeManager::attrIdx(11, 0))   // cyan ink on black
+        : ThemeManager::neutralContent();
 
     buf.moveChar(0, ' ', inputColor, size.x);
 

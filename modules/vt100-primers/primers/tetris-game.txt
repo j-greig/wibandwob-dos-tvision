@@ -1,0 +1,125 @@
+FPS=2
+---
+Your level: 6  *          *
+Full lines: 56 *          *
+               *          *    STATISTICS
+ SCORE  10131  *          *
+               *   ##     *   ###    -  15
+               *  ##      *   #
+  H E L P      *          *    ####  -  18
+               *          *
+ 7:Left        *          *   ###    -  22
+ 9:Right       *          *    #
+ 8:Rotate      *          *       ## -  26
+ 1:Draw Next   *          *      ##
+ 6:Speed Up    *          *   ##     -  17
+ 4:Drop        *          *    ##
+  SPACE:Drop   *          *       ## -  21
+               *          *       ##
+               *         #*   ###    -  24
+   Next:       *         #*     #
+               *   # ##  #*   ------------
+    ##         *  #####  #*     E    : 143
+    ##         ************
+
+               Play TETRIS !
+
+---
+Your level: 6  *          *
+Full lines: 56 *          *
+               *          *    STATISTICS
+ SCORE  10131  *          *
+               *          *   ###    -  15
+               *          *   #
+  H E L P      *          *    ####  -  18
+               *          *
+ 7:Left        *          *   ###    -  22
+ 9:Right       * ##       *    #
+ 8:Rotate      *##        *       ## -  26
+ 1:Draw Next   *          *      ##
+ 6:Speed Up    *          *   ##     -  17
+ 4:Drop        *          *    ##
+  SPACE:Drop   *          *       ## -  21
+               *          *       ##
+               *         #*   ###    -  24
+   Next:       *         #*     #
+               *   # ##  #*   ------------
+    ##         *  #####  #*     E    : 143
+    ##         ************
+
+               Play TETRIS !
+
+---
+Your level: 6  *          *
+Full lines: 56 *          *
+               *          *    STATISTICS
+ SCORE  10141  *     ##   *
+               *     ##   *   ###    -  15
+               *          *   #
+  H E L P      *          *    ####  -  18
+               *          *
+ 7:Left        *          *   ###    -  22
+ 9:Right       *          *    #
+ 8:Rotate      *          *       ## -  27
+ 1:Draw Next   *          *      ##
+ 6:Speed Up    *          *   ##     -  17
+ 4:Drop        *          *    ##
+  SPACE:Drop   *          *       ## -  21
+               *          *       ##
+               *         #*   ###    -  24
+   Next:       *         #*     #
+               * ### ##  #*   ------------
+    ##         *#######  #*     E    : 144
+     ##        ************
+
+               Play TETRIS !
+
+---
+Your level: 6  *          *
+Full lines: 56 *          *
+               *          *    STATISTICS
+ SCORE  10141  *          *
+               *          *   ###    -  15
+               *          *   #
+  H E L P      *       ## *    ####  -  18
+               *       ## *
+ 7:Left        *          *   ###    -  22
+ 9:Right       *          *    #
+ 8:Rotate      *          *       ## -  27
+ 1:Draw Next   *          *      ##
+ 6:Speed Up    *          *   ##     -  17
+ 4:Drop        *          *    ##
+  SPACE:Drop   *          *       ## -  21
+               *          *       ##
+               *         #*   ###    -  24
+   Next:       *         #*     #
+               * ### ##  #*   ------------
+    ##         *#######  #*     E    : 144
+     ##        ************
+
+               Play TETRIS !
+
+---
+Your level: 6  *          *
+Full lines: 57 *          *
+               *          *    STATISTICS     +---------------------------+
+ SCORE  10251  *          *                   |    H I G H   S C O R E    |
+               *          *   ###    -  15    +---------------------------+
+               *          *   #               |                           |
+  H E L P      *          *    ####  -  18    | Paul Butterworth          |
+               *          *                   |                           |
+ 7:Left        *          *   ###    -  22    | Software Designer         |
+ 9:Right       *          *    #              |                           |
+ 8:Rotate      *          *       ## -  27    | VeriFone (UK) Ltd         |
+ 1:Draw Next   *          *      ##           |                           |
+ 6:Speed Up    *          *   ##     -  17    | paul_b2@verifone.com      |
+ 4:Drop        *          *    ##             |                           |
+  SPACE:Drop   *          *       ## -  22    | 100114.230@compuserve.com |
+               *          *       ##          |                           |
+               *          *   ###    -  24    | pbutterworth@             |
+   Next:       *         #*     #             |       cix.compulink.co.uk |
+               *         #*   ------------    |                           |
+     #         *## # #####*     E    : 145    |   Please Play Again!      |
+    ###        ************                   |                           |
+                                              +---------------------------+
+               Play TETRIS !

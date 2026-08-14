@@ -1,7 +1,105 @@
+#define Uses_TDrawBuffer
+#define Uses_TColorAttr
+#include <tvision/tv.h>
+
 #include "frame_animation_window.h"
 
 #include "frame_file_player_view.h"
 #include "notitle_frame.h"
+#include "theme_manager.h"
+
+#include <cstring>
+
+// ── TCGAFrame::draw ──────────────────────────────────────────────────────────
+// Chunky MSDOS frame: solid '█' border in the window's accent colour (the
+// content view's fg colour if set, else white), title as " TITLE " in an
+// inverse tab, close [■] and zoom [↑] drawn tab-style at TFrame's standard
+// hotspot columns so mouse handling keeps working.
+void TCGAFrame::draw()
+{
+    if (!ThemeManager::cgaChrome()) {
+        TFrame::draw();
+        return;
+    }
+    // Thin frames by default; chunky block borders only when the skin
+    // opts in (chunkyFrames / `frames chunky` in a .skin file).
+    {
+        const CgaSkin* sk = ThemeManager::skin();
+        if (!sk || !sk->chunkyFrames) {
+            TFrame::draw();
+            return;
+        }
+    }
+
+    auto* win = (TWindow*)owner;
+    const int w = size.x, h = size.y;
+    if (w <= 0 || h <= 0) return;
+
+    // Accent colour: follow the content view's explicit fg, else the
+    // skin's frame role (active/passive by focus).
+    bool active = win && (win->state & sfActive);
+    TColorRGB accent = ThemeManager::cgaColor(ThemeManager::fgIndex(
+        active ? SkinRole::FrameActive : SkinRole::FramePassive));
+    if (win) {
+        TView* start = win->first();
+        TView* v = start;
+        if (v) do {
+            if (auto* fp = dynamic_cast<FrameFilePlayerView*>(v)) {
+                if (fp->foregroundIndex() >= 0)
+                    accent = ThemeManager::cgaColor(fp->foregroundIndex());
+                break;
+            }
+            if (auto* tv = dynamic_cast<TTextFileView*>(v)) {
+                if (tv->foregroundIndex() >= 0)
+                    accent = ThemeManager::cgaColor(tv->foregroundIndex());
+                break;
+            }
+            v = v->next;
+        } while (v != start);
+    }
+
+    // Mockup style: uniform bright frames regardless of focus.
+    TColorAttr frameAttr(accent, accent);              // solid block colour
+    TColorAttr tabAttr = ThemeManager::attr(SkinRole::Bar);  // skin bar colours
+
+    TDrawBuffer b;
+
+    // Top row: solid border + centred title tab + icon hotspots.
+    b.moveChar(0, ' ', frameAttr, w);
+    const char* t = win ? win->title : nullptr;
+    if (t && t[0]) {
+        char tab[128];
+        int tl = (int)std::strlen(t);
+        if (tl > w - 12) tl = w - 12 > 0 ? w - 12 : 0;
+        if (tl > 0 && tl + 2 < (int)sizeof(tab)) {
+            tab[0] = ' ';
+            std::memcpy(tab + 1, t, tl);
+            tab[tl + 1] = ' ';
+            tab[tl + 2] = '\0';
+            int tx = (w - (tl + 2)) / 2;
+            if (tx < 5) tx = 5;
+            b.moveStr(tx, tab, tabAttr);
+        }
+    }
+    // Hotspots (TFrame::handleEvent expects close at x=2, zoom at width-5).
+    b.moveStr(2, "[\xFE]", tabAttr);              // [■] close
+    if (w > 8) b.moveStr(w - 5, "[\x18]", tabAttr); // [↑] zoom
+    writeLine(0, 0, w, 1, b);
+
+    // Side columns.
+    for (int y = 1; y < h - 1; ++y) {
+        b.moveChar(0, ' ', frameAttr, w);
+        // interior transparent: only write 1-char edges
+        TDrawBuffer eb;
+        eb.moveChar(0, ' ', frameAttr, 1);
+        writeLine(0, y, 1, 1, eb);
+        writeLine(w - 1, y, 1, 1, eb);
+    }
+
+    // Bottom row: solid border.
+    b.moveChar(0, ' ', frameAttr, w);
+    writeLine(0, h - 1, w, 1, b);
+}
 
 // Keep these IDs aligned with wwdos_app.cpp context-menu commands.
 static const ushort cmCtxToggleShadow = 250;
@@ -52,7 +150,7 @@ void TFrameAnimationWindow::changeBounds(const TRect& bounds)
 
 TFrame* TFrameAnimationWindow::initFrame(TRect r)
 {
-    return new TNoTitleFrame(r);
+    return new TCGAFrame(r);  // chunky in CGA chrome; standard TFrame otherwise
 }
 
 TFrame* TFrameAnimationWindow::initFrameless(TRect r)

@@ -1,6 +1,7 @@
 #include "micropolis_tool_palette.h"
 
 #include "micropolis_ascii_view.h"
+#include "theme_manager.h"
 
 #include <algorithm>
 #include <sstream>
@@ -117,26 +118,26 @@ void TMicropolisToolPalette::draw() {
     const int resultTick = map_ ? map_->lastResultTick() : 0;
 
     int y = 0;
-    writeFilledLine(this, y++, TColorAttr(0x70), formatFundsDate(s, size.x));
+    writeFilledLine(this, y++, ThemeManager::attr(SkinRole::Bar), formatFundsDate(s, size.x));
 
     std::ostringstream pop;
     pop << "Pop: " << s.total_pop;
-    writeFilledLine(this, y++, TColorAttr(0x70), fitLine(pop.str(), size.x));
+    writeFilledLine(this, y++, ThemeManager::attr(SkinRole::Bar), fitLine(pop.str(), size.x));
 
-    writeFilledLine(this, y++, TColorAttr(0x07), std::string(std::max(0, size.x), '-'));
+    writeFilledLine(this, y++, ThemeManager::attr(SkinRole::Paper), std::string(std::max(0, size.x), '-'));
 
     for (const PaletteToolRow &row : kToolRows) {
         const bool isActive = row.toolId == activeTool;
-        const TColorAttr attr = isActive ? TColorAttr(0x1F) : TColorAttr(0x03);
+        const TColorAttr attr = isActive ? ThemeManager::attr(SkinRole::Dialog) : ThemeManager::attr(SkinRole::Paper);
         writeFilledLine(this, y++, attr, formatToolRow(row, isActive, size.x));
     }
 
-    writeFilledLine(this, y++, TColorAttr(0x07), std::string(std::max(0, size.x), '-'));
+    writeFilledLine(this, y++, ThemeManager::attr(SkinRole::Paper), std::string(std::max(0, size.x), '-'));
 
     if (resultTick > 0 && !result.empty()) {
-        writeFilledLine(this, y++, TColorAttr(0x70), fitLine(std::string(">> ") + result, size.x));
+        writeFilledLine(this, y++, ThemeManager::attr(SkinRole::Bar), fitLine(std::string(">> ") + result, size.x));
     } else {
-        writeFilledLine(this, y++, TColorAttr(0x70), std::string());
+        writeFilledLine(this, y++, ThemeManager::attr(SkinRole::Bar), std::string());
     }
 
     const std::string footerLines[] = {
@@ -149,11 +150,11 @@ void TMicropolisToolPalette::draw() {
         if (y >= size.y) {
             break;
         }
-        writeFilledLine(this, y++, TColorAttr(0x08), fitLine(line, size.x));
+        writeFilledLine(this, y++, ThemeManager::attr(SkinRole::Dim), fitLine(line, size.x));
     }
 
     for (; y < size.y; ++y) {
-        writeFilledLine(this, y, TColorAttr(0x07), std::string());
+        writeFilledLine(this, y, ThemeManager::attr(SkinRole::Paper), std::string());
     }
 }
 

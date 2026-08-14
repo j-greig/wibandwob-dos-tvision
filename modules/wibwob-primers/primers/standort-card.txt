@@ -1,0 +1,9 @@
+Standort 1
+ [34mKuwait[0m
+ [34mHäfen:[0m
+ [36mBasra.Abadan.[0m
+ [34m──────────[0m
+ [34mQuellen:[0m [93m0[0m
+ [34mBohrstellen:[0m [93m1[0m
+ [34mFMenge:[0m [93m0[0m
+ [34mLager:[0m [31m0[0m

@@ -15,6 +15,7 @@
 #include <tvision/tv.h>
 
 #include "ascii_gallery_view.h"
+#include "theme_manager.h"
 #include <algorithm>
 #include <cstring>
 #include <dirent.h>
@@ -59,11 +60,11 @@ bool TGalleryTabBar::matchesTab(int tabIndex, char firstChar)
 void TGalleryTabBar::draw()
 {
     TDrawBuffer b;
-    TColorAttr normalAttr = {TColorRGB(0xAA, 0xAA, 0xAA), TColorRGB(0x20, 0x20, 0x20)};
-    TColorAttr selectedAttr = {TColorRGB(0xFF, 0xFF, 0xFF), TColorRGB(0x00, 0x70, 0x70)};
-    TColorAttr numAttr = {TColorRGB(0xFF, 0xFF, 0x00), TColorRGB(0x20, 0x20, 0x20)};
-    TColorAttr numSelAttr = {TColorRGB(0xFF, 0xFF, 0x00), TColorRGB(0x00, 0x70, 0x70)};
-    TColorAttr findAttr = {TColorRGB(0xFF, 0xCC, 0x00), TColorRGB(0x00, 0x70, 0x70)};
+    TColorAttr normalAttr = ThemeManager::attr(SkinRole::Bar);
+    TColorAttr selectedAttr = ThemeManager::attr(SkinRole::BarSel);
+    TColorAttr numAttr = ThemeManager::attr(SkinRole::Bar);
+    TColorAttr numSelAttr = ThemeManager::attr(SkinRole::BarSel);
+    TColorAttr findAttr = ThemeManager::attr(SkinRole::BarSel);
 
     b.moveChar(0, ' ', normalAttr, size.x);
 
@@ -161,8 +162,8 @@ void TGalleryFileList::ensureFocusVisible()
 
 void TGalleryFileList::draw()
 {
-    TColorAttr normalAttr = {TColorRGB(0xCC, 0xCC, 0xCC), TColorRGB(0x10, 0x10, 0x10)};
-    TColorAttr focusedAttr = {TColorRGB(0xFF, 0xFF, 0xFF), TColorRGB(0x00, 0x50, 0x80)};
+    TColorAttr normalAttr = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr focusedAttr = ThemeManager::attr(SkinRole::Dialog);
 
     for (int y = 0; y < size.y; y++) {
         TDrawBuffer b;
@@ -338,8 +339,8 @@ void TGalleryPreview::loadFile(const std::string& path)
 
 void TGalleryPreview::draw()
 {
-    TColorAttr textAttr = {TColorRGB(0xDD, 0xDD, 0xDD), TColorRGB(0x00, 0x00, 0x00)};
-    TColorAttr emptyAttr = {TColorRGB(0x40, 0x40, 0x40), TColorRGB(0x00, 0x00, 0x00)};
+    TColorAttr textAttr = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr emptyAttr = ThemeManager::attr(SkinRole::Dim);
 
     for (int y = 0; y < size.y; y++) {
         TDrawBuffer b;
@@ -432,10 +433,10 @@ void TGalleryPreview::handleEvent(TEvent& event)
 //  TGalleryWindow
 // ═══════════════════════════════════════════════════
 
-TGalleryWindow::TGalleryWindow(const TRect& bounds, const std::string& aPrimerDir)
+TGalleryWindow::TGalleryWindow(const TRect& bounds, const std::vector<std::string>& aPrimerDirs)
     : TWindowInit(&TWindow::initFrame),
       TWindow(bounds, "ASCII Gallery", wnNoNumber),
-      primerDir(aPrimerDir),
+      primerDirs(aPrimerDirs),
       searchInput(nullptr)
 {
     options |= ofTileable;
@@ -526,21 +527,36 @@ void TGalleryWindow::scanFiles()
     allFiles.clear();
     allPaths.clear();
 
-    DIR* dir = opendir(primerDir.c_str());
-    if (!dir) return;
+    auto displayNameFor = [&](const std::string& dir, const std::string& name) {
+        for (const std::string& existing : allFiles) {
+            if (existing == name) {
+                size_t slash = dir.rfind("/primers");
+                std::string parent = (slash == std::string::npos) ? dir : dir.substr(0, slash);
+                slash = parent.rfind('/');
+                std::string module = (slash == std::string::npos) ? parent : parent.substr(slash + 1);
+                return module + "/" + name;
+            }
+        }
+        return name;
+    };
 
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != nullptr) {
-        if (entry->d_name[0] == '.') continue;
-        std::string name = entry->d_name;
-        if (name.size() < 5) continue;
-        std::string ext = name.substr(name.size() - 4);
-        if (ext != ".txt") continue;
+    for (const std::string& primerDir : primerDirs) {
+        DIR* dir = opendir(primerDir.c_str());
+        if (!dir) continue;
 
-        allFiles.push_back(name);
-        allPaths.push_back(primerDir + "/" + name);
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (entry->d_name[0] == '.') continue;
+            std::string name = entry->d_name;
+            if (name.size() < 5) continue;
+            std::string ext = name.substr(name.size() - 4);
+            if (ext != ".txt") continue;
+
+            allFiles.push_back(displayNameFor(primerDir, name));
+            allPaths.push_back(primerDir + "/" + name);
+        }
+        closedir(dir);
     }
-    closedir(dir);
 
     // Sort alphabetically via index array
     std::vector<size_t> indices(allFiles.size());
@@ -807,8 +823,9 @@ void TGalleryWindow::handleEvent(TEvent& event)
 //  Factory
 // ═══════════════════════════════════════════════════
 
-static std::string galleryFindPrimerDir()
+static std::vector<std::string> galleryFindPrimerDirs()
 {
+    std::vector<std::string> dirs;
     const char* moduleDirs[] = { "modules-private", "modules" };
     for (const char* base : moduleDirs) {
         DIR* dir = opendir(base);
@@ -819,20 +836,24 @@ static std::string galleryFindPrimerDir()
             std::string candidate = std::string(base) + "/" + entry->d_name + "/primers";
             struct stat st;
             if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
-                closedir(dir);
-                return candidate;
+                dirs.push_back(candidate);
             }
         }
         closedir(dir);
     }
+    if (!dirs.empty())
+        return dirs;
+
     struct stat st;
     if (stat("app/primers", &st) == 0 && S_ISDIR(st.st_mode))
-        return "app/primers";
-    return "primers";
+        dirs.push_back("app/primers");
+    else
+        dirs.push_back("primers");
+    return dirs;
 }
 
 TWindow* createAsciiGalleryWindow(const TRect& bounds)
 {
-    std::string primerDir = galleryFindPrimerDir();
-    return new TGalleryWindow(bounds, primerDir);
+    std::vector<std::string> primerDirs = galleryFindPrimerDirs();
+    return new TGalleryWindow(bounds, primerDirs);
 }

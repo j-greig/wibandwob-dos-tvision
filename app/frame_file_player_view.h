@@ -43,7 +43,8 @@ enum class TBackgroundType {
 
 struct TBackgroundConfig {
     TBackgroundType type = TBackgroundType::Solid;
-    int solidColorIndex = 0;        // Index into ANSI color palette for solid backgrounds
+    int solidColorIndex = 0;        // Index into CGA/ANSI palette for solid backgrounds
+    int fgColorIndex = -1;          // Text colour index (-1 = auto white/dark by bg brightness)
     TColorRGB gradientStart = TColorRGB(0xFF, 0x00, 0x00);  // Red default
     TColorRGB gradientEnd = TColorRGB(0x00, 0x00, 0xFF);    // Blue default
 };
@@ -66,6 +67,8 @@ public:
     // Background support (enhanced with gradients and transparency)
     void setBackgroundIndex(int idx);
     int backgroundIndex() const { return bgConfig.solidColorIndex; }
+    void setForegroundIndex(int idx);
+    int foregroundIndex() const { return bgConfig.fgColorIndex; }
     void setBackgroundConfig(const TBackgroundConfig& config);
     const TBackgroundConfig& getBackgroundConfig() const { return bgConfig; }
     bool openBackgroundDialog();
@@ -114,6 +117,8 @@ public:
     // Background support (enhanced with gradients and transparency)
     void setBackgroundIndex(int idx);
     int backgroundIndex() const { return bgConfig.solidColorIndex; }
+    void setForegroundIndex(int idx);
+    int foregroundIndex() const { return bgConfig.fgColorIndex; }
     void setBackgroundConfig(const TBackgroundConfig& config);
     const TBackgroundConfig& getBackgroundConfig() const { return bgConfig; }
     bool openBackgroundDialog();

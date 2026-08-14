@@ -37,6 +37,9 @@ public:
     TWibWobBackground(const TRect& bounds, char aPattern, uchar aFg, uchar aBg) noexcept;
 
     void setTexture(char ch);
+    // UTF-8 aware: multi-byte glyphs (▒ ░ etc) render correctly; a single
+    // ASCII byte behaves exactly like setTexture(char).
+    void setTextureUtf8(const std::string& glyph);
     void setColor(uchar fg, uchar bg);
     void setColorRgb(uint32_t fg, uint32_t bg);
     void setPreset(const std::string& name);
@@ -45,17 +48,25 @@ public:
     virtual void draw() override;
     virtual void handleEvent(TEvent& event) override;
 
+    // MSDOS-style edge rulers: repeating digits along the top row (magenta on
+    // black) and the left column (red on teal), as per the CGA mockups.
+    void setRulers(bool on) { rulers_ = on; drawView(); }
+    bool rulers() const { return rulers_; }
+
     uchar getFg() const { return fgColor; }
     uchar getBg() const { return bgColor; }
     bool  isRgb() const { return useRgb_; }
     uint32_t getRgbFg() const { return rgbFg_; }
     uint32_t getRgbBg() const { return rgbBg_; }
     char  getPattern() const { return pattern; }
+    const std::string& getPatternUtf8() const { return patternUtf8_; }
 
 private:
     uchar fgColor;
     uchar bgColor;
+    std::string patternUtf8_;  // multi-byte fill glyph; wins over `pattern` when set
     bool useRgb_ = false;
+    bool rulers_ = false;
     uint32_t rgbFg_ = 0;
     uint32_t rgbBg_ = 0;
 };

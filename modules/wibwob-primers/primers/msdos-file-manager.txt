@@ -1,0 +1,59 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ Left        File        Command       Options       Right                     ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║╔═══════════════════════════════╗ ┌─────────────────────────────────────────┐║
+║║ ← → ~/xte                     ║ │ → [^]→│ ← → ~/xterm.dev/.git        [^]→│║
+║║ .n                  File      ║ │ .n       Name             Size  Modify t│║
+║║ /..                 UP-DIR    ║ │ /..                       UP-DIR Mar 16 │║
+║║ *build-aux                    ║ │ /branches                 4096  Nov 16 │║
+║║ *downstream                   ║ │ /hooks                    4096  Nov 16 │║
+║║ *downstream                   ║ │ /info                     4096  Nov 16 │║
+║║ *downstream                   ║ │ /logs                     4096  Nov 16 │║
+║║ *downstream                   ║ │ /objects                  4096  Mar 16 │║
+║║ *downstream                   ║ │ /refs                     4096  Nov 16 │║
+║║ *downstream                   ║ │ COMMIT_EDITMSG            37    Mar 16 │║
+║║ *downstream                   ║ │ COMMIT_EDITMSG~           485   Dec 22 │║
+║║ *downstream                   ║ │ FETCH_HEAD                423   Dec 22 │║
+║║ *downstream                   ║ │ HEAD                      24    Mar 16 │║
+║║ *downstream                   ║ │ ORIG_HEAD                 41    Mar 7  │║
+║║ *downstream                   ║ │ config                    545   Mar 16 │║
+║║ *downstream                   ║ │ description               73    Nov 16 │║
+║║ *downstream                   ║ │ index                     28674 Mar 16 │║
+║║ *downstream                   ║ │ packed-refs               112   Mar 7  │║
+║║ ┌─────────────────────────────┐ ║ │                                         │║
+║║ │ View                    F3  │ ║ │                                         │║
+║║ │ View file...                │ ║ │                                         │║
+║║ │ Filtered view        M-!    │ ║ │                                         │║
+║║ │ Edit                    F4  │ ║ │                                         │║
+║║ │ Copy                    F5  │ ║ │                                         │║
+║║ │ Chmod                C-x c  │ ║ │                                         │║
+║║ │ Link                 C-x l  │ ║ │                                         │║
+║║ │ Symlink              C-x s  │ ║ │                                         │║
+║║ │ Relative symlink     C-x v  │ ║ │                                         │║
+║║ │ Edit symlink       C-x C-s  │ ║ │                                         │║
+║║ │ Chown                C-x o  │ ║ │                                         │║
+║║ │ Advanced chown              │ ║ │                                         │║
+║║ │ Chattr               C-x e  │ ║ │                                         │║
+║║ │ Rename/Move             F6  │ ║ │                                         │║
+║║ │ Mkdir                   F7  │ ║ │                                         │║
+║║ │ Delete                  F8  │ ║ │                                         │║
+║║ │ Quick cd             M-c    │ ║ │                                         │║
+║║ │ ─────────────────────────── │ ║ │                                         │║
+║║ │ Select group            +   │ ║ │                                         │║
+║║ │ Unselect group          -   │ ║ │                                         │║
+║║ │ Invert selection        *   │ ║ │                                         │║
+║║ │ ─────────────────────────── │ ║ │                                         │║
+║║ │ Exit                   F10  │ ║ │                                         │║
+║║ └─────────────────────────────┘ ║ │                                         │║
+║╚═══════════════════════════════╝ └─────────────────────────────────────────┘║
+║UP--DIR                            │ UP--DIR                                   ║
+║_________________________________  │ 848G / 915G (92%)                      ║
+║Hint: % macros work even on the command line.                                  ║
+║10:42 16/03 tools $                                                      [^]   ║
+║                                                                              ║
+║1Help  2Menu  3View  4Edit  5Copy  6RenMov 7Mkdir  8Delete  9PullDn 10Quit   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+The terminal-based file manager with contextual menus and keyboard shortcuts.
+Dual-pane navigation with rich file operations and status information.
+The power of the command line wrapped in an intuitive visual interface.

@@ -31,6 +31,14 @@ set(TV_COMMON_SOURCES
 # wwdos app (primary playground)
 add_executable(wwdos
     wwdos_app.cpp
+    api_desktop.cpp
+    api_paint.cpp
+    api_figlet.cpp
+    api_chat.cpp
+    api_windows.cpp
+    workspace_manager_dialog.cpp
+    workspace_io.cpp
+    app_chrome.cpp
     ${TV_COMMON_SOURCES}
     ascii_grid_view.cpp
     ascii_image_view.cpp
@@ -45,6 +53,9 @@ add_executable(wwdos
     rogue_view.cpp
     deep_signal_view.cpp
     app_launcher_view.cpp
+    disk_library_view.cpp
+    tuiforge_view.cpp
+    tweet_shader_view.cpp
     ascii_gallery_view.cpp
     generative_verse_view.cpp
     generative_orbit_view.cpp

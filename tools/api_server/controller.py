@@ -164,6 +164,8 @@ class Controller:
                     # Update theme state from C++
                     self._state.theme_mode = state_data.get("theme_mode", "light")
                     self._state.theme_variant = state_data.get("theme_variant", "monochrome")
+                    self._state.cga_chrome = state_data.get("cga_chrome", False)
+                    self._state.skin = state_data.get("skin", "")
 
                     # Update windows list with real IDs from C++
                     new_windows = []
@@ -245,13 +247,17 @@ class Controller:
                     "h": str(rect.h)
                 })
             
-            # Forward type-specific props that C++ spawn functions expect.
-            if wtype == WindowType.gradient:
-                cmd_params["gradient"] = str(props.get("gradient", "horizontal"))
-            elif wtype in (WindowType.frame_player, WindowType.text_view):
-                path = str(props.get("path", ""))
-                if path:
-                    cmd_params["path"] = path
+            # Forward ALL scalar props generically — the C++ spawn functions
+            # read their args from the same kv map, and a per-type whitelist
+            # here silently strips new types' props (tuiforge path, shader
+            # name, …). Reserved transport keys are never overwritten.
+            reserved = {"type", "title", "x", "y", "w", "h", "name", "actor"}
+            for k, v in (props or {}).items():
+                if k in reserved or isinstance(v, (dict, list)):
+                    continue
+                cmd_params[k] = str(v)
+            if wtype == WindowType.gradient and "gradient" not in cmd_params:
+                cmd_params["gradient"] = "horizontal"
             # Always send create_window — C++ handles all registered types
             # via find_window_type_by_name() in api_ipc.cpp.
             send_cmd("create_window", cmd_params)

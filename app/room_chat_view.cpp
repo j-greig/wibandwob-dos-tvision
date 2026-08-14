@@ -5,6 +5,7 @@
 /*---------------------------------------------------------*/
 
 #include "room_chat_view.h"
+#include "theme_manager.h"
 
 #define Uses_TKeys
 #define Uses_TDrawBuffer
@@ -66,15 +67,15 @@ static TColorAttr senderColor(const std::string& sender) {
 }
 
 static TColorAttr textColor() {
-    return TColorAttr(TColorRGB(200, 200, 210), TColorRGB(20, 20, 30));
+    return ThemeManager::attr(SkinRole::Paper);
 }
 
 static TColorAttr dimColor() {
-    return TColorAttr(TColorRGB(100, 100, 120), TColorRGB(20, 20, 30));
+    return ThemeManager::attr(SkinRole::Dim);
 }
 
 static TColorAttr inputBgColor() {
-    return TColorAttr(TColorRGB(220, 220, 230), TColorRGB(30, 30, 45));
+    return ThemeManager::attr(SkinRole::Dialog);
 }
 
 static std::string nowHHMM() {
@@ -257,7 +258,7 @@ public:
     virtual void draw() override {
         TDrawBuffer b;
         TColorAttr attr = inputBgColor();
-        TColorAttr cursorAttr = TColorAttr(TColorRGB(25, 25, 35), TColorRGB(220, 220, 230));
+        TColorAttr cursorAttr = ThemeManager::attr(SkinRole::Accent);
         b.moveChar(0, ' ', attr, size.x);
         std::string prompt = "> " + buf;
         if ((int)prompt.size() > size.x - 1) prompt = prompt.substr(0, size.x - 1);

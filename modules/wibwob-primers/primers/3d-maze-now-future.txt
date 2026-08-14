@@ -1,0 +1,50 @@
+# This is a 3D ascii art scene showing a 3D space which disappears into the distance down a corridor. Use it as inspiration for other FPS-type 3D views inside cube-like spaces. The words may be omitted or changed. Be careful when inserting objects into the 3D space that they are not wider than the ascii-grid.
+
+\                           /
+ \                         /
+  \                       /
+   ]                     [    ,'|
+   ]                     [   /  |
+   ]___               ___[ ,'   |
+   ]  ]\             /[  [ |:   |
+   ]  ] \           / [  [ |:   |
+   ]  ]  ]         [  [  [ |:   |
+   ]  ]  ]__     __[  [  [ |:   |
+   ]  ]  ] ]\ _ /[ [  [  [ |:   |
+   ]  ]  ] ] |_| [ [  [  [ :===='
+   ]  ]  ]_]/   \[_[  [  [
+   ]  ]  ]         [  [  [
+   ]  ] /    THIS   \ [  [
+   ]__]/    IS THE   \[__[
+   ]        FUTURE       [
+   ]                     [
+   ]                     [
+  /                       \
+ /      THIS IS NOW        \
+/                           \
+
+
+## Wider version
+
+\                                    /
+ \                                  /
+  \                                /
+   ]                              [    ,'|
+   ]                              [   /  |
+   ]___                        ___[ ,'   |
+   ]  ]\                      /[  [ |:   |
+   ]  ] \                    / [  [ |:   |
+   ]  ]  ]                  [  [  [ |:   |
+   ]  ]  ]__              __[  [  [ |:   |
+   ]  ]  ] ]\ __________ /[ [  [  [ |:   |
+   ]  ]  ] ] |___|_|____| [ [  [  [ :===='
+   ]  ]  ]_]/            \[_[  [  [
+   ]  ]  ]                  [  [  [
+   ]  ] /                    \ [  [
+   ]__]/                      \[__[
+   ]                              [
+   ]                              [
+   ]                              [
+  /                                \
+ /                                  \
+/                                    \

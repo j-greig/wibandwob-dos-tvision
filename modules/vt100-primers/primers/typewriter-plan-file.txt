@@ -1,0 +1,301 @@
+FPS=4
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   |                                            │o│
+                      ┌
+
+
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as m|                                 │o│
+                                 o┐
+                               (±±±)
+
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as p|                     │o│
+                                            ┌o┐
+                                           (±±±)
+
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as possible wh|           │o│
+                                                      ┌o┐
+                                                     (±±±)
+
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as possible while         │o│
+         │o│          getti|                                       │o│
+                          ┌o┐
+                         (±±±)
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as possible while         │o│
+         │o│          getting a PhD.                               │o│
+
+
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as possible while         │o│
+         │o│          getting a PhD.                               │o│
+         │o│                                                       │o│
+         │o│  |                                                    │o│
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as possible while         │o│
+         │o│          getting a PhD.                               │o│
+         │o│                                                       │o│
+         │o│  Home:   177|                                         │o│
+                         ┌o┐
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as possible while         │o│
+         │o│          getting a PhD.                               │o│
+         │o│                                                       │o│
+         │o│  Home:   1775 Arthur St|                              │o│
+                                    ┌o┐
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as possible while         │o│
+         │o│          getting a PhD.                               │o│
+         │o│                                                       │o│
+         │o│  Home:   1775 Arthur St.                              │o│
+         │o│          Euge|                                        │o│
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as possible while         │o│
+         │o│          getting a PhD.                               │o│
+         │o│                                                       │o│
+         │o│  Home:   1775 Arthur St.                              │o│
+         │o│          Eugene, Oregon|                              │o│
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         ┌⎺┬⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺┬⎺┐
+         │o│                                                       │o│
+         │o│                                                       │o│
+         │o│  Plan:   Having as much fun as possible while         │o│
+         │o│          getting a PhD.                               │o│
+         │o│                                                       │o│
+         │o│  Home:   1775 Arthur St.                              │o│
+         │o│          Eugene, Oregon, 97402                        │o│

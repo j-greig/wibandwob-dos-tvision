@@ -5,6 +5,9 @@
 #define Uses_TColorAttr
 #include <tvision/tv.h>
 
+// Semantic skin roles (defined below CgaSkin; forward-declared for the API)
+enum class SkinRole;
+
 // Theme modes: light or dark (auto mode deferred to future PR)
 enum class ThemeMode {
     Light,
@@ -47,4 +50,119 @@ public:
 
     // Convert variant to string
     static std::string variantToString(ThemeVariant variant);
+
+    // Chrome variant flag: true = classic DOS/CGA chrome (frames, menus,
+    // chunky title-tab frames, solid black shadows). Single source of truth —
+    // getPalette(), TCGAFrame and the shadow logic all consult this.
+    static bool& cgaChrome();
+
+    // Authentic IBM CGA 16-colour palette (single source; index 6 = brown).
+    static const TColorRGB* cgaPalette();
+    static TColorRGB cgaColor(int idx);
+
+    // CGA colour as packed 0xRRGGBB (for TWibWobBackground::setColorRgb).
+    static uint32_t cgaRgb(int idx);
+
+    // Active skin name ("" = none). Set by api_set_skin, reported in /state.
+    static std::string& activeSkin();
+
+    // ── SkinRole API (enum defined below struct CgaSkin) ──
+    // Active skin row, or nullptr when none/chrome off.
+    static const struct CgaSkin* skin();
+    // attr(): safe everywhere — house default when unskinned.
+    static TColorAttr attr(SkinRole role);
+    // tryAttr(): true only when a skin is active — for mapColor overrides
+    // that must fall through to TVision's own mapping.
+    static bool tryAttr(SkinRole role, TColorAttr& out);
+    // Packed BIOS byte (bg<<4|fg) for palette-string patching.
+    static unsigned char bios(SkinRole role);
+    // Raw CGA indices / RGB for index- and RGB-taking APIs.
+    static int fgIndex(SkinRole role);
+    static int bgIndex(SkinRole role);
+    static uint32_t rgbFgRole(SkinRole role);
+    static uint32_t rgbBgRole(SkinRole role);
+    // The canonical cga(fg,bg) helper every view used to reinvent.
+    static TColorAttr attrIdx(int fg, int bg);
+
+    // Neutral reading ground for long-form content (chat logs, browser
+    // pages): luminance-tests the skin's Paper bg and returns plain
+    // black-ink-on-white or white-ink-on-black. NEVER the skin's tinted
+    // paper — reading surfaces stay neutral under every skin (canon,
+    // Zilla 2026-08-13: "should be neutral / works with all colour skins").
+    static TColorAttr neutralContent();
+    // true = neutral ground is light (black ink on white); accent inks on
+    // the neutral ground should key off this (e.g. errors: dark red on
+    // light, bright red on dark).
+    static bool neutralContentLight();
 };
+
+#include <vector>
+
+// A named CGA skin — built-in (kSkins seeds) or loaded from skins/*.skin
+// files at runtime (user skins shadow built-ins by name). Colour fields are
+// CGA indices 0-15; -1 = derive (docs/development/theming-roles.md).
+struct CgaSkin {
+    std::string name;
+    std::string texture;   // desktop fill glyph (UTF-8), "" = solid
+    int deskFg = 7, deskBg = 0;      // desktop dither fg/bg
+    int paperBg = 7, paperFg = 0;    // default viewer-window colours ("paper")
+    int dialogBg = 1, dialogFg = 15; // accent window colours ("dialog")
+    // Chrome (window frames / menus) as BIOS attr bytes (bg<<4|fg), -1 =
+    // keep the classic cpAppColor chrome. Dark skins NEED these.
+    int framePassive = -1, frameActive = -1, menuAttr = -1;
+    // Optional role inks, -1 = derive (see resolver)
+    int dimFg = -1, accentFg = -1;
+    int floorFg = -1, floorBg = -1;
+    int okFg = -1, warnFg = -1;
+    // Paper VARIANTS beyond the primary paper (canon rule 1: 3-4 window
+    // colour identities per scheme — see theming-roles.md §canon).
+    // Pairs of (bg, fg); set_skin distributes round-robin.
+    std::vector<std::pair<int,int>> paperVariants;
+    // Chunky solid-block frames (the Figma D-Flat look). Default false:
+    // thin classic single-line frames (Zilla prefers them, 2026-08-13).
+    bool chunkyFrames = false;
+    // Terminal ANSI palette (OSC 4) per slot, 0xRRGGBB. kPalDerive = use
+    // authentic CGA. A skin file remapping these swaps the whole monitor.
+    static const uint32_t kPalDerive = 0xFF000000u;
+    uint32_t termPal[16] = { kPalDerive, kPalDerive, kPalDerive, kPalDerive,
+                             kPalDerive, kPalDerive, kPalDerive, kPalDerive,
+                             kPalDerive, kPalDerive, kPalDerive, kPalDerive,
+                             kPalDerive, kPalDerive, kPalDerive, kPalDerive };
+    bool builtin = false;
+};
+
+// ── Semantic skin roles ──────────────────────────────────────────────
+// One vocabulary, one resolver (docs/development/theming-roles.md).
+// Views ask for a role; the resolver derives colours from the active
+// CgaSkin row, with documented fallbacks when a field is -1 or no skin
+// is active. Rule of thumb: UI affordance = role; depicted thing = content.
+enum class SkinRole {
+    Desk,          // desktop dither cell
+    Paper,         // default viewer window body
+    Dialog,        // accent window body
+    Bar,           // menu/status bars, normal
+    BarSel,        // menu/status bars, selected
+    FramePassive,  // unfocused window border
+    FrameActive,   // focused window border
+    Dim,           // hint/secondary text on Paper
+    Accent,        // highlight ink on Paper
+    Floor,         // chromeless room interior (library, gallery)
+    FloorInk,      // primary ink on Floor
+    Ok,            // healthy indicator
+    Warn,          // warning indicator
+    Shadow,        // window drop shadow
+};
+
+// Skin registry (single source: built-ins + loaded skins/*.skin files).
+// nullptr if unknown name. User skins shadow built-ins by name.
+const CgaSkin* findCgaSkin(const std::string& name);
+const std::vector<CgaSkin>& allCgaSkins();
+
+// Hot skin files. loadUserSkins parses every skins/*.skin in `dir`,
+// replacing same-name registry entries (built-ins can be shadowed) or
+// appending new ones; returns the number of files loaded. saveSkinFile
+// writes a registry-format .skin file. parseSkinFile fills `out` from one
+// file (key-value lines; unknown keys ignored; see skins/README.md).
+int  loadUserSkins(const std::string& dir);
+bool parseSkinFile(const std::string& path, CgaSkin& out);
+bool saveSkinFile(const CgaSkin& s, const std::string& path);

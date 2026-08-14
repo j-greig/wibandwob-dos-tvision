@@ -29,6 +29,8 @@
 #include "rogue_view.h"
 #include "deep_signal_view.h"
 #include "app_launcher_view.h"
+#include "disk_library_view.h"
+#include "tweet_shader_view.h"
 #include "ascii_gallery_view.h"
 #include "scramble_view.h"
 #include "room_chat_view.h"
@@ -37,6 +39,7 @@
 #include "tvterm_view.h"
 #include "backrooms_tv_view.h"
 #include "figlet_text_view.h"
+#include "tuiforge_view.h"
 
 // tvision for TRect
 #define Uses_TRect
@@ -45,46 +48,11 @@
 #include <cstdlib>  // atoi
 #include <cstring>  // strcmp
 
-// ── Extern declarations for spawn helpers in wwdos_app.cpp ─────────────
-
-class TWwdosApp; // forward decl (full type used only by called functions)
-
-extern void api_spawn_test(TWwdosApp&, const TRect*);
-extern void api_spawn_gradient(TWwdosApp&, const std::string&, const TRect*);
-extern void api_open_animation_path(TWwdosApp&, const std::string&, const TRect*, bool frameless, bool shadowless, const std::string& title);
-extern void api_open_text_view_path(TWwdosApp&, const std::string&, const TRect*);
-extern void api_spawn_text_editor(TWwdosApp&, const TRect*, const std::string&);
-extern void api_spawn_browser(TWwdosApp&, const TRect*);
-extern void api_spawn_verse(TWwdosApp&, const TRect*);
-extern void api_spawn_mycelium(TWwdosApp&, const TRect*);
-extern void api_spawn_orbit(TWwdosApp&, const TRect*);
-extern void api_spawn_torus(TWwdosApp&, const TRect*);
-extern void api_spawn_cube(TWwdosApp&, const TRect*);
-extern void api_spawn_life(TWwdosApp&, const TRect*);
-extern void api_spawn_blocks(TWwdosApp&, const TRect*);
-extern void api_spawn_score(TWwdosApp&, const TRect*);
-extern void api_spawn_ascii(TWwdosApp&, const TRect*);
-extern void api_spawn_animated_gradient(TWwdosApp&, const TRect*);
-extern void api_spawn_monster_cam(TWwdosApp&, const TRect*);
-extern void api_spawn_monster_verse(TWwdosApp&, const TRect*);
-extern void api_spawn_contour_map(TWwdosApp&, const TRect*);
-extern void api_spawn_generative_lab(TWwdosApp&, const TRect*);
-extern void api_spawn_monster_portal(TWwdosApp&, const TRect*);
-extern void api_spawn_paint(TWwdosApp&, const TRect*);
-extern void api_spawn_micropolis_ascii(TWwdosApp&, const TRect*);
-extern void api_spawn_terminal(TWwdosApp&, const TRect*);
-extern void api_spawn_wibwob(TWwdosApp&, const TRect*);
-extern void api_spawn_room_chat(TWwdosApp&, const TRect*);
-extern void api_spawn_quadra(TWwdosApp&, const TRect*);
-extern void api_spawn_snake(TWwdosApp&, const TRect*);
-extern void api_spawn_rogue(TWwdosApp&, const TRect*);
-extern void api_spawn_deep_signal(TWwdosApp&, const TRect*);
-extern void api_spawn_backrooms_tv(TWwdosApp&, const TRect*);
-extern void api_spawn_app_launcher(TWwdosApp&, const TRect*);
-extern void api_spawn_gallery(TWwdosApp&, const TRect*);
-extern void api_spawn_figlet_text(TWwdosApp&, const TRect*,
-    const std::string& text, const std::string& font,
-    bool frameless, bool shadowless);
+// ── Declarations for spawn helpers in wwdos_app.cpp ─────────────────────
+#include "api_windows.h"
+#include "api_chat.h"   // api_spawn_room_chat
+#include "api_paint.h"  // api_spawn_paint
+#include "api_figlet.h" // api_spawn_figlet_text
 
 // ── Bounds helper ─────────────────────────────────────────────────────────────
 
@@ -245,9 +213,35 @@ static const char* spawn_rogue(TWwdosApp& app, const std::map<std::string,std::s
 static const char* spawn_deep_signal(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_deep_signal(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_backrooms_tv(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
-    TRect r; api_spawn_backrooms_tv(app, opt_bounds(kv, r)); return nullptr; }
+    // Never fall through to the modal config-dialog overload here — this is
+    // the API-driven create_window path (POST /windows) and a blocking
+    // dialog with no keyboard input wedges the whole IPC accept loop. See
+    // the matching fix + comment in command_registry.cpp's open_backrooms_tv.
+    TRect r; const TRect* pr = opt_bounds(kv, r);
+    BackroomsChannel ch;
+    auto theme_it = kv.find("theme");
+    auto turns_it = kv.find("turns");
+    auto primers_it = kv.find("primers");
+    auto model_it = kv.find("model");
+    if (theme_it != kv.end()) ch.theme = theme_it->second;
+    if (turns_it != kv.end()) ch.turns = std::atoi(turns_it->second.c_str());
+    if (primers_it != kv.end()) ch.primers = primers_it->second;
+    if (model_it != kv.end()) ch.model = model_it->second;
+    if (ch.turns < 1) ch.turns = 1;
+    api_spawn_backrooms_tv(app, pr, &ch);
+    return nullptr; }
 static const char* spawn_app_launcher(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_app_launcher(app, opt_bounds(kv, r)); return nullptr; }
+static const char* spawn_disks(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
+    TRect r; api_spawn_disks(app, opt_bounds(kv, r)); return nullptr; }
+static const char* spawn_tuiforge(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
+    TRect r; auto it = kv.find("path");
+    api_spawn_tuiforge(app, opt_bounds(kv, r),
+                       it != kv.end() ? it->second : std::string());
+    return nullptr; }
+static const char* spawn_shader(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
+    TRect r; auto it = kv.find("shader");
+    api_spawn_shader(app, opt_bounds(kv, r), it != kv.end() ? it->second : ""); return nullptr; }
 static const char* spawn_gallery(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_gallery(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_figlet_text(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
@@ -315,6 +309,11 @@ static bool match_rogue(TWindow* w)       { return has_child_view<TRogueView>(w)
 static bool match_deep_signal(TWindow* w) { return has_child_view<TDeepSignalView>(w); }
 static bool match_backrooms_tv(TWindow* w) { return has_child_view<TBackroomsTvView>(w); }
 static bool match_app_launcher(TWindow* w){ return dynamic_cast<TAppLauncherWindow*>(w) != nullptr; }
+static bool match_disks(TWindow* w){ return isDiskLibraryWindow(w); }
+static bool match_tuiforge(TWindow* w){
+    return dynamic_cast<TTuiforgeWindow*>(w) != nullptr
+        || dynamic_cast<TTuiforgePickerWindow*>(w) != nullptr; }
+static bool match_shader(TWindow* w){ return dynamic_cast<TTweetShaderView*>(w ? w->first() : nullptr) != nullptr || (w && w->title && std::string(w->title).rfind("MONO.SHDR",0)==0); }
 static bool match_gallery(TWindow* w)     { return dynamic_cast<TGalleryWindow*>(w) != nullptr; }
 static bool match_figlet_text(TWindow* w) { return dynamic_cast<TFigletTextWindow*>(w) != nullptr; }
 
@@ -358,6 +357,9 @@ static const WindowTypeSpec k_specs[] = {
     { "deep_signal",       spawn_deep_signal,      match_deep_signal        },
     { "backrooms_tv",      spawn_backrooms_tv,     match_backrooms_tv       },
     { "app_launcher",      spawn_app_launcher,     match_app_launcher       },
+    { "disks",             spawn_disks,            match_disks              },
+    { "tuiforge",          spawn_tuiforge,         match_tuiforge           },
+    { "shader",            spawn_shader,           match_shader             },
     { "gallery",           spawn_gallery,          match_gallery            },
     { "figlet_text",       spawn_figlet_text,      match_figlet_text        },
 };

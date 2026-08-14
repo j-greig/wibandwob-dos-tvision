@@ -1,0 +1,9 @@
+{
+  "name": "wibwob-primers",
+  "version": "1.0.0",
+  "description": "Full Wib&Wob ASCII art primers library",
+  "type": "content",
+  "provides": {
+    "primers": "primers/*.txt"
+  }
+}

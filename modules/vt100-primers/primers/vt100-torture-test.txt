@@ -1,0 +1,50 @@
+FPS=1
+---
+▒◆⎺⎻─⎼⎽◆      This is the       ◆⎽⎼─⎻⎺◆▒
+                                        VT100 series Torture Test Demonstration.
+                                                                               V
+o show the dot-matrix used.  Upper-case characters are 8 by 7 in a 10 by 10
+                                                                           chara
+cter cell, with 1 blank row on top and 2 on the bottom.  The underline
+                                                                      attribute
+uses the first bottom blank row, lower-case decenders use both.
+
+
+
+                                                               This is a normal
+line __________________________________________________y_
+                                                         This is a bold line (no
+rmal unless the Advanced Video Option is installed)
+                                                   This line is underlined _ "
+     "       "       "       "       "    _y_
+                                             This is a blinking line _ "       "
+       "       "       "       "    _y_
+                                       This is inverse video _ (underlined if no
+ AVO and cursor is underline) _y_
+                                 Normal gjpqy Underline   Blink   Underline+Blin
+k gjpqy
+       Bold   gjpqy Underline   Blink   Underline+Blink gjpqy
+---
+▒◆⎺⎻─⎼⎽◆      This is the       ◆⎽⎼─⎻⎺◆▒
+                                        VT100 series Torture Test Demonstration.
+                                                                               V
+ine   Blink   Underline+Blink
+                             Bold+Inverse Underline   Blink   Underline+Blink
+                                                                             Thi
+s is double width
+                 This is double height
+                                      This is double height
+                                                           _ABCDEFGHIJKLMNOPQRST
+UVWXYZ0123456789ioy
+                   _ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ioy
+                                                           _ABCDEFGHIJKLMNOPQRSo
+UVWXYZ0123456789ioy                                                            o
+                                                                               ◆
+▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£· ┌─┬─┐
+                               ▒ ␌ ␊◆±␉␋␍┐°└␤⎺┘─┌⎽┼┤⎻┬⎼≤├π┴£│≤≥π≠£· ├─┼─┤
+                                                            ◆ ␉ ␍ ° ␤ ┘ ┌◆┼␉⎻␍⎼·
+±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£· ├─┼─┤                                                 ·
+                                                                               `
+abcdefghijklmnopqrstuvwxyz{|}~ └─┴─┘ a c e g i k m o q s u w y { }
+                                                                   $PrEM0 works
+on GIGI    This test created by Joe Smith, 8-May-85

@@ -1,5 +1,6 @@
 #include "micropolis_ascii_view.h"
 #include "micropolis_tool_palette.h"
+#include "theme_manager.h"
 
 #define Uses_TWindow
 #define Uses_TEvent
@@ -185,13 +186,13 @@ void TMicropolisAsciiView::draw() {
         << "  Slot:" << saveSlot_ << "  F2:save F3:load";
     std::string topLine = top.str();
     if ((int)topLine.size() > size.x) topLine.resize(size.x);
-    b.moveChar(0, ' ', TColorAttr(0x70), size.x);
-    b.moveStr(0, topLine.c_str(), TColorAttr(0x70));
+    b.moveChar(0, ' ', ThemeManager::attr(SkinRole::Bar), size.x);
+    b.moveStr(0, topLine.c_str(), ThemeManager::attr(SkinRole::Bar));
     writeLine(0, 0, size.x, 1, b);
 
     // --- Map rows (1 to size.y-2) ---
     for (int y = 1; y < size.y - 1; ++y) {
-        b.moveChar(0, ' ', TColorAttr(0x07), size.x);
+        b.moveChar(0, ' ', ThemeManager::attr(SkinRole::Paper), size.x);
         const int wy = camY_ + (y - 1);
         if (useWideTiles) {
             for (int tx = 0; tx < visibleTiles; ++tx) {
@@ -202,8 +203,8 @@ void TMicropolisAsciiView::draw() {
                     const char g0 = pair.empty() ? '?' : pair[0];
                     const char g1 = pair.size() > 1 ? pair[1] : ' ';
                     const bool isCursor = (wx == curX_ && wy == curY_);
-                    const TColorAttr attr0 = isCursor ? TColorAttr(0x70) : color_for_glyph(g0);
-                    const TColorAttr attr1 = isCursor ? TColorAttr(0x70) : color_for_glyph(g1, g0);
+                    const TColorAttr attr0 = isCursor ? ThemeManager::attr(SkinRole::Bar) : color_for_glyph(g0);
+                    const TColorAttr attr1 = isCursor ? ThemeManager::attr(SkinRole::Bar) : color_for_glyph(g1, g0);
                     b.putChar(x, g0);
                     b.putAttribute(x, attr0);
                     if (x + 1 < size.x) {
@@ -219,7 +220,7 @@ void TMicropolisAsciiView::draw() {
                     const char g = bridge_.glyph_for_tile(bridge_.tile_at(wx, wy));
                     const bool isCursor = (wx == curX_ && wy == curY_);
                     b.putChar(x, g);
-                    b.putAttribute(x, isCursor ? TColorAttr(0x70) : color_for_glyph(g));
+                    b.putAttribute(x, isCursor ? ThemeManager::attr(SkinRole::Bar) : color_for_glyph(g));
                 }
             }
         }
@@ -237,8 +238,8 @@ void TMicropolisAsciiView::draw() {
         }
         std::string hintLine = hint.str();
         if ((int)hintLine.size() > size.x) hintLine.resize(size.x);
-        b.moveChar(0, ' ', TColorAttr(0x30), size.x);
-        b.moveStr(0, hintLine.c_str(), TColorAttr(0x30));
+        b.moveChar(0, ' ', ThemeManager::attr(SkinRole::Bar), size.x);
+        b.moveStr(0, hintLine.c_str(), ThemeManager::attr(SkinRole::Bar));
         writeLine(0, size.y - 1, size.x, 1, b);
     }
 }

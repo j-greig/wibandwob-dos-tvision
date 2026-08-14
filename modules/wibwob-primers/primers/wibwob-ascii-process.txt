@@ -1,0 +1,20 @@
+# can be adapted/expanded to show any process, including addition of emoji if applicable
+     ┌─ YOU TYPE THEME ─┐
+     │                 │
+     ▼                 │
+  ╭─CLI AWAKENS────────╯
+  │    │
+  │    ▼
+  │ ╭─WIB GOES WILD─╮
+  │ │   ◉ ◉         │  ...brl'zzzt...
+  │ │    ~          │  "let's make
+  │ │   ___         │   CHAOS!"
+  │ ╰─WOB CALCULATES╯
+  │           │
+  │           ▼         ∴ "systematic
+  │    ╭─ ■ ■ ─╮        beauty"
+  │    │   -   │         
+  │    │  ___  │         
+  │    ╰───────╯         
+  │           │
+  ╰───────────╯

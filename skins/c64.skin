@@ -1,0 +1,51 @@
+# c64.skin — Commodore 64 tribute, the classic light-blue-on-blue boot screen
+name c64
+
+# solid fill, no texture — the C64 screen is a flat colour field, not dithered
+# (texture line omitted)
+
+# desktop: light-blue-slot ink on blue-slot bg — the READY. screen itself
+desk 9 1
+
+# paper: blue bg, light blue ink — default window body matches the boot screen
+paper 1 9
+
+# dialog: grey bg, white ink — accent pane reads as a "system" panel
+dialog 8 15
+
+# chrome explicit — dark skin
+# framePassive: grey bg, blue ink — quiet border chrome
+framePassive 129
+# frameActive: blue bg, white ink — focused window pops against the grey
+frameActive 31
+# menu: light-grey bar, black ink — nods to the C64's function-key strip
+menu 112
+
+dim 8
+# accent: yellow-slot — the C64 loading-bar / highlight colour
+accent 14
+floor 9 1
+
+ok 10
+warn 4
+
+# palette remap onto the authentic 16-colour C64 chip (VIC-II) ramp.
+# slot 1 (blue) -> C64 blue, slot 14 (yellow) -> C64 yellow, as specified;
+# rest mapped by nearest semantic match. Light cyan/magenta reuse the base
+# cyan/purple since the VIC-II has no separate light variants of those.
+pal0 #000000
+pal1 #40318D
+pal2 #55A049
+pal3 #67B6BD
+pal4 #883932
+pal5 #8B3F96
+pal6 #8B5429
+pal7 #9F9F9F
+pal8 #505050
+pal9 #7869C4
+pal10 #94E089
+pal11 #67B6BD
+pal12 #B86962
+pal13 #8B3F96
+pal14 #BFCE72
+pal15 #FFFFFF

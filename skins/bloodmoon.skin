@@ -1,0 +1,45 @@
+# bloodmoon.skin — near-black ritual reds, sparse and grim, bone-white cuts through
+name bloodmoon
+
+# sparse ritual-mark dither, not a dense fill — the void should show through
+texture ∴
+
+# desktop: dark-grey-slot (deepest red-black) dither over pure black
+desk 8 0
+
+# paper: black bg, bone-white ink — the one clean readable colour in the skin
+paper 0 15
+
+# dialog: deep red-black bg, bright red ink — accent panes read as "active ritual"
+dialog 8 12
+
+# chrome explicit — this is the darkest skin of the six
+framePassive 132
+frameActive 79
+menu 15
+
+dim 8
+accent 12
+floor 15 0
+
+ok 10
+warn 14
+
+# ramp from near-black red through blood-red to bone-white highlight.
+# deliberately keeps CGA index 15 as the only non-red note in the monitor.
+pal0 #0A0000
+pal1 #1A0000
+pal2 #2A0000
+pal3 #3A0505
+pal4 #5C0A0A
+pal5 #7A0F0F
+pal6 #991414
+pal7 #B81919
+pal8 #160000
+pal9 #C42020
+pal10 #D62B2B
+pal11 #E63636
+pal12 #FF3333
+pal13 #FF5C5C
+pal14 #FF8080
+pal15 #F5F0E6

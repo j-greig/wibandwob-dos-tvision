@@ -17,110 +17,34 @@
 #define Uses_TProgram
 #include <tvision/tv.h>
 
-extern void api_cascade(TWwdosApp& app);
-extern void api_toggle_scramble(TWwdosApp& app);
-extern void api_expand_scramble(TWwdosApp& app);
-extern std::string api_scramble_say(TWwdosApp& app, const std::string& text);
-extern std::string api_scramble_pet(TWwdosApp& app);
-extern void api_spawn_room_chat(TWwdosApp& app, const TRect* bounds);
-extern std::string api_room_chat_receive(TWwdosApp& app, const std::string& sender, const std::string& text, const std::string& ts);
-extern std::string api_room_presence(TWwdosApp& app, const std::string& participants_json);
-extern std::string api_chat_receive(TWwdosApp& app, const std::string& sender, const std::string& text);
-extern std::string api_wibwob_ask(TWwdosApp& app, const std::string& text);
-extern std::string api_get_chat_history(TWwdosApp& app);
-extern void api_tile(TWwdosApp& app);
-extern void api_close_all(TWwdosApp& app);
-extern void api_save_workspace(TWwdosApp& app);
-extern bool api_open_workspace_path(TWwdosApp& app, const std::string& path);
-extern void api_screenshot(TWwdosApp& app);
-extern void api_set_pattern_mode(TWwdosApp& app, const std::string& mode);
-extern std::string api_set_theme_mode(TWwdosApp& app, const std::string& mode);
-extern std::string api_set_theme_variant(TWwdosApp& app, const std::string& variant);
-extern std::string api_reset_theme(TWwdosApp& app);
-extern std::string api_window_shadow(TWwdosApp& app, const std::string& id, bool on);
-extern std::string api_window_title(TWwdosApp& app, const std::string& id, const std::string& title);
-extern std::string api_desktop_preset(TWwdosApp& app, const std::string& preset);
-extern std::string api_desktop_texture(TWwdosApp& app, const std::string& ch);
-extern std::string api_desktop_color(TWwdosApp& app, int fg, int bg);
-extern std::string api_desktop_gallery(TWwdosApp& app, bool on);
-extern std::string api_desktop_get(TWwdosApp& app);
-extern std::string api_figlet_set_text(TWwdosApp& app, const std::string& id, const std::string& text);
-extern std::string api_figlet_set_font(TWwdosApp& app, const std::string& id, const std::string& font);
-extern std::string api_figlet_set_color(TWwdosApp& app, const std::string& id, const std::string& fg, const std::string& bg);
-extern std::string api_figlet_list_fonts();
-extern void api_open_animation_path(TWwdosApp& app, const std::string& path, const TRect* bounds, bool frameless, bool shadowless, const std::string& title);
-extern void api_spawn_paint(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_micropolis_ascii(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_quadra(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_snake(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_rogue(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_deep_signal(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_app_launcher(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_gallery(TWwdosApp& app, const TRect* bounds);
-extern void api_open_animation_path(TWwdosApp& app, const std::string& path);
-// Generative art windows — previously only reachable via create_window
-extern void api_spawn_verse(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_mycelium(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_orbit(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_torus(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_cube(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_life(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_blocks(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_score(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_ascii(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_animated_gradient(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_gradient(TWwdosApp& app, const std::string& kind, const TRect* bounds);
-extern void api_spawn_monster_cam(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_monster_verse(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_monster_portal(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_backrooms_tv(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_backrooms_tv(TWwdosApp& app, const TRect* bounds, const BackroomsChannel* ch);
-extern void api_spawn_browser(TWwdosApp& app, const TRect* bounds);
-extern void api_spawn_figlet_text(TWwdosApp& app, const TRect* bounds,
-    const std::string& text, const std::string& font, bool frameless, bool shadowless);
-extern void api_spawn_figlet_text_at(TWwdosApp& app,
-    const std::string& text, const std::string& font, int x, int y,
-    bool frameless, bool shadowless);
-extern void api_spawn_text_editor(TWwdosApp& app, const TRect* bounds, const std::string& title);
-extern void api_spawn_wibwob(TWwdosApp& app, const TRect* bounds);
-extern std::string api_gallery_list(TWwdosApp& app, const std::string& tab);
-extern void api_spawn_terminal(TWwdosApp& app, const TRect* bounds);
-extern std::string api_terminal_write(TWwdosApp& app, const std::string& text, const std::string& window_id);
-extern std::string api_terminal_read(TWwdosApp& app, const std::string& window_id);
-
-// Paint canvas wrappers (defined in wwdos_app.cpp, avoid tvision dependency)
-extern std::string api_paint_cell(TWwdosApp& app, const std::string& id, int x, int y, uint8_t fg, uint8_t bg);
-extern std::string api_paint_text(TWwdosApp& app, const std::string& id, int x, int y, const std::string& text, uint8_t fg, uint8_t bg);
-extern std::string api_paint_line(TWwdosApp& app, const std::string& id, int x0, int y0, int x1, int y1, bool erase);
-extern std::string api_paint_rect(TWwdosApp& app, const std::string& id, int x0, int y0, int x1, int y1, bool erase);
-extern std::string api_paint_clear(TWwdosApp& app, const std::string& id);
-extern std::string api_paint_export(TWwdosApp& app, const std::string& id);
-extern std::string api_paint_save(TWwdosApp& app, const std::string& id, const std::string& path);
-extern std::string api_paint_load(TWwdosApp& app, const std::string& id, const std::string& path);
-extern void api_spawn_paint_with_file(TWwdosApp& app, const std::string& path);
-extern std::string api_paint_stamp_figlet(TWwdosApp& app, const std::string& id,
-    const std::string& text, const std::string& font,
-    int x, int y, uint8_t fg, uint8_t bg);
-extern std::string api_list_figlet_fonts();
-extern std::string api_preview_figlet(const std::string& text, const std::string& font, int width);
-extern std::string api_move_window(TWwdosApp& app, const std::string& id, int x, int y);
-extern std::string api_resize_window(TWwdosApp& app, const std::string& id, int width, int height);
-extern std::string api_focus_window(TWwdosApp& app, const std::string& id);
-extern std::string api_raise_window(TWwdosApp& app, const std::string& id);
-extern std::string api_lower_window(TWwdosApp& app, const std::string& id);
-extern std::string api_close_window(TWwdosApp& app, const std::string& id);
+#include "api_windows.h"
+#include "api_desktop.h"
+#include "api_chat.h"
+#include "api_paint.h"
+#include "api_figlet.h"
+#include "workspace_io.h"
 
 const std::vector<CommandCapability>& get_command_capabilities() {
     static const std::vector<CommandCapability> capabilities = {
         {"cascade", "Cascade all windows on desktop", false},
         {"tile", "Tile all windows on desktop", false},
         {"close_all", "Close all windows", false},
-        {"save_workspace", "Save current workspace", false},
+        {"save_workspace", "Save current workspace (optional path param; default workspaces/last_workspace.json + timestamped snapshot)", false},
         {"open_workspace", "Open workspace from a path", true},
         {"screenshot", "Capture screen to a text snapshot", false},
         {"pattern_mode", "Set pattern mode: continuous or tiled", false},
         {"set_theme_mode", "Set theme mode: light or dark", true},
-        {"set_theme_variant", "Set theme variant: monochrome or dark_pastel", true},
+        {"set_theme_variant", "Set chrome theme variant: monochrome (house grey) | cga (classic DOS colour) | dark_pastel", true},
+        {"set_skin", "Apply a named skin in one shot (skin param; list_skins for registry; skins/*.skin files hot-load on unknown names; off restores house grey)", true},
+        {"list_skins", "List every registered skin (built-ins + loaded skins/*.skin) with the active one", false},
+        {"reload_skins", "Re-read skins/*.skin files (shadow built-ins by name) and re-apply the active skin", false},
+        {"skin_save", "Write a skin to skins/<name>.skin (name param; default = active skin) — persist a novel skin", false},
+        {"open_disks", "Open the SYMBIENT SHAREWARE LIBRARY — floppy-disk launcher, each disk boots an app (double-click/Enter)", false},
+        {"open_tuiforge", "Open TUIFORGE.DSK — viewer for ~/Repos/tuiforge/renders grids (path param: scene name like 'kevart/cat3d' or absolute dir; no path = corpus picker list, Enter/double-click boots a render; art keeps authentic CGA colours under any skin; path=tv boots TUIFORGE.TV, a self-tuning corpus channel)", false},
+        {"open_home", "Load the HEMISPHERES home layout — Wib art column west, Wob systems east, core spine centre (chat / disks / TUIFORGE.TV). Loads workspaces/hemispheres.json", false},
+        {"window_mosaic", "Spawn a pixel-art figure from a char map, one tiny window per cell ('fat pixels'). Params: map ('|'-separated rows; '.'=empty; pigments: #=gradient @=radial g=vert d=diag *=blocks o=cube +=torus %=life ~=shader t=testpattern), x, y (origin), cw, ch (cell size, default 6x3), type (override all pigments). One call draws a whole figure — use instead of dozens of create/move calls.", true},
+        {"screensaver", "Screensaver control (action param: now|on|off; minutes param sets idle timeout, 0 disables; default 10min → fullscreen random shader, any key wakes)", false},
+        {"open_shader", "Open SHADER.SYS — pluggable ASCII shader host (shader param: isotower|wibrain|beastiemelt|plasma|wallsofcode|yohei-rocks|tunnel; N cycles, P phosphor, space pauses)", false},
         {"reset_theme", "Reset theme to default (monochrome + light)", false},
         {"open_scramble", "Toggle Scramble cat overlay", false},
         {"scramble_expand", "Toggle Scramble between smol and tall mode", false},
@@ -158,8 +82,11 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},
         {"open_gallery", "Open the ASCII Art Gallery browser with tabbed primer explorer", false},
-        {"gallery_list", "List available primer filenames (optional tab param: 1/#-C, 2/D-L, 3/M, 4/N-S, 5/T-Z, 6/Find with search param)", false},
-        {"open_primer", "Open a primer file by name in a viewer window (requires path param, e.g. 'wibwob-faces.txt')", true},
+        {"gallery_list", "List available primer filenames (optional tab param: tab param 1-5: 1/#-C 2/D-L 3/M 4/N-S 5/T-Z)", false},
+        {"open_primer", "Open a primer in a viewer window (path required; optional x/y/w/h, frameless, shadowless, title)", true},
+        {"set_window_bg", "Set solid background colour of a viewer window (id + idx params, CGA palette 0-15: 1=blue 6=brown)", true},
+        {"set_window_fg", "Set text colour of a viewer window (id + idx params, CGA palette 0-15: 10=phosphor green; -1=auto)", true},
+        {"desktop_rulers", "Toggle MSDOS-style edge rulers on the desktop (on param: 1/0)", true},
         {"open_terminal", "Open a terminal emulator window", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
@@ -223,6 +150,12 @@ std::string exec_registry_command(
     TWwdosApp& app,
     const std::string& name,
     const std::map<std::string, std::string>& kv) {
+    // Every API command counts as activity: without this, long agent-driven
+    // sittings are keyboard-silent, the screensaver fires mid-session and
+    // its fullscreen shader starves the IPC loop — the "stream closed"
+    // cousin deaths of 2026-08-13/14. (screensaver action=now still works:
+    // activation is explicit, not idle-gated.)
+    api_note_input(app);
     if (name == "cascade") {
         api_cascade(app);
         return "ok";
@@ -236,6 +169,11 @@ std::string exec_registry_command(
         return "ok";
     }
     if (name == "save_workspace") {
+        auto pit = kv.find("path");
+        if (pit != kv.end() && !pit->second.empty()) {
+            extern bool api_save_workspace_path(TWwdosApp&, const std::string&);
+            return api_save_workspace_path(app, pit->second) ? "ok" : "err save failed";
+        }
         api_save_workspace(app);
         return "ok";
     }
@@ -266,6 +204,59 @@ std::string exec_registry_command(
         if (it == kv.end() || it->second.empty())
             return "err missing variant";
         return api_set_theme_variant(app, it->second);
+    }
+    if (name == "screensaver") {
+        auto ai = kv.find("action");
+        auto mi = kv.find("minutes");
+        return api_screensaver(app, ai != kv.end() ? ai->second : "on",
+                               mi != kv.end() ? std::atoi(mi->second.c_str()) : -1);
+    }
+    if (name == "open_shader") {
+        auto it = kv.find("shader");
+        TRect r; const TRect* pr = nullptr;
+        auto xi = kv.find("x"), yi = kv.find("y"), wi = kv.find("w"), hi = kv.find("h");
+        if (xi != kv.end() && yi != kv.end() && wi != kv.end() && hi != kv.end()) {
+            int x = std::atoi(xi->second.c_str()), y = std::atoi(yi->second.c_str());
+            int w = std::atoi(wi->second.c_str()), h = std::atoi(hi->second.c_str());
+            r = TRect(x, y, x + w, y + h); pr = &r;
+        }
+        api_spawn_shader(app, pr, it != kv.end() ? it->second : "");
+        return "ok";
+    }
+    if (name == "open_disks") {
+        api_spawn_disks(app, nullptr);
+        return "ok";
+    }
+    if (name == "open_tuiforge") {
+        // Param is "path" (or "render") ONLY — never alias "name": the IPC
+        // transport injects name=<command> into every payload, so a "name"
+        // alias reads back the command's own name as a render path.
+        auto it = kv.find("path");
+        if (it == kv.end() || it->second.empty()) it = kv.find("render");
+        api_spawn_tuiforge(app, nullptr,
+                           it != kv.end() ? it->second : std::string());
+        return "ok";
+    }
+    if (name == "window_mosaic") {
+        return api_window_mosaic(app, kv);
+    }
+    if (name == "open_home") {
+        // The hemispheres hang: one word, whole house.
+        return api_open_workspace_path(app, "workspaces/hemispheres.json")
+                   ? "ok" : "err home layout missing (workspaces/hemispheres.json)";
+    }
+    if (name == "list_skins") return api_list_skins(app);
+    if (name == "reload_skins") return api_reload_skins(app);
+    if (name == "skin_save") {
+        auto it = kv.find("name");
+        return api_skin_save(app, it != kv.end() ? it->second : "");
+    }
+    if (name == "set_skin") {
+        auto it = kv.find("skin");
+        if (it == kv.end() || it->second.empty()) it = kv.find("name");
+        if (it == kv.end() || it->second.empty())
+            return "err missing skin";
+        return api_set_skin(app, it->second);
     }
     if (name == "reset_theme") {
         return api_reset_theme(app);
@@ -383,23 +374,26 @@ std::string exec_registry_command(
         return "ok";
     }
     if (name == "open_backrooms_tv") {
-        // Parse optional channel params from kv
+        // Parse optional channel params from kv. The API path must never
+        // fall through to the modal config dialog (api_spawn_backrooms_tv's
+        // nullptr-channel overload) — that dialog blocks TVision's main
+        // event loop waiting for keyboard input that a headless/API caller
+        // can never supply, which wedges the IPC accept loop for every
+        // command that follows (see runbook gotcha: "open_backrooms_tv
+        // hangs the socket"). The interactive menu (cmBackroomsTv in
+        // wwdos_app.cpp) has its own independent dialog-showing code path,
+        // so this one is free to always use BackroomsChannel's defaults.
         auto theme_it = kv.find("theme");
         auto turns_it = kv.find("turns");
         auto primers_it = kv.find("primers");
         auto model_it = kv.find("model");
-        if (theme_it != kv.end()) {
-            BackroomsChannel ch;
-            ch.theme = theme_it->second;
-            if (turns_it != kv.end()) ch.turns = std::atoi(turns_it->second.c_str());
-            if (primers_it != kv.end()) ch.primers = primers_it->second;
-            if (model_it != kv.end()) ch.model = model_it->second;
-            if (ch.turns < 1) ch.turns = 1;
-            api_spawn_backrooms_tv(app, nullptr, &ch);
-        } else {
-            // No theme — show dialog (menu path)
-            api_spawn_backrooms_tv(app, nullptr);
-        }
+        BackroomsChannel ch; // defaults: theme="make art", turns=3, model="sonnet"
+        if (theme_it != kv.end()) ch.theme = theme_it->second;
+        if (turns_it != kv.end()) ch.turns = std::atoi(turns_it->second.c_str());
+        if (primers_it != kv.end()) ch.primers = primers_it->second;
+        if (model_it != kv.end()) ch.model = model_it->second;
+        if (ch.turns < 1) ch.turns = 1;
+        api_spawn_backrooms_tv(app, nullptr, &ch);
         return "ok";
     }
     if (name == "open_monster_verse") {
@@ -519,6 +513,25 @@ std::string exec_registry_command(
         if (itText == kv.end() || itText->second.empty())
             return "err missing text";
         return api_wibwob_ask(app, itText->second);
+    }
+    if (name == "set_window_bg") {
+        auto id_it = kv.find("id");
+        auto idx_it = kv.find("idx");
+        if (id_it == kv.end() || idx_it == kv.end())
+            return "err missing id/idx";
+        return api_set_window_bg(app, id_it->second, std::atoi(idx_it->second.c_str()));
+    }
+    if (name == "set_window_fg") {
+        auto id_it = kv.find("id");
+        auto idx_it = kv.find("idx");
+        if (id_it == kv.end() || idx_it == kv.end())
+            return "err missing id/idx";
+        return api_set_window_fg(app, id_it->second, std::atoi(idx_it->second.c_str()));
+    }
+    if (name == "desktop_rulers") {
+        auto on_it = kv.find("on");
+        bool on = (on_it == kv.end()) || (on_it->second == "1" || on_it->second == "true");
+        return api_desktop_rulers(app, on);
     }
     if (name == "paint_cell") {
         auto id_it = kv.find("id");

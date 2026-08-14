@@ -1,0 +1,13 @@
+# The symbols inside the cat body like `∵` and `⚆` and the words `CAT` are optional and can be either removed entirely for a cleaner cat, or changed to suit context
+      /\_/\  
+     ( o.o )
+      > ^ <  
+    /|     |\
+   / |     | \
+  ~  |  ∵  |  ~
+     | CAT |   
+     |  =  |    
+ ~~~~|  ⚆  |~~~~~
+∿∿∿∿∿| CAT |∿∿∿∿∿
+     |  ∴  |
+     |     |   

@@ -1,0 +1,65 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ C:\SYSTEM> DIR /W                                                            ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ Volume in drive C has no label                                               ║
+║ Volume Serial Number is 1A2B-3C4D                                            ║
+║ Directory of C:\SYSTEM                                                       ║
+║                                                                              ║
+║ COMMAND  COM    CONFIG   SYS    AUTOEXEC BAT    IO       SYS    MSDOS    SYS║
+║ SYSTEM   INI    USER     DAT    BOOTLOG  TXT    HIMEM    SYS    EMM386   EXE║
+║ DBLSPACE EXE    DEFRAG   EXE    SCANDISK EXE    BACKUP   EXE    RESTORE  EXE║
+║ XCOPY    EXE    ATTRIB   EXE    CHKDSK   EXE    FORMAT   COM    FDISK    EXE║
+║ EDIT     COM    DEBUG    EXE    QBASIC   EXE    HELP     COM    TREE     COM║
+║ DOSKEY   COM    APPEND   EXE    FASTOPEN EXE    KEYB     COM    NLSFUNC  EXE║
+║ SHARE    EXE    SETVER   EXE    LOADFIX  COM    MEMMAKER EXE    MSCDEX   EXE║
+║ SMARTDRV EXE    MOUSE    COM    MSBACKUP EXE    UNDELETE EXE    VSAFE    COM║
+║                                                                              ║
+║        24 File(s)     2,847,392 bytes                                        ║
+║                       47,185,920 bytes free                                  ║
+║                                                                              ║
+║ C:\SYSTEM> TREE /F                                                           ║
+║ ┌─ SYSTEM                                                                    ║
+║ │  ├─ COMMAND.COM                                                            ║
+║ │  ├─ CONFIG.SYS                                                             ║
+║ │  ├─ AUTOEXEC.BAT                                                           ║
+║ │  └─ DRIVERS                                                                ║
+║ │     ├─ HIMEM.SYS                                                           ║
+║ │     ├─ EMM386.EXE                                                          ║
+║ │     ├─ MOUSE.COM                                                           ║
+║ │     └─ SMARTDRV.EXE                                                        ║
+║ └─ UTILS                                                                     ║
+║    ├─ EDIT.COM                                                               ║
+║    ├─ DEBUG.EXE                                                              ║
+║    ├─ QBASIC.EXE                                                             ║
+║    └─ HELP.COM                                                               ║
+║                                                                              ║
+║ C:\SYSTEM> MEM /C                                                            ║
+║ ┌─────────────────────────────────────────────────────────────────────────┐ ║
+║ │ Modules using memory below 1 MB:                                        │ ║
+║ │                                                                         │ ║
+║ │ Name         Total      Conventional    Upper Memory                    │ ║
+║ │ ────────     ─────────   ────────────    ────────────                   │ ║
+║ │ SYSTEM       17,184 (17K)   17,184 (17K)         0 (0K)                │ ║
+║ │ HIMEM         1,120 (1K)    1,120 (1K)          0 (0K)                 │ ║
+║ │ EMM386        3,120 (3K)    3,120 (3K)          0 (0K)                 │ ║
+║ │ COMMAND       3,744 (4K)    3,744 (4K)          0 (0K)                 │ ║
+║ │ MOUSE         8,864 (9K)         0 (0K)     8,864 (9K)                 │ ║
+║ │ DOSKEY        4,144 (4K)         0 (0K)     4,144 (4K)                 │ ║
+║ │ FREE        615,808 (601K)  615,808 (601K)       0 (0K)                │ ║
+║ │ ────────     ─────────   ────────────    ────────────                   │ ║
+║ │ Memory       654,336 (639K)  640,976 (626K)  13,008 (13K)              │ ║
+║ │                                                                         │ ║
+║ │ Total memory:      654,336 (639K)                                       │ ║
+║ │ Total under 1 MB:  640,976 (626K)                                       │ ║
+║ │ Total Expanded:  3,145,728 (3,072K)                                     │ ║
+║ │ Total Extended: 15,728,640 (15,360K)                                    │ ║
+║ │ Available XMS:  15,728,640 (15,360K)                                    │ ║
+║ │ Free XMS:       15,728,640 (15,360K)                                    │ ║
+║ └─────────────────────────────────────────────────────────────────────────┘ ║
+║                                                                              ║
+║ C:\SYSTEM> █                                                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+The command-line interface revealing the inner workings of the operating system.
+Directory listings, memory maps, and system utilities organized in tabular precision.
+The raw power of DOS commands exposing every byte and file in structured clarity.

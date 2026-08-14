@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "app": "test_pattern",
+  "timestamp": "2026-08-13T12:06:47",
+  "screen": { "width": 299, "height": 76 },
+  "globals": { "patternMode": "continuous", "skin": "oilfield" },
+  "desktop": { "char": " ", "fg": 7, "bg": 1, "charUtf8": "░", "rgbFg": 5592405, "rgbBg": 0, "gallery": false },
+  "windows": [
+    {
+      "id": "w1",
+      "type": "frame_player",
+      "title": "Typenwahl",
+      "bounds": { "x": 86, "y": 18, "w": 32, "h": 13 },
+      "zoomed": false,
+      "props": {"path": "modules/wibwob-primers/primers/bohrung-menu.txt", "bgIdx": 0, "fgIdx": 2, "frameless": false, "shadowless": false}
+    },
+    {
+      "id": "w2",
+      "type": "frame_player",
+      "title": "Standort 2",
+      "bounds": { "x": 104, "y": 2, "w": 26, "h": 14 },
+      "zoomed": false,
+      "props": {"path": "modules/wibwob-primers/primers/standort-card.txt", "bgIdx": 7, "fgIdx": 1, "frameless": false, "shadowless": false}
+    },
+    {
+      "id": "w3",
+      "type": "frame_player",
+      "title": "Standort 1",
+      "bounds": { "x": 76, "y": 2, "w": 26, "h": 14 },
+      "zoomed": false,
+      "props": {"path": "modules/wibwob-primers/primers/standort-card.txt", "bgIdx": 7, "fgIdx": 1, "frameless": false, "shadowless": false}
+    },
+    {
+      "id": "w4",
+      "type": "frame_player",
+      "title": "TERRA-TIME",
+      "bounds": { "x": 2, "y": 2, "w": 70, "h": 26 },
+      "zoomed": false,
+      "props": {"path": "modules/wibwob-primers/primers/20260227T121931_ridge-valley_s45853.txt", "bgIdx": 1, "fgIdx": 10, "frameless": false, "shadowless": false}
+    }
+  ],
+  "focusedIndex": 0
+}

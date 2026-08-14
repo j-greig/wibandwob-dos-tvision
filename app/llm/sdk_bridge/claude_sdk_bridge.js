@@ -4,6 +4,7 @@
  * 
  * Provides streaming interface between C++ and Claude Code SDK
  * Supports customSystemPrompt and real-time response streaming
+ * Note: see https://platform.claude.com/docs/en/about-claude/models/overview.md for latest model info
  */
 
 const process = require('process');
@@ -146,7 +147,7 @@ class ClaudeSDKBridge {
                 systemPrompt: this.systemPrompt,
                 maxTurns: data.maxTurns || this.maxTurns,
                 allowedTools: data.allowedTools || this.allowedTools,
-                model: data.model || 'claude-sonnet-4-6'  // Default to sonnet 4.6 if not specified
+                model: data.model || 'claude-sonnet-5'  // Fallback only; real value comes from llm_config.json via the provider
             };
 
             this.sendResponse('SESSION_STARTED', {
@@ -519,12 +520,10 @@ class ClaudeSDKBridge {
     }
     
     normalizeModelId(model) {
-        const m = (model || '').toLowerCase();
-        // Map common aliases to current 4.6 IDs (avoid 3.5)
-        if (m.includes('opus')) return 'claude-opus-4-6';
-        if (m.includes('sonnet')) return 'claude-sonnet-4-6';
-        if (m.includes('haiku')) return 'claude-haiku-4-5';  // Keep haiku resolution if explicitly requested
-        return model || 'claude-sonnet-4-6';
+        // Pure passthrough — model resolution has ONE home: the C++ provider
+        // (claude_code_sdk_provider.cpp configure()), fed by llm_config.json.
+        // Do not add mapping here; three-layer clamps silently launder models.
+        return model || 'claude-sonnet-5';
     }
     
     

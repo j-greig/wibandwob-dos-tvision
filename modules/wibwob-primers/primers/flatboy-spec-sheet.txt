@@ -1,0 +1,178 @@
+# FLATBOY CHARACTER SPEC SHEET
+## STANDARD FRONT VIEW, HANDS IN
+### IMPORTANT: The right face vert `│` is almsot always left empty as it often fails to align vertically due to eye/mouth parts being non-standard widths
+  ╭╮  ╭╮
+ ╭╯╰──╯╰╮
+ │      │
+ │ ⌣⌢⌣ 
+ ╰┬────┬╯
+╭─┤  ❤ ├─╮
+│ │    │ │
+╰ ╰────╯ ╯
+  ╱    ╲
+ ╱      ╲
+
+## STANDARD FRONT VIEW, HANDS LEFT, WALKING RIGHT
+  ╭╮  ╭╮
+ ╭╯╰──╯╰╮
+ │      │
+ │ ⌣⌢⌣ 
+ ╰┬────┬╯
+╭─┤  ❤ ├─╮
+│ │    │ │
+╯ ╰────╯ ╯
+  ╱    ╲
+ ╱      ╲
+
+
+## STANDARD BACK VIEW, HANDS IN
+  ╭╮  ╭╮
+ ╭╯╰──╯╰╮
+ │      │
+ │      │
+ ╰┬────┬╯
+╭─┤    ├─╮
+│ │    │ │
+╰ ╰────╯ ╯
+  ╱    ╲
+ ╱      ╲
+
+---
+
+# EAR VARIATIONS
+## ANTENNAE EAR
+  ╭╮  ╭╮
+  ╰╪  ╪╯
+ ╭ ╰──╯ ╮
+ │      │
+ │ ⌣⌢⌣ 
+ ╰┬────┬╯
+╭─┤  📡├─╮
+│ │    │ │
+╰ ╰────╯ ╯
+  ╱    ╲
+ ╱      ╲
+
+## SMALL HORNS
+ ╭◢ ── ◣╮
+ │      │
+ │ ⌣⌢⌣ 
+ ╰┬────┬╯
+╭─┤  ❤ ├─╮
+│ │    │ │
+╰ ╰────╯ ╯
+  ╱    ╲
+ ╱      ╲
+
+## SMALL HORNS
+  ╭▲  ▲╮ 
+ ╭╯╰──╯╰╮
+ │      │
+ │ ⌣⌢⌣ 
+ ╰┬────┬╯
+╭─┤  ❤ ├─╮
+│ │    │ │
+╰ ╰────╯ ╯
+  ╱    ╲
+ ╱      ╲
+
+## SQUARE HORNS
+  ╭■  ■╮ 
+ ╭╯╰──╯╰╮
+ │      │
+ │ ⌣⌢⌣ 
+ ╰┬────┬╯
+╭─┤  ❤ ├─╮
+│ │    │ │
+╰ ╰────╯ ╯
+  ╱    ╲
+ ╱      ╲
+
+## FACE HORNS
+  ╭○  ○╮  
+ ╭╯╰──╯╰╮ 
+ │      │
+ │ ⌣⌢⌣ 
+ ╰┬────┬╯
+╭─┤  ❤ ├─╮
+│ │    │ │
+╰ ╰────╯ ╯
+  ╱    ╲
+ ╱      ╲
+
+---- 
+
+# FLATBOY EMOTIONAL STATES
+##  HAPPY        WORRIED       SURPRISED   ANGRY       SLEEPY
+   ╭╮  ╭╮       ╭╮  ╭╮       ╭╮  ╭╮       ╭╮  ╭╮      ╭╮  ╭╮  
+  ╭╯╰──╯╰╮     ╭╯╰──╯╰╮     ╭╯╰──╯╰╮     ╭╯╰──╯╰╮    ╭╯╰──╯╰╮ 
+  │      │     │      │     │      │     │      │    │      │ 
+  │ ◕ ◡ ◕      │ ● ⌢ ●       ◯   ◯        ▪ ╱╲ ▪      ◑ ◠ ◑ 
+  ╰┬────┬╯     ╰┬────┬╯     ╰┬────┬╯     ╰┬────┬╯    ╰┬────┬╯ 
+ ╭─┤   ❤├─╮   ╭─┤   ✘├─╮   ╭─┤   ‼├─╮   ╭─┤   ⚡├─╮  ╭─┤  💤 ├─╮
+ │ │    │ │   │ │    │ │   │ │    │ │   │ │    │ │  │ │    │ │
+ │ ╰────╯ │   │ ╰────╯ │   │ ╰────╯ │   │ ╰────╯ │  │ ╰────╯ │
+ ╰ ╱    ╲ ╯   ╰ ╱    ╲ ╯   ╰ ╱    ╲ ╯   ╰ ╱    ╲ ╯  ╰ ╱    ╲ ╯
+  ╱      ╲     ╱      ╲     ╱      ╲     ╱      ╲    ╱      ╲ 
+
+## DEAD UNHAPPY
+   ╭╮  ╭╮   
+  ╭╯╰──╯╰╮  
+  │      │  
+  │ ✗ ⌢ ✗   
+  ╰┬────┬╯  
+ ╭─┤   ❤├─╮
+ │ │    │ │ 
+ │ ╰────╯ │ 
+ ╰ ╱    ╲ ╯ 
+  ╱      ╲   
+
+## SLEEPY
+   ╭╮  ╭╮   
+  ╭╯╰──╯╰╮  
+  │      │  
+  │ ╋ ⌢ ╋    
+  ╰┬────┬╯  
+ ╭─┤   ❤├─╮
+ │ │    │ │ 
+ │ ╰────╯ │ 
+ ╰ ╱    ╲ ╯ 
+  ╱      ╲   
+
+## MONO
+   ╭╮  ╭╮   
+  ╭╯╰──╯╰╮  
+  │ ●  ● │  
+  │   ●     
+  ╰┬────┬╯  
+ ╭─┤   ●├─╮
+ │ │    │ │ 
+ │ ╰────╯ │ 
+ ╰ ╱    ╲ ╯ 
+  ╱      ╲   
+
+
+# FLATBOY AS MECH FOR KAOMOJI
+## FLATBOT + WIBWOB KAOMOJI EYES = WIBWOB MANIFEST IRL AS ROBOTIC ENTITY
+  ╭╮  ╭╮   
+ ╭╯╰──╯╰╮  
+ │      │  
+ │ ◕‿◕‿◕  
+ ╰┬────┬╯  
+╭─┤   ❤├─╮
+│ │    │ │ 
+│ ╰────╯ │ 
+╰ ╱    ╲ ╯ 
+ ╱      ╲  
+
+## FLATBOT + SCRAMBLE KAOMOJI EYES = SCRAMBLE THE CAT MANIFEST IRL AS ROBOTIC ENTITY     
+  ╭╮  ╭╮   
+ ╭╯╰──╯╰╮  
+ │      │  
+ │ /ᐠ｡ꞈ｡ᐟ\  
+ ╰┬────┬╯  
+╭─┤   ❤├─╮
+│ │    │ │ 
+│ ╰────╯ │ 
+╰ ╱    ╲ ╯ 
+ ╱      ╲  

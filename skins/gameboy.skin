@@ -1,0 +1,47 @@
+# gameboy.skin — 4-shade olive-green DMG LCD, everything reads as one dot-matrix screen
+name gameboy
+
+# LCD dot texture: light dither on dark, the classic Game Boy screen grain
+texture ░
+
+# desktop: lightest shade dither over darkest shade — max LCD contrast
+desk 15 0
+
+# paper: darkest bg, mid-light ink — readable body text on the "screen"
+paper 0 11
+
+# dialog: darkest bg (via slot 8, also mapped darkest), lightest ink for accent panes
+dialog 8 15
+
+# chrome must be explicit — this is a dark skin
+framePassive 130
+frameActive 11
+# menu: mid-light bar, black-ish ink for the strongest bar/text split available
+menu 112
+
+dim 8
+accent 11
+floor 15 0
+
+ok 10
+warn 14
+
+# All 16 CGA slots collapse onto the four authentic DMG greens by brightness
+# band — this is the whole point of the skin: there is no colour, only shade.
+# darkest #0F380F  dark #306230  light #8BAC0F  lightest #9BBC0F
+pal0 #0F380F
+pal1 #306230
+pal2 #306230
+pal3 #8BAC0F
+pal4 #306230
+pal5 #306230
+pal6 #306230
+pal7 #8BAC0F
+pal8 #0F380F
+pal9 #8BAC0F
+pal10 #8BAC0F
+pal11 #9BBC0F
+pal12 #8BAC0F
+pal13 #8BAC0F
+pal14 #9BBC0F
+pal15 #9BBC0F

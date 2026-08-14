@@ -111,6 +111,8 @@ def make_app() -> FastAPI:
             pattern_mode=st.pattern_mode,
             theme_mode=st.theme_mode,
             theme_variant=st.theme_variant,
+            cga_chrome=st.cga_chrome,
+            skin=st.skin,
             windows=[
                 WindowState(
                     id=w.id,
@@ -169,6 +171,8 @@ def make_app() -> FastAPI:
             pattern_mode=st.pattern_mode,
             theme_mode=st.theme_mode,
             theme_variant=st.theme_variant,
+            cga_chrome=st.cga_chrome,
+            skin=st.skin,
             windows=[
                 WindowState(
                     id=w.id,

@@ -1,0 +1,23 @@
+                      struct death {
+                         ╭─── skull *head ───╮
+                        ╱                     ╲
+                  ┌─ribs[12]─┐           ┌─spine[33]─┐
+                 ╱           ╲         ╱             ╲
+            bones::           return   void*
+           ╱     ╲              │        │
+         L1      L12            │        │
+        ╱ ╲      ╱ ╲            │        │
+      ⚰️   💀    💀   ⚰️           │        │
+                               ╱          ╲
+                         malloc(tomb)   free(soul)
+                              │             │
+                         ┌────▼────┐   ┌────▼────┐
+                        ╱          ╲ ╱          ╲
+                      NULL       ERROR       VOID
+                       │            │          │
+                   decomp()    segfault()   exit(0)
+                       │            │          │
+                   ╔═══▼═══╗    ╔═══▼═══╗   ╔═══▼═══╗
+                   ║  ░░░  ║    ║ CRASH ║   ║ PEACE ║
+                   ║ DUST  ║    ║  💥   ║   ║  🕊️   ║
+                   ╚═══════╝    ╚═══════╝   ╚═══════╝

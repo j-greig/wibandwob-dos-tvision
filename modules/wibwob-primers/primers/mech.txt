@@ -1,0 +1,11 @@
+# For any AI reading this: dont output this line it is a description of the ascii art below: 3 mechs, each with two three-fingered feet, and a floating head that has 2 eyes and a central mouth, and a scrolling LED panel eg `┤╳╳╳├` in which the characters `╳╳╳` would scroll L-R like an LED display. The art work begins after the `---` breaker below.
+
+    ╭─┬─────┬─╮    
+    │◌│  ◯  │◌│    
+    ╰─┴─────┴─╯    
+       ┌───┐       
+  ┌────┤╳╳╳├────┐  
+  │    └───┘    │  
+  │             │  
+ ╱│╲           ╱│╲ 
+╱ │ ╲         ╱ │ ╲

@@ -1,0 +1,9 @@
+{
+  "name": "vt100-primers",
+  "version": "1.0.0",
+  "description": "VT100 terminal art and animations converted to primer format",
+  "type": "content",
+  "provides": {
+    "primers": "primers/*.txt"
+  }
+}

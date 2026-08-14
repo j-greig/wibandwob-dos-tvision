@@ -7,6 +7,7 @@
 
 #include "browser_view.h"
 #include "text_wrap.h"
+#include "theme_manager.h"
 
 #define Uses_TKeys
 #define Uses_TDrawBuffer
@@ -46,6 +47,12 @@ TBrowserContentView::TBrowserContentView(const TRect& bounds, TScrollBar* hScrol
 }
 
 namespace {
+
+// Page content must read on a NEUTRAL ground — never the skin's tinted
+// paper. Canon helper (shared with the chat log): ThemeManager::neutralContent().
+TColorAttr neutralContentAttr() {
+    return ThemeManager::neutralContent();
+}
 
 struct AnsiRgbState {
     TColorRGB fg {255, 255, 255};
@@ -268,7 +275,7 @@ static std::string flattenMarkdownLinks(const std::string &in) {
 
 void TBrowserContentView::draw() {
     TDrawBuffer buf;
-    TColorAttr normalColor = getColor(1);
+    TColorAttr normalColor = neutralContentAttr();
 
     int totalLines = static_cast<int>(styledLines.size());
 
@@ -350,7 +357,7 @@ std::string TBrowserContentView::getPlainText() const {
 void TBrowserContentView::rebuildWrappedLines() {
     styledLines.clear();
     for (const auto& line : sourceLines) {
-        styledLines.push_back(parseAnsiLine(line, getColor(1)));
+        styledLines.push_back(parseAnsiLine(line, neutralContentAttr()));
     }
     setLimit(size.x, static_cast<int>(styledLines.size()));
     if (vScrollBar)

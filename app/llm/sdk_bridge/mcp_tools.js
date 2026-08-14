@@ -17,7 +17,7 @@ const API_BASE_URL = 'http://127.0.0.1:8089';
 
 const apiClient = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 5000,
+    timeout: 30000,  // was 5s — slow calls (arrange, paint batches) read as "desktop gone"
     headers: { 'Content-Type': 'application/json' }
 });
 
@@ -26,6 +26,9 @@ apiClient.interceptors.response.use(
     (error) => {
         if (error.code === 'ECONNREFUSED') {
             throw new Error('API server not running. Please start the TUI application first.');
+        }
+        if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message || '')) {
+            throw new Error('API call timed out — the desktop is likely still alive and busy. Retry the call; do not assume the connection is lost.');
         }
         throw error;
     }

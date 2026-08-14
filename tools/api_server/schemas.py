@@ -47,8 +47,12 @@ class WindowCreate(BaseModel):
         "rogue",
         "deep_signal",
         "app_launcher",
+        "disks",
+        "shader",
+        "tuiforge",
         "gallery",
         "figlet_text",
+        "backrooms_tv",
     ]
     title: Optional[str] = None
     rect: Optional[RectModel] = None
@@ -226,6 +230,8 @@ class AppStateModel(BaseModel):
     pattern_mode: str
     theme_mode: str
     theme_variant: str
+    cga_chrome: bool = False
+    skin: str = ""
     windows: List[WindowState]
     canvas: CanvasInfo
     desktop: DesktopInfo

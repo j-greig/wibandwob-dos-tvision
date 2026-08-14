@@ -1,0 +1,8 @@
+VERSUCHS-BOHRUNG
+
+ [32mSchnell-Test[0m      [92m1000.-[0m
+ [7mOberflächentest[0m   [92m5000.-[0m
+ [32mTiefen-Bohrung[0m   [92m10000.-[0m
+ [32mDauerbohrung[0m    [92m100000.-[0m
+
+ [91m* ABBRUCH *[0m

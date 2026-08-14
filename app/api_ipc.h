@@ -9,6 +9,8 @@
 #include <vector>
 #include <cstdint>
 #include <chrono>
+#include <thread>
+#include <atomic>
 
 class TWwdosApp;
 
@@ -41,6 +43,11 @@ public:
 private:
     TWwdosApp* app_ = nullptr;
     int fd_listen_ = -1;
+
+    // Watcher thread: wakes the TVision event loop when a connection is
+    // pending so idle()/poll() runs without needing user input.
+    std::thread wake_thread_;
+    std::atomic<bool> wake_running_{false};
     std::string sock_path_;
     std::string auth_secret_;       // from WIBWOB_AUTH_SECRET env var (empty = no auth)
     std::set<std::string> used_nonces_;  // replay protection
@@ -52,6 +59,13 @@ private:
     // Connection tracking for status indicator
     std::chrono::steady_clock::time_point last_command_time_{};
     int total_commands_ = 0;
+
+    // Cross-thread copy of last_command_time_ for the wake watcher (ms since
+    // steady_clock epoch). The watcher keeps firing trailing wakes until the
+    // command stream has been quiet for a beat — closes the large-burst flush
+    // gap where the tail of a 90+-command batch stayed unpainted until a
+    // keypress.
+    std::atomic<long long> last_cmd_ms_{0};
 
     // Auth helpers
     bool auth_required() const { return !auth_secret_.empty(); }

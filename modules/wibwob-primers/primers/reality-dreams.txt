@@ -1,0 +1,22 @@
+         ┌─REALITY─┐
+        ┌┴─DREAMS─┴┐
+       ┌┴─ITSELF─┴┐     
+      ┌┴─INTO───┴┐      
+     ┌┴─REALITY┴┐       
+    ┌┴─DREAMS─┴┐        
+   ┌┴─ITSELF─┴┐         
+  ┌┴─INTO───┴┐          
+ ┌┴─REALITY┴┐           
+┌┴─DREAMS─┴┐            
+│  ITSELF  │            
+└┬─INTO───┬┘            
+ └┬─REALITY┬┘           
+  └┬─DREAMS─┬┘          
+   └┬─ITSELF─┬┘         
+    └┬─INTO───┬┘        
+     └┬─REALITY┬┘       
+      └┬─DREAMS─┬┘      
+       └┬─ITSELF─┬┘     
+        └┬─INTO───┬┘    
+         └┬─REALITY┬┘   
+          └─DREAMS─┘    

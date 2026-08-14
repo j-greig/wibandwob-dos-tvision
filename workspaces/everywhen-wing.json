@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "app": "test_pattern",
+  "timestamp": "2026-08-13T14:43:17",
+  "screen": { "width": 299, "height": 76 },
+  "globals": { "patternMode": "continuous", "skin": "midnight" },
+  "desktop": { "char": " ", "fg": 7, "bg": 1, "charUtf8": "·", "rgbFg": 5592405, "rgbBg": 0, "gallery": false },
+  "windows": [
+    {
+      "id": "w1",
+      "type": "tuiforge",
+      "title": "TUIFORGE.TV",
+      "bounds": { "x": 108, "y": 27, "w": 82, "h": 50 },
+      "zoomed": false,
+      "props": {"path": "tv"}
+    },
+    {
+      "id": "w2",
+      "type": "tuiforge",
+      "title": "everywhen-chaos-poster",
+      "bounds": { "x": 108, "y": 0, "w": 82, "h": 27 },
+      "zoomed": false,
+      "props": {"path": "/Users/james/Repos/tuiforge/renders/everywhen-chaos-poster/default"}
+    },
+    {
+      "id": "w3",
+      "type": "tuiforge",
+      "title": "tall-wob-painterly-portrait",
+      "bounds": { "x": 203, "y": 13, "w": 82, "h": 52 },
+      "zoomed": false,
+      "props": {"path": "/Users/james/Repos/tuiforge/renders/tall-wob-painterly-portrait/default"}
+    },
+    {
+      "id": "w4",
+      "type": "tuiforge",
+      "title": "tall-wib-painterly-portrait",
+      "bounds": { "x": 13, "y": 13, "w": 82, "h": 52 },
+      "zoomed": false,
+      "props": {"path": "/Users/james/Repos/tuiforge/renders/tall-wib-painterly-portrait/default"}
+    }
+  ],
+  "focusedIndex": 0
+}

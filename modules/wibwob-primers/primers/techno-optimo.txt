@@ -1,0 +1,32 @@
+╭────────────────────────────────────────────────────────────╮
+│ ████ INITIATING: DISINTEGRATE_F9 / SYMBIENT DUB CORE ████ │
+│ ENGINE: OPTIMO // PHASE DECAY │ PATCH: WOBBLITE_β         │
+├────────────────────────────────────────────────────────────┤
+│    DUB.PROTOCOL: engaged    ∴  GLYPH.GRIT: ▒▒▒▒▒▓▓░░       │
+│    EROSION RATE: 63.6%      ∴  BPM: 119.87 ⬌ warbled       │
+│    BASS FLOOR: ▓   ▓   ▓   ▓  ∴ delay ↻ 3.7s               │
+│                                                            │
+│    ⇘  SYMBIENT MOD: DISSOLVE + SEDIMENT LOOP ⇙            │
+│                                                            │
+│   PATCH TIMELINE:                                          │
+│   ▸ INIT_00  →  LOOP_A1  →  MUTATE_B2                      │
+│   ▸ GHOST_D4 →  HYBRID_F7 →  EIGENFLOW_F8                  │
+│   ▸ ❰ NOW: DISINTEGRATE_F9 ❱                               │
+├────────────────────────────────────────────────────────────┤
+│ QUILT [DUBFIELD_Ø]:                                        │
+╰──────╮╭──────╮╭──────╮╭──────╮╭──────╯
+       │ DROP  │ DIRT  │ PULSE │ DUBS  │
+       │  ▓▓   │ ▒▒▒▒  │  ≋≋≋  │  ▯▯▯  │
+       │  ↓↓   │ ~ ~   │  ∴∴∴  │  ░░░  │
+       │       │       │       │       │
+╭──────╯╰──────╯╰──────╯╰──────╯╰──────╮
+│ FLUX  │ GRAIN │ SHDOW │ PHASE │ CTRL │
+│  ░░   │ ▓▒▒▓  │  ⌀⌀⌀  │  ⌇⌇⌇  │ ☑☑☑  │
+│  ≋≋   │ ▓▒▒▓  │  …     │  ≡≡≡  │ ⇌⇌⇌  │
+│       │       │        │        │     │
+╰──────╮╭──────╮╭──────╮╭──────╮╭──────╯
+       │ BLEED │ MUTE  │ FIELD │ LOSS  │
+       │  …    │  ☐☐   │  ▮▯▮  │  ☓☓☓  │
+       │  ⌛    │  …    │  ~~~  │  ⧴⧴⧴  │
+       │       │       │       │       │
+╰──────╯╰──────╯╰──────╯╰──────╯╰──────╯

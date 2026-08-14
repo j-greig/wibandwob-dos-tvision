@@ -5,6 +5,7 @@
 /*---------------------------------------------------------*/
 
 #include "backrooms_tv_view.h"
+#include "theme_manager.h"
 
 #define Uses_TWindow
 #define Uses_TEvent
@@ -47,14 +48,11 @@ static void bktv_log(const char* fmt, ...) {
 // backrooms primers/ dir so the CLI subprocess can resolve them by name.
 static std::map<std::string, std::string> g_modulePrimerPaths;
 
-// Jet black background (#000), white foreground (#FFF)
-static const TColorAttr kTextAttr =
-    TColorAttr(TColorRGB(0xFF, 0xFF, 0xFF), TColorRGB(0x00, 0x00, 0x00));
-static const TColorAttr kBlankAttr =
-    TColorAttr(TColorRGB(0x00, 0x00, 0x00), TColorRGB(0x00, 0x00, 0x00));
+// Resolved live (not static) so skin switches take effect on next draw.
+static TColorAttr kTextAttr() { return ThemeManager::attr(SkinRole::Paper); }
+static TColorAttr kBlankAttr() { return ThemeManager::attr(SkinRole::Paper); }
 // Status bar: dim grey on black
-static const TColorAttr kStatusAttr =
-    TColorAttr(TColorRGB(0x66, 0x66, 0x66), TColorRGB(0x00, 0x00, 0x00));
+static TColorAttr kStatusAttr() { return ThemeManager::attr(SkinRole::Dim); }
 
 // ===== BackroomsBridge =====
 
@@ -490,7 +488,7 @@ void TBackroomsTvView::draw() {
 
     // Helper: fill a full row with blank (black) cells
     auto blankRow = [&](int y) {
-        buf.moveChar(0, ' ', kBlankAttr, W);
+        buf.moveChar(0, ' ', kBlankAttr(), W);
         writeLine(0, y, W, 1, buf);
     };
 
@@ -507,12 +505,12 @@ void TBackroomsTvView::draw() {
             int lineIdx = topLine + row;
 
             // Fill row black, then draw text with UTF-8 support
-            buf.moveChar(0, ' ', kBlankAttr, W);
+            buf.moveChar(0, ' ', kBlankAttr(), W);
 
             if (lineIdx >= 0 && lineIdx < totalLines) {
                 const std::string &line = lines_[lineIdx];
                 // moveStr handles UTF-8 multi-byte characters correctly
-                buf.moveStr(pad, TStringView(line), kTextAttr);
+                buf.moveStr(pad, TStringView(line), kTextAttr());
             }
 
             writeLine(0, pad + row, W, 1, buf);
@@ -525,18 +523,14 @@ void TBackroomsTvView::draw() {
 
     // 2-row status bar at bottom
     if (H >= 2) {
-        static const TColorAttr kBarBg =
-            TColorAttr(TColorRGB(0x88, 0x88, 0x88), TColorRGB(0x1A, 0x1A, 0x1A));
-        static const TColorAttr kBarLabel =
-            TColorAttr(TColorRGB(0xFF, 0xFF, 0xFF), TColorRGB(0x1A, 0x1A, 0x1A));
-        static const TColorAttr kBarDim =
-            TColorAttr(TColorRGB(0x66, 0x66, 0x66), TColorRGB(0x1A, 0x1A, 0x1A));
-        static const TColorAttr kBarLive =
-            TColorAttr(TColorRGB(0x00, 0xFF, 0x66), TColorRGB(0x1A, 0x1A, 0x1A));
-        static const TColorAttr kBarPaused =
-            TColorAttr(TColorRGB(0xFF, 0xCC, 0x00), TColorRGB(0x1A, 0x1A, 0x1A));
-        static const TColorAttr kBarIdle =
-            TColorAttr(TColorRGB(0x66, 0x66, 0x66), TColorRGB(0x1A, 0x1A, 0x1A));
+        TColorAttr kBarBg = ThemeManager::attr(SkinRole::Bar);
+        TColorAttr kBarLabel = ThemeManager::attr(SkinRole::Bar);
+        TColorAttr kBarDim = ThemeManager::attr(SkinRole::Dim);
+        // Semantic Live/Paused/Idle fg colours kept, placed on the Bar bg.
+        int barBg = ThemeManager::bgIndex(SkinRole::Bar);
+        TColorAttr kBarLive = ThemeManager::attrIdx(10 /*green*/, barBg);
+        TColorAttr kBarPaused = ThemeManager::attrIdx(14 /*yellow*/, barBg);
+        TColorAttr kBarIdle = ThemeManager::attrIdx(8 /*dark grey*/, barBg);
 
         // ── Row 1: state + theme + turns + primers ──
         buf.moveChar(0, ' ', kBarBg, W);

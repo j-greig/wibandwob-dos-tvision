@@ -34,7 +34,11 @@ if [ ! -d "tools/api_server/venv" ]; then
 fi
 
 echo "📦 Ensuring API server dependencies are installed..."
-./tools/api_server/venv/bin/pip install -q -r tools/api_server/requirements.txt
+echo "   First run may download packages. If a wheel is unavailable, pip may build from source."
+if ! ./tools/api_server/venv/bin/pip install --prefer-binary -r tools/api_server/requirements.txt; then
+    echo "   Wheel-first install failed; retrying with pip defaults."
+    ./tools/api_server/venv/bin/pip install -r tools/api_server/requirements.txt
+fi
 echo "✅ Dependencies ready"
 
 # Run the server

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "app": "test_pattern",
+  "timestamp": "2026-08-12T12:46:17",
+  "screen": { "width": 99, "height": 33 },
+  "globals": { "patternMode": "continuous", "skin": "midnight" },
+  "desktop": { "char": " ", "fg": 7, "bg": 1, "charUtf8": "·", "rgbFg": 5592405, "rgbBg": 0, "gallery": false },
+  "windows": [
+    {
+      "id": "w1",
+      "type": "figlet_text",
+      "title": "NIGHT SHIFT",
+      "bounds": { "x": 44, "y": 26, "w": 50, "h": 7 },
+      "zoomed": false,
+      "props": {"text": "NIGHT SHIFT", "font": "smslant", "fg": "#FFFFFF", "bg": "#000000", "frameless": false, "shadowless": true}
+    },
+    {
+      "id": "w2",
+      "type": "disks",
+      "title": "SYMBIENT SHAREWARE LIBRARY",
+      "bounds": { "x": 1, "y": 1, "w": 54, "h": 23 },
+      "zoomed": false,
+      "props": {}
+    },
+    {
+      "id": "w3",
+      "type": "shader",
+      "title": "SHADER.SYS",
+      "bounds": { "x": 44, "y": 16, "w": 52, "h": 14 },
+      "zoomed": false,
+      "props": {"shader": "wallsofcode"}
+    },
+    {
+      "id": "w4",
+      "type": "shader",
+      "title": "SHADER.SYS",
+      "bounds": { "x": 49, "y": 2, "w": 47, "h": 14 },
+      "zoomed": false,
+      "props": {"shader": "wibrain"}
+    }
+  ],
+  "focusedIndex": 0
+}

@@ -1,0 +1,18 @@
+# oilfield.skin — after the UVL oil game: many small panels, each its own
+# colour identity, on a dark dithered field. Canon combos: grey card with
+# blue ink (0x71), brown cargo panel (0x60), green-on-black dialog (0x02),
+# yellow guidance, red money.
+name oilfield
+texture ░
+desk 8 0
+paper 7 1
+paper2 6 15
+paper3 0 10
+dialog 0 2
+framePassive 0x08
+frameActive 0x0F
+menu 0x70
+dim 8
+accent 14
+ok 10
+warn 12

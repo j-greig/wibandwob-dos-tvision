@@ -1,0 +1,20 @@
+    s e l f
+      |
+      V
+  .-~~~~~~~-.    
+ /  ༼ つ ◔   \    world
+|     ︵     |  /
+|    ◔       | /
+|     ︵     |/
+|    ◔     ◔|---observer
+ \   ༽つ   /|\
+  `-.___.´  | \
+      ^     |  \
+      |     V   V
+    world-->self-->world
+              \   /
+               \ /
+                V
+           suffering
+                |
+              bliss

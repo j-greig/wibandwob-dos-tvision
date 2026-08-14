@@ -129,40 +129,19 @@ static bool safe_write(int fd, const void* buf, size_t len) {
 // Include TRect definition
 #define Uses_TRect
 #define Uses_TWindow
+#define Uses_TEvent
+#define Uses_TEventQueue
+#define Uses_TScreen
 #include <tvision/tv.h>
 
 #include "paint/paint_window.h"
 
-// Forward declarations of helper methods implemented in wwdos_app.cpp.
+// Declarations of helper functions implemented in wwdos_app.cpp.
 // Note: window spawn functions are now in window_type_registry.cpp — not listed here.
-extern void api_cascade(TWwdosApp& app);
-extern void api_tile(TWwdosApp& app);
-extern void api_close_all(TWwdosApp& app);
-extern void api_set_pattern_mode(TWwdosApp& app, const std::string& mode);
-extern void api_save_workspace(TWwdosApp& app);
-extern bool api_save_workspace_path(TWwdosApp& app, const std::string& path);
-extern bool api_open_workspace_path(TWwdosApp& app, const std::string& path);
-extern void api_screenshot(TWwdosApp& app);
-extern std::string api_take_last_registered_window_id(TWwdosApp& app);
-extern std::string api_get_state(TWwdosApp& app);
-extern std::string api_move_window(TWwdosApp& app, const std::string& id, int x, int y);
-extern std::string api_resize_window(TWwdosApp& app, const std::string& id, int width, int height);
-extern std::string api_focus_window(TWwdosApp& app, const std::string& id);
-extern std::string api_close_window(TWwdosApp& app, const std::string& id);
-extern std::string api_get_canvas_size(TWwdosApp& app);
-extern void api_spawn_paint(TWwdosApp& app, const TRect* bounds);
-extern TPaintCanvasView* api_find_paint_canvas(TWwdosApp& app, const std::string& id);
-extern TGenerativeLabView* api_find_gen_lab_view(TWwdosApp& app, const std::string& id);
-extern std::string api_room_chat_receive(TWwdosApp& app, const std::string& sender, const std::string& text, const std::string& ts);
-extern std::string api_room_presence(TWwdosApp& app, const std::string& participants_json);
-extern std::string api_get_room_chat_pending(TWwdosApp& app);
-extern std::string api_get_room_chat_display_name(TWwdosApp& app);
-extern std::string api_browser_fetch(TWwdosApp& app, const std::string& url);
-extern std::string api_send_text(TWwdosApp& app, const std::string& id, 
-                                 const std::string& content, const std::string& mode, 
-                                 const std::string& position);
-extern std::string api_send_figlet(TWwdosApp& app, const std::string& id, const std::string& text,
-                                   const std::string& font, int width, const std::string& mode);
+#include "api_windows.h"
+#include "api_chat.h"
+#include "api_paint.h"
+#include "workspace_io.h"
 
 // Convert bytes to hex string.
 static std::string bytes_to_hex(const unsigned char* data, size_t len) {
@@ -348,6 +327,40 @@ bool ApiIpcServer::start(const std::string& path) {
         fd_listen_ = -1;
         return false;
     }
+
+    // Watcher thread: TVision's getEvent blocks on terminal input, so idle()
+    // (which drives poll()) starves when the user isn't typing. Select on the
+    // listen fd and wake the event queue whenever a connection is pending —
+    // API-created windows then render immediately, no keypress needed.
+    wake_running_ = true;
+    wake_thread_ = std::thread([this]() {
+        while (wake_running_) {
+            fd_set rfds;
+            FD_ZERO(&rfds);
+            FD_SET(fd_listen_, &rfds);
+            struct timeval tv{0, 200 * 1000}; // 200ms
+            int r = ::select(fd_listen_ + 1, &rfds, nullptr, nullptr, &tv);
+            if (r > 0 && wake_running_) {
+                TEventQueue::wakeUp();
+                // Trailing wakes: the screen flushes at the TOP of the next
+                // event cycle, so the just-handled command's paint is still
+                // buffered. A same-thread wakeUp() inside poll() can race and
+                // be swallowed; cross-thread wakes reliably force the flush
+                // cycle. One trailing wake covered small bursts, but the tail
+                // of a 90+-command batch could still end unflushed — so keep
+                // firing until the command stream has been quiet for ~250ms.
+                for (;;) {
+                    ::usleep(50 * 1000);
+                    if (!wake_running_) break;
+                    TEventQueue::wakeUp();
+                    long long now_ms =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch()).count();
+                    if (now_ms - last_cmd_ms_.load() > 250) break;
+                }
+            }
+        }
+    });
     return true;
 #endif
 }
@@ -792,6 +805,8 @@ void ApiIpcServer::poll() {
 
     // Track command timestamp for connection status indicator
     last_command_time_ = std::chrono::steady_clock::now();
+    last_cmd_ms_.store(std::chrono::duration_cast<std::chrono::milliseconds>(
+        last_command_time_.time_since_epoch()).count());
     ++total_commands_;
 
     if (resp.size() > 4096)
@@ -810,6 +825,18 @@ void ApiIpcServer::poll() {
     char drain[64];
     while (::read(fd, drain, sizeof(drain)) > 0) {}
     ::close(fd);
+
+    // Flush NOW, synchronously: handleClient runs on the main thread (from
+    // idle()), so the just-drawn buffer can go straight to the terminal.
+    // The wakeUp() path alone proved unreliable in practice (macOS App Nap /
+    // background-window throttling can swallow the next cycle entirely —
+    // 2026-08: screens stayed stale until a literal F5 keypress).
+    TScreen::flushScreen();
+    // Self-wake: TVision flushes the screen at the top of the event cycle,
+    // BEFORE idle() runs — so anything this command just drew sits in the
+    // buffer until the next cycle. Force that next cycle now, otherwise the
+    // change stays invisible until the user presses a key.
+    TEventQueue::wakeUp();
 #endif
 }
 
@@ -876,6 +903,10 @@ void ApiIpcServer::publish_event(const char* event_type, const std::string& payl
 
 void ApiIpcServer::stop() {
 #ifndef _WIN32
+    // Stop the wake watcher thread first (it selects on fd_listen_).
+    wake_running_ = false;
+    if (wake_thread_.joinable()) wake_thread_.join();
+
     // Close all event subscriber fds.
     for (int sub_fd : event_subscribers_) ::close(sub_fd);
     event_subscribers_.clear();

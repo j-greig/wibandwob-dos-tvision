@@ -9,6 +9,7 @@
 #include "scramble_view.h"
 #include "scramble_engine.h"
 #include "text_wrap.h"
+#include "theme_manager.h"
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
@@ -282,8 +283,8 @@ void TScrambleView::draw()
     TColorAttr catAttr = bgAttr;
 
     // Bubble colours: warm text on dark bg
-    TColorAttr bubbleTextAttr = TColorAttr(TColorRGB(240, 240, 200), TColorRGB(0, 0, 0));
-    TColorAttr bubbleBorderAttr = TColorAttr(TColorRGB(140, 140, 160), TColorRGB(0, 0, 0));
+    TColorAttr bubbleTextAttr = ThemeManager::attr(SkinRole::Dialog);
+    TColorAttr bubbleBorderAttr = ThemeManager::attr(SkinRole::FrameActive);
 
     // Word-wrap bubble text
     std::vector<std::string> bubbleLines;
@@ -471,9 +472,9 @@ void TScrambleMessageView::draw()
     TDrawBuffer b;
 
     // Colours
-    TColorAttr bgAttr = TColorAttr(TColorRGB(160, 160, 170), TColorRGB(0, 0, 0));
-    TColorAttr senderAttr = TColorAttr(TColorRGB(200, 180, 120), TColorRGB(0, 0, 0));
-    TColorAttr textAttr = TColorAttr(TColorRGB(190, 190, 200), TColorRGB(0, 0, 0));
+    TColorAttr bgAttr = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr senderAttr = ThemeManager::attr(SkinRole::Accent);
+    TColorAttr textAttr = ThemeManager::attr(SkinRole::Paper);
 
     // Show last N lines that fit in the view
     int totalLines = static_cast<int>(wrappedLines.size());
@@ -560,12 +561,12 @@ void TScrambleInputView::draw()
     TDrawBuffer b;
 
     // Colours
-    TColorAttr promptAttr = TColorAttr(TColorRGB(200, 180, 120), TColorRGB(0, 0, 0));
-    TColorAttr inputAttr = TColorAttr(TColorRGB(220, 220, 230), TColorRGB(0, 0, 0));
-    TColorAttr cursorAttr = TColorAttr(TColorRGB(25, 25, 35), TColorRGB(220, 220, 230));
+    TColorAttr promptAttr = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr inputAttr = ThemeManager::attr(SkinRole::Paper);
+    TColorAttr cursorAttr = ThemeManager::attr(SkinRole::Accent);
 
     // Separator line on row 0
-    TColorAttr sepAttr = TColorAttr(TColorRGB(80, 80, 100), TColorRGB(0, 0, 0));
+    TColorAttr sepAttr = ThemeManager::attr(SkinRole::Dim);
     b.moveChar(0, '\xC4', sepAttr, size.x);
     writeLine(0, 0, size.x, 1, b);
 
@@ -574,7 +575,7 @@ void TScrambleInputView::draw()
     if (thinking) {
         static const char* spinChars = "|/-\\";
         char spin[2] = { spinChars[spinnerFrame % 4], 0 };
-        TColorAttr spinAttr = TColorAttr(TColorRGB(200, 180, 120), TColorRGB(0, 0, 0));
+        TColorAttr spinAttr = ThemeManager::attr(SkinRole::Paper);
         b.moveStr(0, spin, spinAttr);
         b.moveStr(2, "thinking...", TColorAttr(TColorRGB(130, 130, 150), TColorRGB(0, 0, 0)));
         writeLine(0, 1, size.x, 1, b);
@@ -859,7 +860,7 @@ void TScrambleWindow::draw()
 {
     if (displayState == sdsSmol) {
         TDrawBuffer b;
-        TColorAttr black = TColorAttr(TColorRGB(0, 0, 0), TColorRGB(0, 0, 0));
+        TColorAttr black = ThemeManager::attr(SkinRole::Paper);
         b.moveChar(0, ' ', black, size.x);
         for (int i = 0; i < size.y; i++) writeLine(0, i, size.x, 1, b);
     }

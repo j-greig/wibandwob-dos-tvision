@@ -13,14 +13,16 @@
 #include <tvision/tv.h>
 #include <vector>
 
+#include "theme_manager.h"
+
 class TAsciiGridView : public TView {
 public:
     TAsciiGridView(const TRect &bounds, int gridW, int gridH);
 
     void resizeGrid(int gridW, int gridH);
-    void clear(TColorAttr attr = TColorAttr(0x07), char ch = ' ');
-    void putChar(int x, int y, char ch, TColorAttr attr = TColorAttr(0x07));
-    void putGlyph(int x, int y, const std::string &utf8, TColorAttr attr = TColorAttr(0x07));
+    void clear(TColorAttr attr = ThemeManager::attr(SkinRole::Paper), char ch = ' ');
+    void putChar(int x, int y, char ch, TColorAttr attr = ThemeManager::attr(SkinRole::Paper));
+    void putGlyph(int x, int y, const std::string &utf8, TColorAttr attr = ThemeManager::attr(SkinRole::Paper));
 
     virtual void draw() override;
 

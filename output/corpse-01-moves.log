@@ -1,0 +1,10 @@
+ROUND 1 CARD: left third only
+R1 OUTER: mosaic stair, 6,30 cw6 ch3, lamp @ top (left third)
+SUSPECT CONFIRMED-ISH: screensaver fires mid-sitting (API calls dont reset idle clock)
+R1 INNER: mosaic 5 windows (stair continuation + second moon), pen-down
+ROUND 2 CARD: echo the oldest window
+R2 OUTER: 3 radial lamp-echoes arcing out of left third from the ring (100,12)
+R2 INNER: 3 windows (echo move), pen-down
+ROUND 3 CARD: break the symmetry you find
+R3 OUTER: 15-block slab low-right (215,60) — counterweight against the diagonal
+GAME PAUSED: board lost to ghostty crash after R2; log + captures preserved; resume = each player re-lays own moves
