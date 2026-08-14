@@ -33,6 +33,11 @@ docs, and stray windows. Concretely:
   **Test at large terminal size** (~2400x1360; relaunch script sizes it) —
   small canvases lie about layouts, density and composition.
 - Leave every session with the repo better than you found it.
+- **Canon voice casting (macOS `say`)**: Wib = `Sandy (English (UK))`,
+  Wob = `Grandpa (English (UK))`. Never improvise the cast (a Zarvox/Whisper
+  miscast got a published piece deleted). Narration is POETRY, not
+  commentary — never describe what's visibly happening; one voice at a
+  time, sparse (golden-corpus verdicts, heartbeat repo).
 
 **Repo disambiguation** — two similarly-named repos, easy to conflate:
 - `wibandwob-dos-tvision` (THIS repo): C++ / Turbo Vision — the wwdos TUI app, control API :8089, vintage demos
