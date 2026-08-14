@@ -2094,6 +2094,17 @@ void TWwdosApp::idle()
 
     // Screensaver idle check (lastInputMs_ seeds at first idle pass)
     if (lastInputMs_ == 0) lastInputMs_ = wwNowMs();
+    // Heal a stale saver pointer (window reaped by close_window/close_all):
+    // left dangling it blocks re-fire forever and crashes dismiss paths.
+    if (saverWin_) {
+        bool alive = false;
+        if (TView* start = deskTop->first()) {
+            TView* v = start;
+            do { if (v == (TView*)saverWin_) { alive = true; break; }
+                 v = v->next; } while (v != start);
+        }
+        if (!alive) saverWin_ = nullptr;
+    }
     if (saverTimeoutMins_ > 0 && !saverWin_ &&
         wwNowMs() - lastInputMs_ > (long long)saverTimeoutMins_ * 60000LL)
         activateScreensaver();
@@ -2205,6 +2216,20 @@ void TWwdosApp::dismissScreensaver()
     if (!saverWin_) return;
     TWindow* w = saverWin_;
     saverWin_ = nullptr;
+    // saverWin_ is a raw pointer: if the saver window was destroyed by any
+    // other path (close_window API, close_all, workspace load), it dangles
+    // and w->close() is a use-after-free SIGSEGV (crash 2026-08-14 130008:
+    // dismissScreensaver via api_screensaver after a close_window had
+    // already reaped it). Only touch it if it is still a desktop child.
+    bool alive = false;
+    if (TView* start = deskTop->first()) {
+        TView* v = start;
+        do {
+            if (v == (TView*)w) { alive = true; break; }
+            v = v->next;
+        } while (v != start);
+    }
+    if (!alive) { fprintf(stderr, "[saver] off (window already gone)\n"); return; }
     w->flags |= wfClose;
     w->close();
     fprintf(stderr, "[saver] off\n");

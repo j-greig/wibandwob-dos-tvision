@@ -150,6 +150,12 @@ std::string exec_registry_command(
     TWwdosApp& app,
     const std::string& name,
     const std::map<std::string, std::string>& kv) {
+    // Every API command counts as activity: without this, long agent-driven
+    // sittings are keyboard-silent, the screensaver fires mid-session and
+    // its fullscreen shader starves the IPC loop — the "stream closed"
+    // cousin deaths of 2026-08-13/14. (screensaver action=now still works:
+    // activation is explicit, not idle-gated.)
+    api_note_input(app);
     if (name == "cascade") {
         api_cascade(app);
         return "ok";

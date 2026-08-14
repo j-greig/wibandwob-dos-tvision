@@ -39,11 +39,20 @@
 extern TColorAttr shadowAttr;
 static const TColorAttr kDefaultShadowAttr = shadowAttr;
 
+void api_note_input(TWwdosApp& app) { app.noteInput(); }
+
 std::string api_screensaver(TWwdosApp& app, const std::string& action, int minutes)
 {
     if (minutes >= 0) app.setSaverTimeoutMins(minutes);
+    // minutes=0 with no explicit action means DISABLE — the old default-to
+    // "on" branch saw timeout 0 and helpfully re-armed it to 10, so the one
+    // obvious disable syntax silently kept the saver alive (2026-08-14).
     if (action == "now") { app.activateScreensaver(); return "ok"; }
-    if (action == "off") { app.dismissScreensaver(); app.setSaverTimeoutMins(0); return "ok"; }
+    if (action == "off" || (action.empty() && minutes == 0)) {
+        app.dismissScreensaver();
+        app.setSaverTimeoutMins(0);
+        return "ok";
+    }
     if (action == "on" || action.empty()) {
         if (app.saverTimeoutMins() == 0) app.setSaverTimeoutMins(10);
         app.noteInput();

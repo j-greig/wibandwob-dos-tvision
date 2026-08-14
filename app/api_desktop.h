@@ -23,3 +23,4 @@ std::string api_reload_skins(TWwdosApp&);
 std::string api_skin_save(TWwdosApp&, const std::string& name);
 
 std::string api_screensaver(TWwdosApp&, const std::string& action, int minutes);
+void api_note_input(TWwdosApp&);   // reset the saver idle clock (any API command = activity)
