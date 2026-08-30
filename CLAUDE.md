@@ -1,8 +1,8 @@
 # wibandwob-dos-tvision
 
 **Repo disambiguation** — two similarly-named repos, easy to conflate:
-- `wibandwob-dos-tvision` (THIS repo): C++ / Turbo Vision archive + vintage demos
-- `~/Repos/wibandwob-dos`: TS / bun TUI — the live WibWob-DOS app, microapps (wibwobworld flightsim), control API :8099
+- `wibandwob-dos-tvision` (THIS repo): C++ / Turbo Vision build + vintage demos
+- `~/Repos/wibandwob-dos`: TS / bun TUI — WibWob-DOS app, microapps (wibwobworld flightsim), control API :8099
 
 When a session touches both, SAY SO explicitly at each switch: name the repo and branch before running git commands or editing files there.
 

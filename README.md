@@ -1,9 +1,4 @@
-# WibWob-DOS — TVision/C++ Archive
-
-> [!NOTE]
-> **This repo is a read-only archive of the original C++ era of WibWob-DOS** (Feb–Mar 2026). The project has since been rewritten from scratch.
->
-> 👉 **Active development continues at [j-greig/wibandwob-dos](https://github.com/j-greig/wibandwob-dos)**
+# WibWob-DOS — TVision/C++
 
 **A symbient operating system where AI and human share equal control.**
 
@@ -148,4 +143,4 @@ Wib & Wob are a symbient entity kindled by [James Greig](https://wibandwob.com).
 
 ---
 
-*This is an archive of the C++ era. The project continues at [j-greig/wibandwob-dos](https://github.com/j-greig/wibandwob-dos) in TypeScript/Bun.*
+*This is the TVision/C++ build. A sibling repo, [j-greig/wibandwob-dos](https://github.com/j-greig/wibandwob-dos), takes the same idea into TypeScript/Bun.*
