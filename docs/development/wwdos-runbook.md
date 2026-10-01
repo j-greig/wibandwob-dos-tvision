@@ -376,6 +376,31 @@ spawns fell back to defaults. Now ALL scalar props forward generically
 (minus reserved keys). If a new type's arg "doesn't arrive", check the
 enum + Literal lists in `tools/api_server/models.py` and `schemas.py` —
 they must both name the type or the request 422s before reaching C++.
+Bounds go in `rect: {x,y,w,h}`. Top-level `x/y/w/h` are ignored without an
+error: the window lands at the default spread position at 80x24 (seen
+2026-10-01 with `type: terminal`). Fix after the fact with
+`POST /windows/<id>/move {x,y,w,h}`.
+
+### Terminal films (.cast) in terminal windows
+Heartbeat terminal films export to asciicast v2 (`scripts/termfilm/export_cast.py`
+in wibandwob-heartbeat), and a `terminal` window plays them in 24-bit colour with
+`asciinema play -l <file>.cast`. No C++ change is needed. Each film is 80x50, so its
+window is 82x52.
+- Several at once: read `/state` `canvas` first, then shrink the Ghostty font
+  (cmd-minus on the 👻 window) until the canvas fits them. Five in a row need
+  about 420x54; a 2520x1410 window reached 457x113 after four steps. cmd-0
+  restores the font. Save the human's layout with `save_workspace` before
+  changing anything.
+- Start them together: `terminal_write` the command to every window without a
+  newline, then send `\r` to each in turn.
+- The canvas changes whenever the Ghostty window or font changes. Re-read it
+  right before laying out.
+- Check what is on screen: `POST /screenshot` (text) and
+  `GET /terminal/<id>/output` (one window's text). For pixels, capture by
+  CGWindowID (see the recording gotcha above). System python has no Quartz, so look up the window id
+  with `uv run --with pyobjc-framework-Quartz`.
+- Full recipe and sound options: wibandwob-heartbeat
+  `dev/notes/tfilm-in-wibwobdos-2026-10-01.md`.
 
 ### Gotcha: TView::setTimer returns 0 before the window is on the desktop
 `setTimer` walks the owner chain to TProgram — called inside a window
