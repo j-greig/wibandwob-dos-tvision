@@ -1,0 +1,12 @@
+{
+  "title": "Wib / Wob: A Desktop Becoming",
+  "cues": [
+    {"type": "island", "title": "WIBWOB-DOS"},
+    {"type": "donut"},
+    {"type": "motion"},
+    {"type": "speech", "words": "CHAOS BECOMES ORDER WINDOWS BECOME WORDS"},
+    {"type": "pixels"},
+    {"type": "hold", "seconds": 1},
+    {"type": "finale", "words": "HUMAN MACHINE ONE SHARED WORLD"}
+  ]
+}
