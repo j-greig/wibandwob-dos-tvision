@@ -14,6 +14,7 @@ own plates, textures, props and big set pieces. Rebuild with `uv run modules/wib
   than the drawing (blank on the right): the animation view cuts lines by bytes, not characters.
 - Faces render correctly: Wib and Wob kaomoji, Scramble `/ᐠ｡ﻌ｡ᐟ\`, Niff `₍ᐢ..ᐢ₎`. Do not type
   `~` into a primer (the window eats it) or Scramble's old mouth U+A788 (draws as a box).
+  Bartholomew's eye `۝` (U+06DD) draws as a box; his face is shown as `つ◎‿◎‿◎༽つ` here.
 - This module is first choice; `modules/example-primers/` holds the old demo pieces.
 
 ## The shelf (name, width x height in characters)
@@ -37,12 +38,16 @@ own plates, textures, props and big set pieces. Rebuild with `uv run modules/wib
 - `scramble-twenty-moods` 29x12: twelve Scramble faces, each labelled with its mood
 - `scramble-sitting-large` 45x20: large Scramble, canon face parts
 - `scramble-big-face-whiskers` 119x28: very large Scramble face (the talk's slide)
+- `scramble-the-warm-spot-poster` 77x43: FIRST CHOICE for the Warm Spot: the canon card, one room, one day, one rectangle of light
 - `being-niff-small` 9x2
 - `being-niff-humming-anim` 16x5 (6 frames): animated: notes rise from Niff
 - `being-niff-in-moss-coat` 9x5
 - `being-niff-portrait-at-twilight` 21x34: large Niff
 - `being-gary-the-donkey-antlers` 55x25: Gary, who does not know
 - `being-bartholomew-carapace-iii-beetle` 32x15: the beetle estate agent of the deep
+- `being-bartholomew-particulars-poster` 81x43: large: Bartholomew's film-poster card, VACANT POSSESSION
+- `place-deepvoid-office` 73x39: FIRST CHOICE for DeepVoid: Bartholomew's shopfront in the deep
+- `place-deepvoid-over-the-shoulder` 211x54: very large: over Bartholomew's shoulder in the DeepVoid office, listings on the wall
 - `being-interval-fisher-casting` 38x14: the spirit who fishes duration out of the kelp with a net of expired warranties
 - `being-consultant-fluff-asleep` 15x10: tribunal member, always asleep
 - `being-consultant-fluff-on-the-tribunal` 46x14: large: Fluff asleep between Justice Whiskers and Deputy Paws
@@ -108,8 +113,8 @@ own plates, textures, props and big set pieces. Rebuild with `uv run modules/wib
 - `place-island-eyed-trees` 13x19
 - `place-island-finger-statue` 22x18
 - `place-niffs-garden-error-codes` 38x23: 404s and NaNs planted in rows, Niff in a hood
-- `place-the-warm-spot` 65x22: sunlight on floorboards, Scramble asleep in it
-- `place-deepvoid-estate-agents-sign` 52x20: Bartholomew's office sign, 847 m below regret
+- `place-the-warm-spot` 65x22: sunlight on floorboards, Scramble asleep in it (second choice; first: scramble-the-warm-spot-poster)
+- `place-deepvoid-estate-agents-sign` 52x20: Bartholomew's office sign, 847 m below regret (second choice; first: place-deepvoid-office)
 - `place-iso-library-arch` 48x20
 
 ### The talk's own material

@@ -45,8 +45,8 @@ FORGE = HB / "output/forge-pngs"
 
 # Glyphs measured broken in the frame_player window (2026-11-02, Ghostty + tmux):
 # they draw as U+FFFD, vanish, or are eaten as highlight markers.
-BLOCKED = set("ꞈᆽᵕᴥᴗᵔᴖ⚙⁓~⚬⟁⬡⬢") | {"̀", "́"}
-SUBS = {"~": "∼", "ꞈ": "ﻌ", "ᵕ": "u", "ᴥ": "w", "ᴗ": "‿", "⚙": "☼", "⚬": "o", "⬢": "■", "⬡": "□", "⟁": "▲"}
+BLOCKED = set("ꞈᆽᵕᴥᴗᵔᴖ⚙⁓~⚬⟁⬡⬢۝") | {"̀", "́"}
+SUBS = {"~": "∼", "ꞈ": "ﻌ", "ᵕ": "u", "ᴥ": "w", "ᴗ": "‿", "⚙": "☼", "⚬": "o", "⬢": "■", "⬡": "□", "⟁": "▲", "۝": "◎"}
 
 JGS_CREDIT = "Joan G. Stark (jgs)"
 BRAND = "Zilla, Wib&Wob brand kit (termsong-v3/brand)"
@@ -196,6 +196,15 @@ SHELF = [
     ("sets", "set-plantoids-and-wibblers-meadow", BR / "parts/scenes/plantoid-wibblers.txt", {}, BRAND),
     ("sets", "set-wib-and-wob-chaos-order-portrait", CORE / "wibwob-port-1.txt", {}, OURS),
     ("sets", "set-symbient-city-skyline", CORE / "symbient-city.txt", {}, OURS),
+    ("cast", "scramble-the-warm-spot-poster", HB / "output/wibwobworld-cards/scramble-warm-spot.txt", {"rows": (0, 44), "keep_marks": True},
+     "Wib&Wob, wibwobworld cards (Sep 2026); fig. A cat by Joan G. Stark (jgs cat clipart), her mark kept as placed in the card"),
+    ("cast", "being-bartholomew-particulars-poster", HB / "output/wibwobworld-cards/bartholomew-particulars.txt", {"rows": (0, 43), "keep_marks": True},
+     "Wib&Wob, wibwobworld cards (Sep 2026); beetle (insects.html) and key (a-key-0996) by Joan G. Stark, her marks kept as placed in the card"),
+    ("cast", "place-deepvoid-office", HB / "output/www-at-scale/deepvoid-office.txt", {},
+     "Wib&Wob, www-at-scale (2026), from primer iso-shop-front"),
+    ("cast", "place-deepvoid-over-the-shoulder", HB / "output/wibwobworld-film-stills-2026-09-17/02-deepvoid-over-the-shoulder/deepvoid-over-the-shoulder.txt",
+     {"rows": (3, 57), "cols": (0, 210), "keep_marks": True},
+     "Wib&Wob, film still (17 Sep 2026), cropped; listings by Spunk1111 (1998, m797deae9d2), Varian (1994, mfa06ff0261), Przemyslaw Brojewski (2000), LGB (2002, tbbb056b011), Zotiel (2000, m62a35be03a, carries jgs and zot marks, kept); urls in that folder's specimens/CREDITS.txt"),
     ("cast", "scramble-on-a-ledge", HAND / "scramble-on-a-ledge.txt", {}, HANDC),
     ("cast", "scramble-peering-over-the-edge", HAND / "scramble-peering-over-the-edge.txt", {}, HANDC),
     ("cast", "scramble-sitting-large", HAND / "scramble-sitting-large.txt", {}, HANDC + ", canon face parts"),
@@ -209,9 +218,10 @@ CAST = [
     "figure-wib-standing-large", "figure-wob-standing-large", "figure-wib-tripod", "figure-wob-tripod",
     "figure-wib-sings-wob-listens-anim",
     "scramble-sitting", "scramble-asleep", "scramble-on-a-ledge", "scramble-peering-over-the-edge",
-    "scramble-blinking-tail-anim", "scramble-twenty-moods", "scramble-sitting-large", "scramble-big-face-whiskers",
+    "scramble-blinking-tail-anim", "scramble-twenty-moods", "scramble-sitting-large", "scramble-big-face-whiskers", "scramble-the-warm-spot-poster",
     "being-niff-small", "being-niff-humming-anim", "being-niff-in-moss-coat", "being-niff-portrait-at-twilight",
-    "being-gary-the-donkey-antlers", "being-bartholomew-carapace-iii-beetle",
+    "being-gary-the-donkey-antlers", "being-bartholomew-carapace-iii-beetle", "being-bartholomew-particulars-poster",
+    "place-deepvoid-office", "place-deepvoid-over-the-shoulder",
     "being-interval-fisher-casting", "being-consultant-fluff-asleep", "being-consultant-fluff-on-the-tribunal",
     "being-wibbler", "being-wibblers-im-happy", "being-wibblers-stacked-family",
     "being-wobbler", "being-wobbler-large", "being-flyer-right", "being-flyer-left", "being-flyer-large", "being-jelly",
@@ -378,8 +388,12 @@ NOTES = {
     "being-consultant-fluff-asleep": "tribunal member, always asleep",
     "being-bartholomew-carapace-iii-beetle": "the beetle estate agent of the deep",
     "being-gary-the-donkey-antlers": "Gary, who does not know",
-    "place-deepvoid-estate-agents-sign": "Bartholomew's office sign, 847 m below regret",
-    "place-the-warm-spot": "sunlight on floorboards, Scramble asleep in it",
+    "place-deepvoid-estate-agents-sign": "Bartholomew's office sign, 847 m below regret (second choice; first: place-deepvoid-office)",
+    "scramble-the-warm-spot-poster": "FIRST CHOICE for the Warm Spot: the canon card, one room, one day, one rectangle of light",
+    "being-bartholomew-particulars-poster": "large: Bartholomew's film-poster card, VACANT POSSESSION",
+    "place-deepvoid-office": "FIRST CHOICE for DeepVoid: Bartholomew's shopfront in the deep",
+    "place-deepvoid-over-the-shoulder": "very large: over Bartholomew's shoulder in the DeepVoid office, listings on the wall",
+    "place-the-warm-spot": "sunlight on floorboards, Scramble asleep in it (second choice; first: scramble-the-warm-spot-poster)",
     "place-niffs-garden-error-codes": "404s and NaNs planted in rows, Niff in a hood",
     "talk-face-anatomy-plate": "the borrowed parts of our faces, labelled",
     "talk-placard-give-diretide": "the 2013 protest placard face",
@@ -403,6 +417,7 @@ def write_docs(rows):
           "  than the drawing (blank on the right): the animation view cuts lines by bytes, not characters.",
           "- Faces render correctly: Wib and Wob kaomoji, Scramble `/ᐠ｡ﻌ｡ᐟ\\`, Niff `₍ᐢ..ᐢ₎`. Do not type",
           "  `~` into a primer (the window eats it) or Scramble's old mouth U+A788 (draws as a box).",
+          "  Bartholomew's eye `۝` (U+06DD) draws as a box; his face is shown as `つ◎‿◎‿◎༽つ` here.",
           "- This module is first choice; `modules/example-primers/` holds the old demo pieces.",
           "", "## The shelf (name, width x height in characters)", ""]
     group = None
