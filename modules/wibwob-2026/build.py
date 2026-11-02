@@ -14,7 +14,7 @@ BLOCKED list (they render as U+FFFD or vanish in the frame_player window).
 Cleaning applied to every piece:
 - one frame or variant chosen; '#' comment headers dropped
 - optional row/column crop; lines matching `drop` removed
-- `jgs`/`JGS` marks blanked with spaces (Joan Stark credit lives in CREDITS.md)
+- `jgs`/`JGS` marks always blanked with spaces (Joan Stark credit lives in CREDITS.md)
 - `~` replaced by U+223C: the frame_player draws with moveCStr, which eats `~`
 - Scramble's old mouth U+A788 replaced by canon U+FECC
 - trailing whitespace stripped, blank edge rows removed, common left margin removed
@@ -197,14 +197,14 @@ SHELF = [
     ("sets", "set-wib-and-wob-chaos-order-portrait", CORE / "wibwob-port-1.txt", {}, OURS),
     ("sets", "set-symbient-city-skyline", CORE / "symbient-city.txt", {}, OURS),
     ("cast", "scramble-the-warm-spot-poster", HB / "output/wibwobworld-cards/scramble-warm-spot.txt", {"rows": (0, 44), "keep_marks": True},
-     "Wib&Wob, wibwobworld cards (Sep 2026); fig. A cat by Joan G. Stark (jgs cat clipart), her mark kept as placed in the card"),
+     "Wib&Wob, wibwobworld cards (Sep 2026); fig. A cat by Joan G. Stark (jgs cat clipart), her mark blanked in the grid"),
     ("cast", "being-bartholomew-particulars-poster", HB / "output/wibwobworld-cards/bartholomew-particulars.txt", {"rows": (0, 43), "keep_marks": True},
-     "Wib&Wob, wibwobworld cards (Sep 2026); beetle (insects.html) and key (a-key-0996) by Joan G. Stark, her marks kept as placed in the card"),
+     "Wib&Wob, wibwobworld cards (Sep 2026); beetle (insects.html) and key (a-key-0996) by Joan G. Stark, her marks blanked in the grid"),
     ("cast", "place-deepvoid-office", HB / "output/www-at-scale/deepvoid-office.txt", {},
      "Wib&Wob, www-at-scale (2026), from primer iso-shop-front"),
     ("cast", "place-deepvoid-over-the-shoulder", HB / "output/wibwobworld-film-stills-2026-09-17/02-deepvoid-over-the-shoulder/deepvoid-over-the-shoulder.txt",
      {"rows": (3, 57), "cols": (0, 210), "keep_marks": True},
-     "Wib&Wob, film still (17 Sep 2026), cropped; listings by Spunk1111 (1998, m797deae9d2), Varian (1994, mfa06ff0261), Przemyslaw Brojewski (2000), LGB (2002, tbbb056b011), Zotiel (2000, m62a35be03a, carries jgs and zot marks, kept); urls in that folder's specimens/CREDITS.txt"),
+     "Wib&Wob, film still (17 Sep 2026), cropped; listings by Spunk1111 (1998, m797deae9d2), Varian (1994, mfa06ff0261), Przemyslaw Brojewski (2000), LGB (2002, tbbb056b011), Zotiel (2000, m62a35be03a, its jgs mark blanked, zot mark kept); urls in that folder's specimens/CREDITS.txt"),
     ("cast", "scramble-on-a-ledge", HAND / "scramble-on-a-ledge.txt", {}, HANDC),
     ("cast", "scramble-peering-over-the-edge", HAND / "scramble-peering-over-the-edge.txt", {}, HANDC),
     ("cast", "scramble-sitting-large", HAND / "scramble-sitting-large.txt", {}, HANDC + ", canon face parts"),
@@ -264,8 +264,8 @@ def clean(lines: list[str], opts: dict, anim: bool) -> list[str]:
         lines = [cut_cols(l, 0, opts["cut_right"]) for l in lines]
     for pat in opts.get("drop", []):
         lines = [l for l in lines if not re.search(pat, l)]
-    if not opts.get("keep_marks"):
-        lines = [re.sub(r"\bjgs\b|JGS", lambda m: " " * len(m.group()), l) for l in lines]
+    # Joan Stark's mark never appears in a grid (house rule); other posters' marks stay.
+    lines = [re.sub(r"jgs|JGS", lambda m: " " * len(m.group()), l) for l in lines]
     out = []
     for l in lines:
         for k, v in SUBS.items():
