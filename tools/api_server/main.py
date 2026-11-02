@@ -103,6 +103,9 @@ def make_app() -> FastAPI:
 
     events = EventHub()
     ctl = Controller(events)
+    from .show import register as register_show, TypeReq, GlideReq
+    register_show(app, events)
+    show = app.state.show
 
     # ----- Helpers -----
     def to_state_model() -> AppStateModel:
@@ -219,6 +222,11 @@ def make_app() -> FastAPI:
 
     @app.post("/windows/{win_id}/move", response_model=WindowState)
     async def move(win_id: str, payload: WindowMoveResize) -> WindowState:
+        if payload.ms:  # glide: travel there over ms instead of jumping
+            if payload.x is None or payload.y is None:
+                raise HTTPException(status_code=400, detail="glide needs x and y")
+            await show.glide(win_id, GlideReq(x=payload.x, y=payload.y, w=payload.w, h=payload.h,
+                                              ms=payload.ms, ease=payload.ease or "inout", actor=payload.actor))
         try:
             win = await ctl.move_resize(win_id, x=payload.x, y=payload.y, w=payload.w, h=payload.h)
         except KeyError:
@@ -275,6 +283,10 @@ def make_app() -> FastAPI:
 
     @app.post("/windows/{win_id}/send_text")
     async def send_text(win_id: str, payload: SendTextReq) -> Dict[str, Any]:
+        if payload.cps:  # typed reveal: key by key at cps characters a second
+            return await show.type_text(win_id, TypeReq(content=payload.content, cps=payload.cps,
+                                                        mode=payload.mode, position=payload.position,
+                                                        actor=payload.actor))
         res = await ctl.send_text(win_id, payload.content, payload.mode, payload.position)
         if not res.get("ok"):
             raise HTTPException(status_code=502, detail=res.get("error", "ipc_send_text_failed"))
@@ -412,14 +424,14 @@ def make_app() -> FastAPI:
 
     @app.post("/paint/line")
     async def paint_line(payload: PaintLineRequest) -> Dict[str, Any]:
-        resp = await ctl.paint_line(payload.win_id, payload.x0, payload.y0, payload.x1, payload.y1, payload.fg, payload.bg)
+        resp = await ctl.paint_line(payload.win_id, payload.x0, payload.y0, payload.x1, payload.y1, erase=payload.erase)
         if isinstance(resp, str) and resp.lower().startswith("err"):
             raise HTTPException(status_code=422, detail=resp)
         return {"ok": True}
 
     @app.post("/paint/rect")
     async def paint_rect(payload: PaintRectRequest) -> Dict[str, Any]:
-        resp = await ctl.paint_rect(payload.win_id, payload.x0, payload.y0, payload.x1, payload.y1, payload.fg, payload.bg, payload.fill)
+        resp = await ctl.paint_rect(payload.win_id, payload.x0, payload.y0, payload.x1, payload.y1, erase=payload.erase)
         if isinstance(resp, str) and resp.lower().startswith("err"):
             raise HTTPException(status_code=422, detail=resp)
         return {"ok": True}

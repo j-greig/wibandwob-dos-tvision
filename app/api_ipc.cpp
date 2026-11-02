@@ -479,6 +479,28 @@ void ApiIpcServer::poll() {
         } else {
             resp = "err missing id/x/y\n";
         }
+    } else if (cmd == "move_many") {
+        // moves = "id,x,y[,w,h];id,x,y;..." applied in one IPC round trip (glide, fall).
+        auto m = kv.find("moves");
+        if (m == kv.end()) {
+            resp = "err missing moves\n";
+        } else {
+            int applied = 0;
+            std::stringstream all(m->second);
+            std::string item;
+            while (std::getline(all, item, ';')) {
+                std::vector<std::string> f;
+                std::stringstream one(item);
+                std::string tok;
+                while (std::getline(one, tok, ',')) f.push_back(tok);
+                if (f.size() < 3) continue;
+                api_move_window(*app_, f[0], std::atoi(f[1].c_str()), std::atoi(f[2].c_str()));
+                if (f.size() >= 5)
+                    api_resize_window(*app_, f[0], std::atoi(f[3].c_str()), std::atoi(f[4].c_str()));
+                ++applied;
+            }
+            resp = "{\"success\":true,\"applied\":" + std::to_string(applied) + "}\n";
+        }
     } else if (cmd == "resize_window") {
         auto id = kv.find("id");
         auto w_it = kv.find("width");

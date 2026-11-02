@@ -64,6 +64,9 @@ class WindowMoveResize(BaseModel):
     y: Optional[int] = None
     w: Optional[int] = None
     h: Optional[int] = None
+    ms: Optional[int] = None      # glide over this many ms (absent = jump, as before)
+    ease: Optional[str] = None    # linear | inout | out | back | bounce
+    actor: Optional[str] = None   # wib | wob | scramble: whose hand moves it
 
 
 class WindowPropsUpdate(BaseModel):
@@ -148,8 +151,9 @@ class PaintLineRequest(BaseModel):
     y0: int
     x1: int
     y1: int
-    fg: int = 15
+    fg: int = 15      # accepted for compatibility; the canvas draws with its current brush
     bg: int = 0
+    erase: bool = False
 
 
 class PaintRectRequest(BaseModel):
@@ -158,8 +162,9 @@ class PaintRectRequest(BaseModel):
     y0: int
     x1: int
     y1: int
-    fg: int = 15
+    fg: int = 15      # accepted for compatibility; the canvas draws with its current brush
     bg: int = 0
+    erase: bool = False
     fill: bool = False
 
 
@@ -171,6 +176,8 @@ class SendTextReq(BaseModel):
     content: str
     mode: Literal["append", "replace", "insert"] = "append"
     position: Literal["cursor", "start", "end"] = "end"
+    cps: Optional[float] = None   # typed reveal at this many characters a second (absent = paste)
+    actor: Optional[str] = None
 
 
 class SendFigletReq(BaseModel):

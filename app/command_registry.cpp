@@ -39,6 +39,8 @@ extern std::string api_set_theme_variant(TWwdosApp& app, const std::string& vari
 extern std::string api_reset_theme(TWwdosApp& app);
 extern std::string api_window_shadow(TWwdosApp& app, const std::string& id, bool on);
 extern std::string api_window_title(TWwdosApp& app, const std::string& id, const std::string& title);
+extern std::string api_paint_bare(TWwdosApp& app, const std::string& id, bool on);
+extern std::string api_chrome_set(TWwdosApp& app, const std::string& which, const std::string& text);
 extern std::string api_desktop_preset(TWwdosApp& app, const std::string& preset);
 extern std::string api_desktop_texture(TWwdosApp& app, const std::string& ch);
 extern std::string api_desktop_color(TWwdosApp& app, int fg, int bg);
@@ -181,6 +183,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"inject_command", "Inject a raw IPC command string for internal testing", true},
         {"window_shadow", "Toggle window shadow (id, on params)", true},
         {"window_title", "Set window title (id, title params — empty string removes title)", true},
+        {"paint_bare", "Paint window as canvas only, no tool panel/palette/menu/status (id, on params; clears the canvas)", true},
+        {"chrome_set", "Write the chrome: part=menu|status|kaomoji|reset, text (empty restores the original)", true},
         {"desktop_preset", "Set desktop to a named preset (preset param)", true},
         {"desktop_texture", "Set desktop fill character (char param)", true},
         {"desktop_color", "Set desktop fg/bg colour 0-15 (fg, bg params)", true},
@@ -658,6 +662,19 @@ std::string exec_registry_command(
         if (id_it == kv.end() || on_it == kv.end()) return "err missing id or on";
         bool on = (on_it->second == "true" || on_it->second == "1");
         return api_window_shadow(app, id_it->second, on);
+    }
+    if (name == "paint_bare") {
+        auto id_it = kv.find("id");
+        if (id_it == kv.end()) return "err missing id";
+        auto on_it = kv.find("on");
+        bool on = on_it == kv.end() || on_it->second == "1" || on_it->second == "true";
+        return api_paint_bare(app, id_it->second, on);
+    }
+    if (name == "chrome_set") {
+        auto p_it = kv.find("part");
+        auto t_it = kv.find("text");
+        if (p_it == kv.end()) return "err missing part";
+        return api_chrome_set(app, p_it->second, t_it != kv.end() ? t_it->second : "");
     }
     if (name == "window_title") {
         auto id_it = kv.find("id");

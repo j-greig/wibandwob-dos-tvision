@@ -82,6 +82,16 @@ void TPaintWindow::buildLayout()
     TRect client = getExtent();
     client.grow(-1, -1);
 
+    if (bare_) {
+        int bw = std::max(1, client.b.x - client.a.x);
+        int bh = std::max(1, client.b.y - client.a.y);
+        canvas = new TPaintCanvasView(client, bw, bh, &ctx);
+        canvas->growMode = gfGrowHiX | gfGrowHiY;
+        insert(canvas);
+        canvas->select();
+        return;
+    }
+
     // Menu bar: top row of client area
     TRect menuRect(client.a.x, client.a.y, client.b.x, client.a.y + 1);
     menuBar = new TMenuBar(menuRect,

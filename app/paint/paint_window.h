@@ -35,6 +35,9 @@ public:
     virtual void changeBounds(const TRect &bounds) override;
 
     TPaintCanvasView* getCanvas() const { return canvas; }
+    // Bare: canvas only (no menu bar, tool panel, palette or status). Clears the canvas.
+    void setBare(bool on) { bare_ = on; buildLayout(); drawView(); }
+    bool isBare() const { return bare_; }
     const std::string& getFilePath() const { return filePath_; }
     void setFilePath(const std::string& p) { filePath_ = p; updateTitle(); }
 
@@ -51,6 +54,7 @@ private:
     TMenuBar *menuBar = nullptr;
     std::string filePath_;
     bool dirty_ = false;
+    bool bare_ = false;
     std::string figletFont_ = "standard";
     std::string figletText_;
 

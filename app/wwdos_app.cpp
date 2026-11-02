@@ -423,9 +423,22 @@ public:
         }
     }
 
+    // Chrome as material: when set, the bar shows this text instead of the menu
+    // labels, and the kaomoji slot shows kaomojiText. Menus still open by hotkey.
+    static std::string menuText;
+    static std::string kaomojiText;
+
     virtual void draw() override
     {
-        TMenuBar::draw();
+        if (!menuText.empty()) {
+            TDrawBuffer mb;
+            TAttrPair cN = getColor(0x0301);
+            mb.moveChar(0, ' ', cN, size.x);
+            mb.moveStr(0, menuText.c_str(), cN);
+            writeLine(0, 0, size.x, 1, mb);
+        } else {
+            TMenuBar::draw();
+        }
 
         // Update blink state
         auto now = std::chrono::steady_clock::now();
@@ -441,8 +454,8 @@ public:
         }
 
         // Get kaomoji based on current mood and blink state
-        const char* kaomoji = getKaomojiForState();
-        int kaomojiWidth = 12;
+        const char* kaomoji = kaomojiText.empty() ? getKaomojiForState() : kaomojiText.c_str();
+        int kaomojiWidth = kaomojiText.empty() ? 12 : std::max(12, (int)strwidth(kaomojiText.c_str()) + 1);
         int xPos = size.x - kaomojiWidth;
 
         if (xPos > 1) {
@@ -523,8 +536,19 @@ public:
         }
     }
 
+    // Chrome as material: when set, the status line shows this text only.
+    static std::string statusText;
+
     virtual void draw() override
     {
+        if (!statusText.empty()) {
+            TDrawBuffer sb;
+            TAttrPair cN = getColor(0x0301);
+            sb.moveChar(0, ' ', cN, size.x);
+            sb.moveStr(0, statusText.c_str(), cN);
+            writeLine(0, 0, size.x, 1, sb);
+            return;
+        }
         TStatusLine::draw();
         drawLlmIndicator();
         drawApiIndicator();
@@ -977,6 +1001,7 @@ private:
     // Per-window toggles
     friend std::string api_window_shadow(TWwdosApp&, const std::string&, bool);
     friend std::string api_window_title(TWwdosApp&, const std::string&, const std::string&);
+    friend std::string api_paint_bare(TWwdosApp&, const std::string&, bool);
     // Desktop texture & gallery mode
     friend std::string api_desktop_preset(TWwdosApp&, const std::string&);
     friend std::string api_desktop_texture(TWwdosApp&, const std::string&);
@@ -2699,6 +2724,26 @@ TStatusLine* TWwdosApp::initStatusLine(TRect r)
     );
 }
 
+std::string TCustomMenuBar::menuText;
+std::string TCustomMenuBar::kaomojiText;
+std::string TCustomStatusLine::statusText;
+
+// chrome_set: which = "menu" | "status" | "kaomoji"; empty text restores the original.
+std::string api_chrome_set(TWwdosApp& app, const std::string& which, const std::string& text) {
+    (void)app;
+    if (which == "menu") TCustomMenuBar::menuText = text;
+    else if (which == "kaomoji") TCustomMenuBar::kaomojiText = text;
+    else if (which == "status") TCustomStatusLine::statusText = text;
+    else if (which == "reset") {
+        TCustomMenuBar::menuText.clear();
+        TCustomMenuBar::kaomojiText.clear();
+        TCustomStatusLine::statusText.clear();
+    } else return "err unknown chrome part (menu|status|kaomoji|reset)";
+    if (TProgram::menuBar) TProgram::menuBar->drawView();
+    if (TProgram::statusLine) TProgram::statusLine->drawView();
+    return "ok";
+}
+
 // Implemented here because TWwdosApp must be fully defined first.
 ApiIpcServer::ConnectionStatus TCustomStatusLine::getAppIpcStatus(void* appPtr) {
     auto* app = dynamic_cast<TWwdosApp*>(static_cast<TApplication*>(appPtr));
@@ -3190,13 +3235,28 @@ std::string api_get_state(TWwdosApp& app) {
     return json.str();
 }
 
+// locate() clamps to TWindow's 16x6 minimum. Windows smaller than that (cursor
+// sprites, shape-layout pixels) keep their exact size by bypassing the clamp.
+static void relocateExact(TWindow* w, TRect r) {
+    TPoint mn, mx;
+    w->sizeLimits(mn, mx);
+    TPoint sz = r.b - r.a;
+    if (sz.x >= mn.x && sz.y >= mn.y) { w->locate(r); return; }
+    if (sz.x < 1 || sz.y < 1) return;
+    bool vis = (w->state & sfVisible) != 0;
+    if (vis) w->hide();
+    TRect rr = r;
+    w->changeBounds(rr);
+    if (vis) w->show();
+}
+
 std::string api_move_window(TWwdosApp& app, const std::string& id, int x, int y) {
     TWindow* w = app.findWindowById(id);
     if (!w) return "{\"error\":\"Window not found\"}";
 
     TRect newBounds = w->getBounds();
     newBounds.move(x - newBounds.a.x, y - newBounds.a.y);
-    w->locate(newBounds);
+    relocateExact(w, newBounds);
 
     if (app.ipcServer) {
         std::string payload = std::string("{\"id\":\"") + id + "\"}";
@@ -3212,7 +3272,7 @@ std::string api_resize_window(TWwdosApp& app, const std::string& id, int width, 
     TRect newBounds = w->getBounds();
     newBounds.b.x = newBounds.a.x + width;
     newBounds.b.y = newBounds.a.y + height;
-    w->locate(newBounds);
+    relocateExact(w, newBounds);
 
     if (app.ipcServer) {
         std::string payload = std::string("{\"id\":\"") + id + "\"}";
@@ -3299,7 +3359,7 @@ std::string api_window_title(TWwdosApp& app, const std::string& id, const std::s
     if (!w) return "err window not found";
     delete[] (char*)w->title;
     w->title = title.empty() ? nullptr : newStr(title);
-    w->frame->drawView();
+    if (w->frame) w->frame->drawView();
     return "ok";
 }
 
@@ -5316,6 +5376,13 @@ void api_spawn_paint_with_file(TWwdosApp& app, const std::string& path) {
             return;
         }
     } while (p != v);
+}
+
+std::string api_paint_bare(TWwdosApp& app, const std::string& id, bool on) {
+    auto *pw = dynamic_cast<TPaintWindow*>(app.findWindowById(id));
+    if (!pw) return "err paint window not found";
+    pw->setBare(on);
+    return "ok";
 }
 
 TPaintCanvasView* api_find_paint_canvas(TWwdosApp& app, const std::string& id) {

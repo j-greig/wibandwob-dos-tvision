@@ -11,7 +11,8 @@ Structure
 - `tools/api_server/controller.py`: In-memory controller; replace with C++ IPC/in-process bridge later.
 - `tools/api_server/models.py`: Domain entities (Window, Rect, AppState, WindowType).
 - `tools/api_server/schemas.py`: Pydantic request/response models (create, move, props, state, etc.).
-- `tools/api_server/events.py`: Broadcast hub for `/ws` clients.
+- `tools/api_server/events.py`: Broadcast hub for `/ws` clients; in-process listeners (the show bus).
+- `tools/api_server/show.py`: show endpoints, `/events` SSE, capture timeline (see Show endpoints).
 - `tools/api_server/requirements.txt`: Python dependencies.
 - `tools/api_server/README.md`: This guide.
 
@@ -327,6 +328,70 @@ All batch operations return:
   "timeline_summary": {"counts": {"ops": 6}}
 }
 ```
+
+## Show endpoints (live desktop performance)
+
+Code: `tools/api_server/show.py`. Contract tests (no app needed): `tools/api_server/venv/bin/python -m unittest tests/test_show_api.py`.
+Proof run: `python3 scripts/glitch-show-demo.py --api http://127.0.0.1:8097 --run /tmp/run`, then
+`uv run tools/frames_to_png.py /tmp/run --out <dir> --beats --contact --mp4 show.mp4`.
+`actor` is `wib`, `wob` or `scramble` everywhere; it moves that voice's cursor first and tags the events.
+
+| endpoint | body | does |
+|---|---|---|
+| `POST /windows/{id}/send_text` | `+ cps, actor` | with `cps`: typed reveal, one key at a time (jitter, longer pause after punctuation). Without `cps`: unchanged paste |
+| `POST /windows/{id}/type` | `content, cps=14, target=editor\|title\|figlet, mode, jitter, actor` | typed reveal into an editor, a window title, or a figlet window |
+| `POST /windows/{id}/move` | `+ ms, ease, actor` | with `ms`: glide there (`ease` linear\|inout\|out\|back\|bounce, ~24 steps/s, w/h tween too). Without `ms`: unchanged jump |
+| `POST /windows/{id}/glide` | `x, y, w?, h?, ms=800, ease, fps=24, actor` | the same glide as its own route |
+| `POST /cursors/on` | `{on: true}` | draw the hands on the desktop as tiny frameless windows (`wib` つ◕, `wob` ┼○, `scramble` ᐠᐟ); `{on:false}` removes them. Cursor events stream either way |
+| `POST /cursors/{actor}` | `x, y, ms=350, ease, glyph?` | move that hand |
+| `POST /windows/shape` | `mask, cell="WxH"?, x?, y?, fill=""\|"mask"\|char, primers[], titles[], order=rows\|cols\|random\|spiral, stagger_ms=60, frameless, actor` | one window per non-space, non-`.` mask cell; the frames draw the mask. `mask` is text or a built-in name; `GET /windows/shape/masks` lists them (scramble, tower, twins, heart) |
+| `POST /windows/fall` | `ids[]` (empty = all but cursors), `g=70, bounce=0.3, repose=2, jitter=5, fps=24, max_s=8, seed, actor` | gravity: windows drop, bounce, pile and spill (vendored `gridphysics.py`, a window raises the pile by its full height) |
+| `POST /windows/droste` | `depth=6, scale=0.55, x?, y?, w?, h?, title, pause_ms=600, last="   z\n/ᐠ -w- ᐟ\\", actor` | the screen captured into a window, that window captured into a smaller one inside it, down to `last` (Scramble asleep) |
+| `POST /chrome` | `menu?, status?, kaomoji?, reset, cps, actor` | write the menu bar, status line and menu-bar kaomoji (`cps` types it in). Needs the build with `chrome_set`; older builds answer 501 |
+| `POST /paint/bare` | `win_id, on=true` | paint window as canvas only: no menu, tool panel, palette or status (clears the canvas) |
+| `POST /capture/start` | `dir?, name, settle_ms=40, every={"move.step":3,"type":3,"fall.step":2,"cursor":2}` | start a capture timeline: every action writes `NNNNN-<type>-<actor>.txt` (screen text) into the run dir, plus `events.jsonl` and `frames.jsonl` (time, beat). Default dir `logs/show/<stamp>-<name>/` |
+| `POST /capture/frame` `{label}` · `POST /capture/stop` · `GET /capture/status` | | extra frame, stop (returns run dir and count), status |
+| `POST /events/mark` | `label, text?, actor?` | a marker on the stream; frames after it belong to that beat (`frames_to_png.py --beats` takes the last frame of each) |
+| `GET /events` | `?types=open,land` | Server-Sent Events, one per action (below). `GET /events/recent?n=&after=` polls the last 2000 |
+
+Capture reads the screen with `tmux capture-pane` when `WIBWOB_CAPTURE_TMUX=<session>` is set on the API (the app runs
+in that tmux session), else with the app's `/screenshot` file. Set it: the screenshot path shares `logs/screenshots/`
+with every instance and names files by the second.
+
+### Show events
+
+Every action, from the show routes and from the classic routes (`window.created` → `open`, `window.updated` → `move`,
+`window.closed` → `close`, `text.sent` → `type`, `figlet.sent` → `figlet`, `/menu/command open_primer` → `open`):
+
+```json
+{"seq": 812, "t": 41.207, "type": "land", "actor": "wib",
+ "window": {"id": "w14", "title": "kitchen", "x": 52, "y": 30, "w": 36, "h": 7},
+ "data": {"order": 3, "n": 9, "impact": 21.4, "col": 52, "row": 36, "col_norm": 0.329, "row_norm": 0.857}}
+```
+
+- `seq` increases by one per event; `t` is seconds since the API started. Desktop coordinates: `x` columns, `y` rows
+  below the menu bar.
+- `type` and its `data`:
+  - `open` (`shape, cell:[c,r], index, n` when from a shape; `source:"api"` from classic routes)
+  - `move` (`phase: start|step|end`; start carries `to, ms`)
+  - `land` (fall: `order, n, impact` cells/s, `col, row`, `col_norm, row_norm` 0..1; `phase:"bounce"` for a bounce)
+  - `fall` (`phase: start|step|end`, `ids` / `moved` / `landed`)
+  - `type` (`char, i, n, target`)
+  - `cursor` (`x, y, phase: step|end`)
+  - `droste` (`level, depth, last?`)
+  - `shape` (`ids, cell:[w,h], origin:[x,y], mask_size`)
+  - `chrome` (`part: menu|status|kaomoji|reset|paint_bare, text`)
+  - `close`, `figlet`, `layout`, `mark` (`label, text`), `capture` (`phase: start|stop`).
+- Sonify: `land` and `open` carry position for pitch (`col_norm`, `cell`) and `order` for sequence; one key, and
+  the pile ends on a chord if `order` walks a chord's degrees. Draw two cursors from `cursor` events per `actor`.
+
+### C++ commands used by the show layer (build since the show layer)
+
+- `move_many` IPC: `moves="id,x,y[,w,h];..."` in one round trip (a single IPC call costs ~25 ms).
+- Windows smaller than 16x6 keep their size on move and resize (cursor sprites, shape pixels); bigger windows still go
+  through `locate()` as before.
+- `chrome_set` (`part=menu|status|kaomoji|reset`, `text`) and `paint_bare` (`id`, `on`) via `/menu/command`.
+- `window_title` no longer crashes on a frameless window.
 
 ## MCP Integration
 
