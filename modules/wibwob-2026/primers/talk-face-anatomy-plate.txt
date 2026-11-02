@@ -1,0 +1,28 @@
+PLATE VI                                                                                                              
+༼  TIBETAN MARK ANG KHANG GYON     ◕  CIRCLE WITH ALL BUT             ⚆  WHITE CIRCLE WITH DOT RIGHT                  
+   a bracket with a roof over         UPPER LEFT QUADRANT BLACK          a marker for the game of Go                  
+              │                       a fill-level dot                         │                                      
+              │                     │                                          │                                      
+              │                    ┌┴────────────────────┐                     │                                      
+              │                    │                     │                     │                                      
+            .________________   .-"""-.               .-"""-.               .-"""-.________.                          
+            |                  /    |##\             /    |##\             /       \       |                          
+             )      .------.  |     |###|           |     |###|           |     .-. |     (   .------.                
+            (      `        \ |-----+###|           |-----+###|           |    (###)|      ) `        \               
+             )              | |#########| \       / |#########| \       / |     `-' |     (           |               
+            (               /  \#######/   `.   .'   \#######/   `.   .'   \       /       )          /               
+            `--       _.--'     `-...-'      `-'      `-...-'      `-'      `-...-'      --'    _.--'                 
+                        ┌─────────────────────┼─────────────────────┼─────────────────────┼───────┘                   
+                        │                     ├─────────────────────┘                     │                           
+                        │                     │                                           │                           
+                     HIRAGANA LETTER TU    ‿  UNDERTIE                                 ༽  TIBETAN MARK ANG KHANG GYAS 
+                        the syllable tsu,     the Greek enotikon,                         the closing roofed bracket  
+                        first a river         the uniter                                                              
+                                                                                                                      
+    /\                  /\───────────── ᐠ ᐟ  CANADIAN SYLLABICS FINAL GRAVE, FINAL ACUTE                              
+   /  \________________/  \                  word-final marks in Cree and Inuktitut                                   
+  /                        \                                                                                          
+ |     .-.          .-. ───┼─────────── ｡    HALFWIDTH IDEOGRAPHIC FULL STOP                                          
+ |     `-'   _/\_   `-'     |                a Japanese full stop                                                     
+  \          `--'  ───────/──────────── ﻌ    ARABIC LETTER AIN MEDIAL FORM                                            
+         /ᐠ｡ﻌ｡ᐟ\                             ain, as written in the middle of a word                                  

@@ -1,0 +1,10 @@
+TIBETAN MARK ANG KHANG GYON                     a bracket with a roof over, Tibetan               ༼  
+CIRCLE WITH ALL BUT UPPER LEFT QUADRANT BLACK   an eye, from the geometric shapes                 ◕  
+UNDERTIE                                        a mouth, once the uniter, Byzantine Greek         ‿  
+WHITE CIRCLE WITH DOT RIGHT                     an eye, made as a marker for Go                   ⚆  
+TIBETAN MARK ANG KHANG GYAS                     the roof closes, Tibetan                          ༽  
+CANADIAN SYLLABICS FINAL GRAVE                  an ear, a word-final mark in Cree and Inuktitut   ᐠ  
+HALFWIDTH IDEOGRAPHIC FULL STOP                 an eye, a Japanese full stop                      ｡  
+ARABIC LETTER AIN MEDIAL FORM                   a mouth, Arabic ain, in the middle of a word      ﻌ  
+CANADIAN SYLLABICS FINAL ACUTE                  the other ear, Canadian syllabics                 ᐟ  
+HIRAGANA LETTER TU                              the arms, the syllable tsu, first a river         つ 
