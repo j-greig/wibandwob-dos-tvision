@@ -14,36 +14,23 @@ Usenet drawings: alt.ascii-art via https://www.asciiart.eu/archives/usenet/ .
 | `figure-wob-standing-large` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/tripods/frames/wob-l-stand.txt` |
 | `figure-wib-tripod` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/twins/wib-tripod.txt` |
 | `figure-wob-tripod` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/twins/wob-tripod.txt` |
-| `figure-wib-sings-wob-listens-anim` | Wib&Wob, drawn for this shelf (2 Nov 2026), from brand tripods | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/figure-wib-sings-wob-listens-anim.txt` |
+| `figure-wib-sings-wob-listens-anim` | Wib&Wob, frames of the brand twins-tripods: Wib's three canon mouths (sing-wib.txt), Wob's eyes | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/figure-wib-sings-wob-listens-anim.txt` |
 | `scramble-sitting` | Wib&Wob rig scramble-cat (rigs/), from primer scramble-the-cat | `~/Repos/wibandwob-heartbeat/rigs/art/scramble-cat.txt` |
 | `scramble-asleep` | Wib&Wob rig scramble-sleeping (rigs/) | `~/Repos/wibandwob-heartbeat/rigs/art/scramble-sleeping.txt` |
-| `scramble-on-a-ledge` | Wib&Wob, drawn for this shelf (2 Nov 2026) | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/scramble-on-a-ledge.txt` |
-| `scramble-peering-over-the-edge` | Wib&Wob, drawn for this shelf (2 Nov 2026) | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/scramble-peering-over-the-edge.txt` |
-| `scramble-blinking-tail-anim` | Wib&Wob, drawn for this shelf (2 Nov 2026) | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/scramble-blinking-tail-anim.txt` |
+| `scramble-blinking-tail-anim` | Wib&Wob, frames of the brand Scramble rig (scramble-rig.txt, rig scramble-cat): eye and tail glyphs only | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/scramble-blinking-tail-anim.txt` |
 | `scramble-twenty-moods` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/tripods/frames/scramble-states.txt` |
-| `scramble-sitting-large` | Wib&Wob, drawn for this shelf (2 Nov 2026), canon face parts | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/scramble-sitting-large.txt` |
-| `scramble-big-face-whiskers` | Wib&Wob, GLITCH talk slide 08 (Nov 2026) | `~/Repos/wibandwob-heartbeat/output/glitch-talk-2026-11/slides/08-scramble.txt` |
-| `scramble-the-warm-spot-poster` | Wib&Wob, wibwobworld cards (Sep 2026); fig. A cat by Joan G. Stark (jgs cat clipart), her mark blanked in the grid | `~/Repos/wibandwob-heartbeat/output/wibwobworld-cards/scramble-warm-spot.txt` |
 | `being-niff-small` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/creatures/nif.txt` |
-| `being-niff-humming-anim` | Wib&Wob, drawn for this shelf (2 Nov 2026) | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/being-niff-humming-anim.txt` |
-| `being-niff-in-moss-coat` | Wib&Wob rig niff (rigs/) | `~/Repos/wibandwob-heartbeat/rigs/art/niff.txt` |
 | `being-niff-portrait-at-twilight` | Wib&Wob, forge 'portrait of Nif at twilight' (Feb 2026), annotations cut | `~/Repos/wibandwob-heartbeat/output/forge-pngs/nif-portraits-03-portrait-of-nif-at-twilight.txt` |
 | `being-gary-the-donkey-antlers` | Joan G. Stark, donkey caricature (farm.html, Oct 1996), antlered as Gary by Wib&Wob (Feb 2026) | `~/Repos/wibandwob-heartbeat/output/glitch-talk-2026-11/slides/v4/gary-donkey-fit.txt` |
-| `being-bartholomew-carapace-iii-beetle` | Joan G. Stark, beetle (insects page, June 1999), cast as Bartholomew Carapace III; rig bartholomew | `~/Repos/wibandwob-heartbeat/rigs/art/bartholomew.txt` |
-| `being-bartholomew-particulars-poster` | Wib&Wob, wibwobworld cards (Sep 2026); beetle (insects.html) and key (a-key-0996) by Joan G. Stark, her marks blanked in the grid | `~/Repos/wibandwob-heartbeat/output/wibwobworld-cards/bartholomew-particulars.txt` |
-| `place-deepvoid-office` | Wib&Wob, www-at-scale (2026), from primer iso-shop-front | `~/Repos/wibandwob-heartbeat/output/www-at-scale/deepvoid-office.txt` |
-| `place-deepvoid-over-the-shoulder` | Wib&Wob, film still (17 Sep 2026), cropped; listings by Spunk1111 (1998, m797deae9d2), Varian (1994, mfa06ff0261), Przemyslaw Brojewski (2000), LGB (2002, tbbb056b011), Zotiel (2000, m62a35be03a, its jgs mark blanked, zot mark kept); urls in that folder's specimens/CREDITS.txt | `~/Repos/wibandwob-heartbeat/output/wibwobworld-film-stills-2026-09-17/02-deepvoid-over-the-shoulder/deepvoid-over-the-shoulder.txt` |
-| `being-interval-fisher-casting` | Wib&Wob, drawn for this shelf (2 Nov 2026) | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/being-interval-fisher-casting.txt` |
-| `being-consultant-fluff-asleep` | Wib&Wob, drawn for this shelf (2 Nov 2026) | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/being-consultant-fluff-asleep.txt` |
-| `being-consultant-fluff-on-the-tribunal` | Wib&Wob, drawn for this shelf (2 Nov 2026), tribunal faces from characters/consultant-fluff.md | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/being-consultant-fluff-on-the-tribunal.txt` |
+| `being-bartholomew-carapace-iii-beetle` | Wib&Wob, wake 138 'cave property listings' (18 Dec 2025), his first appearance; beetle only | `~/Repos/wibandwob-heartbeat/vps-heartbeat/output/wake-138-cave-property-listings.txt` |
+| `being-bartholomew-deepvoid-estate-agents` | Wib&Wob, wake 138 'cave property listings' (18 Dec 2025), rows 2-18, his first appearance | `~/Repos/wibandwob-heartbeat/output/glitch-talk-2026-11/slides/v4/bart-origin.txt` |
+| `being-consultant-fluff-on-the-tribunal` | Wib&Wob, wake 73 'pattern canonicity tribunal' (22 Nov 2025), his first appearance; strike marks removed | `~/Repos/wibandwob-heartbeat/vps-heartbeat/output/wake-73-pattern-canonicity-tribunal.md` |
 | `being-wibbler` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/creatures/wibbler.txt` |
 | `being-wibblers-im-happy` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/creatures/wibblers-happy.txt` |
 | `being-wibblers-stacked-family` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/creatures/wibbler-stack.txt` |
 | `being-wobbler` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/creatures/wobbler.txt` |
-| `being-wobbler-large` | Wib&Wob, drawn for this shelf (2 Nov 2026), after the brand wobbler | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/being-wobbler-large.txt` |
 | `being-flyer-right` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/creatures/flyer.txt` |
 | `being-flyer-left` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/creatures/flyer-left.txt` |
-| `being-flyer-large` | Wib&Wob, drawn for this shelf (2 Nov 2026), after the brand flyer | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/being-flyer-large.txt` |
 | `being-jelly` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/creatures/jelly.txt` |
 | `place-castle-tower-www-flag` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/tower/tower.txt` |
 | `place-castle-west-tower-cutaway` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/castle/castle-west-tower.txt` |
@@ -86,8 +73,6 @@ Usenet drawings: alt.ascii-art via https://www.asciiart.eu/archives/usenet/ .
 | `place-island-eyed-trees` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/island/eyed-trees.txt` |
 | `place-island-finger-statue` | Zilla, Wib&Wob brand kit (termsong-v3/brand) | `~/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/island/finger-statue.txt` |
 | `place-niffs-garden-error-codes` | Wib&Wob, forge 'Nif's garden, where error codes learn to bloom' (Feb 2026), captions cut | `~/Repos/wibandwob-heartbeat/output/forge-pngs/nif-portraits-02-nifs-garden-where-error-codes-learn-to-bloom.txt` |
-| `place-the-warm-spot` | Wib&Wob, drawn for this shelf (2 Nov 2026) | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/place-the-warm-spot.txt` |
-| `place-deepvoid-estate-agents-sign` | Wib&Wob, drawn for this shelf (2 Nov 2026) | `~/Repos/wibandwob-dos-tvision/modules/wibwob-2026/src/hand/place-deepvoid-estate-agents-sign.txt` |
 | `place-iso-library-arch` | Wib&Wob, wibandwob-core primer larder | `~/Repos/wibandwob-core/primers/iso-library.txt` |
 | `talk-face-anatomy-plate` | Wib&Wob, GLITCH talk slide 06 (Nov 2026); see CREDITS | `~/Repos/wibandwob-heartbeat/output/glitch-talk-2026-11/slides/06-faces.txt` |
 | `talk-face-parts-borrowed-glyphs` | Wib&Wob, GLITCH talk slide 06b (Unicode names) | `~/Repos/wibandwob-heartbeat/output/glitch-talk-2026-11/slides/06b-parts-fit.txt` |

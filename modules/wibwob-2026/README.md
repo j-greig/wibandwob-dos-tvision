@@ -32,33 +32,20 @@ own plates, textures, props and big set pieces. Rebuild with `uv run modules/wib
 - `figure-wib-sings-wob-listens-anim` 69x9 (8 frames): animated: Wib's mouth opens and closes, Wob blinks
 - `scramble-sitting` 13x4
 - `scramble-asleep` 13x4
-- `scramble-on-a-ledge` 34x7: Scramble on the castle battlements, tail hanging
-- `scramble-peering-over-the-edge` 26x6: ears and eyes over a ledge; put it at the bottom edge of another window
-- `scramble-blinking-tail-anim` 19x5 (8 frames): animated: blinks, tail flicks
+- `scramble-blinking-tail-anim` 19x5 (8 frames): animated: the canon Scramble rig blinks and flicks her tail
 - `scramble-twenty-moods` 29x12: twelve Scramble faces, each labelled with its mood
-- `scramble-sitting-large` 45x20: large Scramble, canon face parts
-- `scramble-big-face-whiskers` 119x28: very large Scramble face (the talk's slide)
-- `scramble-the-warm-spot-poster` 77x43: FIRST CHOICE for the Warm Spot: the canon card, one room, one day, one rectangle of light
 - `being-niff-small` 9x2
-- `being-niff-humming-anim` 16x5 (6 frames): animated: notes rise from Niff
-- `being-niff-in-moss-coat` 9x5
 - `being-niff-portrait-at-twilight` 21x34: large Niff
 - `being-gary-the-donkey-antlers` 55x25: Gary, who does not know
-- `being-bartholomew-carapace-iii-beetle` 32x15: the beetle estate agent of the deep
-- `being-bartholomew-particulars-poster` 81x43: large: Bartholomew's film-poster card, VACANT POSSESSION
-- `place-deepvoid-office` 73x39: FIRST CHOICE for DeepVoid: Bartholomew's shopfront in the deep
-- `place-deepvoid-over-the-shoulder` 211x54: very large: over Bartholomew's shoulder in the DeepVoid office, listings on the wall
-- `being-interval-fisher-casting` 38x14: the spirit who fishes duration out of the kelp with a net of expired warranties
-- `being-consultant-fluff-asleep` 15x10: tribunal member, always asleep
-- `being-consultant-fluff-on-the-tribunal` 46x14: large: Fluff asleep between Justice Whiskers and Deputy Paws
+- `being-bartholomew-carapace-iii-beetle` 19x9: the beetle estate agent of the deep, his origin drawing
+- `being-bartholomew-deepvoid-estate-agents` 81x17: the DeepVoid Estate Agents sign with Bartholomew under it, his origin drawing
+- `being-consultant-fluff-on-the-tribunal` 69x30: the tribunal of cat faces from his first appearance; Fluff is the node over his name
 - `being-wibbler` 9x6
 - `being-wibblers-im-happy` 20x7
 - `being-wibblers-stacked-family` 22x14: large wibblers
 - `being-wobbler` 10x4
-- `being-wobbler-large` 30x7: large wobbler
 - `being-flyer-right` 13x3
 - `being-flyer-left` 13x3
-- `being-flyer-large` 34x6: large flyer
 - `being-jelly` 32x17: large jelly
 - `place-castle-tower-www-flag` 13x14: the castle tower with the WWW flag
 - `place-castle-west-tower-cutaway` 39x33: large tower, cutaway, Wib inside
@@ -113,8 +100,6 @@ own plates, textures, props and big set pieces. Rebuild with `uv run modules/wib
 - `place-island-eyed-trees` 13x19
 - `place-island-finger-statue` 22x18
 - `place-niffs-garden-error-codes` 38x23: 404s and NaNs planted in rows, Niff in a hood
-- `place-the-warm-spot` 65x22: sunlight on floorboards, Scramble asleep in it (second choice; first: scramble-the-warm-spot-poster)
-- `place-deepvoid-estate-agents-sign` 52x20: Bartholomew's office sign, 847 m below regret (second choice; first: place-deepvoid-office)
 - `place-iso-library-arch` 48x20
 
 ### The talk's own material
