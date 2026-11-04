@@ -39,6 +39,9 @@ extern std::string api_set_theme_variant(TWwdosApp& app, const std::string& vari
 extern std::string api_reset_theme(TWwdosApp& app);
 extern std::string api_window_shadow(TWwdosApp& app, const std::string& id, bool on);
 extern std::string api_window_title(TWwdosApp& app, const std::string& id, const std::string& title);
+extern std::string api_window_colour(TWwdosApp& app, const std::string& id, const std::string& colour, const std::string& ink);
+extern std::string api_spawn_terminal_exec(TWwdosApp& app, const TRect* bounds, const std::string& exec, const std::string& title, bool hold);
+extern std::string api_take_last_registered_window_id(TWwdosApp& app);
 extern std::string api_paint_bare(TWwdosApp& app, const std::string& id, bool on);
 extern std::string api_chrome_set(TWwdosApp& app, const std::string& which, const std::string& text);
 extern std::string api_desktop_preset(TWwdosApp& app, const std::string& preset);
@@ -161,8 +164,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_apps", "Open the Applications folder browser", false},
         {"open_gallery", "Open the ASCII Art Gallery browser with tabbed primer explorer", false},
         {"gallery_list", "List available primer filenames (optional tab param: 1/#-C, 2/D-L, 3/M, 4/N-S, 5/T-Z, 6/Find with search param)", false},
-        {"open_primer", "Open a primer file by name in a viewer window (requires path param, e.g. 'wibwob-faces.txt')", true},
-        {"open_terminal", "Open a terminal emulator window", false},
+        {"open_primer", "Open a primer file by name in a viewer window (requires path param, e.g. 'wibwob-faces.txt'; optional x, y, w, h, title, frameless, shadowless, colour, ink)", true},
+        {"window_colour", "Colour a window: id, colour (blue|cyan|grey|black|magenta|red|green|brown|default), ink (0-15)", true},
+        {"open_terminal", "Open a terminal emulator window (optional x, y, w, h, title; exec=<command> runs it instead of a shell, no prompt or echo; hold=1 keeps the last screen after it exits)", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
         {"chat_receive", "Display a remote chat message in Scramble (sender + text params)", true},
@@ -478,6 +482,7 @@ std::string exec_registry_command(
         // Optional explicit placement: x, y (top-left), w, h (outer incl. frame)
         auto xi = kv.find("x"), yi = kv.find("y");
         auto wi = kv.find("w"), hi = kv.find("h");
+        (void)api_take_last_registered_window_id(app);
         if (xi != kv.end() && yi != kv.end() && wi != kv.end() && hi != kv.end()) {
             int x = std::atoi(xi->second.c_str());
             int y = std::atoi(yi->second.c_str());
@@ -488,11 +493,45 @@ std::string exec_registry_command(
         } else {
             api_open_animation_path(app, path, nullptr, frameless, shadowless, title);
         }
+        // Optional colour (blue|cyan|grey|black|magenta|red|green|brown) and ink (0-15).
+        auto ci = kv.find("colour"), ii = kv.find("ink");
+        if ((ci != kv.end() && !ci->second.empty()) || (ii != kv.end() && !ii->second.empty())) {
+            std::string id = api_take_last_registered_window_id(app);
+            if (!id.empty()) {
+                std::string r = api_window_colour(app, id, ci != kv.end() ? ci->second : "",
+                                                  ii != kv.end() ? ii->second : "");
+                if (r.rfind("err", 0) == 0) return r;
+            }
+        }
         return "ok";
     }
+    if (name == "window_colour") {
+        auto it = kv.find("id");
+        if (it == kv.end() || it->second.empty())
+            return "err missing id";
+        auto ci = kv.find("colour"), ii = kv.find("ink");
+        return api_window_colour(app, it->second, ci != kv.end() ? ci->second : "",
+                                 ii != kv.end() ? ii->second : "");
+    }
     if (name == "open_terminal") {
-        api_spawn_terminal(app, nullptr);
-        return "ok";
+        auto ei = kv.find("exec"), ti = kv.find("title"), hi2 = kv.find("hold");
+        auto xi = kv.find("x"), yi = kv.find("y"), wi = kv.find("w"), hi = kv.find("h");
+        bool hasBounds = xi != kv.end() && yi != kv.end() && wi != kv.end() && hi != kv.end();
+        bool extended = hasBounds || (ei != kv.end() && !ei->second.empty())
+                     || (ti != kv.end() && !ti->second.empty());
+        if (!extended) {
+            api_spawn_terminal(app, nullptr);
+            return "ok";
+        }
+        TRect bounds;
+        if (hasBounds) {
+            int x = std::atoi(xi->second.c_str()), y = std::atoi(yi->second.c_str());
+            bounds = TRect(x, y, x + std::atoi(wi->second.c_str()), y + std::atoi(hi->second.c_str()));
+        }
+        bool hold = hi2 != kv.end() && (hi2->second == "1" || hi2->second == "true");
+        return api_spawn_terminal_exec(app, hasBounds ? &bounds : nullptr,
+                                       ei != kv.end() ? ei->second : "",
+                                       ti != kv.end() ? ti->second : "", hold);
     }
     if (name == "terminal_write") {
         auto it = kv.find("text");

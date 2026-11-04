@@ -76,6 +76,8 @@ private:
 /*   context menu for shadow/frame/title toggles.          */
 /*---------------------------------------------------------*/
 
+#include "ega_theme.h"
+
 class TFigletTextWindow : public TWindow
 {
 public:
@@ -88,6 +90,8 @@ public:
 
     TFigletTextView* getFigletView() { return figletView_; }
     bool isFrameless() const { return frameless_; }
+
+    WW_COLOUR_PALETTE_OVERRIDE
 
     static TFrame* initFrame(TRect r)     { return new TNoTitleFrame(r); }
     static TFrame* initFrameless(TRect r) { return new TGhostFrame(r); }

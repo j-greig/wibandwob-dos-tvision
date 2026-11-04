@@ -112,6 +112,8 @@
 #include "tvterm_view.h"
 // Desktop texture & gallery mode
 #include "wibwob_background.h"
+// EGA theme and per-window colours
+#include "ega_theme.h"
 // App launcher (E011)
 #include "app_launcher_view.h"
 #include "ascii_gallery_view.h"
@@ -412,6 +414,8 @@ public:
 
     virtual TColorAttr mapColor(uchar index) noexcept override
     {
+        // EGA: Borland grey bar with red hotkeys, straight from the app palette.
+        if (ww::isEga()) return TMenuBar::mapColor(index);
         TColorRGB trueBlack(0, 0, 0);
         TColorRGB trueWhite(255, 255, 255);
 
@@ -524,6 +528,7 @@ public:
     
     virtual TColorAttr mapColor(uchar index) noexcept override
     {
+        if (ww::isEga()) return TStatusLine::mapColor(index);
         TColorRGB trueBlack(0, 0, 0);
         TColorRGB trueWhite(255, 255, 255);
         
@@ -558,19 +563,20 @@ private:
     void drawLlmIndicator()
     {
         const AuthConfig& auth = AuthConfig::instance();
-        TColorRGB bg(255, 255, 255);
+        bool ega = ww::isEga();
+        TColorRGB bg = ega ? ww::egaRGB(7) : TColorRGB(255, 255, 255);
         TColorRGB fg;
         const char* label = auth.modeName();  // "LLM AUTH" / "LLM KEY" / "LLM OFF"
 
         switch (auth.mode()) {
             case AuthMode::ClaudeCode:
-                fg = TColorRGB(0, 160, 0);       // green
+                fg = ega ? ww::egaRGB(2) : TColorRGB(0, 160, 0);       // green
                 break;
             case AuthMode::ApiKey:
-                fg = TColorRGB(180, 140, 0);      // amber
+                fg = ega ? ww::egaRGB(6) : TColorRGB(180, 140, 0);      // amber
                 break;
             case AuthMode::NoAuth:
-                fg = TColorRGB(180, 50, 50);      // red
+                fg = ega ? ww::egaRGB(4) : TColorRGB(180, 50, 50);      // red
                 break;
         }
 
@@ -592,18 +598,19 @@ private:
         auto status = getAppIpcStatus(TApplication::application);
 
         // Build indicator string and pick colour
-        TColorRGB bg(255, 255, 255);
+        bool ega = ww::isEga();
+        TColorRGB bg = ega ? ww::egaRGB(7) : TColorRGB(255, 255, 255);
         TColorRGB fg;
         const char* label;
 
         if (status.api_active) {
-            fg = TColorRGB(0, 160, 0);       // green
+            fg = ega ? ww::egaRGB(2) : TColorRGB(0, 160, 0);       // green
             label = "API ON";
         } else if (status.listening) {
-            fg = TColorRGB(120, 120, 120);    // grey
+            fg = ega ? ww::egaRGB(8) : TColorRGB(120, 120, 120);    // grey
             label = "API IDLE";
         } else {
-            fg = TColorRGB(180, 50, 50);      // red
+            fg = ega ? ww::egaRGB(4) : TColorRGB(180, 50, 50);      // red
             label = "API OFF";
         }
 
@@ -859,6 +866,7 @@ private:
         std::string id(buf);
         winToId[w] = id;
         idToWin[id] = w;
+        ww::forgetWindow(w);  // a new window never inherits a closed one's colour
         lastRegisteredWindowId_ = id;
         // Notify event subscribers that state has changed.
         if (emit_event && ipcServer) {
@@ -900,6 +908,7 @@ private:
                 bool alive = false;
                 for (auto* aw : activeWins) { if (aw == it->first) { alive = true; break; } }
                 if (!alive) {
+                    ww::forgetWindow(it->first);
                     idToWin.erase(it->second);
                     it = winToId.erase(it);
                 } else {
@@ -1001,6 +1010,8 @@ private:
     // Per-window toggles
     friend std::string api_window_shadow(TWwdosApp&, const std::string&, bool);
     friend std::string api_window_title(TWwdosApp&, const std::string&, const std::string&);
+    friend std::string api_window_colour(TWwdosApp&, const std::string&, const std::string&, const std::string&);
+    friend std::string api_spawn_terminal_exec(TWwdosApp&, const TRect*, const std::string&, const std::string&, bool);
     friend std::string api_paint_bare(TWwdosApp&, const std::string&, bool);
     // Desktop texture & gallery mode
     friend std::string api_desktop_preset(TWwdosApp&, const std::string&);
@@ -2544,33 +2555,12 @@ void TWwdosApp::takeScreenshot(bool showDialog)
     }
 }
 
-// Custom monochrome palette with reversed main areas
-// Palette indices:
-// 0-7:   Desktop/Background (black background with pattern)
-// 8-15:  Window frame colors 
-// 16-23: Cyan window (alternate)
-// 24-31: Gray window (alternate)
-// 32-39: Dialog colors
-// 40-47: Menu colors (reversed to black bg)
-// 48-55: Status line colors (reversed to black bg)
-// 56-63: Help colors
-// 64+:   Additional elements
-
-#define cpMonochrome \
-    "\x70\x70\x0F\x07\x70\x70\x70\x07\x0F\x07\x07\x07\x70\x07\x0F" \
-    "\x70\x0F\x70\x07\x07\x70\x07\x0F\x70\x7F\x7F\x70\x07\x70\x07\x0F" \
-    "\x70\x7F\x7F\x70\x07\x70\x70\x7F\x7F\x07\x70\x0F\x70\x0F\x70\x07" \
-    "\x0F\x0F\x0F\x70\x0F\x07\x70\x70\x70\x07\x70\x0F\x07\x07\x78\x00" \
-    "\x70\xF0\x0F\x70\x07\x70\x70\x0F\x0F\x07\xF0\x7F\x08\x7F\xF0\x70" \
-    "\x7F\x7F\x7F\x0F\x70\x70\x07\x70\x70\x70\x07\x7F\x70\x07\x08\x00" \
-    "\x70\x7F\x7F\x70\x07\x70\x70\x7F\x7F\x07\x0F\x0F\x78\x0F\x78\x07" \
-    "\x0F\x0F\x0F\x70\x0F\x07\x70\x70\x70\x07\x70\x0F\x07\x07\x78\x00" \
-    "\x07\x0F\x07\x70\x70\x07\x0F\x70"
-
+// The app palette comes from the theme (app/ega_theme.cpp): the black-and-white palette
+// by default, Turbo Vision's Borland colours in exact 24-bit EGA when the theme is ega.
+// Both carry the eight window-colour families at indices 136..199.
 TPalette& TWwdosApp::getPalette() const
 {
-    static TPalette palette(cpMonochrome, sizeof(cpMonochrome)-1);
-    return palette;
+    return ww::appPalette();
 }
 
 // Build "FIGlet ~F~ont ▶ { categories... | More Fonts... }" submenu item
@@ -2765,6 +2755,7 @@ TDeskTop* TWwdosApp::initDeskTop(TRect r)
         desktop->remove(desktop->background);
         destroy(desktop->background);
         auto* bg = new TWibWobBackground(bgBounds, '\xB1', 7, 1);
+        if (ww::isEga()) bg->setPreset("ega");
         bg->growMode = gfGrowHiX | gfGrowHiY;
         desktop->background = bg;
         desktop->insertBefore(bg, desktop->first());
@@ -2903,6 +2894,8 @@ int main()
 {
     // Detect auth mode once before any LLM consumer initialises.
     AuthConfig::instance().detect();
+    // WWDOS_THEME=ega starts in the Borland EGA colours (default: monochrome).
+    ww::initThemeFromEnv();
 
     TWwdosApp app;
     app.run();
@@ -3171,6 +3164,7 @@ std::string api_get_state(TWwdosApp& app) {
             bool alive = false;
             for (auto* aw : activeWins) { if (aw == it->first) { alive = true; break; } }
             if (!alive) {
+                ww::forgetWindow(it->first);
                 app.idToWin.erase(it->second);
                 it = app.winToId.erase(it);
             } else {
@@ -3180,7 +3174,7 @@ std::string api_get_state(TWwdosApp& app) {
     }
 
     std::stringstream json;
-    json << "{\"windows\":[";
+    json << "{\"theme_variant\":\"" << ww::themeName(ww::theme()) << "\",\"windows\":[";
 
     bool first = true;
     int z = 0;
@@ -3197,8 +3191,11 @@ std::string api_get_state(TWwdosApp& app) {
              << ",\"z\":" << z
              << ",\"focused\":" << (focused ? "true" : "false")
              << ",\"title\":\"";
-        if (w->title) {
-            std::string title(w->title);
+        // A terminal window's shown title comes from getTitle() (fixed title or program title).
+        const char* shownTitle = w->title;
+        if (auto* tw = dynamic_cast<TWibWobTerminalWindow*>(w)) shownTitle = tw->getTitle(0);
+        if (shownTitle) {
+            std::string title(shownTitle);
             for (char c : title) {
                 if (c == '"') json << "\\\"";
                 else if (c == '\\') json << "\\\\";
@@ -3214,6 +3211,9 @@ std::string api_get_state(TWwdosApp& app) {
             const std::string& p = faw->getFilePath();
             if (!p.empty()) json << ",\"path\":\"" << json_escape(p) << "\"";
         }
+        ww::WinColour wc = ww::windowColour(w);
+        if (wc.bg >= 0) json << ",\"colour\":\"" << ww::colourName(wc.bg) << "\"";
+        if (wc.ink >= 0) json << ",\"ink\":" << wc.ink;
         json << "}";
         first = false;
         ++z;
@@ -3334,6 +3334,7 @@ std::string api_close_window(TWwdosApp& app, const std::string& id) {
         return "{\"error\":\"Close failed\"}";
 
     // Remove from registry after successful removal.
+    ww::forgetWindow(w);
     app.winToId.erase(w);
     app.idToWin.erase(id);
 
@@ -3357,9 +3358,48 @@ std::string api_window_shadow(TWwdosApp& app, const std::string& id, bool on) {
 std::string api_window_title(TWwdosApp& app, const std::string& id, const std::string& title) {
     TWindow* w = app.findWindowById(id);
     if (!w) return "err window not found";
+    // A terminal window owns its title buffer; give it a fixed title instead.
+    if (auto* tw = dynamic_cast<TWibWobTerminalWindow*>(w)) {
+        tw->setFixedTitle(title);
+        return "ok";
+    }
     delete[] (char*)w->title;
     w->title = title.empty() ? nullptr : newStr(title);
     if (w->frame) w->frame->drawView();
+    return "ok";
+}
+
+// Per-window colour: colour = blue|cyan|grey|black|magenta|red|green|brown (or
+// "default" to clear), ink = 0-15. Primer, text, figlet and editor windows take both
+// (frame family + content). Other windows take blue|cyan|grey as their frame palette.
+std::string api_window_colour(TWwdosApp& app, const std::string& id,
+                              const std::string& colour, const std::string& ink) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "err window not found";
+    ww::WinColour c = ww::windowColour(w);
+    if (colour == "default" || colour == "none") {
+        c = ww::WinColour{};
+    } else if (!colour.empty()) {
+        int bg = ww::colourIndex(colour);
+        if (bg < 0) return "err unknown colour (blue|cyan|grey|black|magenta|red|green|brown)";
+        c.bg = bg;
+    }
+    if (!ink.empty()) {
+        char* end = nullptr;
+        long v = std::strtol(ink.c_str(), &end, 10);
+        if (!end || *end || v < 0 || v > 15) return "err ink must be 0-15";
+        c.ink = (int)v;
+    }
+    bool rich = dynamic_cast<TFrameAnimationWindow*>(w) || dynamic_cast<TFigletTextWindow*>(w)
+             || dynamic_cast<TTransparentTextWindow*>(w) || dynamic_cast<TTextEditorWindow*>(w);
+    ww::setWindowColour(w, c);
+    if (!rich) {
+        if (c.bg == 1 || c.bg < 0) w->palette = wpBlueWindow;
+        else if (c.bg == 3) w->palette = wpCyanWindow;
+        else if (c.bg == 7) w->palette = wpGrayWindow;
+        else return "err this window type takes blue|cyan|grey only";
+    }
+    ww::redrawDeep(w);
     return "ok";
 }
 
@@ -5174,6 +5214,20 @@ void api_spawn_terminal(TWwdosApp& app, const TRect* bounds) {
     }
 }
 
+// open_terminal with exec/title/hold: the window runs `exec` instead of a shell (no
+// prompt, no echo) and keeps `title`. Returns {"ok":true,"id":"wN"}.
+std::string api_spawn_terminal_exec(TWwdosApp& app, const TRect* bounds, const std::string& exec,
+                                    const std::string& title, bool hold) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 80, 24);
+    TWindow* w = exec.empty() ? createTerminalWindow(r) : createTerminalWindowExec(r, exec, hold);
+    if (!w) return "err terminal failed (tools/term_exec.sh not found from the app's cwd, or pty error)";
+    if (!title.empty())
+        if (auto* tw = dynamic_cast<TWibWobTerminalWindow*>(w)) tw->setFixedTitle(title);
+    app.deskTop->insert(w);
+    std::string id = app.registerWindow(w);
+    return "{\"ok\":true,\"id\":\"" + id + "\"}";
+}
+
 static TWibWobTerminalWindow* find_terminal_by_zorder(TWwdosApp& app) {
     TView* start = app.deskTop->first();
     if (!start) return nullptr;
@@ -5245,16 +5299,31 @@ std::string api_set_theme_mode(TWwdosApp& app, const std::string& mode) {
     return "ok";
 }
 
+// Switch the whole desktop between the black-and-white palette and the Borland EGA
+// colours, live. The desktop pattern follows (EGA blue hatch; back to the preset it
+// had before EGA on the way out). dark_pastel keeps the mono palette.
 std::string api_set_theme_variant(TWwdosApp& app, const std::string& variant) {
-    (void)app;
-    if (variant != "monochrome" && variant != "dark_pastel")
-        return "err invalid theme variant";
+    ww::Theme t;
+    if (!ww::parseTheme(variant, t))
+        return "err invalid theme variant (monochrome|dark_pastel|ega)";
+    static std::string preEgaPreset = "default";
+    bool wasEga = ww::isEga();
+    ww::setTheme(t);
+    if (auto* bg = dynamic_cast<TWibWobBackground*>(app.deskTop->background)) {
+        if (t == ww::Theme::Ega && !wasEga) {
+            std::string cur = bg->getPresetName();
+            if (cur != "ega") preEgaPreset = cur == "custom" ? "default" : cur;
+            bg->setPreset("ega");
+        } else if (t != ww::Theme::Ega && wasEga && bg->getPresetName() == "ega") {
+            bg->setPreset(preEgaPreset);
+        }
+    }
+    ww::redrawDeep(&app);
     return "ok";
 }
 
 std::string api_reset_theme(TWwdosApp& app) {
-    (void)app;
-    return "ok";
+    return api_set_theme_variant(app, "monochrome");
 }
 
 // --- Desktop texture, colour & gallery mode ---

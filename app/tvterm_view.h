@@ -29,10 +29,28 @@ public:
     // Each row is newline-terminated; trailing whitespace per row is stripped.
     std::string getOutputText() const;
 
+    // A title that stays put: the program's own title and "(Disconnected)" are not shown.
+    void setFixedTitle(const std::string &t);
+    const char *getTitle(short maxSize) override;
+
+    // Exec terminals: tools/term_exec.sh writes its pid here. Closing the window hangs
+    // up that process group (tvterm does not always do it), so no program outlives
+    // its window.
+    void setChildPidFile(const std::string &path) { childPidFile_ = path; }
+    void shutDown() override;
+
 private:
     using Super = tvterm::BasicTerminalWindow;
+    std::string fixedTitle_;
+    std::string childPidFile_;
 };
 
 TWindow* createTerminalWindow(const TRect &bounds);
+
+// A terminal window whose program is `exec` (run by tools/term_exec.sh with no prompt
+// and no echo) instead of the user's shell. hold=true keeps the last screen after the
+// program exits, until the window is closed. Returns nullptr when tools/term_exec.sh is
+// missing (the app must run from the repo root) or the pty fails.
+TWindow* createTerminalWindowExec(const TRect &bounds, const std::string &exec, bool hold);
 
 #endif // TVTERM_VIEW_H

@@ -72,6 +72,8 @@ private:
 /* TTransparentTextWindow - Window hosting the view      */
 /*---------------------------------------------------------*/
 
+#include "ega_theme.h"
+
 class TTransparentTextWindow : public TWindow
 {
 public:
@@ -82,6 +84,7 @@ public:
     const std::string& getFilePath() const;
 
     virtual void changeBounds(const TRect& bounds) override;
+    WW_COLOUR_PALETTE_OVERRIDE
 
 private:
     TTransparentTextView* textView;

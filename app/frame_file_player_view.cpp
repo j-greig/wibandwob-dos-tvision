@@ -6,6 +6,7 @@
 /*---------------------------------------------------------*/
 
 #include "frame_file_player_view.h"
+#include "ega_theme.h"
 #include "gradient.h"
 
 #define Uses_TKeys
@@ -266,13 +267,20 @@ void FrameFilePlayerView::loadAndIndex(const std::string &path) {
 }
 
 void FrameFilePlayerView::draw() {
+    // Window colour (API) or the EGA theme's blue window, else the configured background.
+    TColorAttr themed;
+    const bool useThemed = ww::contentAttr(this, 15, themed,
+        bgConfig.type == TBackgroundType::Solid && bgConfig.solidColorIndex == 0);
+    auto attrAt = [&](int ax, int ay, int aw, int ah) -> TColorAttr {
+        return useThemed ? themed : getBackgroundAttr(bgConfig, ax, ay, aw, ah);
+    };
     TDrawBuffer buf;
     const int W = size.x, H = size.y;
     
     // Fallback: fill with spaces if nothing to show (background-aware)
     auto fillRow = [&](int y) {
         for (int x = 0; x < W; ++x) {
-            TColorAttr attr = getBackgroundAttr(bgConfig, x, y, W, H);
+            TColorAttr attr = attrAt(x, y, W, H);
             buf.moveChar(x, ' ', attr, 1);
         }
         writeLine(0, y, W, 1, buf);
@@ -306,22 +314,22 @@ void FrameFilePlayerView::draw() {
             std::string line(fileData.data() + p, fileData.data() + p + n);
             
             // For solid/transparent, use safe text rendering
-            if (bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
-                TColorAttr attr = getBackgroundAttr(bgConfig, 0, y, W, H);
+            if (useThemed || bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
+                TColorAttr attr = attrAt(0, y, W, H);
                 buf.moveStr(0, line.c_str(), attr);
             } else {
                 // For gradients, use middle color for text to avoid corruption
-                TColorAttr attr = getBackgroundAttr(bgConfig, W/2, y, W, H);
+                TColorAttr attr = attrAt(W/2, y, W, H);
                 buf.moveStr(0, line.c_str(), attr);
             }
         }
         // Fill remaining width with background
-        if (bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
-            TColorAttr attr = getBackgroundAttr(bgConfig, 0, y, W, H);
+        if (useThemed || bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
+            TColorAttr attr = attrAt(0, y, W, H);
             if (W > n) buf.moveChar(n, ' ', attr, W - n);
         } else {
             for (int x = n; x < W; ++x) {
-                TColorAttr attr = getBackgroundAttr(bgConfig, x, y, W, H);
+                TColorAttr attr = attrAt(x, y, W, H);
                 buf.moveChar(x, ' ', attr, 1);
             }
         }
@@ -421,6 +429,13 @@ void TTextFileView::setLimit()
 
 void TTextFileView::draw()
 {
+    // Window colour (API) or the EGA theme's blue window, else the configured background.
+    TColorAttr themed;
+    const bool useThemed = ww::contentAttr(this, 15, themed,
+        bgConfig.type == TBackgroundType::Solid && bgConfig.solidColorIndex == 0);
+    auto attrAt = [&](int ax, int ay, int aw, int ah) -> TColorAttr {
+        return useThemed ? themed : getBackgroundAttr(bgConfig, ax, ay, aw, ah);
+    };
     // Always draw when explicitly called by TVision framework
     // The needsRedraw optimization caused blank windows during terminal resize
     needsRedraw = false; // Clear flag early to prevent recursive calls
@@ -437,8 +452,8 @@ void TTextFileView::draw()
             const std::string& line = lines[lineIndex];
             
             // For solid colors and transparency, use efficient text rendering
-            if (bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
-                TColorAttr attr = getBackgroundAttr(bgConfig, 0, y, viewWidth, viewHeight);
+            if (useThemed || bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
+                TColorAttr attr = attrAt(0, y, viewWidth, viewHeight);
                 TAttrPair attrs{attr, attr};
                 ushort written = buf.moveCStr(0, line.c_str(), attrs, viewWidth);
                 if (written < viewWidth) {
@@ -446,7 +461,7 @@ void TTextFileView::draw()
                 }
             } else {
                 // For gradients, render entire line first then apply background
-                TColorAttr defaultAttr = getBackgroundAttr(bgConfig, viewWidth/2, y, viewWidth, viewHeight);
+                TColorAttr defaultAttr = attrAt(viewWidth/2, y, viewWidth, viewHeight);
                 TAttrPair attrs{defaultAttr, defaultAttr};
                 ushort written = buf.moveCStr(0, line.c_str(), attrs, viewWidth);
                 if (written < viewWidth) {
@@ -455,24 +470,31 @@ void TTextFileView::draw()
                 
                 // Apply gradient background to spaces only to avoid text corruption
                 for (int x = written; x < viewWidth; ++x) {
-                    TColorAttr attr = getBackgroundAttr(bgConfig, x, y, viewWidth, viewHeight);
+                    TColorAttr attr = attrAt(x, y, viewWidth, viewHeight);
                     buf.moveChar(x, ' ', attr, 1);
                 }
             }
         } else {
             // Empty line with background
-            if (bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
-                TColorAttr attr = getBackgroundAttr(bgConfig, 0, y, viewWidth, viewHeight);
+            if (useThemed || bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
+                TColorAttr attr = attrAt(0, y, viewWidth, viewHeight);
                 buf.moveChar(0, ' ', attr, viewWidth);
             } else {
                 for (int x = 0; x < viewWidth; ++x) {
-                    TColorAttr attr = getBackgroundAttr(bgConfig, x, y, viewWidth, viewHeight);
+                    TColorAttr attr = attrAt(x, y, viewWidth, viewHeight);
                     buf.moveChar(x, ' ', attr, 1);
                 }
             }
         }
         
         writeLine(0, y, viewWidth, 1, buf);
+        // The scrollbar column is never drawn by the scrollbar (this draw() replaces
+        // TGroup::draw); paint it in the window colour so it is not a black stripe.
+        if (size.x > viewWidth) {
+            TDrawBuffer edge;
+            edge.moveChar(0, ' ', attrAt(viewWidth, y, viewWidth, viewHeight), size.x - viewWidth);
+            writeLine(viewWidth, y, size.x - viewWidth, 1, edge);
+        }
     }
 }
 

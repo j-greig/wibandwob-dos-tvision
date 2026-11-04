@@ -88,7 +88,7 @@ class ThemeMode(BaseModel):
 
 
 class ThemeVariant(BaseModel):
-    variant: Literal["monochrome", "dark_pastel"]
+    variant: Literal["monochrome", "dark_pastel", "ega"]
 
 
 class MonodrawLoadRequest(BaseModel):

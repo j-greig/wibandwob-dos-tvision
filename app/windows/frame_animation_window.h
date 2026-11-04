@@ -13,6 +13,8 @@
 
 #include <string>
 
+#include "../ega_theme.h"
+
 class TFrameAnimationWindow : public TWindow
 {
 public:
@@ -28,6 +30,7 @@ public:
     bool isFrameless() const { return frameless_; }
 
     virtual void handleEvent(TEvent& event) override;
+    WW_COLOUR_PALETTE_OVERRIDE
 
 private:
     std::string filePath_;

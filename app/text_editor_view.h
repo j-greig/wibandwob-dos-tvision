@@ -100,6 +100,8 @@ private:
     TColorAttr selectedColor;
 };
 
+#include "ega_theme.h"
+
 class TTextEditorWindow : public TWindow {
 public:
     TTextEditorWindow(const TRect &r, const char *title = "Text Editor");
@@ -107,6 +109,7 @@ public:
     virtual void changeBounds(const TRect& b) override;
     
     TTextEditorView* getEditorView() { return editorView; }
+    WW_COLOUR_PALETTE_OVERRIDE
     
 private:
     static TFrame* initFrame(TRect r);

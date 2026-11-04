@@ -1,4 +1,5 @@
 #include "figlet_text_view.h"
+#include "ega_theme.h"
 #include "figlet_utils.h"
 #include "ui/ui_helpers.h"
 
@@ -53,7 +54,12 @@ void TFigletTextView::rerender() {
 }
 
 void TFigletTextView::draw() {
-    TColorAttr attr = TColorAttr(fgColor_, bgColor_);
+    // Window colour (API) or the EGA theme's blue window (yellow letters); a colour set
+    // through figlet_set_color keeps its own.
+    TColorAttr attr;
+    const bool isDefault = (uint32_t)fgColor_ == 0xFFFFFF && (uint32_t)bgColor_ == 0x000000;
+    if (!ww::contentAttr(this, 14, attr, isDefault))
+        attr = TColorAttr(fgColor_, bgColor_);
     TDrawBuffer b;
 
     for (int y = 0; y < size.y; y++) {

@@ -5,6 +5,7 @@
 #define Uses_TKeys
 #define Uses_MsgBox
 #define Uses_TScreenCell
+#define Uses_TFrame
 #include <tvision/tv.h>
 
 #include "tvterm_view.h"
@@ -13,7 +14,13 @@
 #include <tvterm/vtermemu.h>
 #include <tvterm/termemu.h>
 #include <algorithm>
+#include <climits>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 // Command IDs for tvterm integration — must not collide with existing app commands.
 // These are wired through TVTermConstants so tvterm-core uses our IDs.
@@ -156,6 +163,140 @@ std::string TWibWobTerminalWindow::getOutputText() const
 static void onTermError(const char *reason)
 {
     messageBox(mfError | mfOKButton, "Cannot create terminal: %s.", reason);
+}
+
+static void onTermErrorQuiet(const char *reason)
+{
+    fprintf(stderr, "[tvterm] cannot create terminal: %s\n", reason);
+}
+
+void TWibWobTerminalWindow::shutDown()
+{
+    if (!childPidFile_.empty())
+    {
+        pid_t pid = 0;
+        if (FILE *f = fopen(childPidFile_.c_str(), "r"))
+        {
+            long v = 0;
+            if (fscanf(f, "%ld", &v) == 1) pid = (pid_t) v;
+            fclose(f);
+        }
+        unlink(childPidFile_.c_str());
+        childPidFile_.clear();
+        if (pid > 1)
+        {
+            // The program is a session leader (setsid in the pty child): its group is pid.
+            kill(-pid, SIGHUP);
+            kill(pid, SIGHUP);
+            for (int i = 0; i < 30; ++i)
+            {
+                if (waitpid(pid, nullptr, WNOHANG) == pid || kill(pid, 0) != 0)
+                {
+                    pid = 0;
+                    break;
+                }
+                usleep(10000);
+            }
+            if (pid > 1)
+            {
+                kill(-pid, SIGKILL);
+                kill(pid, SIGKILL);
+                waitpid(pid, nullptr, WNOHANG);
+            }
+        }
+    }
+    Super::shutDown();
+}
+
+void TWibWobTerminalWindow::setFixedTitle(const std::string &t)
+{
+    fixedTitle_ = t;
+    if (frame) frame->drawView();
+}
+
+const char *TWibWobTerminalWindow::getTitle(short maxSize)
+{
+    if (!fixedTitle_.empty())
+        return fixedTitle_.c_str();
+    return Super::getTitle(maxSize);
+}
+
+namespace {
+
+// Wraps the vterm factory and adds the environment that makes tools/term_exec.sh the
+// terminal's program: SHELL points at the wrapper, WWDOS_TERM_EXEC carries the command.
+class ExecEmulatorFactory final : public tvterm::TerminalEmulatorFactory
+{
+public:
+    ExecEmulatorFactory(const std::string &wrapper, const std::string &exec, bool hold,
+                        const std::string &pidFile) :
+        wrapper_(wrapper), exec_(exec), hold_(hold ? "1" : "0"), pidFile_(pidFile)
+    {
+        const char *sh = std::getenv("SHELL");
+        shell_ = (sh && *sh && wrapper_ != sh) ? sh : "/bin/zsh";
+        vars_[0] = {"TERM", "xterm-256color"};
+        vars_[1] = {"COLORTERM", "truecolor"};
+        vars_[2] = {"SHELL", wrapper_.c_str()};
+        vars_[3] = {"WWDOS_TERM_EXEC", exec_.c_str()};
+        vars_[4] = {"WWDOS_TERM_HOLD", hold_.c_str()};
+        vars_[5] = {"WWDOS_TERM_SHELL", shell_.c_str()};
+        vars_[6] = {"WWDOS_TERM_PIDFILE", pidFile_.c_str()};
+    }
+
+    tvterm::TerminalEmulator &create(TPoint size, tvterm::Writer &w) noexcept override
+    {
+        return inner_.create(size, w);
+    }
+
+    TSpan<const tvterm::EnvironmentVar> getCustomEnvironment() noexcept override
+    {
+        return TSpan<const tvterm::EnvironmentVar>(vars_, 7);
+    }
+
+private:
+    tvterm::VTermEmulatorFactory inner_;
+    std::string wrapper_, exec_, hold_, pidFile_, shell_;
+    tvterm::EnvironmentVar vars_[7];
+};
+
+std::string findTermExecWrapper()
+{
+    const char *repo = std::getenv("WWDOS_REPO");
+    std::string candidates[] = {
+        repo && *repo ? std::string(repo) + "/tools/term_exec.sh" : std::string(),
+        "tools/term_exec.sh",
+    };
+    for (const auto &c : candidates)
+    {
+        if (c.empty()) continue;
+        char buf[PATH_MAX];
+        if (realpath(c.c_str(), buf) && access(buf, X_OK) == 0)
+            return buf;
+    }
+    return "";
+}
+
+} // namespace
+
+TWindow* createTerminalWindowExec(const TRect &bounds, const std::string &exec, bool hold)
+{
+    using namespace tvterm;
+    std::string wrapper = findTermExecWrapper();
+    if (wrapper.empty())
+        return nullptr;
+    static unsigned counter = 0;
+    char pidFile[96];
+    snprintf(pidFile, sizeof(pidFile), "/tmp/wwdos-term-%d-%u.pid", (int) getpid(), ++counter);
+    unlink(pidFile);
+    ExecEmulatorFactory factory(wrapper, exec, hold, pidFile);
+    TPoint viewSize = BasicTerminalWindow::viewSize(bounds);
+    // No message box: this runs from the API with nobody at the keyboard.
+    auto *termCtrl = TerminalController::create(viewSize, factory, onTermErrorQuiet);
+    if (!termCtrl)
+        return nullptr;
+    auto *w = new TWibWobTerminalWindow(bounds, *termCtrl);
+    w->setChildPidFile(pidFile);
+    return w;
 }
 
 TWindow* createTerminalWindow(const TRect &bounds)

@@ -28,6 +28,7 @@ inline const std::vector<DesktopPreset>& getDesktopPresets() {
         {"noise",         '%',    8,  0,  true,  0x555555, 0x000000}, // grungy
         {"white_paper",   ' ',    15, 15, true,  0xFFFFFF, 0xFFFFFF}, // true white RGB
         {"gallery_wall",  ' ',    0,  0,  true,  0x000000, 0x000000}, // true black — gallery mode
+        {"ega",           '\xB0', 7,  1,  true,  0xAAAAAA, 0x0000AA}, // ░ EGA light grey on EGA blue (theme ega)
     };
     return presets;
 }

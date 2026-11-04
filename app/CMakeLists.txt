@@ -15,6 +15,7 @@ set(TV_COMMON_SOURCES
     wibwob_background.cpp
     window_type_registry.cpp
     theme_manager.cpp
+    ega_theme.cpp
     wibwob_view.cpp
     wibwob_engine.cpp
     room_chat_view.cpp
@@ -99,6 +100,7 @@ target_link_libraries(simple_tui PRIVATE tvision)
 add_executable(frame_file_player
     frame_file_player_main.cpp
     frame_file_player_view.cpp
+    ega_theme.cpp
 )
 target_link_libraries(frame_file_player PRIVATE tvision)
 

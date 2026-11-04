@@ -144,6 +144,7 @@ extern bool api_save_workspace_path(TWwdosApp& app, const std::string& path);
 extern bool api_open_workspace_path(TWwdosApp& app, const std::string& path);
 extern void api_screenshot(TWwdosApp& app);
 extern std::string api_take_last_registered_window_id(TWwdosApp& app);
+extern std::string api_window_colour(TWwdosApp& app, const std::string& id, const std::string& colour, const std::string& ink);
 extern std::string api_get_state(TWwdosApp& app);
 extern std::string api_move_window(TWwdosApp& app, const std::string& id, int x, int y);
 extern std::string api_resize_window(TWwdosApp& app, const std::string& id, int width, int height);
@@ -436,8 +437,19 @@ void ApiIpcServer::poll() {
                 resp = std::string(err) + "\n";
             } else {
                 std::string id = api_take_last_registered_window_id(*app_);
+                // Optional window colour (colour=blue|cyan|..., ink=0-15) on creation.
+                auto ci = kv.find("colour"), ii = kv.find("ink");
+                std::string colourErr;
+                if (!id.empty() && ((ci != kv.end() && !ci->second.empty()) ||
+                                    (ii != kv.end() && !ii->second.empty()))) {
+                    std::string r = api_window_colour(*app_, id, ci != kv.end() ? ci->second : "",
+                                                      ii != kv.end() ? ii->second : "");
+                    if (r.rfind("err", 0) == 0) colourErr = r;
+                }
                 if (id.empty()) {
                     resp = "{\"success\":true}\n";
+                } else if (!colourErr.empty()) {
+                    resp = std::string("{\"success\":true,\"id\":\"") + id + "\",\"colour_error\":\"" + colourErr + "\"}\n";
                 } else {
                     resp = std::string("{\"success\":true,\"id\":\"") + id + "\"}\n";
                 }

@@ -252,6 +252,14 @@ class Controller:
                 path = str(props.get("path", ""))
                 if path:
                     cmd_params["path"] = path
+            elif wtype.value == "figlet_text":
+                for k in ("text", "font", "frameless", "shadowless"):
+                    if props.get(k) not in (None, ""):
+                        cmd_params[k] = str(props[k])
+            # Window colour (EGA family) and ink, any window type.
+            for k in ("colour", "ink"):
+                if props.get(k) not in (None, ""):
+                    cmd_params[k] = str(props[k])
             # Always send create_window — C++ handles all registered types
             # via find_window_type_by_name() in api_ipc.cpp.
             send_cmd("create_window", cmd_params)
@@ -435,6 +443,12 @@ class Controller:
 
     # ----- Properties / Commands -----
     async def set_props(self, win_id: str, props: Dict[str, Any]) -> Window:
+        if any(props.get(k) not in (None, "") for k in ("colour", "ink")):
+            resp = send_cmd("exec_command", {
+                "name": "window_colour", "actor": "api", "id": win_id,
+                "colour": str(props.get("colour") or ""), "ink": str(props.get("ink", "") if props.get("ink") is not None else "")})
+            if isinstance(resp, str) and resp.lower().startswith("err"):
+                raise ValueError(resp)
         async with self._lock:
             win = self._require(win_id)
             win.props.update(props)

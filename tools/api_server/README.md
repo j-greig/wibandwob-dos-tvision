@@ -354,6 +354,46 @@ Proof run: `python3 scripts/glitch-show-demo.py --api http://127.0.0.1:8097 --ru
 | `POST /events/mark` | `label, text?, actor?` | a marker on the stream; frames after it belong to that beat (`frames_to_png.py --beats` takes the last frame of each) |
 | `GET /events` | `?types=open,land` | Server-Sent Events, one per action (below). `GET /events/recent?n=&after=` polls the last 2000 |
 
+### Stage endpoints: EGA theme, window colours, film windows, nested desktops
+
+Code: `tools/api_server/show_stage.py` (film, nest), `app/ega_theme.cpp` (palette, window colours),
+`tools/term_exec.sh` (the program of an exec terminal). Contract tests (no app needed):
+`tools/api_server/venv/bin/python -m unittest tests/test_show_stage.py`. Proof PNGs of a live run:
+`uv run tools/ansi_to_png.py --tmux <session> -o shot.png --ega-check`.
+
+| endpoint | body | does |
+|---|---|---|
+| `POST /theme/variant` | `{"variant": "ega"\|"monochrome"}` | live switch to the Borland 1990 colours in exact 24-bit EGA (blue ░ desktop, grey menu and status line with red hotkeys, blue windows, grey dialogs with green buttons) and back. Launch in it with env `WWDOS_THEME=ega` on the app. `GET /state` reports `theme_variant` |
+| `POST /windows` | `props: {colour, ink, ...}` | window colour on creation: `colour` = `blue\|cyan\|grey\|black\|magenta\|red\|green\|brown`, `ink` = 0-15 (EGA index). Primer, text_view, text_editor and figlet_text windows take both (frame and content); other windows take `blue\|cyan\|grey` as their frame. Without a colour, EGA draws these windows blue: primers and text white (15), editor and figlet yellow (14). figlet_text now gets `text`/`font` from props |
+| `POST /props/{id}` | `{"props": {"colour": "cyan", "ink": 0}}` | recolour a window; `colour: "default"` clears it; 400 on an unknown colour or ink |
+| `POST /menu/command` `open_primer` | `args: {path, x, y, w, h, title, colour, ink}` | primer window with a colour |
+| `POST /menu/command` `open_terminal` | `args: {exec, title, hold, x, y, w, h}` | `exec`: the window runs that command (via `tools/term_exec.sh`) with no prompt, echo or cursor; `title` stays put; `hold: 1` keeps the last screen after the command ends. Returns `{"ok":true,"id":"wN"}`. Closing the window kills the command's process group |
+| `GET /show/tapes` | | the film tapes (`modules/wibwob-2026/tapes/INDEX.json`, or `WWDOS_TAPES`) |
+| `POST /show/film` | `tape, x?, y?, title?, actor?, lead_ms=1200, close_after=false` | a terminal window of the tape's size + 2 (centred and clamped), playing `tools/tapes/tape_play.py <tape> --at <epoch>`, epoch = now + `lead_ms`. Returns `{window_id, at, duration, fps, audio, title, cols, rows, x, y, w, h}`; `audio` is the absolute mp3 path: start it at `at` (wall clock, `time.time()`). Default leaves the last frame; `close_after` closes the window when the tape ends |
+| `POST /show/nest` | `x?, y?, w?, h?, title?, theme="ega", actor?, boot_s=10` | a terminal window running a second WIBWOB-DOS (`WIBWOB_INSTANCE=nest<k>`, its stderr in `/tmp/wwdos-nest<k>.log`); waits for `/tmp/wibwob_nest<k>.sock`. Returns `{window_id, instance, depth: 1, x, y, w, h, inner: {cols, rows}}`. Binary: `WWDOS_NEST_BIN`, default `build/app/wwdos` |
+| `POST /show/inner/{instance}/{verb}` | per verb | acts inside a nested desktop over its own socket. `primer` (`path` (bare name = `modules/wibwob-2026/primers/`), `x, y, w, h, title, colour, ink, frameless`), `figlet` (`text, font, x, y, w, h, colour, ink, title`), `type` (`content, cps, target=editor\|title\|figlet, id?`; no `id` opens an editor at `x, y, w, h`), `move` / `glide` (`id, x, y, w?, h?, ms`), `chrome` (`part=menu\|status\|kaomoji\|reset, text`), `nest` (opens nest<k+1> inside this one: depth 2, 3, ...), `close_all` (that desktop's windows and every nest below it), `state` |
+| `GET /show/nest` · `POST /show/nest/close_all` | | list the open nests (re-adopts nests the app still runs after an API restart); end every nest, deepest first, and close their windows (also on API shutdown) |
+
+Nesting depth on a 192x52 desktop with the default sizes (0.62 x 0.78 of the desktop, then 0.66 x 0.74 of each inner
+desktop): depth 1 is 148x46 inside, depth 2 95x30, depth 3 60x18 (all three hold readable primers and figlet), depth 4
+37x9 (a desktop with room for one small window), depth 5 22x5 (menu bar, status line and a strip of desktop), depth 6
+20x1 (a menu bar only). Each level boots in under a second.
+
+Stage events (same envelope as every show event):
+
+```json
+{"seq": 41, "t": 12.0, "type": "film", "actor": "wib",
+ "window": {"id": "w7", "title": "the night set", "x": 55, "y": 0, "w": 82, "h": 52},
+ "data": {"phase": "start", "tape": "disk-jockey", "at": 1793780739.651, "duration": 12.0, "fps": 12.0,
+          "audio": "/…/modules/wibwob-2026/tapes/disk-jockey.mp3", "title": "the night set"}}
+{"type": "film", "data": {"phase": "end", "tape": "disk-jockey", "at": 1793780739.651, "duration": 12.0, "closed": false}, ...}
+{"type": "nest", "window": {"id": "w9", ...}, "data": {"phase": "open", "instance": "nest2", "depth": 2, "parent": "nest1"}}
+{"type": "nest", "data": {"phase": "close", "instance": "nest2", "depth": 2, "parent": "nest1"}, ...}
+```
+
+A mirror of the screen must read it with `tmux capture-pane -e -p -N`: without `-N` tmux drops the trailing blank
+cells of each line, and a status line that ends in grey spaces comes back black.
+
 Capture reads the screen with `tmux capture-pane` when `WIBWOB_CAPTURE_TMUX=<session>` is set on the API (the app runs
 in that tmux session), else with the app's `/screenshot` file. Set it: the screenshot path shares `logs/screenshots/`
 with every instance and names files by the second.

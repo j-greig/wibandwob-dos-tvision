@@ -8,6 +8,7 @@
 /*---------------------------------------------------------*/
 
 #include "text_editor_view.h"
+#include "ega_theme.h"
 #include "text_wrap.h"
 #include "figlet_utils.h"
 
@@ -123,6 +124,9 @@ void TTextEditorView::draw()
 {
     int W = size.x, H = size.y;
     if (W <= 0 || H <= 0) return;
+    // Window colour (API) or the EGA theme's Turbo Pascal blue (yellow text).
+    TColorAttr normalColor = this->normalColor;
+    ww::contentAttr(this, 14, normalColor);
 
     size_t curVisual = visualLineForCursor();
 

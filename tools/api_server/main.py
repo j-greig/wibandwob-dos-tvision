@@ -106,6 +106,8 @@ def make_app() -> FastAPI:
     from .show import register as register_show, TypeReq, GlideReq
     register_show(app, events)
     show = app.state.show
+    from .show_stage import register as register_stage
+    register_stage(app)
 
     # ----- Helpers -----
     def to_state_model() -> AppStateModel:
@@ -350,6 +352,8 @@ def make_app() -> FastAPI:
             await ctl.set_props(win_id, payload.props)
         except KeyError:
             raise HTTPException(status_code=404, detail="window not found")
+        except ValueError as exc:  # window_colour refused (unknown colour, ink out of range)
+            raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
 
     @app.post("/menu/command")

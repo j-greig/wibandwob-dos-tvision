@@ -6,6 +6,7 @@
 /*---------------------------------------------------------*/
 
 #include "transparent_text_view.h"
+#include "ega_theme.h"
 #include "text_wrap.h"
 #include <algorithm>
 
@@ -107,7 +108,9 @@ void TTransparentTextView::draw()
     TColorAttr textAttr;
     char fillChar = ' ';
 
-    if (useCustomBg) {
+    if (ww::contentAttr(this, 15, textAttr, !useCustomBg)) {
+        // Window colour (API) or the EGA theme's blue window: solid, not see-through.
+    } else if (useCustomBg) {
         textAttr = TColorAttr(fgColor, bgColor);
     } else {
         if (TProgram::deskTop && TProgram::deskTop->background) {
