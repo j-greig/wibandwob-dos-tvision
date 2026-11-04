@@ -255,7 +255,12 @@ bool contentAttr(const TView* view, int themeInk, TColorAttr& out, bool allowThe
     return false;
 }
 
-static void freeBuffersDeep(TView* v) {
+static void (*gRepaintHook)(TView*) = nullptr;
+void setRepaintHook(void (*hook)(TView*)) { gRepaintHook = hook; }
+void runRepaintHook(TView* v) { if (gRepaintHook && v) gRepaintHook(v); }
+
+void freeBuffersDeep(TView* v) {
+    if (gRepaintHook && v) gRepaintHook(v);
     auto* g = dynamic_cast<TGroup*>(v);
     if (!g) return;
     g->forEach([](TView* c, void*) { freeBuffersDeep(c); }, nullptr);

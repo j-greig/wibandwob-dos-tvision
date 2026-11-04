@@ -46,7 +46,7 @@ void TWibWobBackground::setColorRgb(uint32_t fg, uint32_t bg)
     drawView();
 }
 
-void TWibWobBackground::setPreset(const std::string& name)
+void TWibWobBackground::setPreset(const std::string& name, bool draw)
 {
     for (auto& p : getDesktopPresets()) {
         if (name == p.name) {
@@ -56,7 +56,7 @@ void TWibWobBackground::setPreset(const std::string& name)
             useRgb_ = p.useRgb;
             rgbFg_ = p.rgbFg;
             rgbBg_ = p.rgbBg;
-            drawView();
+            if (draw) drawView();
             return;
         }
     }

@@ -36,6 +36,7 @@ extern void api_screenshot(TWwdosApp& app);
 extern void api_set_pattern_mode(TWwdosApp& app, const std::string& mode);
 extern std::string api_set_theme_mode(TWwdosApp& app, const std::string& mode);
 extern std::string api_set_theme_variant(TWwdosApp& app, const std::string& variant);
+extern std::string api_set_theme_variant_sweep(TWwdosApp& app, const std::string& variant, int sweepMs);
 extern std::string api_reset_theme(TWwdosApp& app);
 extern std::string api_window_shadow(TWwdosApp& app, const std::string& id, bool on);
 extern std::string api_window_title(TWwdosApp& app, const std::string& id, const std::string& title);
@@ -125,7 +126,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"screenshot", "Capture screen to a text snapshot", false},
         {"pattern_mode", "Set pattern mode: continuous or tiled", false},
         {"set_theme_mode", "Set theme mode: light or dark", true},
-        {"set_theme_variant", "Set theme variant: monochrome or dark_pastel", true},
+        {"set_theme_variant", "Set theme variant: monochrome, dark_pastel or ega (optional sweep_ms: the new colours roll down the screen over that time)", true},
         {"reset_theme", "Reset theme to default (monochrome + light)", false},
         {"open_scramble", "Toggle Scramble cat overlay", false},
         {"scramble_expand", "Toggle Scramble between smol and tall mode", false},
@@ -273,7 +274,9 @@ std::string exec_registry_command(
         auto it = kv.find("variant");
         if (it == kv.end() || it->second.empty())
             return "err missing variant";
-        return api_set_theme_variant(app, it->second);
+        auto si = kv.find("sweep_ms");
+        int sweep = si != kv.end() ? std::atoi(si->second.c_str()) : 0;
+        return api_set_theme_variant_sweep(app, it->second, sweep);
     }
     if (name == "reset_theme") {
         return api_reset_theme(app);
@@ -493,16 +496,20 @@ std::string exec_registry_command(
         } else {
             api_open_animation_path(app, path, nullptr, frameless, shadowless, title);
         }
+        std::string newId = api_take_last_registered_window_id(app);
         // Optional colour (blue|cyan|grey|black|magenta|red|green|brown) and ink (0-15).
         auto ci = kv.find("colour"), ii = kv.find("ink");
         if ((ci != kv.end() && !ci->second.empty()) || (ii != kv.end() && !ii->second.empty())) {
-            std::string id = api_take_last_registered_window_id(app);
-            if (!id.empty()) {
-                std::string r = api_window_colour(app, id, ci != kv.end() ? ci->second : "",
+            if (!newId.empty()) {
+                std::string r = api_window_colour(app, newId, ci != kv.end() ? ci->second : "",
                                                   ii != kv.end() ? ii->second : "");
                 if (r.rfind("err", 0) == 0) return r;
             }
         }
+        // want_id=1: answer with the new window's id (batch callers name windows by it).
+        auto wi2 = kv.find("want_id");
+        if (wi2 != kv.end() && wi2->second == "1")
+            return "{\"ok\":true,\"id\":\"" + newId + "\"}";
         return "ok";
     }
     if (name == "window_colour") {

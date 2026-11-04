@@ -208,6 +208,18 @@ void TWibWobTerminalWindow::shutDown()
     Super::shutDown();
 }
 
+void TWibWobTerminalWindow::markDirty()
+{
+    // TerminalView repaints every cell after an exposure change.
+    forEach([](TView *v, void *) {
+        if (dynamic_cast<tvterm::TerminalView*>(v) && (v->state & sfExposed))
+        {
+            v->setState(sfExposed, False);
+            v->setState(sfExposed, True);
+        }
+    }, nullptr);
+}
+
 void TWibWobTerminalWindow::setFixedTitle(const std::string &t)
 {
     fixedTitle_ = t;

@@ -1,3 +1,6 @@
+#define Uses_TEventQueue
+#include <tvision/tv.h>
+
 #include "api_ipc.h"
 #include "command_registry.h"
 #include "core/json_utils.h"
@@ -12,6 +15,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#include <poll.h>
 #endif
 
 #ifdef __APPLE__
@@ -344,11 +348,27 @@ bool ApiIpcServer::start(const std::string& path) {
         fd_listen_ = -1;
         return false;
     }
-    if (::listen(fd_listen_, 4) < 0) {
+    if (::listen(fd_listen_, 16) < 0) {
         ::close(fd_listen_);
         fd_listen_ = -1;
         return false;
     }
+    // Wake the event loop the moment a client connects, instead of waiting for the next
+    // 20 ms idle tick: each IPC round trip drops from ~25 ms to ~1 ms.
+    stopWake_ = false;
+    int lfd = fd_listen_;
+    wakeThread_ = std::thread([this, lfd] {
+        while (!stopWake_.load()) {
+            struct pollfd p = {lfd, POLLIN, 0};
+            int r = ::poll(&p, 1, 100);
+            if (r > 0 && (p.revents & POLLIN)) {
+                TEventQueue::wakeUp();
+                ::usleep(1000);   // the main thread accepts within a tick; do not spin
+            } else if (r < 0 && errno != EINTR) {
+                break;
+            }
+        }
+    });
     return true;
 #endif
 }
@@ -358,9 +378,28 @@ void ApiIpcServer::poll() {
     return;
 #else
     if (fd_listen_ < 0 || !app_) return;
+    // Serve every connection that is waiting (a client often sends several in a row).
+    for (int k = 0; k < 32; ++k)
+        if (!pollOne()) break;
+#endif
+}
+
+bool ApiIpcServer::pollOne() {
+#ifdef _WIN32
+    return false;
+#else
     int fd = ::accept(fd_listen_, nullptr, nullptr);
     if (fd < 0) {
-        return; // EAGAIN expected in non-blocking mode
+        return false; // EAGAIN expected in non-blocking mode
+    }
+    // The accepted fd inherits O_NONBLOCK from the listener; the command may not have
+    // arrived yet (the wake thread accepts as soon as the client connects), so read
+    // blocking with a short timeout.
+    {
+        int fl = ::fcntl(fd, F_GETFL, 0);
+        if (fl & O_NONBLOCK) ::fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);
+        struct timeval tv = {1, 0};
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     }
     // macOS Unix socket default SO_SNDBUF is 8192 — too small for
     // JSON responses like get_capabilities (~9KB with 75+ commands).
@@ -373,24 +412,79 @@ void ApiIpcServer::poll() {
             std::string err = "{\"error\":\"auth_failed\"}\n";
             (void)safe_write(fd, err.c_str(), err.size());
             ::close(fd);
-            return;
+            return true;
         }
     }
 
-    // Read a single line command.
-    char buf[2048];
-    ssize_t n = ::read(fd, buf, sizeof(buf)-1);
-    if (n <= 0) {
-        ::close(fd);
-        return;
+    // Read one newline-terminated command (any length: batches carry many).
+    std::string line;
+    {
+        char buf[8192];
+        while (line.find('\n') == std::string::npos && line.size() < (8u << 20)) {
+            ssize_t n = ::read(fd, buf, sizeof(buf));
+            if (n <= 0) break;
+            line.append(buf, (size_t)n);
+        }
     }
-    buf[n] = 0;
-    std::string line(buf);
+    if (line.empty()) {
+        ::close(fd);
+        return true;
+    }
+    size_t nl = line.find('\n');
+    if (nl != std::string::npos) line.resize(nl);
+
+    std::string cmd;
+    std::string resp = dispatch(line, cmd);
+
+    if (cmd == "subscribe_events") {
+        // Keep this fd open — the client will receive pushed events.
+#ifdef SO_NOSIGPIPE
+        int one = 1;
+        ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
+        // Send initial ack so the client knows subscription is active.
+        const char* ack = "{\"type\":\"subscribed\"}\n";
+        if (!safe_write(fd, ack, std::strlen(ack))) {
+            ::close(fd);
+            return true;
+        }
+        // Set non-blocking so publish_event doesn't stall the event loop.
+        ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+        event_subscribers_.push_back(fd);
+        return true; // do NOT write resp or close fd
+    }
+
+    // Track command timestamp for connection status indicator
+    last_command_time_ = std::chrono::steady_clock::now();
+    ++total_commands_;
+
+    if (resp.size() > 4096)
+        fprintf(stderr, "[ipc] large response: %zu bytes for cmd=%s\n", resp.size(), cmd.c_str());
+    // For large responses, set SO_LINGER so close() blocks until all
+    // data is delivered to the client (macOS drops unread data on close).
+    if (resp.size() > 4096) {
+        struct linger lg = { 1, 2 };  // linger on, 2 second timeout
+        ::setsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+    }
+    bool ok = safe_write(fd, resp.c_str(), resp.size());
+    if (!ok)
+        fprintf(stderr, "[ipc] ERROR: safe_write failed for %zu bytes\n", resp.size());
+    ::shutdown(fd, SHUT_WR);
+    // Drain client's FIN so close doesn't RST and discard buffered data.
+    char drain[64];
+    while (::read(fd, drain, sizeof(drain)) > 0) {}
+    ::close(fd);
+    return true;
+#endif
+}
+
+// One command line -> its response (with trailing newline). `batch` runs many.
+std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd) {
+    std::string line = rawLine;
     // Simple trim
     while (!line.empty() && (line.back()=='\n' || line.back()=='\r' || line.back()==' ')) line.pop_back();
 
-    // Parse: "cmd:<name> k=v k=v"
-    std::string cmd;
+    cmd.clear();
     std::map<std::string,std::string> kv;
     {
         std::istringstream iss(line);
@@ -408,6 +502,32 @@ void ApiIpcServer::poll() {
     }
 
     std::string resp = "ok\n";
+    if (cmd == "batch") {
+        // Many commands in one message, run in order in this one tick:
+        // lines=base64:<"cmd:a k=v\ncmd:b k=v\n...">. Returns {"results":["<resp a>","<resp b>",...]}.
+        std::string payload = kv["lines"];
+        if (payload.rfind("base64:", 0) == 0) payload = base64_decode(payload.substr(7));
+        std::string out = "{\"results\":[";
+        std::istringstream ls(payload);
+        std::string sub;
+        bool first = true;
+        int count = 0;
+        while (std::getline(ls, sub)) {
+            if (sub.empty()) continue;
+            std::string subCmd;
+            std::string r;
+            if (sub.rfind("cmd:batch", 0) == 0 || sub.rfind("cmd:subscribe_events", 0) == 0 || ++count > 200)
+                r = "err not allowed in a batch";
+            else
+                r = dispatch(sub, subCmd);
+            while (!r.empty() && (r.back() == '\n' || r.back() == '\r')) r.pop_back();
+            out += (first ? "\"" : ",\"") + json_escape(r) + "\"";
+            first = false;
+        }
+        out += "]}\n";
+        last_command_time_ = std::chrono::steady_clock::now();
+        return out;
+    }
     if (cmd == "get_capabilities") {
         resp = get_command_capabilities_json() + "\n";
     } else if (cmd == "get_window_types") {
@@ -806,45 +926,7 @@ void ApiIpcServer::poll() {
         resp = "err unknown cmd\n";
     }
 
-    if (cmd == "subscribe_events") {
-        // Keep this fd open — the client will receive pushed events.
-#ifdef SO_NOSIGPIPE
-        int one = 1;
-        ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
-#endif
-        // Send initial ack so the client knows subscription is active.
-        const char* ack = "{\"type\":\"subscribed\"}\n";
-        if (!safe_write(fd, ack, std::strlen(ack))) {
-            ::close(fd);
-            return;
-        }
-        // Set non-blocking so publish_event doesn't stall the event loop.
-        ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-        event_subscribers_.push_back(fd);
-        return; // do NOT write resp or close fd
-    }
-
-    // Track command timestamp for connection status indicator
-    last_command_time_ = std::chrono::steady_clock::now();
-    ++total_commands_;
-
-    if (resp.size() > 4096)
-        fprintf(stderr, "[ipc] large response: %zu bytes for cmd=%s\n", resp.size(), cmd.c_str());
-    // For large responses, set SO_LINGER so close() blocks until all
-    // data is delivered to the client (macOS drops unread data on close).
-    if (resp.size() > 4096) {
-        struct linger lg = { 1, 2 };  // linger on, 2 second timeout
-        ::setsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
-    }
-    bool ok = safe_write(fd, resp.c_str(), resp.size());
-    if (!ok)
-        fprintf(stderr, "[ipc] ERROR: safe_write failed for %zu bytes\n", resp.size());
-    ::shutdown(fd, SHUT_WR);
-    // Drain client's FIN so close doesn't RST and discard buffered data.
-    char drain[64];
-    while (::read(fd, drain, sizeof(drain)) > 0) {}
-    ::close(fd);
-#endif
+    return resp;
 }
 
 ApiIpcServer::ConnectionStatus ApiIpcServer::getConnectionStatus() const {
@@ -910,6 +992,8 @@ void ApiIpcServer::publish_event(const char* event_type, const std::string& payl
 
 void ApiIpcServer::stop() {
 #ifndef _WIN32
+    stopWake_ = true;
+    if (wakeThread_.joinable()) wakeThread_.join();
     // Close all event subscriber fds.
     for (int sub_fd : event_subscribers_) ::close(sub_fd);
     event_subscribers_.clear();

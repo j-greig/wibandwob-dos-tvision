@@ -1020,6 +1020,15 @@ private:
     friend std::string api_desktop_gallery(TWwdosApp&, bool);
     friend std::string api_desktop_get(TWwdosApp&);
     bool galleryMode_ = false;
+
+    // Theme sweep: after a theme change with sweep_ms, idle() repaints the screen in
+    // bands from the top, so the new colours roll down over sweep_ms.
+    bool sweepOn_ = false;
+    std::chrono::steady_clock::time_point sweepT0_;
+    int sweepMs_ = 0;
+    int sweepDone_ = 0;
+    void stepSweep();
+    friend std::string api_set_theme_variant_sweep(TWwdosApp&, const std::string&, int);
 };
 
 // Static member definition
@@ -2869,9 +2878,33 @@ TRect TWwdosApp::calculateWindowBounds(const std::string& filePath)
     return TRect(x, y, x + windowWidth, y + windowHeight);
 }
 
+void TWwdosApp::stepSweep()
+{
+    if (!sweepOn_) return;
+    int rows = size.y;
+    auto el = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - sweepT0_).count();
+    int target = sweepMs_ > 0 ? (int)std::min<long long>(rows, (long long)rows * el / sweepMs_ + 1) : rows;
+    if (target > sweepDone_) {
+        // A window about to rebuild its buffer must repaint every cell (terminal views
+        // otherwise copy only changed cells, and a film may have drawn since the drop).
+        deskTop->forEach([](TView* v, void*) {
+            auto* g = dynamic_cast<TGroup*>(v);
+            if (g && !g->buffer) ww::runRepaintHook(v);
+        }, nullptr);
+        TRect saved = clip;
+        clip = TRect(0, sweepDone_, size.x, target);
+        redraw();
+        clip = saved;
+        sweepDone_ = target;
+    }
+    if (sweepDone_ >= rows) sweepOn_ = false;
+}
+
 void TWwdosApp::idle()
 {
     TApplication::idle();
+    stepSweep();
 
     // Poll IPC server for incoming API commands
     if (ipcServer) ipcServer->poll();
@@ -2896,6 +2929,9 @@ int main()
     AuthConfig::instance().detect();
     // WWDOS_THEME=ega starts in the Borland EGA colours (default: monochrome).
     ww::initThemeFromEnv();
+    ww::setRepaintHook([](TView* v) {
+        if (auto* tw = dynamic_cast<TWibWobTerminalWindow*>(v)) tw->markDirty();
+    });
 
     TWwdosApp app;
     app.run();
@@ -4591,6 +4627,7 @@ void api_spawn_text_editor(TWwdosApp& app, const TRect* bounds, const std::strin
     }
     TWindow* window = createTextEditorWindow(r, title.empty() ? "Text Editor" : title.c_str());
     TProgram::deskTop->insert(window);
+    app.registerWindow(window);  // so create_window can return its id
 }
 
 std::string api_send_text(TWwdosApp& app, const std::string& id,
@@ -5302,7 +5339,7 @@ std::string api_set_theme_mode(TWwdosApp& app, const std::string& mode) {
 // Switch the whole desktop between the black-and-white palette and the Borland EGA
 // colours, live. The desktop pattern follows (EGA blue hatch; back to the preset it
 // had before EGA on the way out). dark_pastel keeps the mono palette.
-std::string api_set_theme_variant(TWwdosApp& app, const std::string& variant) {
+std::string api_set_theme_variant_sweep(TWwdosApp& app, const std::string& variant, int sweepMs) {
     ww::Theme t;
     if (!ww::parseTheme(variant, t))
         return "err invalid theme variant (monochrome|dark_pastel|ega)";
@@ -5310,16 +5347,33 @@ std::string api_set_theme_variant(TWwdosApp& app, const std::string& variant) {
     bool wasEga = ww::isEga();
     ww::setTheme(t);
     if (auto* bg = dynamic_cast<TWibWobBackground*>(app.deskTop->background)) {
+        // With a sweep the desktop must not repaint all at once: change it without drawing.
+        bool draw = sweepMs <= 0;
         if (t == ww::Theme::Ega && !wasEga) {
             std::string cur = bg->getPresetName();
             if (cur != "ega") preEgaPreset = cur == "custom" ? "default" : cur;
-            bg->setPreset("ega");
+            bg->setPreset("ega", draw);
         } else if (t != ww::Theme::Ega && wasEga && bg->getPresetName() == "ega") {
-            bg->setPreset(preEgaPreset);
+            bg->setPreset(preEgaPreset, draw);
         }
     }
-    ww::redrawDeep(&app);
+    if (sweepMs <= 0) {
+        app.sweepOn_ = false;
+        ww::redrawDeep(&app);
+        return "ok";
+    }
+    // Window buffers hold the old colours; drop them, then let idle() paint band by band.
+    ww::freeBuffersDeep(&app);
+    app.sweepOn_ = true;
+    app.sweepT0_ = std::chrono::steady_clock::now();
+    app.sweepMs_ = sweepMs;
+    app.sweepDone_ = 0;
+    app.stepSweep();
     return "ok";
+}
+
+std::string api_set_theme_variant(TWwdosApp& app, const std::string& variant) {
+    return api_set_theme_variant_sweep(app, variant, 0);
 }
 
 std::string api_reset_theme(TWwdosApp& app) {

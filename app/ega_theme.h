@@ -63,6 +63,13 @@ bool contentAttr(const TView* view, int themeInk, TColorAttr& out, bool allowThe
 // screen buffer, so drawView() alone repaints the old colours; this frees the
 // buffers first. Use after a theme or window-colour change.
 void redrawDeep(TView* v);
+// Drop the cached buffers of every group inside v (not v's own draw).
+void freeBuffersDeep(TView* v);
+// Called for every view freeBuffersDeep visits. The app sets it so terminal windows
+// repaint every cell (a terminal view otherwise copies only changed cells into the
+// fresh, blank buffer).
+void setRepaintHook(void (*hook)(TView*));
+void runRepaintHook(TView* v);
 
 } // namespace ww
 

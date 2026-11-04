@@ -9,6 +9,8 @@
 #include <vector>
 #include <cstdint>
 #include <chrono>
+#include <atomic>
+#include <thread>
 
 class TWwdosApp;
 
@@ -26,7 +28,7 @@ public:
 
     // Start listening on a Unix socket path. Returns false on failure.
     bool start(const std::string& path = "/tmp/wwdos.sock");
-    // Poll for new connections and handle a single command per connection.
+    // Serve every waiting connection (one command each; `batch` carries many).
     void poll();
     // Stop and clean up.
     void stop();
@@ -52,6 +54,13 @@ private:
     // Connection tracking for status indicator
     std::chrono::steady_clock::time_point last_command_time_{};
     int total_commands_ = 0;
+
+    // Wakes the TV event loop when a client connects (see start()).
+    std::thread wakeThread_;
+    std::atomic<bool> stopWake_{false};
+
+    bool pollOne();
+    std::string dispatch(const std::string& line, std::string& cmd);
 
     // Auth helpers
     bool auth_required() const { return !auth_secret_.empty(); }

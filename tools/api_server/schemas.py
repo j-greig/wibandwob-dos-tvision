@@ -89,6 +89,7 @@ class ThemeMode(BaseModel):
 
 class ThemeVariant(BaseModel):
     variant: Literal["monochrome", "dark_pastel", "ega"]
+    sweep_ms: int = 0   # >0: the new colours roll down the screen over this time
 
 
 class MonodrawLoadRequest(BaseModel):

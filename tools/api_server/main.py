@@ -108,6 +108,8 @@ def make_app() -> FastAPI:
     show = app.state.show
     from .show_stage import register as register_stage
     register_stage(app)
+    from .show_ops import register as register_ops
+    register_ops(app, ctl)
 
     # ----- Helpers -----
     def to_state_model() -> AppStateModel:
@@ -379,7 +381,7 @@ def make_app() -> FastAPI:
 
     @app.post("/theme/variant")
     async def theme_variant(payload: ThemeVariant) -> Dict[str, Any]:
-        result = await ctl.set_theme_variant(payload.variant)
+        result = await ctl.set_theme_variant(payload.variant, payload.sweep_ms)
         if not result.get("ok"):
             raise HTTPException(status_code=400, detail=result.get("error", "set_theme_variant_failed"))
         return result
@@ -952,13 +954,19 @@ def make_app() -> FastAPI:
 
     @app.post("/timeline/cancel")
     async def timeline_cancel(body: Dict[str, Any]) -> Dict[str, Any]:
-        gid = str((body or {}).get("group_id", ""))
+        gid = str((body or {}).get("timeline_id") or (body or {}).get("group_id") or "")
         if not gid:
-            raise HTTPException(status_code=400, detail="missing group_id")
+            raise HTTPException(status_code=400, detail="missing timeline_id (or group_id)")
+        rec = app.state.director.cancel(gid)   # POST /show/timeline ids
+        if rec is not None:
+            return {"ok": True, "timeline_id": gid, "canceled": 1, **rec}
         return await ctl.cancel_timeline(gid)
 
     @app.get("/timeline/status")
     async def timeline_status(group_id: str) -> Dict[str, Any]:
+        rec = app.state.director.timelines.get(group_id)
+        if rec is not None:
+            return {k: v for k, v in rec.items() if not k.startswith("_")}
         return await ctl.get_timeline_status(group_id)
 
     # ----- Monodraw Integration -----

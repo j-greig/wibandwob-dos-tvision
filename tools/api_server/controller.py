@@ -623,9 +623,12 @@ class Controller:
         """Set theme mode (light or dark) via command registry"""
         return await self.exec_command("set_theme_mode", {"mode": mode})
 
-    async def set_theme_variant(self, variant: str) -> Dict[str, Any]:
-        """Set theme variant (monochrome or dark_pastel) via command registry"""
-        return await self.exec_command("set_theme_variant", {"variant": variant})
+    async def set_theme_variant(self, variant: str, sweep_ms: int = 0) -> Dict[str, Any]:
+        """Set theme variant (monochrome, dark_pastel or ega; sweep_ms rolls it down the screen)"""
+        args = {"variant": variant}
+        if sweep_ms:
+            args["sweep_ms"] = int(sweep_ms)
+        return await self.exec_command("set_theme_variant", args)
 
     async def reset_theme(self) -> Dict[str, Any]:
         """Reset theme to defaults (monochrome + light) via command registry"""

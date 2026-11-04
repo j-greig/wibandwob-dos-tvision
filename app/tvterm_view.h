@@ -37,6 +37,8 @@ public:
     // up that process group (tvterm does not always do it), so no program outlives
     // its window.
     void setChildPidFile(const std::string &path) { childPidFile_ = path; }
+    // Make the next draw copy every cell (after the window's buffer was dropped).
+    void markDirty();
     void shutDown() override;
 
 private:

@@ -391,6 +391,40 @@ Stage events (same envelope as every show event):
 {"type": "nest", "data": {"phase": "close", "instance": "nest2", "depth": 2, "parent": "nest1"}, ...}
 ```
 
+### Director endpoints: batch, names, place, scene, timeline, dive
+
+Code: `tools/api_server/show_ops.py`. Contract tests: `tools/api_server/venv/bin/python -m unittest tests/test_show_ops.py`.
+Latency: `python3 tools/api_server/bench.py --api http://127.0.0.1:<port>` (p50/p95 per action; run on your own instance).
+
+| endpoint | body | does |
+|---|---|---|
+| `POST /show/batch` | `{"ops":[{op...}], "atomic": false, "actor"?}` | up to 40 ops in one call. Ops on existing windows travel as one IPC `batch` message; ops that open a window go at once so later ops can use its name. State syncs once. Returns `{ok, applied, ms, results:[{i, op, ok, id?, as?, rect?:[x,y,w,h], error?}]}`. `atomic: true` checks every op first (names, place refs, primers, colours) and applies none if one fails |
+| `GET /show/scene` | `?since=<seq>&minimap=true&full=false` | the scene as text rows `name\|kind\|slug\|x,y,w,h\|colour/ink\|z\|text\|id` (front first) plus a 64x18 `minimap` (each window a frame with the first letter of its name). `since` returns only windows changed after that `seq`, and `gone` (names closed since) |
+| `POST /show/place` | `{"place":{...}, "w"?, "h"?, "target"?}` | resolve a place to `{rect}` without moving anything |
+| `POST /show/timeline` | `{"steps":[{"t":ms,"op":{...}}], "start_ms":0, "at"?: epoch, "id"?}` | the API runs the ops itself at `at + start_ms + t` (wall clock; pass a film's `at` to lock to its music); steps with the same `t` run as one batch. Returns `{id, starts_at, ends_at, steps, applied, failed, state}`. `GET /show/timeline/{id}`, `GET /timeline/status?group_id=<id>`, `POST /timeline/cancel {"timeline_id": id}` |
+| `POST /show/dive` | `{"depth":5, "gap_ms":700, "themes"?:[...], "seed"?:[slugs], "x"?, "y"?, "w"?, "h"?, "scale":0.68, "vscale":0.86}` | opens nest1, then nest2 inside it, down to `depth`, `gap_ms` apart. Themes alternate mono/EGA from the outer theme unless given; each level gets one small shelf primer (`seed`, cast first) in the strip the next level leaves free. Returns `{depth, ms, levels:[{instance, depth, theme, window_id, parent, rect, desktop:[cols,rows], seed:{slug, rect, window_id}, t}], stopped?}` |
+| `POST /show/surface` | `{"gap_ms":400}` | closes every nest deepest first, one per beat. Returns `{closed:[{instance, depth, t}], ms}` |
+| `POST /theme/variant` | `{"variant":"ega", "sweep_ms":600}` | `sweep_ms` rolls the new colours down the screen over that time instead of flipping at once |
+
+Ops (every op takes `actor`; targets are a name given with `as`, a window title, or an id):
+`primer {slug|path, as, place|x,y, w?, h?, title?, colour?, ink?, frameless?}` (size from the file when no w/h) ·
+`figlet {text, font?, as, place|x,y, w?, h?, colour?, ink?}` · `text {content, as?, place?, w?, h?, cps?}` (opens an editor
+unless `target`; `type` = text with cps 14) · `move {target, place|x,y|dx,dy, w?, h?}` · `glide {target, place|x,y, ms, ease?, wait?}`
+(runs in the background unless `wait`) · `colour {target, colour?, ink?}` · `front {target}` · `close {target}` ·
+`title {target, text}` · `chrome {menu?, status?, kaomoji?, reset?, cps?}` · `theme {variant, sweep_ms?}` · `wait {ms}` ·
+`cursor {actor, target|x,y}` · `film {tape, as?, place|x,y, lead_ms?, close_after?}` · `nest {as?, place|x,y, w?, h?, theme?}` ·
+`inner {instance (or the nest's name), verb, ...}`.
+
+Place (`place` on any op that opens or moves a window; result rect is clamped to the desktop and slid off other
+windows along the free axis unless `"avoid": false`; `dx`/`dy` nudge after):
+`{"right_of":"tower","gap":2,"align":"start|center|end"}`, `left_of`, `above`, `below` · `{"on":"ledge","at":"left|center|right"}`
+(rests on its top frame) · `{"inside":"wall","at":"top|bottom-left|..."}` · `{"cell":"C2"}` or `{"cell":"B2:C3"}` (6x4 grid,
+columns A-F, rows 1-4; a span sets w/h when not given) · `{"anchor":"bottom-left","margin":1}` · `{"center":true}`.
+
+IPC: the app wakes its event loop as soon as a client connects (a helper thread polls the socket), so one round trip
+is about 1 ms instead of a 20 ms idle tick, and `cmd:batch lines=base64:<lines>` runs many commands in one message.
+`open_primer want_id=1` answers `{"ok":true,"id":"wN"}`.
+
 A mirror of the screen must read it with `tmux capture-pane -e -p -N`: without `-N` tmux drops the trailing blank
 cells of each line, and a status line that ends in grey spaces comes back black.
 

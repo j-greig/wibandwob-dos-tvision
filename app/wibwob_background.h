@@ -40,7 +40,7 @@ public:
     void setTexture(char ch);
     void setColor(uchar fg, uchar bg);
     void setColorRgb(uint32_t fg, uint32_t bg);
-    void setPreset(const std::string& name);
+    void setPreset(const std::string& name, bool draw = true);
     std::string getPresetName() const;
 
     virtual void draw() override;
