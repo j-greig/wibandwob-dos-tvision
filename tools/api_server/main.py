@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Any, Dict, Optional
 
@@ -1039,7 +1040,7 @@ def make_app() -> FastAPI:
         mcp = FastApiMCP(app)
         mcp.mount_http()  # Mounts MCP server at /mcp with HTTP transport
         print("✅ MCP server mounted at /mcp")
-        print("🔗 MCP URL: http://127.0.0.1:8089/mcp")
+        print(f"🔗 MCP URL: http://127.0.0.1:{os.environ.get('WIBWOB_API_PORT', '8089')}/mcp")
     else:
         print("⚠️  MCP not available - install 'fastapi-mcp' for MCP support")
 
@@ -1052,4 +1053,9 @@ app = make_app()
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8089, log_level="info")
+    import argparse
+    import os
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=int(os.environ.get("WIBWOB_API_PORT", "8089")))
+    uvicorn.run(app, host="127.0.0.1", port=ap.parse_args().port, log_level="info")
