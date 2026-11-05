@@ -3,6 +3,7 @@
 #include "api_ipc.h"
 #include "backrooms_tv_view.h"
 #include "core/json_utils.h"
+#include "core/base64_util.h"
 #include "figlet_utils.h"
 
 #include <cstdint>
@@ -100,6 +101,8 @@ extern std::string api_terminal_read(TWwdosApp& app, const std::string& window_i
 extern std::string api_paint_cell(TWwdosApp& app, const std::string& id, int x, int y, uint8_t fg, uint8_t bg);
 extern std::string api_paint_text(TWwdosApp& app, const std::string& id, int x, int y, const std::string& text, uint8_t fg, uint8_t bg);
 extern std::string api_paint_line(TWwdosApp& app, const std::string& id, int x0, int y0, int x1, int y1, bool erase);
+extern std::string api_paint_grid(TWwdosApp& app, const std::string& id, int x, int y, int w, int h,
+                                  const std::string& chars, const std::string& attrs);
 extern std::string api_paint_rect(TWwdosApp& app, const std::string& id, int x0, int y0, int x1, int y1, bool erase);
 extern std::string api_paint_clear(TWwdosApp& app, const std::string& id);
 extern std::string api_paint_export(TWwdosApp& app, const std::string& id);
@@ -180,6 +183,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"get_chat_history", "Return Wib&Wob chat history as JSON array of {role, content} messages", false},
         {"paint_cell", "Set a single cell on a paint canvas (id, x, y, fg, bg params)", true},
         {"paint_text", "Write text on a paint canvas (id, x, y, text, fg, bg params)", true},
+        {"paint_grid", "Write a w x h block of text cells on a paint canvas in one redraw (id, x, y, w, h, chars, attrs; chars and attrs are base64 of w*h bytes, row by row, attr = fg | bg<<4)", true},
         {"paint_line", "Draw a line on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
@@ -610,6 +614,21 @@ std::string exec_registry_command(
         uint8_t fg = fg_it != kv.end() ? std::atoi(fg_it->second.c_str()) : 15;
         uint8_t bg = bg_it != kv.end() ? std::atoi(bg_it->second.c_str()) : 0;
         return api_paint_text(app, id_it->second, std::atoi(x_it->second.c_str()), std::atoi(y_it->second.c_str()), text_it->second, fg, bg);
+    }
+    if (name == "paint_grid") {
+        auto id_it = kv.find("id");
+        auto x_it = kv.find("x"); auto y_it = kv.find("y");
+        auto w_it = kv.find("w"); auto h_it = kv.find("h");
+        auto c_it = kv.find("chars"); auto a_it = kv.find("attrs");
+        if (id_it == kv.end() || x_it == kv.end() || y_it == kv.end() || w_it == kv.end() || h_it == kv.end()
+            || c_it == kv.end() || a_it == kv.end())
+            return "err missing id/x/y/w/h/chars/attrs";
+        auto unb64 = [](const std::string& v) {
+            return ww::base64Decode(v.rfind("base64:", 0) == 0 ? v.substr(7) : v);
+        };
+        return api_paint_grid(app, id_it->second, std::atoi(x_it->second.c_str()), std::atoi(y_it->second.c_str()),
+                              std::atoi(w_it->second.c_str()), std::atoi(h_it->second.c_str()),
+                              unb64(c_it->second), unb64(a_it->second));
     }
     if (name == "paint_line") {
         auto id_it = kv.find("id");

@@ -5,6 +5,7 @@
 /*---------------------------------------------------------*/
 
 #include "paint_canvas.h"
+#include <algorithm>
 #include <sstream>
 
 TPaintCanvasView::TPaintCanvasView(const TRect &bounds, int cols, int rows, PaintContext *ctx)
@@ -424,6 +425,32 @@ void TPaintCanvasView::putText(int x, int y, const std::string& text, uint8_t fg
         c.qMask = 0;
     }
     drawView();
+}
+
+int TPaintCanvasView::putGrid(int x, int y, int w, int h, const std::string& chars, const std::string& attrs)
+{
+    int n = 0;
+    const size_t total = std::min(chars.size(), attrs.size());
+    for (int dy = 0; dy < h; ++dy) {
+        int py = y + dy;
+        if (py < 0 || py >= rows) continue;
+        for (int dx = 0; dx < w; ++dx) {
+            size_t i = static_cast<size_t>(dy) * w + dx;
+            if (i >= total) break;
+            int px = x + dx;
+            if (px < 0 || px >= cols) continue;
+            auto &c = buffer[py * cols + px];
+            char ch = chars[i];
+            c.textChar = (ch == 0) ? ' ' : ch;
+            c.textFg = static_cast<uint8_t>(attrs[i]) & 0x0F;
+            c.textBg = (static_cast<uint8_t>(attrs[i]) >> 4) & 0x0F;
+            c.uOn = false; c.lOn = false;
+            c.qMask = 0;
+            ++n;
+        }
+    }
+    drawView();
+    return n;
 }
 
 void TPaintCanvasView::putLine(int x0, int y0, int x1, int y1, bool erase)

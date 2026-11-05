@@ -5628,6 +5628,17 @@ std::string api_paint_text(TWwdosApp& app, const std::string& id, int x, int y, 
     return "ok";
 }
 
+std::string api_paint_grid(TWwdosApp& app, const std::string& id, int x, int y, int w, int h,
+                           const std::string& chars, const std::string& attrs) {
+    auto *canvas = api_find_paint_canvas(app, id);
+    if (!canvas) return "err paint window not found";
+    if (w <= 0 || h <= 0) return "err w and h must be positive";
+    if (chars.size() < static_cast<size_t>(w) * h || attrs.size() < static_cast<size_t>(w) * h)
+        return "err chars and attrs need w*h bytes each";
+    int n = canvas->putGrid(x, y, w, h, chars, attrs);
+    return "ok " + std::to_string(n);
+}
+
 std::string api_paint_line(TWwdosApp& app, const std::string& id, int x0, int y0, int x1, int y1, bool erase) {
     auto *canvas = api_find_paint_canvas(app, id);
     if (!canvas) return "err paint window not found";
