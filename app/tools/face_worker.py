@@ -96,7 +96,9 @@ def main():
             print(f"[face_worker] WARN: could not load eye cascade: {e}")
             eye_cascade = None
 
-    cap = open_camera(args.device, 320, 240, fps=max(1, args.fps))
+    # capture size: FM_CAP_W x FM_CAP_H (default 320x240, 4:3); 640x360 gives 16:9 from a 16:9 camera
+    cap = open_camera(args.device, int(os.environ.get("FM_CAP_W", "320")), int(os.environ.get("FM_CAP_H", "240")),
+                      fps=max(1, args.fps))
     if cap is None:
         print("[face_worker] ERROR: cannot open webcam; using synthetic frames", file=sys.stderr)
     else:
