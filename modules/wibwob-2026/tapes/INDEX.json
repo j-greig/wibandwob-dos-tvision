@@ -153,6 +153,20 @@
    "fps": 12,
    "file": "far-thump.tape.gz",
    "audio": "far-thump.mp3"
+  },
+  {
+   "slug": "walking-tower",
+   "title": "the tower walks",
+   "what": "The Wib&Wob castle tower, the one on every closing card, walks across the window: it grows long owl legs, stands up and creeps about, crouching and darting, then folds its legs and sits down again.",
+   "film": "drawn for wibwob-dos (tape_tower.py)",
+   "from": 0.0,
+   "to": 14.0,
+   "duration": 14.0,
+   "cols": 64,
+   "rows": 26,
+   "fps": 12,
+   "file": "walking-tower.tape.gz",
+   "audio": "walking-tower.mp3"
   }
  ]
 }
