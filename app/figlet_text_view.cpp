@@ -66,8 +66,7 @@ void TFigletTextView::draw() {
         b.moveChar(0, ' ', attr, size.x);
         if (y < (int)renderedLines_.size()) {
             const std::string& line = renderedLines_[y];
-            int len = std::min((int)line.size(), (int)size.x);
-            b.moveStr(0, line.substr(0, len).c_str(), attr);
+            b.moveStr(0, TStringView(line), attr, (ushort)size.x);   // clip by cells: a byte cut splits UTF-8 glyphs
         }
         writeLine(0, y, size.x, 1, b);
     }

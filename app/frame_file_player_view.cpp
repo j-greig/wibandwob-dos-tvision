@@ -308,20 +308,14 @@ void FrameFilePlayerView::draw() {
         if (pureEnd > p && fileData[pureEnd - 1] == '\r') --pureEnd;
         size_t len = pureEnd > p ? pureEnd - p : 0;
 
-        // Render line with proper text handling
-        int n = (int)std::min<size_t>(len, (size_t)W);
-        if (n > 0) {
-            std::string line(fileData.data() + p, fileData.data() + p + n);
-            
-            // For solid/transparent, use safe text rendering
-            if (useThemed || bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
-                TColorAttr attr = attrAt(0, y, W, H);
-                buf.moveStr(0, line.c_str(), attr);
-            } else {
-                // For gradients, use middle color for text to avoid corruption
-                TColorAttr attr = attrAt(W/2, y, W, H);
-                buf.moveStr(0, line.c_str(), attr);
-            }
+        // Render the line clipped to W cells (not W bytes: a byte cut splits UTF-8 glyphs into mojibake);
+        // n is the number of cells written, so the fill below starts where the text ends on screen
+        int n = 0;
+        if (len > 0) {
+            TStringView line(fileData.data() + p, len);
+            bool flat = useThemed || bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent;
+            TColorAttr attr = flat ? attrAt(0, y, W, H) : attrAt(W/2, y, W, H);   // gradients: middle colour for text
+            n = buf.moveStr(0, line, attr, (ushort)W);
         }
         // Fill remaining width with background
         if (useThemed || bgConfig.type == TBackgroundType::Solid || bgConfig.type == TBackgroundType::Transparent) {
