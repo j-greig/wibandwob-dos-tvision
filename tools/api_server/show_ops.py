@@ -1002,7 +1002,7 @@ class Director:
                 if sw >= 6 and sh >= 3:
                     try:
                         r = await self.stage.inner(inst, "primer", stage_mod.InnerReq(
-                            path=str(sp), x=sx, y=sy, w=sw, h=sh,
+                            path=str(sp), x=sx, y=sy, w=sw, h=sh, actor=req.actor,
                             title=sp.stem.replace("being-", "", 1).split("-")[0]))
                         seed = {"slug": sp.stem, "rect": [sx, sy, sw, sh], "window_id": r.get("window_id")}
                     except HTTPException:
