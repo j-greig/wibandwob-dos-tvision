@@ -49,6 +49,7 @@ class WindowCreate(BaseModel):
         "app_launcher",
         "gallery",
         "figlet_text",
+        "tr808",
     ]
     title: Optional[str] = None
     rect: Optional[RectModel] = None

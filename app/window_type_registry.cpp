@@ -37,6 +37,7 @@
 #include "tvterm_view.h"
 #include "backrooms_tv_view.h"
 #include "figlet_text_view.h"
+#include "tr808_view.h"
 
 // tvision for TRect
 #define Uses_TRect
@@ -82,6 +83,7 @@ extern void api_spawn_deep_signal(TWwdosApp&, const TRect*);
 extern void api_spawn_backrooms_tv(TWwdosApp&, const TRect*);
 extern void api_spawn_app_launcher(TWwdosApp&, const TRect*);
 extern void api_spawn_gallery(TWwdosApp&, const TRect*);
+extern void api_spawn_tr808(TWwdosApp&, const TRect*, const std::map<std::string, std::string>&);
 extern void api_spawn_figlet_text(TWwdosApp&, const TRect*,
     const std::string& text, const std::string& font,
     bool frameless, bool shadowless);
@@ -250,6 +252,9 @@ static const char* spawn_app_launcher(TWwdosApp& app, const std::map<std::string
     TRect r; api_spawn_app_launcher(app, opt_bounds(kv, r)); return nullptr; }
 static const char* spawn_gallery(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     TRect r; api_spawn_gallery(app, opt_bounds(kv, r)); return nullptr; }
+// kv: preset=<name>, play=1, audio=0|1, tempo=<bpm>
+static const char* spawn_tr808(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
+    TRect r; api_spawn_tr808(app, opt_bounds(kv, r), kv); return nullptr; }
 static const char* spawn_figlet_text(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
     auto ti = kv.find("text");
     if (ti == kv.end() || ti->second.empty()) return "err missing text param";
@@ -317,6 +322,7 @@ static bool match_backrooms_tv(TWindow* w) { return has_child_view<TBackroomsTvV
 static bool match_app_launcher(TWindow* w){ return dynamic_cast<TAppLauncherWindow*>(w) != nullptr; }
 static bool match_gallery(TWindow* w)     { return dynamic_cast<TGalleryWindow*>(w) != nullptr; }
 static bool match_figlet_text(TWindow* w) { return dynamic_cast<TFigletTextWindow*>(w) != nullptr; }
+static bool match_tr808(TWindow* w)       { return dynamic_cast<TTR808Window*>(w) != nullptr; }
 
 // ── Registry table ────────────────────────────────────────────────────────────
 // Add new window types here — nowhere else.
@@ -360,6 +366,7 @@ static const WindowTypeSpec k_specs[] = {
     { "app_launcher",      spawn_app_launcher,     match_app_launcher       },
     { "gallery",           spawn_gallery,          match_gallery            },
     { "figlet_text",       spawn_figlet_text,      match_figlet_text        },
+    { "tr808",             spawn_tr808,            match_tr808              },
 };
 
 // ── Lookup implementations ────────────────────────────────────────────────────

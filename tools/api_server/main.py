@@ -111,6 +111,8 @@ def make_app() -> FastAPI:
     register_stage(app)
     from .show_ops import register as register_ops
     register_ops(app, ctl)
+    from .tr808 import register as register_tr808
+    register_tr808(app, app.state.show_bus)
 
     # ----- Helpers -----
     def to_state_model() -> AppStateModel:

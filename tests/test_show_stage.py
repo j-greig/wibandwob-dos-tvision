@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("WIBWOB_SHOW_TMP", tempfile.mkdtemp(prefix="wwdos-stage-test-"))
 os.environ.pop("WIBWOB_CAPTURE_TMUX", None)
+os.environ["WWDOS_TR808_RELAY"] = "0"  # no IPC event subscriber in contract tests
 
 from fastapi.testclient import TestClient  # noqa: E402
 
