@@ -104,6 +104,8 @@
 #include "quadra_view.h"
 // Snake game
 #include "snake_view.h"
+// TR-808 drum machine
+#include "tr808_view.h"
 // WibWob Rogue dungeon crawler
 #include "rogue_view.h"
 // Deep Signal space scanner game
@@ -261,6 +263,7 @@ const ushort cmAppLauncher = 232;    // Applications folder browser
 const ushort cmScrambleReply = 233;  // Async Scramble LLM response ready
 const ushort cmAsciiGallery = 234;   // ASCII Art Gallery browser
 const ushort cmBackroomsTv = 284;    // Backrooms TV live art window
+const ushort cmTr808 = 290;          // TR-808 drum machine
 
 // Glitch menu commands
 const ushort cmToggleGlitchMode = 140;
@@ -750,6 +753,10 @@ public:
 /*---------------------------------------------------------*/
 /* TWwdosApp - Main application class               */
 /*---------------------------------------------------------*/
+class TWwdosApp;
+static TWwdosApp* tr808_app = nullptr;
+void tr808_event_sink(TWindow* w, const char* type, const std::string& body);
+
 class TWwdosApp : public TApplication
 {
 public:
@@ -982,6 +989,10 @@ private:
     friend void api_spawn_micropolis_ascii(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_quadra(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_snake(TWwdosApp&, const TRect* bounds);
+    friend void api_spawn_tr808(TWwdosApp&, const TRect* bounds, const std::map<std::string, std::string>& kv);
+    friend std::string api_tr808_action(TWwdosApp&, const std::map<std::string, std::string>& kv);
+    friend void tr808_event_sink(TWindow* w, const char* type, const std::string& body);
+    friend TTR808Window* find_tr808(TWwdosApp& app, const std::string& id);
     friend void api_spawn_rogue(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_deep_signal(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_app_launcher(TWwdosApp&, const TRect* bounds);
@@ -1070,6 +1081,8 @@ TWwdosApp::TWwdosApp() :
     } else {
         fprintf(stderr, "[wibwob] IPC server started on %s\n", sockPath.c_str());
     }
+    tr808_app = this;
+    tr808SetEventSink(&tr808_event_sink);
 
     // Auto-restore layout from env var (room deployment).
     const char* layoutPath = std::getenv("WIBWOB_LAYOUT_PATH");
@@ -1353,6 +1366,11 @@ void TWwdosApp::handleEvent(TEvent& event)
                 TWindow* w = createQuadraWindow(r);
                 deskTop->insert(w);
                 registerWindow(w);
+                clearEvent(event);
+                break;
+            }
+            case cmTr808: {
+                api_spawn_tr808(*this, nullptr, {});
                 clearEvent(event);
                 break;
             }
@@ -2658,6 +2676,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("Monster Ve~r~se (Generative)", cmMonsterVerse, kbNoKey) +
             *new TMenuItem("Monster Cam (Emo~j~i)", cmMonsterCam, kbNoKey) +
             *new TMenuItem("~B~ackrooms TV", cmBackroomsTv, kbNoKey) +
+            *new TMenuItem("TR-~8~08 Drum Machine", cmTr808, kbNoKey) +
             newLine() +
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
             *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
@@ -5014,6 +5033,65 @@ void api_spawn_snake(TWwdosApp& app, const TRect* bounds) {
     TWindow* w = createSnakeWindow(r);
     app.deskTop->insert(w);
     app.registerWindow(w);
+}
+
+// ── TR-808 ────────────────────────────────────────────────────────────────
+
+// Publishes a TR-808 event with the window's API id (tr808_step, tr808_transport).
+void tr808_event_sink(TWindow* w, const char* type, const std::string& body) {
+    TWwdosApp* app = tr808_app;
+    if (!app || !app->ipcServer) return;
+    std::string id;
+    auto it = app->winToId.find(w);
+    if (it != app->winToId.end()) id = it->second;
+    app->ipcServer->publish_event(type, "{\"id\":\"" + id + "\"," + body + "}");
+}
+
+void api_spawn_tr808(TWwdosApp& app, const TRect* bounds, const std::map<std::string, std::string>& kv) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 118, 28);
+    TWindow* w = createTR808Window(r, kv);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
+    auto pi = kv.find("play");
+    if (pi != kv.end() && (pi->second == "1" || pi->second == "true"))
+        if (auto* tw = dynamic_cast<TTR808Window*>(w)) tw->view()->play();
+}
+
+// Front-most TR-808 window, or the one with API id `id`.
+TTR808Window* find_tr808(TWwdosApp& app, const std::string& id) {
+    if (!id.empty() && id != "auto")
+        return dynamic_cast<TTR808Window*>(app.findWindowById(id));
+    TView* start = app.deskTop->first();
+    if (!start) return nullptr;
+    TView* v = start;
+    do {
+        if (auto* w = dynamic_cast<TTR808Window*>(v)) return w;
+        v = v->next;
+    } while (v != start);
+    return nullptr;
+}
+
+// exec_command name=tr808 action=<verb> [id=wN] [...]. Opens a window first
+// when none exists and the verb is open, play or load_preset.
+std::string api_tr808_action(TWwdosApp& app, const std::map<std::string, std::string>& kv) {
+    auto get = [&](const char* k) { auto it = kv.find(k); return it == kv.end() ? std::string() : it->second; };
+    const std::string action = get("action");
+    const std::string id = get("id");
+    TTR808Window* w = find_tr808(app, id);
+    if (!w) {
+        if (!id.empty() && id != "auto") return "err tr808 window not found";
+        if (action != "open" && action != "play" && action != "load_preset" && action != "preset")
+            return "err no tr808 window (action=open opens one)";
+        api_spawn_tr808(app, nullptr, {});
+        w = find_tr808(app, "");
+        if (!w) return "err tr808 spawn failed";
+    }
+    std::string r = w->view()->apiAction(action, kv);
+    if (r.rfind("err", 0) == 0) return r;
+    std::string wid;
+    auto it = app.winToId.find(w);
+    if (it != app.winToId.end()) wid = it->second;
+    return "{\"id\":\"" + wid + "\"," + r.substr(1);
 }
 
 void api_spawn_rogue(TWwdosApp& app, const TRect* bounds) {

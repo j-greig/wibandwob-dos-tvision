@@ -59,6 +59,8 @@ extern void api_spawn_paint(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_micropolis_ascii(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_quadra(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_snake(TWwdosApp& app, const TRect* bounds);
+extern void api_spawn_tr808(TWwdosApp& app, const TRect* bounds, const std::map<std::string, std::string>& kv);
+extern std::string api_tr808_action(TWwdosApp& app, const std::map<std::string, std::string>& kv);
 extern void api_spawn_rogue(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_deep_signal(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_app_launcher(TWwdosApp& app, const TRect* bounds);
@@ -160,6 +162,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_micropolis_ascii", "Open Micropolis ASCII MVP window", false},
         {"open_quadra", "Open Quadra falling blocks game", false},
         {"open_snake", "Open Snake game", false},
+        // ── Music ────────────────────────────────────────────────────────
+        {"open_tr808", "Open the TR-808 drum machine (optional preset, play=1, audio=0|1, tempo, x, y, w, h)", false},
+        {"tr808", "Drive the TR-808 (action=play|stop|toggle|tempo bpm|select instrument|toggle_step step instrument?|set_step instrument step active|set_param instrument param value|load_preset preset|clear all?|instrument?|set_pattern bank number variation|swing value|scale value|accent value|master value|last_step value|mute instrument|solo instrument|audio on|random density|copy|paste|cursor step|text text|state; optional id). Steps are 0-15. Publishes tr808_step events on steps with hits", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},
@@ -325,6 +330,21 @@ std::string exec_registry_command(
     if (name == "open_quadra") {
         api_spawn_quadra(app, nullptr);
         return "ok";
+    }
+    if (name == "open_tr808") {
+        TRect r;
+        const TRect* b = nullptr;
+        if (kv.count("x") && kv.count("y") && kv.count("w") && kv.count("h")) {
+            int x = std::atoi(kv.at("x").c_str()), y = std::atoi(kv.at("y").c_str());
+            r = TRect(x, y, x + std::atoi(kv.at("w").c_str()), y + std::atoi(kv.at("h").c_str()));
+            b = &r;
+        }
+        api_spawn_tr808(app, b, kv);
+        std::string id = api_take_last_registered_window_id(app);
+        return id.empty() ? "ok" : "{\"ok\":true,\"id\":\"" + id + "\"}";
+    }
+    if (name == "tr808") {
+        return api_tr808_action(app, kv);
     }
     if (name == "open_snake") {
         api_spawn_snake(app, nullptr);

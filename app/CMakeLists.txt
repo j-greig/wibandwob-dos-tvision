@@ -43,6 +43,9 @@ add_executable(wwdos
     game_of_life_view.cpp
     quadra_view.cpp
     snake_view.cpp
+    tr808_engine.cpp
+    tr808_audio.cpp
+    tr808_view.cpp
     rogue_view.cpp
     deep_signal_view.cpp
     app_launcher_view.cpp
@@ -82,6 +85,8 @@ add_executable(wwdos
     backrooms_tv_view.cpp
 )
 target_include_directories(wwdos PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# The TR-808 finds modules/tr808/samples in the source tree when run from elsewhere.
+set_source_files_properties(tr808_audio.cpp PROPERTIES COMPILE_DEFINITIONS "WWDOS_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
 target_link_libraries(wwdos PRIVATE tvision tvterm-core)
 
 # On Linux, api_ipc.cpp uses OpenSSL for HMAC (macOS uses CommonCrypto)
@@ -162,6 +167,10 @@ add_executable(ascii_dump
     tvision_ascii_view_poc.cpp
 )
 target_include_directories(ascii_dump PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+
+# tr808_engine_test (sequencer timing, swing, pattern edits; no tvision)
+add_executable(tr808_engine_test tr808_engine_test.cpp tr808_engine.cpp)
+add_test(NAME tr808_engine COMMAND tr808_engine_test)
 
 # command_registry_test (native ctest coverage for registry capability payload)
 add_executable(command_registry_test EXCLUDE_FROM_ALL
