@@ -393,7 +393,9 @@ class Stage:
             if r.lower().startswith("err"):
                 raise HTTPException(502, r)
             new = [w for w in state_at(sock).get("windows", []) if w["id"] not in before]
-            return {"ok": True, "instance": instance, "window_id": new[-1]["id"] if new else None}
+            wid = new[-1]["id"] if new else None
+            await self._inner_event(req, rec, "primer", wid, name=Path(path).stem)
+            return {"ok": True, "instance": instance, "window_id": wid}
         if verb == "figlet":
             kv = {"type": "figlet_text", "text": req.text or "WIBWOB", "font": req.font or "standard"}
             for k in ("x", "y", "w", "h"):
@@ -413,6 +415,7 @@ class Stage:
             if not wid:
                 new = [w for w in state_at(sock).get("windows", []) if w["id"] not in before]
                 wid = new[-1]["id"] if new else None
+            await self._inner_event(req, rec, "figlet", wid, text=kv["text"], font=kv["font"])
             return {"ok": True, "instance": instance, "window_id": wid}
         if verb == "type":
             return await self._inner_type(instance, sock, req)
@@ -428,6 +431,7 @@ class Stage:
                 r = exec_at(sock, "chrome_set", part=part, text=req.text if req.text is not None else "")
             if r.lower().startswith("err"):
                 raise HTTPException(501, r)
+            await self._inner_event(req, rec, "chrome", None, part=part, text=(req.text or "")[:80])
             return {"ok": True, "instance": instance, "part": part}
         if verb == "nest":
             return await self._inner_nest(rec, req)
@@ -440,6 +444,13 @@ class Stage:
             return {"instance": instance, "state": state_at(sock), "desk": desk_at(sock)}
         raise HTTPException(400, f"unknown verb {verb!r} (primer, figlet, type, move, glide, chrome, "
                                  f"nest, close_all, state)")
+
+    async def _inner_event(self, req: InnerReq, rec: Dict[str, Any], verb: str, wid: Optional[str], **data: Any) -> None:
+        """One event per change made inside a nested desktop, so a client's log can show what a dive or an inner call
+        did on the level it did it (the nested app has no event stream of its own)."""
+        win = {"id": wid, "title": req.title, "x": req.x, "y": req.y, "w": req.w, "h": req.h} if wid else None
+        await self.bus.emit("inner", actor=req.actor, window=win, verb=verb, instance=rec["instance"],
+                            depth=rec["depth"], **data)
 
     async def _inner_type(self, instance: str, sock: str, req: InnerReq) -> Dict[str, Any]:
         content = req.content if req.content is not None else (req.text or "")
