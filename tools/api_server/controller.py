@@ -252,6 +252,11 @@ class Controller:
                 path = str(props.get("path", ""))
                 if path:
                     cmd_params["path"] = path
+            elif wtype.value == "tr808":
+                for k in ("preset", "play", "audio", "tempo"):
+                    if props.get(k) not in (None, ""):
+                        v = props[k]
+                        cmd_params[k] = ("1" if v else "0") if isinstance(v, bool) else str(v)
             elif wtype.value == "figlet_text":
                 for k in ("text", "font", "frameless", "shadowless"):
                     if props.get(k) not in (None, ""):

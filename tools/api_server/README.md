@@ -46,6 +46,7 @@ Window Types
 - **text_view** — Text/primer file viewer: `props: {"path": "file.txt"}` (readonly)
 - **text_editor** — Interactive text editor (supports send_text/send_figlet APIs)
 - **wallpaper** — Static wallpaper patterns
+- **tr808** — TR-808 drum machine: `props: {"preset": "trap", "play": true, "audio": false}` (see "TR-808 drum machine")
 
 IPC Bridge to the C++ App
 - The C++ `wwdos` app creates a Unix socket at `/tmp/wwdos.sock`.
@@ -466,6 +467,65 @@ Every action, from the show routes and from the classic routes (`window.created`
   through `locate()` as before.
 - `chrome_set` (`part=menu|status|kaomoji|reset`, `text`) and `paint_bare` (`id`, `on`) via `/menu/command`.
 - `window_title` no longer crashes on a frameless window.
+
+### TR-808 drum machine
+
+Code: `app/tr808_engine.*` (sequencer, no tvision), `app/tr808_view.*` (window, keys, API actions, events),
+`app/tr808_audio.*` (afplay preview), `tools/api_server/tr808.py` (routes, event relay). Port of the Bun microapp
+`microapps/wibwob-tr808`. Tests: `ctest -R tr808` in the build dir (engine timing, swing, edits) and
+`tools/api_server/venv/bin/python -m unittest tests/test_tr808_api.py`.
+
+| endpoint | body | does |
+|---|---|---|
+| `POST /windows` | `{"type": "tr808", "props": {preset?, play?, audio?, tempo?}}` | open a TR-808 window (default 118x28, centred) |
+| `POST /menu/command` `open_tr808` | `args: {preset?, play: 1, audio: 0\|1, tempo?, x, y, w, h}` | the same as a command; returns `{"ok":true,"id":"wN"}` |
+| `POST /tr808` | `{action, id?, ...args}` | drive it; returns the state (below). No `id`: the front-most TR-808. `open`, `play` and `load_preset` open one when none exists |
+| `GET /tr808/state?id=` | | state: `transport, step, tempo, pattern ("A1-A"), scale, swing, accent_level, master, last_step, selected, cursor, audio, presets, instruments[{id, steps: "x...x...", muted, soloed, params}], accent` |
+| `GET /tr808/relay` | | whether the event relay is connected and how many events it passed on |
+| `GET /events?types=tr808_step,tr808_transport` | | the step events as SSE (show bus envelope; payload under `data`) |
+
+Actions (steps are 0-15; `instrument` is `bd sd lt mt ht rs cb cp ma cl cy oh ch` or `accent`, default the selected row):
+`play`, `stop`, `toggle`, `tempo {bpm}` (35-300), `select {instrument}`, `toggle_step {step, instrument?}`,
+`set_step {step, active, instrument?}`, `set_param {instrument, param, value}` (`tune attack tone snappy decay level`, 0-100),
+`load_preset {preset}` (`classic-house electro trap bossa breakbeat reggaeton minimal afrobeat`), `clear {all?, instrument?}`,
+`set_pattern {bank?, number?, variation?}` (A/B, 1-8, A/B), `swing {value}` (50 straight, 66 standard, 75 heavy),
+`scale {value}` (`16th 32nd 8th-triplet`), `accent {value}`, `master {value}`, `last_step {value}` (1-16),
+`mute {instrument}`, `solo {instrument}` (toggles), `audio {on}` (local preview; no `on` toggles), `random {density?}`,
+`copy`, `paste`, `cursor {step}`, `text {text}` (the microapp's text grammar: `tempo 140`, `toggle bd 4`, `set bd 0 on`,
+`param bd tune 75`, `preset trap`, `swing 66`, `laststep 12`, `mute sd`, `random 0.5`, ...), `state`.
+
+```sh
+curl -X POST :8093/windows -d '{"type":"tr808","props":{"preset":"classic-house"}}' -H 'content-type: application/json'
+curl -X POST :8093/tr808 -d '{"action":"play"}' -H 'content-type: application/json'
+curl -N ':8093/events?types=tr808_step'
+```
+
+Events. The app publishes them on IPC `subscribe_events`; the API relays them onto the show bus. `tr808_step` fires
+only on steps with a hit (a voice that sounds after mute/solo, or an accent):
+
+```json
+{"type": "tr808_step", "window": {"id": "w1"}, "data": {"id": "w1", "step": 4, "voices": ["bd", "sd", "ch", "cp"],
+ "levels": {"bd": 80, "sd": 80, "ch": 80, "cp": 80}, "accent": true, "accent_level": 80, "master": 100, "tempo": 120,
+ "swing": 50, "scale": "16th", "gap_ms": 125, "last_step": 16, "pattern": "A1-A", "at": 1793887000562,
+ "app_seq": 7, "relay_ms": 0.7}}
+{"type": "tr808_transport", "data": {"id": "w1", "state": "playing", "change": "play|stop|tempo", "tempo": 120,
+ "swing": 50, "scale": "16th", "pattern": "A1-A", "step_ms": 125, "at": 1793887000562}}
+```
+
+`at` is the app's wall clock (epoch ms) when the step fired; `gap_ms` is the time to the next step; `relay_ms` is the
+app-to-API delay (about 1 ms). Measured step jitter: within 3 ms of the grid at 120 BPM, swing included.
+
+Local preview audio plays `modules/tr808/samples/<id>.wav` with `afplay` from a worker thread (volume = 0.9 x level/80 x
+master/100, accent x1.33 at accent level 80). Turn it off for a show where a web page plays the sound: launch the app
+with `WWDOS_TR808_AUDIO=0`, or `{"action":"audio","on":false}`, or the `m` key. The setting is app-wide. Samples come
+from the TS synth: `bun modules/tr808/render_samples.ts [path/to/wibandwob-dos]`. Sample dir lookup:
+`$WWDOS_TR808_SAMPLES`, `$WWDOS_REPO/modules/tr808/samples`, `./modules/tr808/samples`, then the source tree.
+
+Keys (window focused): `SPACE` play/stop, `ENTER` toggle step at cursor, `←/→` cursor, `1-9 0 - =` select BD..OH,
+`BKSP` CH, `` ` `` accent, `a/z` tempo ±5, `A/Z` ±1, `v` variation, `b` bank, `F1-F4 F7` or `! @ # $ % ^ & *` pattern
+1-8 (the status line takes F5, F6, F8), `p` cycle presets, `c` clear row, `C` clear pattern, `r` random, `s` scale,
+`w` swing (50, 55, 60, 66, 75), `x` mute, `o` solo, `m` local audio, `Ctrl+C/V` copy/paste pattern, `q`/`ESC` close.
+The sequencer pauses while a menu or dialog is open (modal loop); it resumes on the next step without a burst.
 
 ## MCP Integration
 
