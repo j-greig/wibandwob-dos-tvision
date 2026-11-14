@@ -23,7 +23,9 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <dirent.h>
+#ifndef __EMSCRIPTEN__
 #include <util.h>       // forkpty() on macOS
+#endif
 #include <map>
 #include <set>
 #include <string>
@@ -202,7 +204,12 @@ bool BackroomsBridge::start(const BackroomsChannel &channel) {
     // The PTY is separate from tvision's terminal → no freeze.
     int masterFd = -1;
     struct winsize ws = { 25, 80, 0, 0 };  // dummy size
+#ifdef __EMSCRIPTEN__
+    (void) ws; (void) masterFd;
+    return false; // no processes in the browser
+#else
     pid_ = forkpty(&masterFd, nullptr, nullptr, &ws);
+#endif
     if (pid_ < 0) return false;
 
     if (pid_ == 0) {

@@ -1064,6 +1064,21 @@ TWwdosApp::TWwdosApp() :
     // so they appear in the TV dialog and the CLI can resolve them immediately.
     syncModulePrimers();
 
+#ifdef __EMSCRIPTEN__
+    // Browser build: no Unix socket API, no LLM engine, no saved layout. Open four
+    // primers from the embedded library as the start screen and stop here.
+    struct BootWindow { const char *title, *file; int x, y, w, h; };
+    static const BootWindow bootScene[] = {
+        {"the island",   "/modules/wibwob-2026/primers/place-island-sun-over-sea.txt",   4,  2, 46, 19},
+        {"WWW",          "/modules/wibwob-2026/primers/place-castle-tower-www-flag.txt", 54, 3, 17, 16},
+        {"Wib&Wob",      "/modules/wibwob-2026/primers/face-wib-and-wob-small-pair.txt", 75, 5, 18, 11},
+        {"the wibblers", "/modules/wibwob-2026/primers/being-wibblers-im-happy.txt",     20, 23, 24, 9},
+    };
+    for (const auto &bw : bootScene)
+        openAnimationFilePath(bw.file, TRect(bw.x, bw.y, bw.x + bw.w, bw.y + bw.h), false, false, bw.title);
+    return;
+#endif
+
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
 

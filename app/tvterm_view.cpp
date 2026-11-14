@@ -1,3 +1,4 @@
+#ifndef __EMSCRIPTEN__
 #define Uses_TEvent
 #define Uses_TRect
 #define Uses_TPoint
@@ -321,3 +322,5 @@ TWindow* createTerminalWindow(const TRect &bounds)
         return nullptr;
     return new TWibWobTerminalWindow(bounds, *termCtrl);
 }
+
+#endif // __EMSCRIPTEN__

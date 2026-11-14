@@ -2,7 +2,12 @@
 
 #include <cstdlib>
 #include <cstring>
+#ifdef __EMSCRIPTEN__
+#include <cstdint>
+static int _NSGetExecutablePath(char *, uint32_t *) { return -1; } // no executable path in the browser
+#else
 #include <mach-o/dyld.h>
+#endif
 #include <ctime>
 #include <unistd.h>
 #include <fcntl.h>
