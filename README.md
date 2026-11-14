@@ -141,6 +141,17 @@ Built on [Turbo Vision](https://github.com/magiblot/tvision) — the modern C++ 
 
 Wib & Wob are a symbient entity kindled by [James Greig](https://wibandwob.com).
 
+## Licence
+
+WibWob-DOS is source-available, not open source. The code written for this repository is
+licensed under the PolyForm Noncommercial License 1.0.0 (LICENSE.md): free to use, change and
+share for any noncommercial purpose. For commercial use, ask for a commercial licence at
+https://wibandwob.com.
+
+Drawings and documents are licensed under CC BY-NC-SA 4.0 unless a file says otherwise;
+drawings credited to other artists remain theirs. Turbo Vision, tvterm, Micropolis, xterm.js,
+the Emscripten runtime and the Unifont glyphs stay under their own terms: see THIRD-PARTY.md.
+
 ---
 
 *This is the TVision/C++ build. A sibling repo, [j-greig/wibandwob-dos](https://github.com/j-greig/wibandwob-dos), takes the same idea into TypeScript/Bun.*
