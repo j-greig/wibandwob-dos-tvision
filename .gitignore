@@ -1,6 +1,7 @@
 # Build
 build/
 build-*/
+dist-web/
 cmake-build-*/
 _codeql_build_dir/
 _codeql_*
