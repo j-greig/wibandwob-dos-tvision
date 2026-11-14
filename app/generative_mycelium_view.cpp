@@ -49,7 +49,7 @@ static inline void curl(float x,float y,float t,float &ux,float &uy){
 
 } // namespace
 
-TGenerativeMyceliumView::TGenerativeMyceliumView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowAll; eventMask|=evBroadcast|evKeyboard; }
+TGenerativeMyceliumView::TGenerativeMyceliumView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowHiX|gfGrowHiY; eventMask|=evBroadcast|evKeyboard; }
 TGenerativeMyceliumView::~TGenerativeMyceliumView(){ stopTimer(); }
 void TGenerativeMyceliumView::startTimer(){ if(!timerId) timerId=setTimer(periodMs,(int)periodMs);}    
 void TGenerativeMyceliumView::stopTimer(){ if(timerId){ killTimer(timerId); timerId=0; }}

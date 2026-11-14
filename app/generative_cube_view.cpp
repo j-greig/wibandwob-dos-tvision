@@ -63,7 +63,7 @@ static inline void line3D(std::vector<TScreenCell>&buf,int W,int H, Vec3 a3, Vec
 
 } // namespace
 
-TGenerativeCubeView::TGenerativeCubeView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowAll; eventMask|=evBroadcast|evKeyboard; }
+TGenerativeCubeView::TGenerativeCubeView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowHiX|gfGrowHiY; eventMask|=evBroadcast|evKeyboard; }
 TGenerativeCubeView::~TGenerativeCubeView(){ stopTimer(); }
 void TGenerativeCubeView::startTimer(){ if(!timerId) timerId=setTimer(periodMs,(int)periodMs);}    
 void TGenerativeCubeView::stopTimer(){ if(timerId){ killTimer(timerId); timerId=0; }}

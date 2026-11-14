@@ -35,7 +35,7 @@ static inline RGB pal(int idx, float t){ int n=5; t=clampf(t); float x=t*(n-1); 
 
 } // namespace
 
-TGenerativeTorusView::TGenerativeTorusView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowAll; eventMask|=evBroadcast|evKeyboard; }
+TGenerativeTorusView::TGenerativeTorusView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowHiX|gfGrowHiY; eventMask|=evBroadcast|evKeyboard; }
 TGenerativeTorusView::~TGenerativeTorusView(){ stopTimer(); }
 void TGenerativeTorusView::startTimer(){ if(!timerId) timerId=setTimer(periodMs,(int)periodMs);}    
 void TGenerativeTorusView::stopTimer(){ if(timerId){ killTimer(timerId); timerId=0; }}

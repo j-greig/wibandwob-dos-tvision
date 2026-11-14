@@ -46,7 +46,7 @@ TGenerativeOrbitView::TGenerativeOrbitView(const TRect &bounds, unsigned periodM
     : TView(bounds), periodMs(periodMs)
 {
     options |= ofSelectable;
-    growMode = gfGrowAll;
+    growMode = gfGrowHiX | gfGrowHiY;
     eventMask |= evBroadcast | evKeyboard;
 }
 
