@@ -1,0 +1,819 @@
+Subject: platform: browser console for Emscripten builds
+
+New WasmDisplay (ANSI through AnsiScreenWriter to a page callback, for xterm.js),
+WasmGridDisplay (cells into a uint32 grid the page draws itself) and WasmInput (a byte
+queue parsed with TermIO). pollHandles waits on an EM_ASYNC_JS promise instead of select,
+so with -sASYNCIFY every nested modal loop runs unchanged. All changes are inside
+__EMSCRIPTEN__ guards; native builds are unchanged.
+---
+ include/tvision/internal/wasmcon.h |  87 +++++
+ include/tvision/util.h             |   2 +
+ source/platform/conctl.cpp         |  38 +-
+ source/platform/events.cpp         |  14 +
+ source/platform/platform.cpp       |  13 +-
+ source/platform/strings.cpp        |   2 +
+ source/platform/wasmcon.cpp        | 548 +++++++++++++++++++++++++++++
+ 7 files changed, 702 insertions(+), 2 deletions(-)
+ create mode 100644 include/tvision/internal/wasmcon.h
+ create mode 100644 source/platform/wasmcon.cpp
+
+diff --git a/include/tvision/internal/wasmcon.h b/include/tvision/internal/wasmcon.h
+new file mode 100644
+index 0000000..fecaaef
+--- /dev/null
++++ b/include/tvision/internal/wasmcon.h
+@@ -0,0 +1,87 @@
++#ifndef TVISION_WASMCON_H
++#define TVISION_WASMCON_H
++
++#ifdef __EMSCRIPTEN__
++
++#include <internal/platform.h>
++#include <internal/termio.h>
++#include <internal/ansiwrit.h>
++
++namespace tvision
++{
++
++class ConsoleCtl;
++
++void wasmConsoleWrite(const char *data, size_t bytes) noexcept;
++TPoint wasmConsoleSize() noexcept;
++bool wasmInputPending() noexcept;
++void wasmWaitForInput(int ms) noexcept;
++
++class WasmDisplay final : public DisplayAdapter
++{
++    ConsoleCtl &con;
++    AnsiScreenWriter ansiScreenWriter;
++
++public:
++
++    WasmDisplay(ConsoleCtl &aCon) noexcept;
++
++    TPoint reloadScreenInfo() noexcept override;
++    int getColorCount() noexcept override;
++    TPoint getFontSize() noexcept override;
++    void writeCell(TPoint pos, TStringView text, TColorAttr attr, bool doubleWidth) noexcept override;
++    void setCaretPosition(TPoint pos) noexcept override;
++    void setCaretSize(int size) noexcept override;
++    void clearScreen() noexcept override;
++    void flush() noexcept override;
++};
++
++// Cell-grid display for the WebGL page (shell-webgl.html): no ANSI, every
++// cell goes into a uint32 grid [codepoint, fg rgb, bg rgb] that the page reads
++// from wasm memory on flush and draws with one instanced quad per cell.
++class WasmGridDisplay final : public DisplayAdapter
++{
++    ConsoleCtl &con;
++
++public:
++
++    WasmGridDisplay(ConsoleCtl &aCon) noexcept;
++
++    TPoint reloadScreenInfo() noexcept override;
++    int getColorCount() noexcept override;
++    TPoint getFontSize() noexcept override;
++    void writeCell(TPoint pos, TStringView text, TColorAttr attr, bool doubleWidth) noexcept override;
++    void setCaretPosition(TPoint pos) noexcept override;
++    void setCaretSize(int size) noexcept override;
++    void clearScreen() noexcept override;
++    void flush() noexcept override;
++};
++
++bool wasmWantsGrid() noexcept;
++
++struct WasmInputGetter final : public InputGetter
++{
++    int get() noexcept override;
++    void unget(int k) noexcept override;
++};
++
++class WasmInput final : public InputAdapter
++{
++    ConsoleCtl &con;
++    InputState &state;
++    WasmInputGetter in;
++
++public:
++
++    WasmInput(ConsoleCtl &aCon, InputState &aState) noexcept;
++    ~WasmInput();
++
++    bool getEvent(TEvent &ev) noexcept override;
++    bool hasPendingEvents() noexcept override;
++};
++
++} // namespace tvision
++
++#endif // __EMSCRIPTEN__
++
++#endif // TVISION_WASMCON_H
+diff --git a/include/tvision/util.h b/include/tvision/util.h
+index f71c7e7..f2fb513 100644
+--- a/include/tvision/util.h
++++ b/include/tvision/util.h
+@@ -108,7 +108,9 @@ int vsnprintf( char _FAR *buffer, size_t size, const char _FAR *format,
+ 
+ int stricmp( const char *s1, const char *s2 ) noexcept;
+ int strnicmp( const char *s1, const char *s2, size_t maxlen ) noexcept;
++#ifndef __EMSCRIPTEN__ // Emscripten's libc declares and defines strupr.
+ char *strupr(char *s) noexcept;
++#endif
+ char *itoa( int value, char *buffer, int radix ) noexcept;
+ char *ltoa( long value, char *buffer, int radix ) noexcept;
+ char *ultoa( ulong value, char *buffer, int radix ) noexcept;
+diff --git a/source/platform/conctl.cpp b/source/platform/conctl.cpp
+index 2303e2e..a819365 100644
+--- a/source/platform/conctl.cpp
++++ b/source/platform/conctl.cpp
+@@ -24,7 +24,43 @@ void ConsoleCtl::destroyInstance() noexcept
+ 
+ } // namespace tvision
+ 
+-#ifdef _TV_UNIX
++#if defined(__EMSCRIPTEN__)
++
++#include <internal/wasmcon.h>
++
++namespace tvision
++{
++
++// The browser console has no file descriptors: output goes to xterm.js and
++// the size comes from the page (see wasmcon.cpp).
++ConsoleCtl::ConsoleCtl() noexcept
++{
++    files[0] = stdin;
++    files[1] = stdout;
++}
++
++ConsoleCtl::~ConsoleCtl()
++{
++}
++
++void ConsoleCtl::write(const char *data, size_t bytes) const noexcept
++{
++    wasmConsoleWrite(data, bytes);
++}
++
++TPoint ConsoleCtl::getSize() const noexcept
++{
++    return wasmConsoleSize();
++}
++
++TPoint ConsoleCtl::getFontSize() const noexcept
++{
++    return {8, 16};
++}
++
++} // namespace tvision
++
++#elif defined(_TV_UNIX)
+ 
+ #include <unistd.h>
+ #include <fcntl.h>
+diff --git a/source/platform/events.cpp b/source/platform/events.cpp
+index 77b09ac..5f9e9b8 100644
+--- a/source/platform/events.cpp
++++ b/source/platform/events.cpp
+@@ -6,6 +6,10 @@ using std::chrono::nanoseconds;
+ using std::chrono::duration_cast;
+ using std::chrono::steady_clock;
+ 
++#ifdef __EMSCRIPTEN__
++#include <internal/wasmcon.h>
++#endif
++
+ #ifdef _TV_UNIX
+ #include <unistd.h>
+ #include <fcntl.h>
+@@ -132,6 +136,15 @@ static bool fdEmpty(int fd) noexcept
+     return ioctl(fd, FIONREAD, &nbytes) == -1 || !nbytes;
+ }
+ 
++#ifdef __EMSCRIPTEN__
++static void pollHandles(PollData &, int ms) noexcept
++// The browser has no selectable descriptors. Input readiness is reported by
++// WasmInput::hasPendingEvents(); here we only yield to the browser until
++// input arrives or the timeout ends.
++{
++    wasmWaitForInput(ms);
++}
++#else
+ static void pollHandles(PollData &pd, int ms) noexcept
+ {
+     auto &fds = pd.handles;
+@@ -168,6 +181,7 @@ static void pollHandles(PollData &pd, int ms) noexcept
+                 }
+     }
+ }
++#endif // __EMSCRIPTEN__
+ 
+ #else
+ 
+diff --git a/source/platform/platform.cpp b/source/platform/platform.cpp
+index 18c7eee..77899bb 100644
+--- a/source/platform/platform.cpp
++++ b/source/platform/platform.cpp
+@@ -10,6 +10,7 @@
+ #include <internal/sighandl.h>
+ #include <internal/conctl.h>
+ #include <internal/getenv.h>
++#include <internal/wasmcon.h>
+ 
+ namespace tvision
+ {
+@@ -32,7 +33,17 @@ Platform &Platform::getInstance() noexcept
+ 
+ ConsoleAdapter &Platform::createConsole() noexcept
+ {
+-#ifdef _WIN32
++#if defined(__EMSCRIPTEN__)
++    auto &con = ConsoleCtl::getInstance();
++    InputState &inputState = *new InputState;
++    // The WebGL page (shell-webgl.html) sets Module.wwdosGrid and gets cells;
++    // the xterm.js page gets ANSI. One wasm serves both.
++    DisplayAdapter &display = wasmWantsGrid()
++        ? static_cast<DisplayAdapter &>(*new WasmGridDisplay(con))
++        : static_cast<DisplayAdapter &>(*new WasmDisplay(con));
++    auto &input = *new WasmInput(con, inputState);
++    return *new ConsoleAdapter(display, {&input});
++#elif defined(_WIN32)
+     return Win32ConsoleAdapter::create();
+ #else
+     auto &con = ConsoleCtl::getInstance();
+diff --git a/source/platform/strings.cpp b/source/platform/strings.cpp
+index 630c8d2..ac27382 100644
+--- a/source/platform/strings.cpp
++++ b/source/platform/strings.cpp
+@@ -74,6 +74,7 @@ int strnicmp( const char *s1, const char *s2, size_t maxlen ) noexcept
+ 
+ #include <cctype>
+ 
++#ifndef __EMSCRIPTEN__
+ char *strupr(char *s) noexcept
+ {
+     char* p = s;
+@@ -81,6 +82,7 @@ char *strupr(char *s) noexcept
+         p++;
+     return s;
+ }
++#endif
+ 
+ // Quick and dirty implementation of itoa, ltoa, ultoa based on sprintf.
+ // It won't provide the expected results in some cases, but at least will not
+diff --git a/source/platform/wasmcon.cpp b/source/platform/wasmcon.cpp
+new file mode 100644
+index 0000000..478dadb
+--- /dev/null
++++ b/source/platform/wasmcon.cpp
+@@ -0,0 +1,548 @@
++// Browser console for Turbo Vision under Emscripten.
++//
++// Output: AnsiScreenWriter -> ConsoleCtl::write -> Module.wwdosWrite (xterm.js).
++// Input:  xterm.js onData bytes -> Module.wwdosPush -> a byte queue in JS,
++//         read here one byte at a time and parsed with TermIO (the same parser
++//         the Unix console uses for escape sequences and SGR mouse reports).
++// Size:   Module.wwdosCols/Rows; a page resize sets a flag that is turned into
++//         cmScreenChanged by WasmInput.
++// Waiting: EventWaiter::pollHandles (events.cpp) calls wasmWaitForInput(ms),
++//         an ASYNCIFY sleep that returns early when input arrives.
++
++#ifdef __EMSCRIPTEN__
++
++#define Uses_TKeys
++#define Uses_TEvent
++#define Uses_TPoint
++#include <tvision/tv.h>
++
++#include <internal/wasmcon.h>
++#include <internal/conctl.h>
++#include <internal/termio.h>
++#include <internal/ansiwrit.h>
++#include <internal/codepage.h>
++#include <internal/utf8.h>
++
++#include <emscripten.h>
++#include <vector>
++
++EM_JS(void, wwdos_js_write, (const char *data, size_t len), {
++    if (Module.wwdosWrite)
++        Module.wwdosWrite(HEAPU8.slice(data, data + len));
++});
++
++EM_JS(int, wwdos_js_cols, (void), {
++    return Module.wwdosCols ? Module.wwdosCols() : 80;
++});
++
++EM_JS(int, wwdos_js_rows, (void), {
++    return Module.wwdosRows ? Module.wwdosRows() : 25;
++});
++
++// Module.wwdosQueue is an array the page appends to; Module.wwdosPos is the
++// read index. Consumed bytes are dropped in bulk, never one shift() at a time.
++EM_JS(int, wwdos_js_getbyte, (void), {
++    var q = Module.wwdosQueue, p = Module.wwdosPos | 0;
++    if (!q || p >= q.length) return -1;
++    var b = q[p++];
++    if (p >= q.length) { q.length = 0; p = 0; }
++    else if (p > 4096) { q.splice(0, p); p = 0; }
++    Module.wwdosPos = p;
++    return b;
++});
++
++EM_JS(void, wwdos_js_ungetbyte, (int b), {
++    var q = Module.wwdosQueue = Module.wwdosQueue || [], p = Module.wwdosPos | 0;
++    if (p > 0) { q[--p] = b; Module.wwdosPos = p; }
++    else q.unshift(b);
++});
++
++EM_JS(int, wwdos_js_pending, (void), {
++    var q = Module.wwdosQueue;
++    return (q && (Module.wwdosPos | 0) < q.length) || Module.wwdosResized ? 1 : 0;
++});
++
++// Yield to the browser if C++ has run for more than 30 ms without waiting,
++// so a long burst of input (a big paste) cannot freeze painting and input.
++// Called only from event-polling code.
++EM_ASYNC_JS(void, wwdos_js_maybe_yield, (void), {
++    var now = performance.now();
++    if (now - (Module.wwdosLastYield || 0) < 30) return;
++    await new Promise(function (r) { setTimeout(r, 0); });
++    Module.wwdosLastYield = performance.now();
++});
++
++EM_JS(int, wwdos_js_take_resize, (void), {
++    if (Module.wwdosResized) { Module.wwdosResized = false; return 1; }
++    return 0;
++});
++
++EM_ASYNC_JS(void, wwdos_js_wait, (int ms), {
++    var q = Module.wwdosQueue;
++    if ((q && (Module.wwdosPos | 0) < q.length) || Module.wwdosResized) return;
++    await new Promise(function (resolve) {
++        var t = null;
++        var done = function () {
++            if (t !== null) clearTimeout(t);
++            Module.wwdosWake = null;
++            Module.wwdosLastYield = performance.now();
++            resolve();
++        };
++        Module.wwdosWake = done;
++        if (ms >= 0) t = setTimeout(done, ms);
++    });
++});
++
++namespace tvision
++{
++
++void wasmConsoleWrite(const char *data, size_t bytes) noexcept
++{
++    wwdos_js_write(data, bytes);
++}
++
++TPoint wasmConsoleSize() noexcept
++{
++    return {wwdos_js_cols(), wwdos_js_rows()};
++}
++
++bool wasmInputPending() noexcept
++{
++    return wwdos_js_pending() != 0;
++}
++
++void wasmWaitForInput(int ms) noexcept
++{
++    // A zero timeout is a non-blocking poll; never yield for it, or every
++    // getEvent() call would cost a trip through the browser event loop.
++#ifdef WWDOS_DEBUG_INPUT
++    EM_ASM({ console.log('wait', $0); }, ms);
++#endif
++    if (ms != 0)
++        wwdos_js_wait(ms);
++    else
++        wwdos_js_maybe_yield();
++}
++
++/////////////////////////////////////////////////////////////////////////
++// WasmDisplay
++
++WasmDisplay::WasmDisplay(ConsoleCtl &aCon) noexcept :
++    con(aCon),
++    ansiScreenWriter(aCon, TermCap::getDisplayCapabilities(aCon, *this))
++{
++}
++
++TPoint WasmDisplay::reloadScreenInfo() noexcept
++{
++    ansiScreenWriter.reset();
++    return wasmConsoleSize();
++}
++
++int WasmDisplay::getColorCount() noexcept
++{
++    return 256*256*256;
++}
++
++TPoint WasmDisplay::getFontSize() noexcept
++{
++    return {8, 16};
++}
++
++void WasmDisplay::writeCell( TPoint pos, TStringView text, TColorAttr attr,
++                             bool doubleWidth ) noexcept
++{
++    ansiScreenWriter.writeCell(pos, text, attr, doubleWidth);
++}
++
++void WasmDisplay::setCaretPosition(TPoint pos) noexcept
++{
++    ansiScreenWriter.setCaretPosition(pos);
++}
++
++void WasmDisplay::setCaretSize(int size) noexcept
++{
++    TStringView seq = size > 0 ? "\x1B[?25h" : "\x1B[?25l";
++    con.write(seq.data(), seq.size());
++}
++
++void WasmDisplay::clearScreen() noexcept
++{
++    ansiScreenWriter.clearScreen();
++}
++
++void WasmDisplay::flush() noexcept
++{
++#ifdef WWDOS_DEBUG_INPUT
++    EM_ASM({ console.log('flush'); });
++#endif
++    ansiScreenWriter.flush();
++}
++
++} // namespace tvision
++
++/////////////////////////////////////////////////////////////////////////
++// WasmGridDisplay (shell-webgl.html)
++
++EM_JS(int, wwdos_js_wants_grid, (void), {
++    return Module.wwdosGrid ? 1 : 0;
++});
++
++// The page keeps the grid: ptr points at cols*rows*3 uint32 in wasm memory,
++// [codepoint | wide<<31, fg 0xRRGGBB, bg 0xRRGGBB] per cell. caretX/Y < 0 = hidden.
++EM_JS(void, wwdos_js_grid_flush, (uint32_t *ptr, int cols, int rows, int caretX, int caretY), {
++    if (Module.wwdosGrid)
++        Module.wwdosGrid(HEAPU32.subarray(ptr >> 2, (ptr >> 2) + cols * rows * 3), cols, rows, caretX, caretY);
++});
++
++namespace tvision
++{
++
++bool wasmWantsGrid() noexcept
++{
++    return wwdos_js_wants_grid() != 0;
++}
++
++namespace
++{
++
++std::vector<uint32_t> gridCells;
++TPoint gridSize {0, 0};
++TPoint gridCaret {-1, -1};
++int gridCaretSize = 0;
++bool gridDirty = false;
++
++// VGA/EGA 16-colour palette in BIOS order (black, blue, green, cyan, red, magenta, brown, grey, ...).
++constexpr uint32_t biosPalette[16] =
++{
++    0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xAA5500, 0xAAAAAA,
++    0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF,
++};
++
++uint32_t xtermToRGB(uint8_t i) noexcept
++{
++    if (i < 16)
++        return biosPalette[XTerm16toBIOS(i)];
++    if (i < 232)
++    {
++        i -= 16;
++        int r = i / 36, g = (i / 6) % 6, b = i % 6;
++        auto lv = [] (int v) -> uint32_t { return v ? 55 + 40 * v : 0; };
++        return (lv(r) << 16) | (lv(g) << 8) | lv(b);
++    }
++    uint32_t v = 8 + 10 * (i - 232);
++    return (v << 16) | (v << 8) | v;
++}
++
++uint32_t desiredToRGB(TColorDesired c, bool fg) noexcept
++{
++    if (c.isRGB())
++    {
++        TColorRGB rgb = c.asRGB();
++        return (uint32_t(rgb.r) << 16) | (uint32_t(rgb.g) << 8) | rgb.b;
++    }
++    if (c.isBIOS())
++        return biosPalette[c.asBIOS() & 0xF];
++    if (c.isXTerm())
++        return xtermToRGB(c.asXTerm());
++    return fg ? 0xC0C0C0 : 0x000000;
++}
++
++uint32_t firstCodepoint(TStringView text) noexcept
++{
++    if (text.empty())
++        return ' ';
++    uint32_t u = 0;
++    size_t len = Utf8BytesLeft(text[0]) + 1;
++    if (len > text.size())
++        len = text.size();
++    uchar c = text[0];
++    if (len == 1) u = c;
++    else if (len == 2) u = c & 0x1F;
++    else if (len == 3) u = c & 0x0F;
++    else u = c & 0x07;
++    for (size_t i = 1; i < len; ++i)
++        u = (u << 6) | (uchar(text[i]) & 0x3F);
++    return u;
++}
++
++} // namespace
++
++WasmGridDisplay::WasmGridDisplay(ConsoleCtl &aCon) noexcept :
++    con(aCon)
++{
++}
++
++TPoint WasmGridDisplay::reloadScreenInfo() noexcept
++{
++    gridSize = wasmConsoleSize();
++    gridCells.assign(size_t(gridSize.x) * gridSize.y * 3, 0);
++    gridDirty = true;
++    return gridSize;
++}
++
++int WasmGridDisplay::getColorCount() noexcept
++{
++    return 256*256*256;
++}
++
++TPoint WasmGridDisplay::getFontSize() noexcept
++{
++    return {8, 16};
++}
++
++void WasmGridDisplay::writeCell( TPoint pos, TStringView text, TColorAttr attr,
++                                 bool doubleWidth ) noexcept
++{
++    if (pos.x < 0 || pos.y < 0 || pos.x >= gridSize.x || pos.y >= gridSize.y)
++        return;
++    uint32_t fg = desiredToRGB(::getFore(attr), true);
++    uint32_t bg = desiredToRGB(::getBack(attr), false);
++    ushort style = ::getStyle(attr);
++    if (style & slReverse)
++    {
++        uint32_t t = fg; fg = bg; bg = t;
++    }
++    if (style & slUnderline)
++        fg |= 0x01000000;       // flag: page draws an underline row
++    size_t i = (size_t(pos.y) * gridSize.x + pos.x) * 3;
++    gridCells[i] = firstCodepoint(text) | (doubleWidth ? 0x80000000u : 0);
++    gridCells[i + 1] = fg;
++    gridCells[i + 2] = bg;
++    if (doubleWidth && pos.x + 1 < gridSize.x)
++    {
++        gridCells[i + 3] = 0x40000000u;     // trail: page draws the right half
++        gridCells[i + 4] = fg;
++        gridCells[i + 5] = bg;
++    }
++    gridDirty = true;
++}
++
++void WasmGridDisplay::setCaretPosition(TPoint pos) noexcept
++{
++    gridCaret = pos;
++    gridDirty = true;
++}
++
++void WasmGridDisplay::setCaretSize(int size) noexcept
++{
++    gridCaretSize = size;
++    gridDirty = true;
++}
++
++void WasmGridDisplay::clearScreen() noexcept
++{
++    for (size_t i = 0; i + 2 < gridCells.size(); i += 3)
++    {
++        gridCells[i] = ' ';
++        gridCells[i + 1] = 0xC0C0C0;
++        gridCells[i + 2] = 0;
++    }
++    gridDirty = true;
++}
++
++void WasmGridDisplay::flush() noexcept
++{
++    if (!gridDirty || gridCells.empty())
++        return;
++    gridDirty = false;
++    bool show = gridCaretSize > 0;
++    wwdos_js_grid_flush(gridCells.data(), gridSize.x, gridSize.y,
++                        show ? gridCaret.x : -1, show ? gridCaret.y : -1);
++}
++
++} // namespace tvision
++
++/////////////////////////////////////////////////////////////////////////
++// WasmInput
++
++namespace tvision
++{
++
++int WasmInputGetter::get() noexcept
++{
++    return wwdos_js_getbyte();
++}
++
++void WasmInputGetter::unget(int k) noexcept
++{
++    wwdos_js_ungetbyte(k);
++}
++
++static constexpr KeyDownEvent fromNonPrintableAscii[32] =
++{
++    {{'@'},         kbLeftCtrl, {'@'}, 1},
++    {{kbCtrlA},     kbLeftCtrl},
++    {{kbCtrlB},     kbLeftCtrl},
++    {{kbCtrlC},     kbLeftCtrl},
++    {{kbCtrlD},     kbLeftCtrl},
++    {{kbCtrlE},     kbLeftCtrl},
++    {{kbCtrlF},     kbLeftCtrl},
++    {{kbCtrlG},     kbLeftCtrl},
++    {{kbBack},      0},
++    {{kbTab},       0},
++    {{kbEnter},     0},
++    {{kbCtrlK},     kbLeftCtrl},
++    {{kbCtrlL},     kbLeftCtrl},
++    {{kbEnter},     0},
++    {{kbCtrlN},     kbLeftCtrl},
++    {{kbCtrlO},     kbLeftCtrl},
++    {{kbCtrlP},     kbLeftCtrl},
++    {{kbCtrlQ},     kbLeftCtrl},
++    {{kbCtrlR},     kbLeftCtrl},
++    {{kbCtrlS},     kbLeftCtrl},
++    {{kbCtrlT},     kbLeftCtrl},
++    {{kbCtrlU},     kbLeftCtrl},
++    {{kbCtrlV},     kbLeftCtrl},
++    {{kbCtrlW},     kbLeftCtrl},
++    {{kbCtrlX},     kbLeftCtrl},
++    {{kbCtrlY},     kbLeftCtrl},
++    {{kbCtrlZ},     kbLeftCtrl},
++    {{kbEsc},       0},
++    {{'\\'},        kbLeftCtrl, {'\\'}, 1},
++    {{']'},         kbLeftCtrl, {']'}, 1},
++    {{'^'},         kbLeftCtrl, {'^'}, 1},
++    {{'_'},         kbLeftCtrl, {'_'}, 1},
++};
++
++WasmInput::WasmInput(ConsoleCtl &aCon, InputState &aState) noexcept :
++    InputAdapter(-1),
++    con(aCon),
++    state(aState)
++{
++    TermIO::keyModsOn(con);
++    TermIO::mouseOn(con);
++}
++
++WasmInput::~WasmInput()
++{
++    TermIO::mouseOff(con);
++    TermIO::keyModsOff(con);
++}
++
++bool WasmInput::hasPendingEvents() noexcept
++{
++    if (!wasmInputPending())
++        return false;
++    wwdos_js_maybe_yield();
++    return true;
++}
++
++static bool getEventImpl(WasmInputGetter &in, InputState &state, TEvent &ev) noexcept;
++
++bool WasmInput::getEvent(TEvent &ev) noexcept
++{
++    bool r = getEventImpl(in, state, ev);
++#ifdef WWDOS_DEBUG_INPUT
++    EM_ASM({ console.log('ev', $0, $1, $2.toString(16)); }, r, ev.what, ev.what == evKeyDown ? ev.keyDown.keyCode : 0);
++#endif
++    return r;
++}
++
++static bool getEventImpl(WasmInputGetter &in, InputState &state, TEvent &ev) noexcept
++{
++    if (wwdos_js_take_resize())
++    {
++        ev.what = evCommand;
++        ev.message.command = cmScreenChanged;
++        return true;
++    }
++
++    if (state.bracketedPaste)
++    {
++        int k = in.get();
++        if (k == -1)
++            return false;
++        if (k == '\x1B')
++        {
++            static const char end[] = "[201~";
++            int got[5], n = 0;
++            while (n < 5 && (got[n] = in.get()) == end[n])
++                ++n;
++            if (n == 5)
++            {
++                state.bracketedPaste = false;
++                return false;
++            }
++            // Not the delimiter: drop the ESC, keep the rest as pasted text.
++            if (got[n] != -1)
++                in.unget(got[n]);
++            while (n > 0)
++                in.unget(got[--n]);
++            return false;
++        }
++        in.unget(k);
++    }
++    else
++    {
++    GetChBuf buf(in);
++    switch (TermIO::parseEvent(buf, ev, state))
++    {
++        case Rejected: buf.reject(); break;
++        case Accepted: return true;
++        case Ignored: return false;
++    }
++    }
++
++    int k = in.get();
++    if (k == -1)
++        return false;
++
++    int keys[4] = {k};
++    int numKeys = 1;
++    bool alt = false;
++
++    ev.what = evKeyDown;
++    ev.keyDown = {};
++
++    if (k == '\x1B')
++    {
++        // ESC followed by another byte in the same burst is Alt+key.
++        int k2 = in.get();
++        if (k2 != -1)
++        {
++            keys[0] = k = k2;
++            alt = true;
++        }
++    }
++
++    if ((uint) k < 32)
++        ev.keyDown = fromNonPrintableAscii[k];
++    else if (k == 127)
++        ev.keyDown = {{kbBack}, 0};
++    else
++    {
++        numKeys += Utf8BytesLeft((char) k);
++        for (int i = 1; i < numKeys; ++i)
++        {
++            keys[i] = in.get();
++            if (keys[i] == -1 || (keys[i] & 0xC0) != 0x80)
++            {
++                if (keys[i] != -1)
++                    in.unget(keys[i]);
++                numKeys = i;
++                break;
++            }
++        }
++        for (int i = 0; i < numKeys; ++i)
++            ev.keyDown.text[i] = (char) keys[i];
++        ev.keyDown.textLength = (uchar) numKeys;
++        ev.keyDown.charScan.charCode = CpTranslator::fromUtf8({ev.keyDown.text, size_t(numKeys)});
++        if (ev.keyDown.keyCode <= kbCtrlZ)
++            ev.keyDown.keyCode = kbNoKey;
++    }
++
++    if (alt)
++    {
++        ev.keyDown.controlKeyState |= kbLeftAlt;
++        TermIO::normalizeKey(ev.keyDown);
++    }
++    if (state.bracketedPaste)
++        ev.keyDown.controlKeyState |= kbPaste;
++
++    return ev.keyDown.keyCode != kbNoKey || ev.keyDown.textLength;
++}
++
++} // namespace tvision
++
++#endif // __EMSCRIPTEN__

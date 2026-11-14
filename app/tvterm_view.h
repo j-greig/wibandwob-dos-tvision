@@ -1,6 +1,36 @@
 #ifndef TVTERM_VIEW_H
 #define TVTERM_VIEW_H
 
+#ifdef __EMSCRIPTEN__
+// Browser build: there is no PTY, so the terminal window is a placeholder
+// with the same interface. Implementation: wasm/tvterm_stub.cpp.
+#define Uses_TWindow
+#define Uses_TRect
+#define Uses_TPoint
+#include <tvision/tv.h>
+#include <string>
+
+namespace tvterm { struct TVTermConstants { ushort cmCheckTerminalUpdates; }; }
+
+class TWibWobTerminalWindow : public TWindow
+{
+public:
+    static const tvterm::TVTermConstants termConsts;
+    TWibWobTerminalWindow(const TRect &bounds) noexcept;
+    void sendText(const std::string &) {}
+    std::string getOutputText() const { return std::string(); }
+    void setFixedTitle(const std::string &t);
+    void setChildPidFile(const std::string &) {}
+    void markDirty() {}
+private:
+    std::string fixedTitle_;
+};
+
+TWindow* createTerminalWindow(const TRect &bounds);
+TWindow* createTerminalWindowExec(const TRect &bounds, const std::string &exec, bool hold);
+
+#else // !__EMSCRIPTEN__
+
 #define Uses_TWindow
 #define Uses_TRect
 #define Uses_TPoint
@@ -54,5 +84,7 @@ TWindow* createTerminalWindow(const TRect &bounds);
 // program exits, until the window is closed. Returns nullptr when tools/term_exec.sh is
 // missing (the app must run from the repo root) or the pty fails.
 TWindow* createTerminalWindowExec(const TRect &bounds, const std::string &exec, bool hold);
+
+#endif // __EMSCRIPTEN__
 
 #endif // TVTERM_VIEW_H

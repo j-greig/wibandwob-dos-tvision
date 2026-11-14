@@ -1,0 +1,94 @@
+<!-- Page template. kernel/tools/bundle.py replaces the INLINE markers to make one self-contained file. -->
+<title>WIBWOB-DOS</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--INLINE_CSS-->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #term { position: absolute; inset: 0; padding: 0; }
+  #boot { position: absolute; left: 16px; top: 16px; color: #aaa; font: 14px Menlo, Consolas, monospace; }
+  .xterm .xterm-viewport { overflow-y: hidden !important; }
+</style>
+<div id="term"></div>
+<div id="boot">loading WIBWOB-DOS...</div>
+<!--INLINE_XTERM-->
+<script>
+(function () {
+  var term = new Terminal({
+    fontFamily: "Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace",
+    fontSize: 15,
+    lineHeight: 1.0,
+    letterSpacing: 0,
+    scrollback: 0,
+    cursorBlink: false,
+    allowProposedApi: true,
+    drawBoldTextInBrightColors: false,
+    customGlyphs: true,
+    macOptionIsMeta: true,
+    theme: { background: '#000000', foreground: '#c0c0c0' }
+  });
+  var fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById('term'));
+  // WebGL draws box-drawing and block characters as joined glyphs; the DOM
+  // renderer leaves gaps between rows. Fall back to DOM if WebGL is missing.
+  try {
+    var gl = new WebglAddon.WebglAddon();
+    gl.onContextLoss(function () { gl.dispose(); });
+    term.loadAddon(gl);
+    window.wwdosRenderer = 'webgl';
+  } catch (e) { window.wwdosRenderer = 'dom'; }
+  fit.fit();
+  term.focus();
+
+  var enc = new TextEncoder();
+  var M = {
+    wwdosQueue: [],
+    wwdosResized: false,
+    wwdosWake: null,
+    wwdosWrite: function (bytes) { term.write(bytes); },
+    wwdosCols: function () { return term.cols; },
+    wwdosRows: function () { return term.rows; },
+    print: function (s) { console.log(s); },
+    printErr: function (s) { console.warn(s); },
+    onRuntimeInitialized: function () {
+      var b = document.getElementById('boot'); if (b) b.remove();
+      window.wwdosBootMs = performance.now();
+    }
+  };
+  // A loader page may hand over the wasm bytes itself (window.wwdosWasm) instead of the inlined base64.
+  if (window.wwdosWasm) M.instantiateWasm = function (info, done) {
+    WebAssembly.instantiate(window.wwdosWasm, info).then(function (r) { done(r.instance); });
+    return {};
+  };
+  function wake() { if (M.wwdosWake) M.wwdosWake(); }
+  term.onData(function (d) {
+    var bytes = enc.encode(d);
+    for (var i = 0; i < bytes.length; i++) M.wwdosQueue.push(bytes[i]);
+    wake();
+  });
+  term.onBinary(function (d) {
+    for (var i = 0; i < d.length; i++) M.wwdosQueue.push(d.charCodeAt(i) & 255);
+    wake();
+  });
+  var rt = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () { fit.fit(); M.wwdosResized = true; wake(); }, 60);
+  });
+  window.wwdosTerm = term;
+  window.wwdosModule = M;
+  // Inside a frame written with document.write the frame can still be a few rows tall
+  // when the page loads, and the app lays out its boot scene for that size. Start the app only once
+  // the terminal is a sensible size, or after about a second if the frame really is that small.
+  window.addEventListener('load', function () {
+    var tries = 0;
+    (function start() {
+      fit.fit();
+      if ((term.rows < 20 || term.cols < 60) && tries++ < 60) { requestAnimationFrame(start); return; }
+      WWDOS(M);
+    })();
+  });
+})();
+</script>
+<!--INLINE_APP-->

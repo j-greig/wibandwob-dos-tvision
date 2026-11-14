@@ -55,7 +55,7 @@ TGenerativeMonsterPortalView::TGenerativeMonsterPortalView(const TRect &bounds, 
     : TView(bounds), periodMs(periodMs)
 {
     options |= ofSelectable;
-    growMode = gfGrowAll;
+    growMode = gfGrowHiX | gfGrowHiY;
     eventMask |= evBroadcast | evKeyboard;
 }
 

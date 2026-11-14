@@ -1,0 +1,2 @@
+# util.h in Turbo Vision has CRLF line endings; keep the patch bytes exactly as written.
+*.patch -text

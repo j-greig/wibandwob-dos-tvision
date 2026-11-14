@@ -16,9 +16,12 @@
 #include <unistd.h>
 #include <errno.h>
 #include <poll.h>
+#include <sys/time.h>
 #endif
 
-#ifdef __APPLE__
+#if defined(__EMSCRIPTEN__)
+// Browser build: the IPC server never starts, so no HMAC library is linked.
+#elif defined(__APPLE__)
 #include <CommonCrypto/CommonHMAC.h>
 #else
 #include <openssl/hmac.h>
@@ -200,7 +203,9 @@ std::string ApiIpcServer::generate_nonce() {
 
 std::string ApiIpcServer::compute_hmac(const std::string& nonce) {
     unsigned char result[32]; // SHA-256 = 32 bytes
-#ifdef __APPLE__
+#if defined(__EMSCRIPTEN__)
+    memset(result, 0, sizeof(result));
+#elif defined(__APPLE__)
     CCHmac(kCCHmacAlgSHA256,
            auth_secret_.data(), auth_secret_.size(),
            nonce.data(), nonce.size(),
