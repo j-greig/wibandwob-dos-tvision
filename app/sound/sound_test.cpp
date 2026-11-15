@@ -4,6 +4,7 @@
 #include "mixer.h"
 #include <memory>
 #include "score.h"
+#include "tracker.h"
 #include "synth.h"
 
 #include <cmath>
@@ -282,12 +283,48 @@ static void testScore() {
     }
 }
 
+static void testTracker() {
+    std::printf("[tracker]\n");
+    TrackChannel fm{ChanKind::Fm, patchIndex("bass")}, sp{ChanKind::Speaker, 0}, dr{ChanKind::Drums, 0};
+    TrackCell c;
+    std::string err;
+    check(parseCell(fm, "C-4 06 A37", c, err) && c.note == 60 && c.instr == 6 && c.fx == 'A' && c.fxv == 0x37, "a cell parses: C-4 06 A37");
+    check(cellText(fm, c) == "C-4 06 A37" && cellText(fm, TrackCell()) == "--- .. ...", "a cell prints as it was written; an empty one as --- .. ...");
+    check(parseCell(dr, "BD- 7F", c, err) && c.note == 0 && cellText(dr, c) == "BD- 7F ...", "a drum cell: BD- 7F");
+    check(parseCell(sp, "===", c, err) && c.note == -2 && cellText(sp, c) == "=== .. ...", "a note off: ===");
+    check(!parseCell(fm, "C-4 09", c, err) && err.find("FM instrument") != std::string::npos, "an FM instrument past the patches is refused");
+    check(!parseCell(dr, "C-4", c, err) && !parseCell(fm, "C-4 01 X12", c, err), "a note on a drum channel and an unknown effect are refused");
+
+    Song s = newSong(8, {fm, sp, dr});
+    parseCell(fm, "C-2 01", s.grid[0][0], err);
+    parseCell(fm, "G-2 .. A47", s.grid[4][0], err);
+    parseCell(sp, "C-6 .. G08", s.grid[1][1], err);
+    parseCell(dr, "SD- 40", s.grid[2][2], err);
+    Song back;
+    check(parseSong(songText(s), back, err) && songText(back) == songText(s), "a song saved as text loads back the same (" + err + ")");
+    check(rowText(s, 4) == "04 G-2 .. A47 | --- .. ... | --- .. ...", "row text: " + rowText(s, 4));
+    check(rowMs(s) == 125, "at 120 bpm and 4 rows a beat a row is 125 ms");
+    auto r0 = rowSounds(s, 0);
+    check(r0.size() == 1 && r0[0].note.durMs == 4 * 125 * 0.95 && r0[0].note.patch.name == "bass",
+          "C-2 rings until the next note in its channel, four rows on (gate 475 ms)");
+    auto r4 = rowSounds(s, 4);
+    check(r4.size() == 3 && r4[1].note.midi == 43 + 4 && r4[2].note.midi == 43 + 7 && std::fabs(r4[2].atMs - 250.0 / 3) < 1e-9,
+          "A47 plays G-2, B-2, D-3 across the row");
+    auto r1 = rowSounds(s, 1);
+    check(r1.size() == 1 && r1[0].note.voice == Voice::PcSpeaker && r1[0].note.durMs == 62.5, "G08 gates the speaker note to half a row");
+    auto r2 = rowSounds(s, 2);
+    check(r2.size() == 1 && r2[0].drum && r2[0].drum_voice == 1 && std::fabs(r2[0].gain - 64 / 127.0) < 1e-9, "SD- 40 is a snare at level 0x40");
+    Song bad;
+    check(!parseSong("channels fm:bass\n00 C-4 | E-4\n", bad, err) && err.find("line 2") == 0, "a row with too many cells is refused with its line");
+}
+
 int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     if (only.empty() || only == "synth") testSynth();
     if (only.empty() || only == "mixer") testMixer();
     if (only.empty() || only == "ears") testEars();
     if (only.empty() || only == "score") testScore();
+    if (only.empty() || only == "tracker") testTracker();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

@@ -24,6 +24,10 @@ struct Heard {
     bool accent = false;     // tr808 accent
     int tempo = 0;           // tr808 tempo
     std::string who;         // who played it (the synth) or started the pattern (the TR-808)
+    // A tracker's sound: its channel, how many channels the song has, and the cell's text.
+    int channel = -1;
+    int channels = 0;
+    std::string cell;
     // For the synth's level over time: its envelope.
     bool hasEnvelope = false;
     Patch envPatch;
@@ -48,6 +52,11 @@ public:
     std::string meter(double now, double ms, double rowMs, const std::string& source = "") const;
     // Tracker rows of the last `ms`, one per rowMs: "-0.750  C-4 E-4      | BD CH".
     std::vector<std::string> rows(double now, double ms, double rowMs, const std::string& source = "") const;
+    // A tracker's rows as the ears heard them, in the tracker's own form ("03 C-2 01 ... | BD- 7F ..."):
+    // rows start at originMs + k * rowMs; the rows that started in [now - ms, now) are given; the
+    // row number is k modulo songRows.
+    std::vector<std::string> cellRows(double now, double ms, double rowMs, double originMs, const std::string& window,
+                                      int songRows) const;
     // One plain sentence of what was heard and what sounds now.
     std::string summary(double now, double ms, const std::string& source = "") const;
     // The whole answer of the hear command, as JSON. window filters by window id.
