@@ -874,3 +874,16 @@ TWindow* createDeepSignalWindow(const TRect &bounds) {
     w->setup();
     return w;
 }
+
+std::string TDeepSignalView::describeState() const {
+    std::string s = std::string("deep signal game, ") + (victory ? "won" : gameOver ? "game over" : "playing") + ": turn " +
+                    std::to_string(turn) + ", fuel " + std::to_string(probe.fuel) + "/" + std::to_string(probe.maxFuel) + ", " +
+                    std::to_string(signalsDecoded) + " of " + std::to_string(signals.size()) + " signals decoded";
+    if (!logMessages.empty()) s += "; last message: " + ww::clipText(logMessages.back().text, 60);
+    return s;
+}
+bool TDeepSignalView::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    for (const auto& m : logMessages) out.push_back(m.text);
+    return true;
+}

@@ -7,6 +7,7 @@
 #define Uses_TWindow
 #define Uses_TRect
 #define Uses_TEvent
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <map>
@@ -20,8 +21,9 @@
 using Tr808EventSink = void (*)(TWindow* window, const char* type, const std::string& body);
 void tr808SetEventSink(Tr808EventSink sink);
 
-class TTR808View : public TView {
+class TTR808View : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TTR808View(const TRect& bounds);
     ~TTR808View() override;
 

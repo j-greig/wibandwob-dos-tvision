@@ -10,6 +10,7 @@
 #define Uses_TView
 #define Uses_TDrawBuffer
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 #include <vector>
 #include <array>
@@ -31,8 +32,9 @@ struct Piece {
 // Board cell: 0 = empty, 1-7 = piece color
 using Cell = uint8_t;
 
-class TQuadraView : public TView {
+class TQuadraView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     static constexpr int BOARD_W = 10;
     static constexpr int BOARD_H = 20;
     static constexpr int CELL_W  = 2;  // each cell is 2 chars wide for square look

@@ -324,3 +324,16 @@ TWindow* createTerminalWindow(const TRect &bounds)
 }
 
 #endif // __EMSCRIPTEN__
+
+std::string TWibWobTerminalWindow::describeState() const {
+    const char* t = const_cast<TWibWobTerminalWindow*>(this)->getTitle(0);
+    auto lines = ww::splitText(getOutputText());
+    std::string last;
+    for (auto it = lines.rbegin(); it != lines.rend(); ++it) if (!it->empty()) { last = ww::clipText(*it, 50); break; }
+    return std::string("terminal") + (t && *t ? std::string(" \"") + t + "\"" : "") + " showing " +
+           std::to_string(lines.size()) + " lines of output" + (last.empty() ? "" : "; last line: \"" + last + "\"");
+}
+bool TWibWobTerminalWindow::describeText(std::vector<std::string>& out) const {
+    out = ww::splitText(getOutputText());
+    return true;
+}

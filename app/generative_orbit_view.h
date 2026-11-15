@@ -15,10 +15,12 @@
 #define Uses_TDrawBuffer
 #define Uses_TEvent
 #define Uses_TColorAttr
+#include "describe.h"
 #include <tvision/tv.h>
 
-class TGenerativeOrbitView : public TView {
+class TGenerativeOrbitView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TGenerativeOrbitView(const TRect &bounds, unsigned periodMs = 50);
     virtual ~TGenerativeOrbitView();
 

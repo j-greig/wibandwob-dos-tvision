@@ -42,6 +42,7 @@
 #include "test_pattern.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "describe.h"
 #include "core/json_utils.h"
 #include "gradient.h"
 #include "ui/ui_helpers.h"
@@ -671,12 +672,15 @@ public:
 /*---------------------------------------------------------*/
 /* TTestPatternWindow - Window containing test pattern    */
 /*---------------------------------------------------------*/
-class TTestPatternWindow : public TWindow
+class TTestPatternWindow : public TWindow, public ww::Describable
 {
 private:
     TTestPatternView* patternView;
     
 public:
+    std::string describeState() const override {
+        return "still test pattern of colour bars, " + std::to_string(size.x - 2) + "x" + std::to_string(size.y - 2);
+    }
     TTestPatternWindow(const TRect& bounds, const char* aTitle) :
         TWindow(bounds, "", wnNoNumber),
         TWindowInit(&TTestPatternWindow::initFrame)
@@ -704,9 +708,13 @@ public:
 /*---------------------------------------------------------*/
 /* TGradientWindow - Window containing gradient           */
 /*---------------------------------------------------------*/
-class TGradientWindow : public TWindow
+class TGradientWindow : public TWindow, public ww::Describable
 {
+    const char* kind_ = "horizontal";
 public:
+    std::string describeState() const override {
+        return std::string("still ") + kind_ + " colour gradient, " + std::to_string(size.x - 2) + "x" + std::to_string(size.y - 2);
+    }
     enum GradientType {
         gtHorizontal,
         gtVertical,
@@ -726,6 +734,8 @@ public:
         
         // Insert the appropriate gradient view
         TGradientView* gradientView = nullptr;
+        static const char* kinds[] = {"horizontal", "vertical", "radial", "diagonal"};
+        kind_ = kinds[type];
         switch (type)
         {
             case gtHorizontal:
@@ -1055,6 +1065,8 @@ std::string TWwdosApp::runtimeApiKey;
 static const char* windowTypeName(TWindow* w);
 static bool residentTextOf(TWindow* w, std::vector<std::string>& out);
 static std::string residentStateOf(TWindow* w);
+static bool frameWindowMatches(TWindow* w);
+static std::string frameWindowState(TWindow* w);
 
 // Accessor for runtime API key (used by wibwob_view.cpp)
 std::string getAppRuntimeApiKey() {
@@ -1101,6 +1113,7 @@ TWwdosApp::TWwdosApp() :
     residentHooks.textOf = [](TWindow* w, std::vector<std::string>& out) { return residentTextOf(w, out); };
     residentHooks.stateOf = [](TWindow* w) { return residentStateOf(w); };
     resident::setHooks(residentHooks);
+    ww::addExternalDescriber({"TFrameAnimationWindow", frameWindowMatches, frameWindowState, nullptr});
 
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
@@ -3265,100 +3278,52 @@ static const char* windowTypeName(TWindow* w) {
     return specs.empty() ? "test_pattern" : specs.front().type;
 }
 
-static std::vector<std::string> splitLines(const std::string& s) {
-    std::vector<std::string> out;
-    size_t p = 0;
-    while (p <= s.size()) {
-        size_t nl = s.find('\n', p);
-        if (nl == std::string::npos) nl = s.size();
-        std::string l = s.substr(p, nl - p);
-        while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
-        out.push_back(l);
-        p = nl + 1;
-    }
-    while (!out.empty() && out.back().empty()) out.pop_back();
-    return out;
-}
-
-// The text a window's model holds, for look_read: editor lines, terminal output,
-// chat messages, paint canvas. Other types are read from their cells.
+// The text a window's model holds and its one sentence of state, for look_read and
+// look_glance: both come from the window's describer (describe.h).
 static bool residentTextOf(TWindow* w, std::vector<std::string>& out) {
-    out.clear();
-    if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
-        if (!tw->getEditorView()) return false;
-        out = tw->getEditorView()->getLines();
-        return true;
-    }
-    if (auto* term = dynamic_cast<TWibWobTerminalWindow*>(w)) {
-        out = splitLines(term->getOutputText());
-        return true;
-    }
-    if (auto* chat = dynamic_cast<TWibWobWindow*>(w)) {
-        auto* mv = chat->getMessageView();
-        if (!mv) return false;
-        for (const auto& m : mv->getMessages()) {
-            auto lines = splitLines(m.content);
-            std::string who = m.sender.empty() ? "Wib&Wob" : m.sender;
-            if (lines.empty()) lines.push_back("");
-            out.push_back(who + ": " + lines[0]);
-            for (size_t i = 1; i < lines.size(); ++i) out.push_back("  " + lines[i]);
-        }
-        return true;
-    }
-    if (auto* pw = dynamic_cast<TPaintWindow*>(w)) {
-        if (!pw->getCanvas()) return false;
-        out = splitLines(pw->getCanvas()->exportText());
-        return true;
-    }
-    return false;
+    std::string state, cls;
+    bool model = false;
+    return ww::describeWindow(w, state, out, model, cls) && model;
 }
 
 static std::string residentStateOf(TWindow* w) {
-    std::vector<std::string> lines;
-    if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
-        if (!tw->getEditorView()) return "";
-        const auto& l = tw->getEditorView()->getLines();
-        size_t chars = 0;
-        for (auto& s : l) chars += s.size();
-        std::string top;
-        for (auto& s : l) if (!s.empty()) { top = s.size() > 40 ? s.substr(0, 37) + "..." : s; break; }
-        return "text editor holding " + std::to_string(l.size()) + " lines, " + std::to_string(chars) +
-               " characters" + (top.empty() ? "" : "; first line: \"" + top + "\"");
+    std::string state, cls;
+    std::vector<std::string> text;
+    bool model = false;
+    return ww::describeWindow(w, state, text, model, cls) ? state : "";
+}
+
+// Frame-player windows: their classes are shared byte for byte with the film engine, so their
+// describer lives here (describe.h, ExternalDescriber), from the views' public getters.
+static bool frameWindowMatches(TWindow* w) { return dynamic_cast<TFrameAnimationWindow*>(w) != nullptr; }
+static std::string frameWindowState(TWindow* w) {
+    struct Found { FrameFilePlayerView* fp = nullptr; TTextFileView* tf = nullptr; } found;
+    w->forEach([](TView* v, void* p) {
+        auto* out = static_cast<Found*>(p);
+        if (auto* a = dynamic_cast<FrameFilePlayerView*>(v)) out->fp = a;
+        if (auto* b = dynamic_cast<TTextFileView*>(v)) out->tf = b;
+    }, &found);
+    FrameFilePlayerView* fp = found.fp;
+    TTextFileView* tf = found.tf;
+    if (fp) {
+        if (!fp->ok()) return "frame player that failed to load " + fp->getFilePath() + ": " + fp->error();
+        return "frame player animating " + fp->getFilePath() + ", " + std::to_string(fp->getFrameCount()) +
+               " frames, one every " + std::to_string(fp->getPeriodMs()) + " ms";
     }
-    if (auto* term = dynamic_cast<TWibWobTerminalWindow*>(w)) {
-        const char* t = term->getTitle(0);
-        lines = splitLines(term->getOutputText());
-        return std::string("terminal") + (t && *t ? std::string(" \"") + t + "\"" : "") + " showing " +
-               std::to_string(lines.size()) + " lines of output";
+    if (tf) {
+        if (!tf->ok()) return "text file view that failed to load " + tf->getFilePath() + ": " + tf->error();
+        return "text file " + tf->getFilePath() + ", " + std::to_string(tf->getContentLines()) + " lines";
     }
-    if (auto* chat = dynamic_cast<TWibWobWindow*>(w)) {
-        auto* mv = chat->getMessageView();
-        if (!mv) return "";
-        const auto& m = mv->getMessages();
-        if (m.empty()) return "chat with no messages yet";
-        std::string last = m.back().sender.empty() ? "Wib&Wob" : m.back().sender;
-        return "chat with " + std::to_string(m.size()) + " messages; the last from " + last;
-    }
-    if (auto* pw = dynamic_cast<TPaintWindow*>(w)) {
-        auto* c = pw->getCanvas();
-        if (!c) return "";
-        lines = splitLines(c->exportText());
-        int ink = 0;
-        for (auto& s : lines) for (char ch : s) if (ch != ' ') ++ink;
-        return "paint canvas " + std::to_string(c->getCols()) + "x" + std::to_string(c->getRows()) + " with " +
-               std::to_string(ink) + " cells inked";
-    }
-    return "";
+    return "frame window with nothing loaded";
 }
 
 // Text of a window that holds text (the text editor), for checking what input produced.
 std::string api_window_text(TWwdosApp& app, const std::string& id) {
     TWindow* w = app.findWindowById(id);
     if (!w) return "err window not found";
-    auto* tw = dynamic_cast<TTextEditorWindow*>(w);
-    if (!tw || !tw->getEditorView()) return "err no text reader for this window type";
-    std::string out = "{\"id\":\"" + id + "\",\"type\":\"text_editor\",\"lines\":[";
-    const auto& lines = tw->getEditorView()->getLines();
+    std::vector<std::string> lines;
+    if (!residentTextOf(w, lines)) return "err no text in this window's model (its cells are its text: look_read)";
+    std::string out = std::string("{\"id\":\"") + id + "\",\"type\":\"" + windowTypeName(w) + "\",\"lines\":[";
     for (size_t i = 0; i < lines.size(); ++i) out += (i ? ",\"" : "\"") + json_escape(lines[i]) + "\"";
     out += "]}";
     return out;

@@ -20,6 +20,7 @@ std::string cmdRead(const KV& kv);      // look_read
 std::string cmdStudy(const KV& kv);     // look_study
 std::string cmdChanges(const KV& kv);   // look_changes
 std::string cmdMark(const KV& kv);      // look_mark
+std::string cmdDescribe(const KV& kv);  // describe: every window says what it is (describe.h)
 
 // Called on every pass of the event loop (from afterBase): moves marks with their
 // windows, takes marks and hands down when their time is up.

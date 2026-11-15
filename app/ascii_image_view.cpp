@@ -1,3 +1,4 @@
+#include "describe.h"
 #include "ascii_image_view.h"
 
 #define Uses_TRect
@@ -72,8 +73,14 @@ static Grid rasterizeToGrid(const Image &img,const RenderParams&rp){ Grid g; g.c
 
 static inline uint8_t ansiToTVAttr(uint8_t fg,uint8_t bg){ return ((bg&0x0F)<<4)|(fg&0x0F); }
 
-class TAsciiImageView : public TView{
+class TAsciiImageView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override {
+        using M = GlyphConfig::Mode;
+        const char* mode = rp.glyphCfg.mode == M::Blocks ? "blocks" : rp.glyphCfg.mode == M::Unicode ? "unicode" : "ascii";
+        return "still image drawn in characters (" + std::string(mode) + "), " + std::to_string(size.x) + "x" +
+               std::to_string(size.y) + ", dither " + ww::onOff(rp.orderedDither);
+    }
     TAsciiImageView(const Image &img,const RenderParams &params):TView(TRect(1,1,1,1)),original(img),rp(params){ growMode=gfGrowHiX|gfGrowHiY; options|=ofSelectable; }
     virtual void draw() override{
         TRect r=getExtent(); int cols=r.b.x-r.a.x; if(cols<=0) return; int rows=r.b.y-r.a.y; if(rows<=0) return; if(dirty||cols!=cached.cols||rows!=cached.rows){ RenderParams rp2=rp; rp2.cols=cols; rp2.rows=rows; cached=rasterizeToGrid(original,rp2); dirty=false; }
@@ -108,3 +115,5 @@ TWindow* createAsciiImageWindowFromFile(const TRect &bounds, const std::string &
         return nullptr;
     }
 }
+
+bool isAsciiImageWindow(TWindow* w) { return dynamic_cast<TAsciiImageWindow*>(w) != nullptr; }

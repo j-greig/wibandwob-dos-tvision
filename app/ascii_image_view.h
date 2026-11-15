@@ -9,3 +9,6 @@ struct TRect;
 // Creates a tileable window that hosts an ASCII image view rendering the given file.
 // Supported formats: PNG/JPEG (via stb_image). Returns nullptr on failure.
 TWindow* createAsciiImageWindowFromFile(const TRect &bounds, const std::string &path);
+
+// True for a window opened by createAsciiImageWindowFromFile (window type ascii_image).
+bool isAsciiImageWindow(TWindow* w);

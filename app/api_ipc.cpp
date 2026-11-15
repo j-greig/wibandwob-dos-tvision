@@ -933,7 +933,8 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
             }
         }
     } else if (cmd.rfind("resident_", 0) == 0 || cmd.rfind("look_", 0) == 0 || cmd == "window_text" ||
-               cmd == "acts" || cmd == "window_owner" || cmd == "standing" || cmd == "residents_about") {
+               cmd == "acts" || cmd == "window_owner" || cmd == "standing" || cmd == "residents_about" ||
+               cmd == "describe") {
         resp = exec_registry_command(*app_, cmd, kv) + "\n";
     } else {
         resp = "err unknown cmd\n";

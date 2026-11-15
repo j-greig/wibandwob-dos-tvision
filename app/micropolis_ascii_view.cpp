@@ -365,3 +365,12 @@ TWindow* createMicropolisAsciiWindow(const TRect &bounds) {
     w->setup();
     return w;
 }
+
+std::string TMicropolisAsciiView::describeState() const {
+    static const char* speeds[] = {"paused", "slow", "medium", "fast", "ultra"};
+    std::string s = std::string("city simulation (seed ") + std::to_string(seed_) + ") at speed " +
+                    speeds[(simSpeed_ >= 0 && simSpeed_ < 5) ? simSpeed_ : 0] + ", cursor at " + std::to_string(curX_) + "," +
+                    std::to_string(curY_) + ", tool " + std::to_string(activeTool_) + ", save slot " + std::to_string(saveSlot_);
+    if (!lastResult_.empty()) s += "; last: " + ww::clipText(lastResult_, 50);
+    return s;
+}

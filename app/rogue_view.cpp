@@ -881,3 +881,17 @@ TWindow* createRogueWindow(const TRect &bounds) {
     w->setup();
     return w;
 }
+
+std::string TRogueView::describeState() const {
+    std::string s = std::string("rogue game, ") + (victory ? "won" : gameOver ? "game over" : "playing") + ": floor " +
+                    std::to_string(player.floor) + ", HP " + std::to_string(player.hp) + "/" + std::to_string(player.maxHp) +
+                    ", level " + std::to_string(player.level) + ", gold " + std::to_string(player.gold) +
+                    (player.hasKey ? ", holding the key" : "");
+    if (!log.empty()) s += "; last message: " + ww::clipText(log.back().text, 60);
+    return s;
+}
+bool TRogueView::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    for (const auto& m : log) out.push_back(m.text);
+    return true;
+}

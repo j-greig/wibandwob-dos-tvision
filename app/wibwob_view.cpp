@@ -1264,3 +1264,26 @@ bool TWibWobWindow::exportChat(const std::string& filename) const {
 TWindow* createWibWobWindow(const TRect& bounds, const std::string& title) {
     return new TWibWobWindow(bounds, title);
 }
+
+std::string TWibWobWindow::describeState() const {
+    if (!messageView) return "Wib&Wob chat";
+    const auto& m = messageView->getMessages();
+    if (m.empty()) return std::string("Wib&Wob chat with no messages yet") + (pendingAsk_.empty() ? "" : "; a question waits");
+    std::string last = m.back().sender.empty() ? "Wib&Wob" : m.back().sender;
+    std::string s = "Wib&Wob chat with " + std::to_string(m.size()) + " messages; the last from " + last;
+    if (m.back().is_streaming) s += ", still arriving";
+    if (!pendingAsk_.empty()) s += "; a question waits";
+    return s;
+}
+bool TWibWobWindow::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    if (!messageView) return false;
+    for (const auto& m : messageView->getMessages()) {
+        auto lines = ww::splitText(m.content);
+        std::string who = m.sender.empty() ? "Wib&Wob" : m.sender;
+        if (lines.empty()) lines.push_back("");
+        out.push_back(who + ": " + lines[0]);
+        for (size_t i = 1; i < lines.size(); ++i) out.push_back("  " + lines[i]);
+    }
+    return true;
+}

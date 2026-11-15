@@ -14,10 +14,12 @@
 #define Uses_TDrawBuffer
 #define Uses_TEvent
 #define Uses_TColorAttr
+#include "describe.h"
 #include <tvision/tv.h>
 
-class TGenerativeMyceliumView : public TView {
+class TGenerativeMyceliumView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TGenerativeMyceliumView(const TRect &bounds, unsigned periodMs = 55);
     virtual ~TGenerativeMyceliumView();
 
