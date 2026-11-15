@@ -956,4 +956,316 @@ std::string cmdStatus(const KV& kv) {
     return os.str();
 }
 
+// ---------------------------------------------------------------- dialogs and menus
+
+namespace {
+
+std::vector<TView*> childrenInOrder(TGroup* g) {
+    std::vector<TView*> v;
+    if (!g || !g->first()) return v;
+    TView* f = g->first();
+    TView* p = f;
+    do { v.push_back(p); p = p->next; } while (p != f);
+    std::reverse(v.begin(), v.end());   // insertion (tab) order
+    return v;
+}
+
+std::map<TView*, std::string> labelsOf(TGroup* g) {
+    std::map<TView*, std::string> m;
+    for (TView* c : childrenInOrder(g)) {
+        if (auto* l = dynamic_cast<TLabel*>(c)) {
+            TView* link = l->*PeekLabel::link_();
+            char buf[256] = {0};
+            l->getText(buf);
+            if (link) m[link] = plainLabel(buf);
+        }
+    }
+    return m;
+}
+
+std::vector<std::string> clusterItems(TCluster* cl) {
+    std::vector<std::string> out;
+    TStringCollection* s = cl->*PeekCluster::strings_();
+    if (!s) return out;
+    for (int i = 0; i < s->getCount(); ++i) out.push_back(plainLabel((const char*)s->at(i)));
+    return out;
+}
+
+std::string listItemText(TListViewer* lv, int i) {
+    char buf[256] = {0};
+    lv->getText(buf, (short)i, 255);
+    return buf;
+}
+
+std::string menuItemsJson(TMenu* menu, int depth) {
+    std::ostringstream os;
+    os << "[";
+    bool first = true;
+    for (TMenuItem* it = menu ? menu->items : nullptr; it; it = it->next) {
+        if (!it->name) continue;   // separator
+        os << (first ? "" : ",") << "{\"name\":" << q(plainLabel(it->name));
+        if (it->command == 0) {
+            os << ",\"items\":" << (depth < 6 && it->subMenu ? menuItemsJson(it->subMenu, depth + 1) : "[]");
+        } else {
+            bool en = !it->disabled && TView::commandEnabled(it->command);
+            os << ",\"command\":" << it->command << ",\"enabled\":" << (en ? "true" : "false");
+            if (it->param) os << ",\"key\":" << q(it->param);
+        }
+        os << "}";
+        first = false;
+    }
+    os << "]";
+    return os.str();
+}
+
+std::string describe(TView* v) {
+    if (!v) return "null";
+    std::ostringstream os;
+    if (auto* mv = dynamic_cast<TMenuView*>(v)) {
+        TMenu* menu = mv->*PeekMenuView::menu_();
+        TMenuItem* cur = mv->*PeekMenuView::current_();
+        os << "{\"kind\":\"menu\",\"items\":" << menuItemsJson(menu, 5)
+           << ",\"current\":" << q(cur && cur->name ? plainLabel(cur->name) : "")
+           << ",\"accept\":{\"how\":\"resident_menu choose=<name>\",\"key\":\"Enter\"}"
+           << ",\"cancel\":{\"key\":\"Esc\"}}";
+        return os.str();
+    }
+    auto* g = dynamic_cast<TGroup*>(v);
+    auto* w = dynamic_cast<TWindow*>(v);
+    const char* kind = dynamic_cast<TDialog*>(v) ? "dialog" : w ? "window" : "view";
+    os << "{\"kind\":\"" << kind << "\",\"id\":" << q(idOf(v))
+       << ",\"title\":" << q(w && w->title ? w->title : "")
+       << ",\"owner\":" << q(g_owned.count(v) ? "resident" : "person")
+       << ",\"modal\":" << ((v->state & sfModal) ? "true" : "false");
+    if (!g) { os << "}"; return os.str(); }
+    auto labels = labelsOf(g);
+    std::string accept, cancel;
+    os << ",\"controls\":[";
+    bool first = true;
+    for (TView* c : childrenInOrder(g)) {
+        std::ostringstream cs;
+        std::string label = labels.count(c) ? labels[c] : "";
+        bool en = !(c->state & sfDisabled);
+        if (auto* b = dynamic_cast<TButton*>(c)) {
+            ushort cmd = b->*PeekButton::command_();
+            bool def = b->*PeekButton::amDefault_();
+            en = en && TView::commandEnabled(cmd);
+            std::string t = plainLabel(b->title);
+            cs << "{\"kind\":\"button\",\"label\":" << q(t) << ",\"command\":" << cmd
+               << ",\"default\":" << (def ? "true" : "false");
+            if (accept.empty() && (def || cmd == cmOK || cmd == cmYes)) accept = t;
+            if (cancel.empty() && (cmd == cmCancel || cmd == cmNo)) cancel = t;
+        } else if (auto* cl = dynamic_cast<TCluster*>(c)) {
+            const char* k = dynamic_cast<TRadioButtons*>(c) ? "radio" : dynamic_cast<TCheckBoxes*>(c) ? "checkboxes" : "cluster";
+            cs << "{\"kind\":\"" << k << "\",\"label\":" << q(label) << ",\"items\":[";
+            auto items = clusterItems(cl);
+            for (size_t i = 0; i < items.size(); ++i)
+                cs << (i ? "," : "") << "{\"label\":" << q(items[i]) << ",\"on\":" << (cl->mark((int)i) ? "true" : "false") << "}";
+            cs << "]";
+        } else if (auto* in = dynamic_cast<TInputLine*>(c)) {
+            cs << "{\"kind\":\"input\",\"label\":" << q(label) << ",\"value\":" << q(in->data ? in->data : "");
+        } else if (auto* lv = dynamic_cast<TListViewer*>(c)) {
+            cs << "{\"kind\":\"list\",\"label\":" << q(label) << ",\"count\":" << lv->range
+               << ",\"focused\":" << lv->focused << ",\"items\":[";
+            int n = std::min<int>(lv->range, 50);
+            for (int i = 0; i < n; ++i) cs << (i ? "," : "") << q(listItemText(lv, i));
+            cs << "]";
+        } else if (dynamic_cast<TLabel*>(c) || dynamic_cast<TFrame*>(c) || dynamic_cast<TScrollBar*>(c) ||
+                   dynamic_cast<THistory*>(c)) {
+            continue;
+        } else if (auto* st = dynamic_cast<TStaticText*>(c)) {
+            char buf[256] = {0};
+            st->getText(buf);
+            cs << "{\"kind\":\"text\",\"text\":" << q(buf);
+        } else {
+            cs << "{\"kind\":\"view\",\"class\":" << q(typeid(*c).name());
+        }
+        cs << ",\"enabled\":" << (en ? "true" : "false") << "}";
+        os << (first ? "" : ",") << cs.str();
+        first = false;
+    }
+    os << "]";
+    if (!accept.empty()) os << ",\"accept\":{\"press\":" << q(accept) << ",\"key\":\"Enter\"}";
+    if (!cancel.empty() || dynamic_cast<TDialog*>(v))
+        os << ",\"cancel\":{" << (cancel.empty() ? "" : "\"press\":" + q(cancel) + ",") << "\"key\":\"Esc\"}";
+    os << "}";
+    return os.str();
+}
+
+// The window a press goes to when no id is given: the running modal dialog, else
+// the front-most dialog on the desktop.
+TGroup* defaultPressTarget() {
+    if (TheTopView && !dynamic_cast<TMenuView*>(TheTopView)) return dynamic_cast<TGroup*>(TheTopView);
+    TDeskTop* d = TProgram::deskTop;
+    if (!d || !d->first()) return nullptr;
+    TView* f = d->first();
+    TView* v = f;
+    do {
+        if (dynamic_cast<TDialog*>(v) && (v->state & sfVisible)) return static_cast<TGroup*>(v);
+        v = v->next;
+    } while (v != f);
+    return nullptr;
+}
+
+struct Found { TView* control = nullptr; int index = -1; std::string kind; };
+
+Found findControl(TGroup* g, const std::string& label, const std::string& item) {
+    auto labels = labelsOf(g);
+    std::string key = matchKey(label);
+    std::string ikey = matchKey(item);
+    Found exact, prefix;
+    int prefixCount = 0;
+    auto consider = [&](TView* c, int idx, const std::string& text, const char* kind) {
+        std::string k = matchKey(text);
+        if (k.empty()) return;
+        if (k == key && !exact.control) { exact.control = c; exact.index = idx; exact.kind = kind; }
+        else if (k.rfind(key, 0) == 0) { if (!prefixCount++) { prefix.control = c; prefix.index = idx; prefix.kind = kind; } }
+    };
+    auto indexOf = [&](TView* c) -> int {
+        if (ikey.empty()) return -1;
+        if (auto* cl = dynamic_cast<TCluster*>(c)) {
+            auto items = clusterItems(cl);
+            for (size_t i = 0; i < items.size(); ++i) if (matchKey(items[i]) == ikey) return (int)i;
+        }
+        if (auto* lv = dynamic_cast<TListViewer*>(c)) {
+            for (int i = 0; i < lv->range; ++i) if (matchKey(listItemText(lv, i)) == ikey) return i;
+        }
+        return -2;
+    };
+    for (TView* c : childrenInOrder(g)) {
+        if (auto* b = dynamic_cast<TButton*>(c)) { consider(c, -1, plainLabel(b->title), "button"); continue; }
+        if (labels.count(c)) consider(c, indexOf(c), labels[c], "labelled");
+        if (auto* cl = dynamic_cast<TCluster*>(c)) {
+            auto items = clusterItems(cl);
+            for (size_t i = 0; i < items.size(); ++i) consider(c, (int)i, items[i], "item");
+        } else if (auto* lv = dynamic_cast<TListViewer*>(c)) {
+            int n = std::min<int>(lv->range, 500);
+            for (int i = 0; i < n; ++i) consider(c, i, listItemText(lv, i), "item");
+        }
+    }
+    if (exact.control) return exact;
+    if (prefixCount == 1) return prefix;
+    return Found{};
+}
+
+TMenuItem* findMenuItem(TMenu* menu, const std::vector<std::string>& path, size_t at) {
+    for (TMenuItem* it = menu ? menu->items : nullptr; it; it = it->next) {
+        if (!it->name) continue;
+        if (matchKey(plainLabel(it->name)) != matchKey(path[at])) continue;
+        if (at + 1 == path.size()) return it;
+        if (it->command == 0 && it->subMenu) {
+            if (TMenuItem* r = findMenuItem(it->subMenu, path, at + 1)) return r;
+        }
+    }
+    return nullptr;
+}
+
+TMenuItem* searchMenu(TMenu* menu, const std::string& name, int& count, int depth) {
+    TMenuItem* found = nullptr;
+    for (TMenuItem* it = menu ? menu->items : nullptr; it; it = it->next) {
+        if (!it->name) continue;
+        if (it->command != 0 && matchKey(plainLabel(it->name)) == matchKey(name)) { if (!found) found = it; ++count; }
+        if (it->command == 0 && it->subMenu && depth < 6) {
+            TMenuItem* r = searchMenu(it->subMenu, name, count, depth + 1);
+            if (r && !found) found = r;
+        }
+    }
+    return found;
+}
+
+}  // namespace
+
+std::string cmdFront(const KV&) {
+    TDeskTop* d = TProgram::deskTop;
+    TView* front = TheTopView ? TheTopView : (d ? d->current : nullptr);
+    std::ostringstream os;
+    os << "{\"modal\":" << (TheTopView ? "true" : "false")
+       << ",\"menu_open\":" << (dynamic_cast<TMenuView*>(TheTopView) ? "true" : "false")
+       << ",\"focused\":" << q(d && d->current ? nameOf(d->current) : "")
+       << ",\"front\":" << describe(front) << ",\"dialogs\":[";
+    bool first = true;
+    if (d && d->first()) {
+        TView* f = d->first();
+        TView* v = f;
+        do {
+            if (dynamic_cast<TDialog*>(v) && v != front) {
+                os << (first ? "" : ",") << describe(v);
+                first = false;
+            }
+            v = v->next;
+        } while (v != f);
+    }
+    os << "]}";
+    return os.str();
+}
+
+std::string cmdPress(const KV& kv) {
+    std::string label = str(kv, "label");
+    if (label.empty()) return "err missing label";
+    std::string err;
+    TView* t = resolveTarget(kv, err);
+    if (!err.empty()) return err;
+    TGroup* g = t ? dynamic_cast<TGroup*>(t) : defaultPressTarget();
+    if (!g) return "err no dialog in front; give id=";
+    Found f = findControl(g, label, str(kv, "item"));
+    if (!f.control) return "err no control labelled '" + label + "' in " + nameOf(g);
+    if (f.index == -2) return "err no item '" + str(kv, "item") + "'";
+    if (personActingIn(g)) return sharingError(g);
+    Item it;
+    it.kind = Kind::Press;
+    it.target = g;
+    it.targetId = nameOf(g);
+    it.control = f.control;
+    it.index = f.index;
+    if (has(kv, "value")) { it.hasValue = true; it.value = str(kv, "value"); }
+    it.what = "press " + label + (f.index >= 0 ? " #" + std::to_string(f.index) : "");
+    std::vector<Item> items{it};
+    return enqueueAll(items);
+}
+
+std::string cmdMenu(const KV& kv) {
+    TMenuView* bar = TProgram::menuBar;
+    TMenu* menu = bar ? bar->*PeekMenuView::menu_() : nullptr;
+    if (!has(kv, "choose")) {
+        std::ostringstream os;
+        os << "{\"open\":" << (dynamic_cast<TMenuView*>(TheTopView) ? "true" : "false")
+           << ",\"menus\":" << menuItemsJson(menu, 0) << "}";
+        return os.str();
+    }
+    std::string path = str(kv, "choose");
+    std::vector<std::string> parts;
+    {
+        std::string cur;
+        for (char c : path) {
+            if (c == '>' || c == '/') { parts.push_back(cur); cur.clear(); }
+            else cur += c;
+        }
+        parts.push_back(cur);
+    }
+    TMenuItem* item = nullptr;
+    if (parts.size() > 1) item = findMenuItem(menu, parts, 0);
+    else {
+        int count = 0;
+        item = searchMenu(menu, parts[0], count, 0);
+        if (count > 1) return "err menu item '" + path + "' is ambiguous; give the path, e.g. File>Open";
+    }
+    if (!item || item->command == 0) return "err no menu item '" + path + "'";
+    if (item->disabled || !TView::commandEnabled(item->command)) return "err menu item disabled: " + path;
+    std::string err;
+    TView* t = resolveTarget(kv, err);
+    if (!err.empty()) return err;
+    if (t && personActingIn(t)) return sharingError(t);
+    Item it;
+    it.kind = Kind::Command;
+    it.ev = TEvent{};
+    it.ev.what = evCommand;
+    it.ev.message.command = item->command;
+    it.ev.message.infoPtr = nullptr;
+    it.target = t;
+    it.targetId = t ? nameOf(t) : "app";
+    it.what = "menu " + path + " (command " + std::to_string(item->command) + ")";
+    std::vector<Item> items{it};
+    return enqueueAll(items);
+}
+
 }  // namespace resident

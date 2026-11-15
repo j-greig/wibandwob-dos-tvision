@@ -44,6 +44,9 @@ std::string cmdKey(const KV& kv);      // resident_key
 std::string cmdMouse(const KV& kv);    // resident_mouse
 std::string cmdStatus(const KV& kv);   // resident_status
 std::string cmdManners(const KV& kv);  // resident_manners
+std::string cmdFront(const KV& kv);    // resident_front
+std::string cmdPress(const KV& kv);    // resident_press
+std::string cmdMenu(const KV& kv);     // resident_menu
 
 }  // namespace resident
 

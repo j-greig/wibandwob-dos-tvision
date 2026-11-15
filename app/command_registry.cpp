@@ -189,6 +189,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"resident_mouse", "Resident input: action=click|double|down|up|move|drag|scroll at desktop cells x,y (drag: x2,y2; scroll: dir, count; button, mods); id= delivers to that window without raising or focusing it", true},
         {"resident_status", "Resident input queue, delivery log since=seq, the person's state and the windows the resident owns", false},
         {"resident_manners", "Resident manners: share_ms (how long a window stays the person's after their last input), wait_on_button, clear=1 drops the queue", true},
+        {"resident_front", "What is in front: the modal dialog or open menu, its controls with labels and kinds, and how to accept or cancel; the focused window; other dialogs", false},
+        {"resident_press", "Press a dialog control by its label (label=, item= for a list or cluster entry, value= for an input line; id= or the dialog in front)", true},
+        {"resident_menu", "List the menu bar as names, or choose=File>Open a menu item by name (id= sends the command to that window first)", true},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
@@ -729,6 +732,9 @@ std::string exec_registry_command(
         if (name == "resident_mouse") return resident::cmdMouse(kv);
         if (name == "resident_status") return resident::cmdStatus(kv);
         if (name == "resident_manners") return resident::cmdManners(kv);
+        if (name == "resident_front") return resident::cmdFront(kv);
+        if (name == "resident_press") return resident::cmdPress(kv);
+        if (name == "resident_menu") return resident::cmdMenu(kv);
     }
     if (name == "inject_command") {
         auto id_it = kv.find("cmd_id");

@@ -7,7 +7,7 @@ Binary: WWDOS_BIN or build-resident/app/wwdos.
 Usage:
     python3 tests/resident/test_resident_input.py            # all slices
     python3 tests/resident/test_resident_input.py s1 duet    # chosen groups
-Groups: s1 (queue, burst, keys, pointer), s2 (focus, manners), duet.
+Groups: s1 (queue, burst, keys, pointer), s2 (focus, manners), duet, s3 (dialogs, menus).
 """
 
 import json
@@ -227,12 +227,108 @@ def test_duet(desk, rounds=6):
     R.check(desk.focused() == a, "the person's focus never moved")
 
 
+# ---------------------------------------------------------------------------- S3
+
+def test_s3(desk):
+    print("\n[S3] what is in front; dialogs and menus by name")
+    fresh(desk)
+    a = desk.editor(2, 1, 70, 14, "A")
+    b = desk.editor(80, 1, 70, 14, "B")
+
+    # Menu items chosen by name are queued; inject_command (putEvent, one slot) is not.
+    before = len(desk.windows())
+    lines = "\n".join(["cmd:exec_command name=inject_command cmd_id=100"] * 5)
+    import base64
+    desk.ipc("batch", lines="base64:" + base64.b64encode(lines.encode()).decode())
+    time.sleep(0.5)
+    injected = len(desk.windows()) - before
+    before = len(desk.windows())
+    focus_before = desk.focused()
+    lines = "\n".join(["cmd:resident_menu choose=File>New%20Test%20Pattern"] * 5)
+    desk.ipc("batch", lines="base64:" + base64.b64encode(lines.encode()).decode())
+    time.sleep(0.8)
+    chosen = len(desk.windows()) - before
+    print(f"    5 inject_command in one batch -> {injected} window(s); 5 resident_menu -> {chosen}")
+    R.check(injected < 5, f"inject_command (single putEvent slot) loses events in a batch: {injected}/5")
+    R.check(chosen == 5, f"resident_menu queues all five: {chosen}/5")
+    R.check(desk.focused() == focus_before, "windows the resident opened did not take the person's focus")
+    st = desk.j("resident_status")
+    R.check(len(st["owned"]) >= 5, f"the resident owns the windows it opened ({len(st['owned'])})")
+    fresh(desk)
+    a = desk.editor(2, 1, 70, 14, "A")
+    b = desk.editor(80, 1, 70, 14, "B")
+    desk.ipc("focus_window", id=a)
+
+    menus = desk.j("resident_menu")
+    names = [m["name"] for m in menus["menus"]]
+    R.check(names[:6] == ["File", "Edit", "View", "Window", "Tools", "Help"], f"menu bar listed by name: {names}")
+
+    # The resident opens a dialog: it is the resident's, and the person keeps typing.
+    j, _ = q(desk, "resident_menu", choose="Help>About WIBWOBWORLD")
+    time.sleep(0.3)
+    f = desk.j("resident_front")
+    R.check(f["modal"] and f["front"]["kind"] == "dialog", "resident_front reports a modal dialog")
+    R.check(f["front"]["owner"] == "resident", "the dialog is marked as the resident's")
+    btns = [c["label"] for c in f["front"]["controls"] if c["kind"] == "button"]
+    R.check(btns == ["OK"], f"its controls are listed by label: {btns}")
+    R.check(f["front"].get("accept", {}).get("press") == "OK", "accept is named: press OK")
+    texts = [c["text"] for c in f["front"]["controls"] if c["kind"] == "text"]
+    R.check(any("WIBWOBWORLD" in t for t in texts), "its text is reported")
+    desk.person_type("still typing")
+    time.sleep(0.4)
+    R.check(desk.text(a) == ["still typing"], f"the person's keys reach A while the resident's dialog is open: {desk.text(a)}")
+    j, log = q(desk, "resident_press", label="OK")
+    time.sleep(0.3)
+    f = desk.j("resident_front")
+    R.check(not f["modal"], "pressing OK by label closed the resident's dialog")
+    R.check(desk.focused() == a, "the person's focus is still A")
+
+    # The person opens a dialog: resident keys still reach another window.
+    time.sleep(1.6)
+    desk.person_keys("M-h")
+    time.sleep(0.3)
+    f = desk.j("resident_front")
+    R.check(f["menu_open"] and f["front"]["kind"] == "menu", "the person's open menu is reported as a menu")
+    items = [i["name"] for i in f["front"].get("items", [])]
+    R.check("About WIBWOBWORLD" in items, f"with its items: {items[:4]}")
+    desk.person_keys("a")
+    time.sleep(0.4)
+    f = desk.j("resident_front")
+    R.check(f["modal"] and f["front"]["owner"] == "person", "the person's About dialog is in front, owned by the person")
+    j, log = q(desk, "resident_key", id=b, text="behind the dialog")
+    R.check(desk.text(b) == ["behind the dialog"], "resident keys reach B while the person's dialog is modal")
+    r = desk.ipc("resident_press", label="OK")
+    R.check(r.startswith("err Sharing violation"), f"pressing the person's dialog while they act in it is refused: {r[:60]}")
+    time.sleep(1.7)
+    j, log = q(desk, "resident_press", label="OK")
+    time.sleep(0.3)
+    R.check(not desk.j("resident_front")["modal"], "after share_ms the resident can answer the person's dialog")
+
+    # An input dialog: set the field by its label, read it back, cancel.
+    time.sleep(0.2)
+    q(desk, "resident_menu", choose="File>Save Workspace As")
+    time.sleep(0.3)
+    f = desk.j("resident_front")
+    inputs = [c for c in f["front"].get("controls", []) if c["kind"] == "input"]
+    R.check(inputs and inputs[0]["label"] == "Name:", f"the input is reported with its label: {inputs[:1]}")
+    q(desk, "resident_press", label="Name", value="resident-test")
+    f = desk.j("resident_front")
+    inputs = [c for c in f["front"].get("controls", []) if c["kind"] == "input"]
+    R.check(inputs and inputs[0]["value"] == "resident-test", "the field was set by its label")
+    R.check(f["front"].get("cancel", {}).get("press") == "Cancel", "cancel is named: press Cancel")
+    q(desk, "resident_press", label="Cancel")
+    time.sleep(0.3)
+    R.check(not desk.j("resident_front")["modal"], "Cancel by label closed it")
+    r = desk.ipc("resident_menu", choose="File>No Such Thing")
+    R.check(r.startswith("err no menu item"), "an unknown menu item is refused by name")
+
+
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["s1", "s2", "duet"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["s1", "s2", "duet", "s3"]
     desk = Desk(os.environ.get("RESIDENT_TEST_NAME", "residenttest")).start()
     try:
         for g in groups:
-            {"s1": test_s1, "s2": test_s2, "duet": test_duet}[g](desk)
+            {"s1": test_s1, "s2": test_s2, "duet": test_duet, "s3": test_s3}[g](desk)
     except Exception as e:  # noqa: BLE001
         R.check(False, f"exception: {e!r}")
     finally:
