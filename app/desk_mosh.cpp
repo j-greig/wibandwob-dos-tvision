@@ -10,6 +10,7 @@
 #define Uses_TDrawBuffer
 #define Uses_TKeys
 #define Uses_TDialog
+#define Uses_THardwareInfo
 #include <tvision/tv.h>
 
 #include "ega_theme.h"
@@ -551,6 +552,107 @@ void wayRaw(const Grid& t, std::vector<Spec>& out) {
     }
 }
 
+// ---------------------------------------------------------------- the screen layer (optional)
+//
+// After the windows, a filter over the desktop rows of the screen itself, for what windows
+// cannot do: colour runs and decay across window edges, rows read at the wrong width
+// across the whole desktop. TWwdosApp::getEvent calls screenBefore() before the base
+// getEvent, which flushes the screen to the terminal, and screenAfter() when it returns;
+// tick() also calls screenAfter() first, so idle work, IPC and look_study see the true
+// screen. Only cells that still hold the value the filter wrote are put back, so a view
+// that drew in between keeps its drawing.
+
+bool g_screenOn = false;
+int g_screenDepth = 0;
+Grid g_prevShown;          // what the filter showed at the last step
+Grid g_stepShown;          // what it shows during this step
+uint64_t g_screenStep = ~0ull;
+std::vector<std::pair<size_t, TScreenCell>> g_saved;   // index, true cell
+std::vector<TScreenCell> g_wrote;                       // the cell written there
+
+int screenTop() { return TProgram::deskTop ? TProgram::deskTop->origin.y : 1; }
+int screenRows() { return TProgram::deskTop ? TProgram::deskTop->size.y : 0; }
+
+Grid screenGrid() {
+    Grid g;
+    int W = TScreen::screenWidth, top = screenTop(), H = screenRows();
+    if (!TScreen::screenBuffer || W <= 0 || H <= 0) return g;
+    g.w = W; g.h = H;
+    g.c.assign(TScreen::screenBuffer + (size_t)top * W, TScreen::screenBuffer + (size_t)(top + H) * W);
+    return g;
+}
+
+// The film's compose(), for one step's parameters, over the true screen S.
+Grid screenCompose(const Grid& S) {
+    Grid N = S;
+    int W = S.w, H = S.h, p = B.active;
+    if (g_prevShown.w != W || g_prevShown.h != H) g_prevShown = S;
+    const Grid& P = g_prevShown;
+    double kick = env(B.sinceKick, 0.9), sn = env(B.sinceSnare, 0.8), met = env(B.sinceMetal, 0.5), a = amt();
+    double tearAmp = p == Tear ? (4 + 30 * kick) * a : p == Raw ? 12 * kick * a : 0;
+    int bandH = p == Tear ? 2 + (B.tearSeed % 5) : 3;
+    int stride = W + (p == Wrap ? B.stride : 0);
+    double decay = p == Bleed ? (0.08 + 0.5 * met + 0.25 * sn) * a * 0.6 : 0;
+    double drop = p == Bleed ? (0.25 + 0.6 * sn) * a : p == Raw ? 0.3 * a : 0;
+    int z = p == Raw ? B.zoom : 1;
+    for (int y = 0; y < H; ++y) {
+        if (p == Raw && h3(y >> 1, (int)(g_step >> 3), 13) < 0.3 * a) {   // rows left as they were
+            for (int x = 0; x < W; ++x) N.c[(size_t)y * W + x] = P.at(x, y);
+            continue;
+        }
+        int ys = y;
+        if (p == Tear && sn > 0.3 && B.stutH > 1 && h3(y / (B.stutH * 3), B.stutSeed, 9) < 0.6) ys = y - (y % B.stutH);
+        int off = (p == Wrap ? B.phase : 0) + (tearAmp ? (int)std::lround((h3(ys / bandH, B.tearSeed, 7) - 0.5) * 2 * tearAmp) : 0);
+        int rot = (p == Bleed) && h3(y / 4, B.rot, 11) < 0.5 ? B.rot : 0;
+        bool have = false;
+        TColorAttr last{};
+        for (int x = 0; x < W; ++x) {
+            TScreenCell c;
+            if (z > 1) c = S.at(x / z + B.zx, (ys + B.scroll) / z + B.zy);
+            else if (p == Wrap) c = S.flat((long)ys * stride + x + off);
+            else c = S.at(x + off, ys + (p == Raw ? B.scroll : 0));
+            if (rot) setColours(c, fgIdx(c) + rot, bgIdx(c) + rot);
+            if (decay && h3(x >> 2, y >> 1, B.blockSeed + B.stutSeed) < decay) {
+                int b = bgIdx(c);
+                setGlyph(c, SHADE[std::min(4, lumOf(b) * 5 / 256)]);
+                setColours(c, b, b + 1);
+            }
+            if (have && drop && h3(x, y, (int)(g_step >> 1)) < drop) c.attribute = last;
+            last = c.attribute; have = true;
+            N.c[(size_t)y * W + x] = c;
+        }
+    }
+    if (p == Mosh) {
+        double refresh = 0.04 + 0.5 * kick;
+        for (int by = 0; by * 4 < H; ++by)
+            for (int bx = 0; bx * 8 < W; ++bx) {
+                if (h3(bx, by, (int)(g_step >> 1) + 999) < refresh) continue;
+                int vx = (int)(h3(bx, by, B.vecSeed) * 5) - 2, vy = (int)(h3(by, bx, B.vecSeed + 3) * 3) - 1;
+                for (int y = by * 4; y < std::min(H, by * 4 + 4); ++y)
+                    for (int x = bx * 8; x < std::min(W, bx * 8 + 8); ++x) N.c[(size_t)y * W + x] = P.at(x - vx, y - vy);
+            }
+    }
+    for (int y = 0; y < H; ++y) fixWide(&N.c[(size_t)y * W], W);
+    return N;
+}
+
+void screenAfterImpl() {
+    if (g_saved.empty() || !TScreen::screenBuffer) { g_saved.clear(); g_wrote.clear(); return; }
+    size_t n = (size_t)TScreen::screenWidth * TScreen::screenHeight;
+    for (size_t k = 0; k < g_saved.size(); ++k) {
+        size_t i = g_saved[k].first;
+        if (i < n && TScreen::screenBuffer[i] == g_wrote[k]) TScreen::screenBuffer[i] = g_saved[k].second;
+    }
+    g_saved.clear();
+    g_wrote.clear();
+}
+
+void screenRefreshAll() {
+    if (!TScreen::screenBuffer) return;
+    int W = TScreen::screenWidth;
+    for (int y = 0; y < TScreen::screenHeight; ++y) THardwareInfo::screenWrite(0, y, TScreen::screenBuffer + (size_t)y * W, W);
+}
+
 // ---------------------------------------------------------------- the beat
 
 void advance(const Hit& hit) {
@@ -681,6 +783,14 @@ Grid crop(const Grid& t, const TRect& r) {
 
 void runStep(const Hit& hit) {
     auto t0 = Clock::now();
+    if (g_screenOn && g_stepShown.w) g_prevShown = g_stepShown;   // the screen layer's flow moves on per step
+    if (!g_on) {
+        int pos = hit.step >= 0 ? hit.step : (B.pos + 1) % 16;
+        B.active = wayFor(B.bar + (pos <= B.pos ? 1 : 0));
+        advance(hit);
+        g_step++;
+        return;
+    }
     int pos = hit.step >= 0 ? hit.step : (B.pos + 1) % 16;
     int w = wayFor(B.bar + (pos <= B.pos ? 1 : 0));
     if (w != B.active) {
@@ -774,8 +884,20 @@ void turnOn() {
                      ", seed " + std::to_string(g_set.seed) + (g_set.scope.empty() ? "" : ", scope " + g_set.scope) + ")", "", "");
 }
 
+void screenStop() {
+    if (!g_screenOn) return;
+    g_screenOn = false;
+    screenAfterImpl();
+    screenRefreshAll();
+}
+
 void turnOff(const char* how) {
-    if (!g_on) return;
+    bool screen = g_screenOn;
+    screenStop();
+    if (!g_on) {
+        if (screen) resident::addAct(resident::currentWho(), std::string("mosh screen ") + how, "", "");
+        return;
+    }
     g_on = false;
     clearShards(true);
     restoreReal();
@@ -791,7 +913,7 @@ std::string statusJson() {
       << ",\"showing\":" << q(g_on ? kWayNames[B.active] : "") << ",\"amount\":" << g_set.amount
       << ",\"tempo\":" << g_set.tempo << ",\"seed\":" << g_set.seed << ",\"count\":" << g_set.count
       << ",\"scope\":" << q(g_set.scope.empty() ? "desktop" : g_set.scope) << ",\"shards\":" << g_pool.size()
-      << ",\"held\":" << g_held.size() << ",\"step\":" << g_step << ",\"bar\":" << B.bar
+      << ",\"held\":" << g_held.size() << ",\"screen\":" << (g_screenOn ? "true" : "false") << ",\"step\":" << g_step << ",\"bar\":" << B.bar
       << ",\"clock\":" << q(Clock::now() - g_last808 < std::chrono::seconds(1) ? "tr808" : g_set.tempo > 0 ? "internal" : "manual")
       << ",\"opened\":" << g_opened << ",\"closed\":" << g_closed << ",\"by\":" << q(g_by)
       << ",\"step_ms\":" << (int)(g_stepMs * 10) / 10.0 << ",\"step_ms_avg\":" << (int)(g_stepMsAvg * 10) / 10.0
@@ -820,27 +942,55 @@ bool parseHits(const std::string& s, Hit& h) {
 // ---------------------------------------------------------------- public
 
 bool isShard(const TView* v) { return dynamic_cast<const TMoshShard*>(v) != nullptr; }
-bool on() { return g_on; }
+bool on() { return g_on || g_screenOn; }
 uint64_t stepCount() { return g_step; }
 uint64_t openedTotal() { return g_opened; }
 uint64_t closedTotal() { return g_closed; }
 
 std::string summaryJson() {
     std::ostringstream o;
-    o << "{\"on\":" << (g_on ? "true" : "false") << ",\"way\":" << q(g_on ? kWayNames[B.active] : "")
-      << ",\"shards\":" << (g_pool.size() + g_held.size()) << ",\"step\":" << g_step << ",\"opened\":" << g_opened
+    o << "{\"on\":" << (g_on || g_screenOn ? "true" : "false") << ",\"way\":" << q(g_on || g_screenOn ? kWayNames[B.active] : "")
+      << ",\"screen\":" << (g_screenOn ? "true" : "false") << ",\"shards\":" << (g_pool.size() + g_held.size()) << ",\"step\":" << g_step << ",\"opened\":" << g_opened
       << ",\"closed\":" << g_closed << "}";
     return o.str();
 }
 
+void screenBefore() {
+    if (g_screenDepth++ != 0 || !g_screenOn || TheTopView || !TScreen::screenBuffer) return;
+    Grid S = screenGrid();
+    if (S.c.empty()) return;
+    Grid N = screenCompose(S);
+    int W = S.w, top = screenTop();
+    for (int y = 0; y < S.h; ++y) {
+        bool row = false;
+        for (int x = 0; x < W; ++x) {
+            size_t k = (size_t)y * W + x;
+            if (N.c[k] == S.c[k]) continue;
+            size_t i = (size_t)(top + y) * W + x;
+            g_saved.emplace_back(i, S.c[k]);
+            g_wrote.push_back(N.c[k]);
+            TScreen::screenBuffer[i] = N.c[k];
+            row = true;
+        }
+        if (row) THardwareInfo::screenWrite(0, top + y, TScreen::screenBuffer + (size_t)(top + y) * W, W);
+    }
+    g_stepShown = std::move(N);
+}
+
+void screenAfter() {
+    if (g_screenDepth > 0) --g_screenDepth;
+    if (g_screenDepth == 0) screenAfterImpl();
+}
+
 void tick() {
+    screenAfterImpl();   // idle work, IPC and look_study see the true screen
     auto now = Clock::now();
     if (g_on && g_lastTick.time_since_epoch().count()) {
         double gap = std::chrono::duration<double, std::milli>(now - g_lastTick).count();
         g_loopMsAvg = g_loopMsAvg == 0 ? gap : g_loopMsAvg * 0.95 + gap * 0.05;
     }
     g_lastTick = now;
-    if (!g_on) return;
+    if (!g_on && !g_screenOn) return;
     if (TheTopView) return;   // a menu or dialog is open: the mosh waits
     bool from808 = now - g_last808 < std::chrono::seconds(1);
     if (!from808 && g_set.tempo > 0 && now >= g_nextAt) {
@@ -859,7 +1009,7 @@ void tick() {
 }
 
 void noteEvent(const TEvent& ev) {
-    if (!g_on || ev.what != evKeyDown || ev.keyDown.keyCode != kbEsc) return;
+    if (!(g_on || g_screenOn) || ev.what != evKeyDown || ev.keyDown.keyCode != kbEsc) return;
     auto now = Clock::now();
     if (now - g_lastEsc < std::chrono::milliseconds(800)) {
         resident::WhoScope ws(resident::eventWho());
@@ -871,7 +1021,7 @@ void noteEvent(const TEvent& ev) {
 }
 
 void noteTr808(const char* type, const std::string& body) {
-    if (!g_on || std::strcmp(type, "tr808_step") != 0) return;
+    if (!(g_on || g_screenOn) || std::strcmp(type, "tr808_step") != 0) return;
     g_last808 = Clock::now();
     Hit h;
     size_t p = body.find("\"step\":");
@@ -908,8 +1058,25 @@ std::string command(const std::string& nameIn, const KV& kvIn) {
         else if (verb == "seed") kv["n"] = val;
         else if (verb == "scope") { kv["scope"] = val; std::string id; ss >> id; if (!id.empty()) kv["id"] = id; }
         else if (verb == "step") kv["hits"] = val;
+        else if (verb == "screen") kv["value"] = val.empty() ? "on" : val;
     }
     if (name == "mosh_status") return statusJson();
+    if (name == "mosh_screen") {
+        std::string v = str(kv, "value", str(kv, "on", "on"));
+        bool want = v == "on" || v == "1" || v == "true";
+        if (want && !g_screenOn) {
+            if (!g_on) { B = Beat{}; B.active = wayFor(0); g_step = 0; g_nextAt = Clock::now(); }
+            g_prevShown = Grid{}; g_stepShown = Grid{};
+            g_screenOn = true;
+            resident::addAct(resident::currentWho(), "mosh screen on", "", "");
+        } else if (!want && g_screenOn) {
+            g_screenOn = false;
+            screenAfterImpl();
+            screenRefreshAll();
+            resident::addAct(resident::currentWho(), "mosh screen off", "", "");
+        }
+        return statusJson();
+    }
     if (name == "mosh_on") {
         if (kv.count("way")) { std::string w = kv["way"]; for (int i = 0; i < 6; ++i) if (w == kWayNames[i]) g_set.way = (Way)i; }
         turnOn();
@@ -962,7 +1129,7 @@ std::string command(const std::string& nameIn, const KV& kvIn) {
         return statusJson();
     }
     if (name == "mosh_step") {
-        if (!g_on) return "err mosh is off";
+        if (!g_on && !g_screenOn) return "err mosh is off";
         Hit h;
         if (!parseHits(str(kv, "hits"), h)) return "err hits: kick,snare,tick,rat,metal,accent";
         int n = std::max(1, std::min(256, std::atoi(str(kv, "n", "1").c_str())));

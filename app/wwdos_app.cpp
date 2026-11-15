@@ -2980,7 +2980,9 @@ void TWwdosApp::getEvent(TEvent& event)
     resident::settle();   // window changes since the last event belong to its author
     if (resident::takeEvent(event)) return;
     bool fromPut = pending.what != evNothing;
+    deskmosh::screenBefore();   // the optional screen layer shows only while the screen flushes
     TApplication::getEvent(event);
+    deskmosh::screenAfter();
     resident::noteOrigin(event, fromPut);
     resident::afterBase(event);
     deskmosh::noteEvent(event);   // Esc twice stops a desk mosh

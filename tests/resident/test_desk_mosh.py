@@ -310,7 +310,36 @@ def group_bench():
         d.stop()
 
 
-GROUPS = {"ways": group_ways, "input": group_input, "restore": group_restore, "seed": group_seed,
+def group_screen():
+    print("screen")
+    d, ed, pr = new_desk("moshscreen")
+    try:
+        before = cap(d)
+        study0 = [r["text"] for r in d.j("look_study", x=0, y=0, w=160, h=20)["rows"]]
+        for way in ("wrap", "tear", "mosh", "bleed", "raw"):
+            m(d, "mosh_way", way=way)
+            m(d, "mosh_screen", value="on")
+            steps(d, BEAT[:6])
+            shown = cap(d)
+            R.check(diff_cells(before, shown) > 300, f"screen layer {way}: the shown screen changes ({diff_cells(before, shown)} cells)")
+            st = d.j("look_study", x=0, y=0, w=160, h=20)
+            R.check([r["text"] for r in st["rows"]] == study0 and st.get("mosh", {}).get("on"),
+                    f"screen layer {way}: look_study reads the true frame and says a mosh is showing")
+            m(d, "mosh_screen", value="off"); time.sleep(0.4)
+            R.check(cap(d) == before, f"screen layer {way} off: byte-identical")
+        m(d, "mosh_way", way="all"); m(d, "mosh_on"); m(d, "mosh_screen", value="on")
+        steps(d, BEAT)
+        d.person_type("xy"); time.sleep(0.3)
+        R.check(d.text(ed)[0].startswith("xy"), "both layers on: typing lands in the editor")
+        m(d, "mosh_panic"); time.sleep(0.4)
+        R.check(not m(d, "mosh_status")["screen"], "panic stops the screen layer too")
+        after = cap(d)
+        R.check(diff_cells(before, after) <= 2, "both layers off: the screen is back (apart from the typed text)")
+    finally:
+        d.stop()
+
+
+GROUPS = {"screen": group_screen, "ways": group_ways, "input": group_input, "restore": group_restore, "seed": group_seed,
           "log": group_log, "scope": group_scope, "bench": group_bench}
 
 if __name__ == "__main__":

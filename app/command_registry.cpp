@@ -208,6 +208,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"mosh_count", "Desk mosh: most shard windows at once (value=, default 240)", false},
         {"mosh_scope", "Desk mosh scope: desktop, or window with id= (one window moshes, the rest stay clean)", false},
         {"mosh_step", "Desk mosh: run steps now (hits=kick,snare,tick,rat,metal,accent; n=)", false},
+        {"mosh_screen", "Desk mosh screen layer on|off (value=): a filter over the desktop rows for colour runs and decay across window edges; the windows layer is mosh_on", false},
         {"mosh_status", "Desk mosh settings, shard count and step timings", false},
         {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
