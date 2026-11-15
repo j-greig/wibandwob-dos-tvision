@@ -425,6 +425,33 @@ def test_listen(_desk):
         desk.stop()
 
 
+def test_listen_synth(_desk):
+    print("listen to the synth")
+    name = NAME + "_lsynth"
+    desk = Desk(name, env={"PATH": "/usr/bin:/bin", "ANTHROPIC_API_KEY": "", "WWDOS_LISTEN": "1", "WWDOS_SYNTH_AUDIO": "0",
+                           "WWDOS_LISTEN_RATE": "present"}).start()
+    try:
+        wid = desk.j("open_synth", x=4, y=2, w=60, h=18, actor="setup")["id"]
+        desk.ipc("focus_window", id=wid)
+        time.sleep(0.4)
+        for k in "zxcv":
+            desk.person_text(k)
+            time.sleep(0.15)
+        started = wait_for(lambda: [a for a in desk.j("acts", by="wib")["acts"] if a["what"].startswith("jam started")], 6)
+        R.check(bool(started), "the person plays the synth: the listener starts wib's jam")
+        ans = wait_for(lambda: (lambda s: s if s.get("answers") else None)(desk.j("jam", action="state")), 15, 0.5)
+        R.check(bool(ans) and ans["answers"][0]["answer"], f"wib answers the phrase in notes: {ans['answers'][:1] if ans else ''}")
+        notes = [a["what"] for a in desk.j("acts", by="app")["acts"]]
+        R.check(any("answers the person's synth phrases (noticed: playing)" in n for n in notes), "and the Feed says why")
+        desk.ipc("resident_listen", on="0", actor="bot9", source="visitor")
+        time.sleep(0.5)
+        st = desk.j("jam", action="state")
+        R.check(not st.get("on", st.get("running", False)), f"turning listening off stops the jam: {str(st)[:80]}")
+    finally:
+        R.check(desk.alive(), "the synth desktop is still running")
+        desk.stop()
+
+
 def test_listen_model(_desk):
     print("listen with a model")
     name = NAME + "_lmodel"
@@ -557,11 +584,11 @@ def test_rehearse(desk):
 
 
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "jam", "undo", "rehearse", "listen", "listenmodel"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "jam", "undo", "rehearse", "listen", "listensynth", "listenmodel"]
     desk = Desk(NAME, env=NO_LLM).start()
     try:
         for g in groups:
-            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "jam": test_jam, "listen": test_listen, "listenmodel": test_listen_model, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
+            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "jam": test_jam, "listen": test_listen, "listensynth": test_listen_synth, "listenmodel": test_listen_model, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
