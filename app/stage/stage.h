@@ -12,6 +12,10 @@
 //                                                      ghost = no frame, no shadow (a sprite); COLOUR is a
 //                                                      colour family (see colour); with no file and W H given
 //                                                      the window opens empty; open on an existing NAME moves and retitles it
+//   open NAME X Y W H ghost clear ...                  a clear sprite: its blank cells show what is under it and its
+//                                                      characters take the background of the cell they cover; it keeps
+//                                                      its size (W H = 0 0 is the drawing's own size, no 16 x 6 floor)
+//                                                      and tile and cascade leave it alone
 //   open NAME X Y W H mirror [flip] [block] [of NAME2] |title   a window showing the live desktop (or window NAME2)
 //                                                      scaled to its interior; flip reverses left to right; block
 //                                                      keeps the commonest character per cell that is not fill
@@ -41,7 +45,9 @@
 //   tile | cascade | bars on|off
 //   sound NAME                        play the page's audio clip NAME (scene manifest "sounds"); the engine also
 //                                     sends ~open ~close ~say ~shake ~tile ~flash for the page's synthesised effects
-//   colour NAME blue|cyan|grey|black|magenta|red|green|brown [INK 0-15]   a window's colour family and text ink
+//   colour NAME blue|cyan|grey|black|magenta|red|green|brown [INK 0-15|contrast]   a window's colour family and text ink;
+//                                     contrast (a ghost window): each character black on a light background and white
+//                                     on a dark one, cell by cell; it makes the window clear. A number sets a fixed ink again
 //   theme ega|monochrome              the whole desktop's palette
 //   mark NAME X Y /boot/file.txt [ink N] [in S]   line art in one ink (EGA 0-15, default 0 black) on the desktop itself, under every window; X may be
 //                                     "left" or "right" and Y "top" or "bottom" (the real desktop edge; a colour picture
@@ -229,6 +235,7 @@ public:
     double shownTime() const { return double(shown) / clockHz; }
     double animTime() const;              // the clock for drawings (ww_anim_clock)
     void settle();                        // redraw every stage window at the clock's frame, then the mirrors
+    void spriteSettle();                  // draw every clear sprite again, back to front, over what is under it now
     void paused(bool on);                 // the host paused or resumed: drawings hold at the shown tick
     void resized() { relayout(); }        // lay the stage out again if the desktop changed size
     double length() const;
@@ -305,8 +312,9 @@ private:
     void run(const std::string& line);
     TFrameAnimationWindow* win(const std::string& name);
     TRect place(int x, int y, int w, int h) const;
-    TRect fit(const std::string& path, bool ghost) const;
-    void openWin(const std::string& name, TRect r, bool ghost, const std::string& path, const std::string& title);
+    TRect fit(const std::string& path, bool ghost, bool clear = false) const;
+    void openWin(const std::string& name, TRect r, bool ghost, const std::string& path, const std::string& title,
+                 bool clear = false, bool contrast = false);
     void closeWin(const std::string& name);
     void setTitle(TFrameAnimationWindow* w, const std::string& title);
     void swapWin(const std::string& name, const std::string& path);

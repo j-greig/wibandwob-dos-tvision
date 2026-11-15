@@ -51,6 +51,7 @@
 #include "mirror_view.h"
 
 static std::string g_hint;   // status line text set by the stage (hint |text)
+static bool g_timerSeen = false;   // a timer fired since the last idle (TMinApp::idle draws the clear sprites again)
 static double g_bgDrawMs = 0;   // time spent drawing the desktop and its marks (wwdos_bg_draw_ms, for tools/paint_bench.py)
 static int g_bgDraws = 0;
 static double g_tickMs = 0;     // time spent in stage timer events: commands, file loads, glides (wwdos_tick_ms)
@@ -699,6 +700,9 @@ public:
     void idle() override
     {
         TApplication::idle();
+        // A timer may have drawn a view under a clear sprite (a drawing's own frame); draw the sprites again before
+        // the screen is flushed.
+        if (g_timerSeen) { g_timerSeen = false; stage.spriteSettle(); }
         serveTools();
         if (g_liveRedrawStatus) { g_liveRedrawStatus = false; if (statusLine) statusLine->drawView(); }
         if (g_liveQueue.empty()) return;
@@ -1069,6 +1073,7 @@ void TMinApp::handleEvent(TEvent& event)
         return;
     }
 #endif
+    if (event.what == evBroadcast && event.message.command == cmTimerExpired) g_timerSeen = true;
     if (event.what == evBroadcast && event.message.command == cmTimerExpired && stageTimer && event.message.infoPtr == stageTimer) {
         StageTickTimer tt;
         serveTools();                            // a paused page's seek or step, if the timer got here before idle did

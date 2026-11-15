@@ -9,6 +9,7 @@
 #define Uses_TStringView
 #define Uses_TFrame
 #define Uses_TDrawBuffer
+#define Uses_TScreen
 #include <tvision/tv.h>
 
 #include "stage.h"
@@ -104,6 +105,26 @@ struct StageWindow : TFrameAnimationWindow
             }
         }
     }
+    // A clear sprite ("open NAME ... ghost clear", "ink contrast"): see draw() below.
+    bool clear = false, contrast = false;
+    void setClear(bool on, bool ink)
+    {
+        if (on != clear) {
+            // The window holds its group lock while clear, so its views write into the window's buffer and never
+            // straight to the screen; draw() puts the buffer on the screen with the blank cells left out.
+            if (on) ++lockFlag; else if (lockFlag) --lockFlag;
+            clear = on;
+            if (on) options &= ~ofTileable; else options |= ofTileable;
+        }
+        contrast = on && ink;
+        drawView();
+    }
+    void changeBounds(const TRect& b) override
+    {
+        TFrameAnimationWindow::changeBounds(b);
+        if (clear) drawView();   // the group lock stops TGroup::changeBounds from drawing the window
+    }
+    void draw() override;
     PictureView* picture()
     {
         TView* found = nullptr;
@@ -117,10 +138,105 @@ struct StageWindow : TFrameAnimationWindow
     void sizeLimits(TPoint& min, TPoint& max) override
     {
         TFrameAnimationWindow::sizeLimits(min, max);
-        if (stageLowFloors) min = isFrameless() ? TPoint {1, 1} : TPoint {2, 2};
+        if (clear || (stageLowFloors && isFrameless())) min = TPoint {1, 1};   // a clear sprite keeps its size always
+        else if (stageLowFloors) min = TPoint {2, 2};
         else if (!isFrameless()) min.y = 3;
     }
 };
+}
+
+// A clear sprite shows what lies under it wherever its own cell is blank. Its views write into the window's buffer
+// (the window holds its group lock); draw() then
+//   1. hides the window for a moment and draws the views behind it over its rectangle, so the desktop (or the
+//      screen) holds what lies under it, with the views in front still cutting as usual;
+//   2. writes, cell by cell, its own cell where that is not a space, else the cell under it. A covering character
+//      takes the background of the cell under it; its ink is its own, or with "ink contrast" black on a light
+//      background and white on a dark one (lightBack below).
+// Turbo Vision cuts a view behind the window by the window's whole rectangle, so after anything under a sprite is
+// drawn again the sprite must be drawn again too: Stage::spriteSettle does that at the end of every tick, seek and
+// live command, and the film app after each idle (a drawing's own timer).
+namespace {
+// Light or dark background, by relative luminance (sRGB, WCAG): light when L > 0.179, the point where black and
+// white ink have equal contrast. The 16 BIOS colours use the VGA values; light are green, cyan, light grey and
+// 10 to 15 (light green, light cyan, light red, light magenta, yellow, white); dark are black, blue, red, magenta,
+// brown, dark grey and light blue. The terminal's default background counts as dark.
+bool lightBack(TColorDesired c)
+{
+    static const uint8_t vga[16][3] = {
+        {0, 0, 0}, {0, 0, 170}, {0, 170, 0}, {0, 170, 170}, {170, 0, 0}, {170, 0, 170}, {170, 85, 0}, {170, 170, 170},
+        {85, 85, 85}, {85, 85, 255}, {85, 255, 85}, {85, 255, 255}, {255, 85, 85}, {255, 85, 255}, {255, 255, 85}, {255, 255, 255}};
+    static const uint8_t xtermToBios[16] = {0, 4, 2, 6, 1, 5, 3, 7, 8, 12, 10, 14, 9, 13, 11, 15};
+    int r, g, b;
+    if (c.isRGB()) { TColorRGB k = c.asRGB(); r = k.r; g = k.g; b = k.b; }
+    else if (c.isBIOS()) { const uint8_t* k = vga[uint8_t(c.asBIOS()) & 15]; r = k[0]; g = k[1]; b = k[2]; }
+    else if (c.isXTerm()) {
+        int i = uint8_t(c.asXTerm());
+        if (i < 16) { const uint8_t* k = vga[xtermToBios[i]]; r = k[0]; g = k[1]; b = k[2]; }
+        else if (i < 232) { static const int lv[6] = {0, 95, 135, 175, 215, 255}; i -= 16; r = lv[i / 36]; g = lv[i / 6 % 6]; b = lv[i % 6]; }
+        else r = g = b = 8 + 10 * (i - 232);
+    } else return false;
+    auto lin = [](int v) { double s = v / 255.0; return s <= 0.04045 ? s / 12.92 : std::pow((s + 0.055) / 1.055, 2.4); };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) > 0.179;
+}
+
+bool blankCell(const TScreenCell& c)
+{
+    if (c._ch.isWideCharTrail()) return false;
+    TStringView t = c._ch.getText();
+    return t.size() == 0 || (t.size() == 1 && (t[0] == ' ' || t[0] == 0));
+}
+
+void StageWindow::draw()
+{
+    if (!clear) { TFrameAnimationWindow::draw(); return; }
+    if (!buffer) { getBuffer(); if (buffer) redraw(); }   // the views draw into the new buffer (the lock is held)
+    TGroup* desk = owner;
+    if (!buffer || !desk || !(state & sfVisible)) return;
+    TRect mine = getBounds(), clipWas = desk->clip, c = mine;
+    c.intersect(clipWas);
+    if (c.isEmpty()) return;
+    // 1. what lies under the window
+    state &= ~sfVisible;
+    desk->clip = c;
+    if (TView* nv = nextView()) desk->drawSubViews(nv, nullptr);
+    desk->clip = clipWas;
+    state |= sfVisible;
+    // 2. the window's own ink over it
+    TScreenCell blank;
+    blank._ch.moveChar(' ');
+    auto under = [&](int x, int y) -> TScreenCell {
+        if (x < 0 || y < 0 || x >= desk->size.x || y >= desk->size.y) return blank;
+        if (desk->buffer) return desk->buffer[y * desk->size.x + x];
+        TPoint g = desk->makeGlobal(TPoint {x, y});
+        if (!TScreen::screenBuffer || g.x < 0 || g.y < 0 || g.x >= TScreen::screenWidth || g.y >= TScreen::screenHeight) return blank;
+        return TScreen::screenBuffer[g.y * TScreen::screenWidth + g.x];
+    };
+    int W = size.x, H = size.y;
+    std::vector<TScreenCell> row(W > 0 ? W : 1);
+    std::vector<char> own(W > 0 ? W : 1);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            const TScreenCell& o = buffer[y * W + x];
+            TScreenCell u = under(mine.a.x + x, mine.a.y + y);
+            bool ink = o._ch.isWideCharTrail() ? (x > 0 && own[x - 1] && row[x - 1]._ch.isWide()) : !blankCell(o);
+            own[x] = ink;
+            if (!ink) { row[x] = u; continue; }
+            TColorAttr a = ::getAttr(o);
+            TColorDesired back = ::getBack(::getAttr(u));
+            ::setBack(a, back);
+            if (contrast) ::setFore(a, lightBack(back) ? TColorDesired(TColorBIOS(0)) : TColorDesired(TColorBIOS(15)));
+            row[x] = o;
+            ::setAttr(row[x], a);
+        }
+        // a wide character cut in two by the sprite's edge becomes a space
+        for (int x = 0; x < W; ++x) {
+            bool cut = row[x]._ch.isWideCharTrail() ? (x > 0 && own[x - 1] != own[x])
+                     : (row[x]._ch.isWide() && x + 1 < W && own[x + 1] != own[x]);
+            if (cut) { TColorAttr a = ::getAttr(row[x]); row[x] = blank; ::setAttr(row[x], a); }
+        }
+        writeBuf(0, y, W, 1, row.data());
+    }
+}
 }
 
 static std::string trim(const std::string& s)
@@ -174,7 +290,9 @@ void Stage::settle()
 {
     host.stageFlush();      // the desktop's layers first: the mirrors copy what is on the screen
     for (auto& kv : wins) if (auto* w = win(kv.first)) ww::redrawDeep(w);
+    spriteSettle();
     host.stageSettle(true);
+    spriteSettle();
 }
 
 bool Stage::load(const char* path)
@@ -236,6 +354,7 @@ void Stage::relayout()
     replay(now, next);
     advance();
     host.stageFlush();
+    spriteSettle();
 }
 
 void Stage::replay(int target, size_t upto)
@@ -558,7 +677,7 @@ void Stage::picWindows()
         if (k != c.shown) { v->setFrame(k); c.shown = k; }
         ++it;
     }
-    if (!quiet) { host.stageFlush(); host.stageSettle(false); }   // the desktop's layers, then the mirrors that copy the screen (one pass a tick)
+    if (!quiet) { host.stageFlush(); spriteSettle(); host.stageSettle(false); spriteSettle(); }   // the desktop's layers, then the mirrors that copy the screen (one pass a tick)
 }
 
 // A size the script gives in cells shrinks with the layout on a small desktop; fitted sizes do not.
@@ -574,7 +693,7 @@ TRect Stage::place(int x, int y, int w, int h) const
 }
 
 // The file's first frame, plus the frame rows and columns unless ghost.
-TRect Stage::fit(const std::string& path, bool ghost) const
+TRect Stage::fit(const std::string& path, bool ghost, bool clear) const
 {
     if (auto p = pic::get(path)) { int pad = ghost ? 0 : 2; return TRect(0, 0, std::max(3, p->w + pad), std::max(2, p->h + pad)); }
     int maxW = 0, h = 0;
@@ -588,7 +707,9 @@ TRect Stage::fit(const std::string& path, bool ghost) const
         maxW = std::max(maxW, (int) TText::width(TStringView(line.c_str(), line.size())));
         h++;
     }
-    int pad = ghost ? (frames ? 0 : 1) : 2;   // a one-frame file shows in a text view that keeps a scroll-bar column
+    // A one-frame ghost gets a column and a row more than its drawing (a text view once kept a scroll-bar column);
+    // films are laid out with it. A clear sprite is the drawing's own size.
+    int pad = ghost ? (frames || clear ? 0 : 1) : 2;
     return TRect(0, 0, std::max(3, maxW + pad), std::max(2, h + pad));
 }
 
@@ -607,17 +728,20 @@ void Stage::setTitle(TFrameAnimationWindow* w, const std::string& title)
     if (w->frame) w->frame->drawView();
 }
 
-void Stage::openWin(const std::string& name, TRect r, bool ghost, const std::string& path, const std::string& title)
+void Stage::openWin(const std::string& name, TRect r, bool ghost, const std::string& path, const std::string& title,
+                    bool clear, bool contrast)
 {
     if (TFrameAnimationWindow* w = win(name)) {
         if (w->getFilePath() != path) swapWin(name, path);
         w = win(name);
+        if (clear) if (auto* sw = dynamic_cast<StageWindow*>(w)) sw->setClear(true, contrast);
         put(name, w, r);
         setTitle(w, title);
         w->select();
         return;
     }
     auto* w = new StageWindow(r, title.c_str(), path, ghost, ghost);
+    if (clear) w->setClear(true, contrast);   // before insert: it is drawn clear from its first draw
     host.stageDesk()->insert(w);
     wins[name] = w;
     if (!ghost) sfx("~open");
@@ -643,6 +767,7 @@ void Stage::swapWin(const std::string& name, const std::string& path)
     if (!old) return;
     std::string title = old->title ? old->title : "";
     auto* w = new StageWindow(old->getBounds(), title.c_str(), path, old->isFrameless(), old->isFrameless());
+    if (auto* os = dynamic_cast<StageWindow*>(old)) if (os->clear) w->setClear(true, os->contrast);
     ww::WinColour colour = ww::windowColour(old);        // the colour belongs to the name, not the window object
     if (colour.bg >= 0 || colour.ink >= 0) ww::setWindowColour(w, colour);
     ww::forgetWindow(old);
@@ -727,11 +852,13 @@ void Stage::run(const std::string& line)
 
     if (cmd == "open") {
         std::string name, tok, path, of, xs, ys; int w = 0, hh = 0, fam = -1; bool ghost = false, mirror = false, flip = false, block = false;
+        bool clear = false, contrast = false;
         PicClock pc;
         h >> name >> xs >> ys >> w >> hh;
         int x = atoi(xs.c_str()), y = atoi(ys.c_str());
         while (h >> tok) {
             if (tok == "ghost") ghost = true; else if (tok[0] == '/') path = tok;
+            else if (tok == "clear") clear = true;
             else if (tok == "frame") h >> pc.frame0; else if (tok == "fps") h >> pc.fps;
             else if (tok == "loop") pc.loopMode = 1; else if (tok == "once") pc.loopMode = 2;
             else if (tok == "mirror") mirror = true; else if (tok == "flip") flip = true;
@@ -744,9 +871,10 @@ void Stage::run(const std::string& line)
             if (FILE* f = fopen(path.c_str(), "w")) { fputs(" \n----\n \n", f); fclose(f); }
         }
         TRect r = (w > 0 && hh > 0) ? placeSized(x, y, w, hh) : place(x, y, w, hh);
-        if (w <= 0 || hh <= 0) { TRect f = fit(path, ghost); r.b.x = r.a.x + f.b.x; r.b.y = r.a.y + f.b.y; }
+        clear = clear && ghost;   // a framed window has no blank cells to show through
+        if (w <= 0 || hh <= 0) { TRect f = fit(path, ghost, clear); r.b.x = r.a.x + f.b.x; r.b.y = r.a.y + f.b.y; }
         anchor(r, xs, ys);
-        openWin(name, r, ghost, path, title);
+        openWin(name, r, ghost, path, title, clear, contrast);
         if (fam >= 0) if (auto* cw = win(name)) { ww::WinColour c; c.bg = fam; ww::setWindowColour(cw, c); ww::redrawDeep(cw); }
         if (mirror) if (auto* mw = win(name)) stageMirror(mw, host.stageDesk(), of.empty() ? nullptr : win(of), flip, block);
         if (win(name) && pic::get(path)) { pc.start = now; winPics[name] = pc; picWindows(); } else winPics.erase(name);
@@ -761,7 +889,8 @@ void Stage::run(const std::string& line)
         TRect from = wn->getBounds();
         TRect to;
         if (cmd == "rect" && (w <= 0 || hh <= 0)) {   // rect NAME X Y 0 0: back to the file's own size
-            TRect f = fit(wn->getFilePath(), wn->isFrameless());
+            auto* sw = dynamic_cast<StageWindow*>(wn);
+            TRect f = fit(wn->getFilePath(), wn->isFrameless(), sw && sw->clear);
             to = place(x, y, f.b.x, f.b.y);
         } else if (w > 0 && hh > 0)
             to = placeSized(x, y, w, hh);
@@ -810,10 +939,19 @@ void Stage::run(const std::string& line)
     } else if (cmd == "theme") {
         std::string name; h >> name; host.stageTheme(name);
     } else if (cmd == "colour") {
-        std::string name, fam; int ink = -1; h >> name >> fam >> ink;
+        std::string name, fam, inkTok; h >> name >> fam >> inkTok;
+        // INK "contrast": a clear sprite's ink follows the background under each cell (StageWindow::draw); it makes
+        // a ghost window clear. A number sets a fixed ink again; no INK leaves the ink mode as it is.
+        bool contrastInk = inkTok == "contrast";
+        int ink = -1;
+        if (!inkTok.empty() && !contrastInk) { char* end = nullptr; long v = strtol(inkTok.c_str(), &end, 10); if (end != inkTok.c_str()) ink = int(v); }
         if (auto* w = win(name)) {
             ww::WinColour c; c.bg = ww::colourIndex(fam); c.ink = ink;
             ww::setWindowColour(w, c);
+            if (auto* sw = dynamic_cast<StageWindow*>(w)) {
+                if (contrastInk && sw->isFrameless()) sw->setClear(true, true);
+                else if (!inkTok.empty() && !contrastInk && sw->contrast) sw->setClear(true, false);
+            }
             ww::redrawDeep(w);
         }
     } else if (cmd == "mark") {
@@ -1040,12 +1178,25 @@ std::string Stage::windowsJson()
     return out + "]";
 }
 
+// Every clear sprite drawn again, back to front, so each shows what is under it now (see StageWindow::draw).
+void Stage::spriteSettle()
+{
+    TDeskTop* desk = host.stageDesk();
+    if (!desk) return;
+    std::vector<StageWindow*> ws;
+    desk->forEach([](TView* v, void* out) {
+        if (auto* sw = dynamic_cast<StageWindow*>(v)) if (sw->clear) ((std::vector<StageWindow*>*) out)->push_back(sw);
+    }, &ws);
+    for (auto it = ws.rbegin(); it != ws.rend(); ++it) (*it)->drawView();
+}
+
 std::string Stage::runLive(const std::string& raw)
 {
     std::string line = liveLine(raw);
     curT = time();
     run(line);
     host.stageFlush();
+    spriteSettle();
     host.stageTrace(curT, line, warn);
     return warn ? warn : "";
 }
