@@ -23,6 +23,8 @@
 
 #include <atomic>
 #include <string>
+#include <deque>
+#include <chrono>
 #include <vector>
 #include <functional>
 #include <chrono>
@@ -56,6 +58,8 @@ public:
     // Message operations
     void addMessage(const std::string& sender, const std::string& content, bool is_error = false);
     void clear();
+    // Take out the first message from sender (all of them when all is true); returns how many went.
+    int removeFrom(const std::string& sender, bool all = false);
     void scrollToBottom();
     void scrollToTop();
     void scrollLineUp();
@@ -186,8 +190,20 @@ private:
 
     // Logging
     std::string sessionId;
-    std::string pendingAsk_;  // queued self-prompt, drained when engine idle
-    resident::Who pendingAskWho_{"app", resident::Source::App};  // who queued it (resident_senses.h)
+    std::string pendingAsk_;  // unused: asks join queued_ (kept for the describer's wording)
+    resident::Who pendingAskWho_{"app", resident::Source::App};
+    // Lines typed or asked while a reply streams: shown as "waiting", sent in order when it ends;
+    // Esc clears them. Each keeps its author (who is speaking) and whether it came from wibwob_ask.
+    struct Queued { std::string text; resident::Who who; bool ask; };
+    std::deque<Queued> queued_;
+    bool busy() const;
+    void drainQueue();
+    void showQueueStatus();
+    // A stand-in reply for tests (WWDOS_CHAT_STANDIN_MS=<ms>): the chat is busy for that long, then
+    // answers "stand-in reply to: <text>", with no model.
+    bool standinActive_ = false;
+    std::chrono::steady_clock::time_point standinUntil_{};
+    std::string standinText_;
     bool speakNextUserMessage_ = false;  // TTS the self-prompted user message
     std::string logFilePath;
 

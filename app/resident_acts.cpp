@@ -383,13 +383,25 @@ bool g_handOn = true;
 int g_handMs = 150;
 int g_handLingerMs = 1000;
 
+// Each resident's hand has its own letter and colour: Wib and Wob share an initial, so Wob's hand is
+// its last letter. Black on yellow (wib), cyan (wob), magenta (scramble), light grey (anyone else).
+char handLetter(const std::string& actor) {
+    if (actor == "wib") return 'W';
+    if (actor == "wob") return 'B';
+    if (actor == "scramble") return 'S';
+    return actor.empty() ? 'R' : (char)std::toupper((unsigned char)actor[0]);
+}
+int handColour(const std::string& actor) {
+    return actor == "wib" ? 14 : actor == "wob" ? 11 : actor == "scramble" ? 13 : 7;
+}
+
 void drawHand(Hand& h, const std::string& actor, int x, int y) {
     x = std::max(0, std::min(x, (int)TScreen::screenWidth - 1));
     y = std::max(0, std::min(y, (int)TScreen::screenHeight - 1));
     if (!h.view) {
         h.view = new TOverlayCell(TRect(x, y, x + 1, y + 1));
-        h.view->text = std::string(1, actor.empty() ? 'R' : (char)std::toupper((unsigned char)actor[0]));
-        h.view->attr = TColorAttr(TColorBIOS(0), TColorBIOS(14));
+        h.view->text = std::string(1, handLetter(actor));
+        h.view->attr = TColorAttr(TColorBIOS(0), TColorBIOS(handColour(actor)));
         TProgram::application->insert(h.view);
     } else {
         if (h.view->origin.x != x || h.view->origin.y != y) h.view->moveTo(x, y);
@@ -531,7 +543,7 @@ namespace {
 bool readOnly(const std::string& name, const KV& kv) {
     static const char* names[] = {"get_state", "get_canvas_size", "get_capabilities", "get_window_types", "window_text",
                                   "acts", "residents_about", "standing", "desktop_get", "terminal_read",
-                                  "get_chat_history", "subscribe_events", "ping", "describe", "person_events", "person_wait", "resident_reflexes", "figlet_list_fonts",
+                                  "get_chat_history", "subscribe_events", "ping", "describe", "person_events", "person_wait", "resident_reflexes", "help", "resident_selftest", "figlet_list_fonts",
                                   "list_figlet_fonts", "preview_figlet", "gallery_list", "paint_export", "batch",
                                   "exec_command", "resident_status", "resident_front", "resident_key",
                                   "resident_mouse", "resident_press", "resident_menu"};
@@ -789,7 +801,8 @@ std::string cmdHand(const KV& kv) {
     bool first = true;
     for (auto& p : g_hands) {
         const Hand& h = p.second;
-        os << (first ? "" : ",") << "{\"actor\":" << q(p.first) << ",\"x\":" << h.x << ",\"y\":" << h.y
+        os << (first ? "" : ",") << "{\"actor\":" << q(p.first) << ",\"letter\":" << q(std::string(1, handLetter(p.first)))
+           << ",\"x\":" << h.x << ",\"y\":" << h.y
            << ",\"visible\":" << ((h.view && (h.view->state & sfVisible)) ? "true" : "false")
            << ",\"moving\":" << (h.moving ? "true" : "false") << ",\"from\":[" << h.fromX << "," << h.fromY
            << "],\"to\":[" << h.tx << "," << h.ty << "],\"started_ms\":" << h.startedMs

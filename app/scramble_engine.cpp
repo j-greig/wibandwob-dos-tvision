@@ -556,6 +556,9 @@ void ScrambleHaikuClient::poll()
 
         fprintf(stderr, "[scramble] async done: exit=%d result_len=%zu\n",
                 exitCode, result.size());
+        if (exitCode != 0)
+            resident::addAct(resident::Who{"app", resident::Source::App},
+                             "scramble's model process ended with status " + std::to_string(exitCode), "", "child process died");
 
         outputBuffer.clear();
         ResponseCallback cb = pendingCallback;
