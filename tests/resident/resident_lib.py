@@ -25,7 +25,7 @@ class Desk:
         # desktop starts with no windows of its own and never writes to ~/.wwdos.
         self.home = f"/tmp/wibwob_{name}.home"
         self.env = {"WWDOS_HOME": self.home, "WWDOS_BOOT": "0", "WWDOS_SLEEP_MS": "0",
-                    "WWDOS_RESTORE": "0", **(env or {})}
+                    "WWDOS_RESTORE": "0", "WWDOS_MIDI": "off", **(env or {})}
         self.binary = binary or os.environ.get("WWDOS_BIN", DEFAULT_BIN)
         self.cols, self.rows = cols, rows
         self.sock = f"/tmp/wibwob_{name}.sock"

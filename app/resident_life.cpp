@@ -5,6 +5,7 @@
 #include "resident_senses.h"
 #include "describe.h"
 #include "resident_tool.h"
+#include "resident_teach.h"
 
 #define Uses_TWindow
 #define Uses_TView
@@ -417,6 +418,7 @@ void addBoot(std::vector<std::string>& lines, std::vector<bool>& loud, const std
 
 void residentBootLines(const std::string& r, std::vector<std::string>& lines, std::vector<bool>& loud);
 void bookBootLines(std::vector<std::string>& lines, std::vector<bool>& loud);
+void selftestBootLines(std::vector<std::string>& lines, std::vector<bool>& loud);
 std::string notesJson();
 
 void bootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
@@ -440,6 +442,7 @@ void bootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
                                     : "no model; the residents speak by rule"));
     for (auto r : kResidents) residentBootLines(r, lines, loud);
     bookBootLines(lines, loud);
+    selftestBootLines(lines, loud);
     if (g_self.deskFound && g_restoreOn) {
         int ok = 0;
         for (auto& r : g_restored) if (!r.to.empty()) ++ok;
@@ -1220,6 +1223,38 @@ std::vector<std::string> noteExtras(const std::string& r) {
     return out;
 }
 
+struct SelftestLine {
+    std::string when, who, result, failed;
+};
+bool lastSelftest(SelftestLine& out) {
+    auto ls = readLines(path("SELFTEST.TXT"));
+    for (auto it = ls.rbegin(); it != ls.rend(); ++it) {
+        if (it->empty() || (*it)[0] == ';') continue;
+        std::vector<std::string> f;
+        size_t p = 0;
+        while (true) {
+            size_t t = it->find('\t', p);
+            f.push_back(it->substr(p, t == std::string::npos ? std::string::npos : t - p));
+            if (t == std::string::npos) break;
+            p = t + 1;
+        }
+        if (f.size() < 3) continue;
+        out = SelftestLine{f[0], f[1], f[2], f.size() > 3 ? f[3] : ""};
+        return true;
+    }
+    return false;
+}
+
+void selftestBootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
+    SelftestLine s;
+    if (!lastSelftest(s)) {
+        addBoot(lines, loud, padDots("SELFTEST", 14) + "never run (resident_selftest start=1)");
+        return;
+    }
+    addBoot(lines, loud, padDots("SELFTEST", 14) + "last run " + s.when + " by " + s.who + ": " + s.result, !s.failed.empty());
+    if (!s.failed.empty()) addBoot(lines, loud, "      failed: " + oneLine(s.failed, 60), true);
+}
+
 void bookBootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
     auto log = readLog();
     std::string s = padDots("LOG.TXT", 14) + std::to_string(log.size()) + (log.size() == 1 ? " entry" : " entries");
@@ -1780,6 +1815,8 @@ void rotateActs() {
     for (int i = kActsFiles - 1; i >= 0; --i) std::rename(actsFile(i).c_str(), actsFile(i + 1).c_str());
 }
 
+void noteSelftest(const resident::ActRecord& a, const std::string& when);
+
 void flushActs() {
     std::vector<resident::ActRecord> acts;
     resident::lastActs(4000, acts);
@@ -1793,6 +1830,7 @@ void flushActs() {
         localtime_r(&t, &tm);
         char when[24];
         std::strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", &tm);
+        if (a.what.rfind("self-test: ", 0) == 0 && a.what.find(" passed") != std::string::npos) noteSelftest(a, when);
         os << g_self.boots << "\t" << a.n << "\t" << when << "\t" << field(a.actor) << "\t" << field(a.source) << "\t"
            << field(a.window) << "\t" << field(a.what) << "\t" << field(a.result) << "\n";
         g_actsFlushed = a.n;
@@ -1804,6 +1842,26 @@ void flushActs() {
         text = "; WIBWOB-DOS acts log. waking<TAB>n<TAB>date time<TAB>actor<TAB>source<TAB>window<TAB>what<TAB>result\n" + text;
     appendFile(actsFile(0), text);
     rotateActs();   // a file past the limit is set aside at once, not at the next act
+}
+
+// SELFTEST.TXT: one line per finished self-test (resident_selftest, resident_teach.cpp), found in the
+// acts log: date time, who ran it, the result, then the checks that failed.
+void noteSelftest(const resident::ActRecord& a, const std::string& when) {
+    std::string line = when + "\t" + field(a.actor) + "\t" + field(a.what.substr(11));
+    JVal root;
+    std::string js = resident::cmdSelftest(KV{});
+    JParse p(js);
+    std::string failed;
+    if (p.value(root))
+        if (const JVal* checks = root.get("checks"))
+            for (auto& c : checks->arr) {
+                const JVal* ok = c.get("ok");
+                if (ok && ok->kind == JVal::Bool && !ok->b) failed += (failed.empty() ? "" : ", ") + c.str("check");
+            }
+    line += "\t" + field(failed);
+    if (fileSize(path("SELFTEST.TXT")) <= 0)
+        line = "; WIBWOB-DOS self-tests. date time<TAB>who<TAB>result<TAB>checks that failed\n" + line;
+    appendFile(path("SELFTEST.TXT"), line + "\n");
 }
 
 struct DiskAct {
