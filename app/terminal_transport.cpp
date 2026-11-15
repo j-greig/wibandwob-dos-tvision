@@ -8,17 +8,23 @@
 
 #include "terminal_transport.h"
 #include "tvterm_view.h"
+#include "cast_player.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 namespace termtransport {
+std::string idOf(TWibWobTerminalWindow* w);
+std::string jsonEsc(const std::string& s);
 namespace {
 
 std::string str(const std::map<std::string, std::string>& kv, const char* k) {
     auto it = kv.find(k);
     return it == kv.end() ? std::string() : it->second;
 }
+
+}  // namespace
 
 std::string jsonEsc(const std::string& s) {
     std::string o;
@@ -30,6 +36,8 @@ std::string jsonEsc(const std::string& s) {
     return o;
 }
 
+namespace {
+
 const char* stateName(TWibWobTerminalWindow::RunState s) {
     switch (s) {
     case TWibWobTerminalWindow::RunState::Paused: return "paused";
@@ -38,10 +46,14 @@ const char* stateName(TWibWobTerminalWindow::RunState s) {
     }
 }
 
+}  // namespace
+
 std::string idOf(TWibWobTerminalWindow* w) {
     const auto& h = resident::hooks();
     return h.idOf ? h.idOf(w) : std::string();
 }
+
+namespace {
 
 std::vector<TWibWobTerminalWindow*> terminals() {
     std::vector<TWibWobTerminalWindow*> v;
@@ -131,11 +143,82 @@ std::string terminal_registry_command(const std::string& name, const std::map<st
         if (!t) return err;
         return act(t, name.substr(9), resident::currentWho());
     }
+    if (name == "terminal_release") {
+        std::string err;
+        TWibWobTerminalWindow* t = target(kv, err);
+        if (!t) return err;
+        std::string id = idOf(t);
+        bool released = t->releaseKeyboard();
+        resident::addAct(resident::currentWho(), released ? "gave the keyboard back from the terminal"
+                                                          : "release: the terminal did not hold the keyboard", id, "");
+        return std::string("{\"ok\":true,\"id\":\"") + jsonEsc(id) + "\",\"released\":" +
+               (released ? "true" : "false") + ",\"keyboard\":\"" + (released ? "focus" : t->keyboard()) + "\"}";
+    }
+    if (name == "terminal_record") {
+        std::string err;
+        TWibWobTerminalWindow* t = target(kv, err);
+        if (!t) return err;
+        std::string action = str(kv, "action");
+        if (action.empty()) action = kv.count("stop") ? "stop" : kv.count("start") ? "start" : "";
+        if (action == "start") {
+            std::string file = str(kv, "file");
+            if (file.empty()) return "err terminal_record action=start needs file=<path.cast>";
+            if (!t->startRecording(file, err)) return "err " + err;
+            return "{\"ok\":true,\"id\":\"" + jsonEsc(idOf(t)) + "\",\"recording\":\"" + jsonEsc(file) + "\"}";
+        }
+        if (action == "stop") {
+            std::string file = t->recordingPath();
+            double secs = t->recordingSeconds();
+            long n = t->stopRecording(err);
+            if (n < 0) return "err " + err;
+            return "{\"ok\":true,\"id\":\"" + jsonEsc(idOf(t)) + "\",\"file\":\"" + jsonEsc(file) +
+                   "\",\"events\":" + std::to_string(n) + ",\"seconds\":" + fmt1(secs) + "}";
+        }
+        if (action == "state" || action.empty()) {
+            std::string file = t->recordingPath();
+            return "{\"id\":\"" + jsonEsc(idOf(t)) + "\",\"recording\":" + (file.empty() ? "false" : "true") +
+                   ",\"file\":\"" + jsonEsc(file) + "\",\"seconds\":" + fmt1(t->recordingSeconds()) + "}";
+        }
+        return "err action is start, stop or state";
+    }
     if (name == "terminal_state") {
         std::string err;
         TWibWobTerminalWindow* t = target(kv, err);
         if (!t) return err;
         return stateJson(t);
+    }
+    if (name == "open_cast") {
+        std::string file = str(kv, "file"), err;
+        if (file.empty()) return "err open_cast needs file=<path.cast>";
+        int x = kv.count("x") ? atoi(str(kv, "x").c_str()) : -1;
+        int y = kv.count("y") ? atoi(str(kv, "y").c_str()) : -1;
+        TCastPlayerWindow* w = createCastPlayer(file, x, y, err);
+        if (!w) return "err " + err;
+        if (kv.count("speed") || kv.count("loop") || str(kv, "paused") == "1") {
+            std::map<std::string, std::string> c;
+            if (kv.count("speed")) c["speed"] = str(kv, "speed");
+            if (kv.count("loop")) c["loop"] = str(kv, "loop");
+            if (str(kv, "paused") == "1") c["action"] = "pause";
+            w->control(c);
+        }
+        TProgram::deskTop->insert(w);
+        const auto& hk = resident::hooks();
+        std::string id = hk.idOf ? hk.idOf(w) : std::string();
+        return "{\"ok\":true,\"id\":\"" + jsonEsc(id) + "\"}";
+    }
+    if (name == "cast_control" || name == "cast_state") {
+        std::string id = str(kv, "id");
+        TCastPlayerWindow* w = nullptr;
+        if (!id.empty()) {
+            const auto& h = resident::hooks();
+            w = dynamic_cast<TCastPlayerWindow*>(h.findWindow ? h.findWindow(id) : nullptr);
+            if (!w) return "err window " + id + " is not a cast player";
+        } else if (TProgram::deskTop && TProgram::deskTop->current) {
+            w = dynamic_cast<TCastPlayerWindow*>(TProgram::deskTop->current);
+        }
+        if (!w) return "err no cast player: give id=";
+        if (name == "cast_state") return w->stateJson();
+        return w->control(kv);
     }
     *handled = false;
     return "";

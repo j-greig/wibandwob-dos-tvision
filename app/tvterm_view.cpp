@@ -31,26 +31,31 @@
 #include <sys/proc.h>
 #endif
 #include "terminal_transport.h"
+#include "cast_record.h"
 
 // Command IDs for tvterm integration — must not collide with existing app commands.
-// These are wired through TVTermConstants so tvterm-core uses our IDs.
+// These are wired through TVTermConstants so tvterm-core uses our IDs. Every field is
+// named: the struct has cmCopySelection between cmReleaseInput and hcInputGrabbed, and a
+// positional list that skips it leaves hcInputGrabbed at 0 (hcNoContext), which made every
+// terminal window's title read "(Input Grab)" although none held the keyboard.
 enum : ushort
 {
-    cmTvTermCheckUpdates = 500,
-    cmTvTermUpdated      = 501,
-    cmTvTermGrabInput    = 502,
-    cmTvTermReleaseInput = 503,
-    hcTvTermInputGrabbed = 504,
+    cmTvTermCheckUpdates  = 500,
+    cmTvTermUpdated       = 501,
+    cmTvTermCopySelection = 505,
 };
 
-const tvterm::TVTermConstants TWibWobTerminalWindow::termConsts =
+const tvterm::TVTermConstants TWibWobTerminalWindow::termConsts = []
 {
-    cmTvTermCheckUpdates,
-    cmTvTermUpdated,
-    cmTvTermGrabInput,
-    cmTvTermReleaseInput,
-    hcTvTermInputGrabbed,
-};
+    tvterm::TVTermConstants k {};
+    k.cmCheckTerminalUpdates = cmTvTermCheckUpdates;
+    k.cmTerminalUpdated = cmTvTermUpdated;
+    k.cmGrabInput = termtransport::cmTermGrab;        // Window > Grab Keyboard
+    k.cmReleaseInput = termtransport::cmTermRelease;  // Alt-End, a click outside, terminal_release
+    k.cmCopySelection = cmTvTermCopySelection;
+    k.hcInputGrabbed = termtransport::hcTerminalGrab; // the status line while grabbed
+    return k;
+}();
 
 TWibWobTerminalWindow::TWibWobTerminalWindow(
     const TRect &bounds,
@@ -195,6 +200,7 @@ static void onTermErrorQuiet(const char *reason)
 
 void TWibWobTerminalWindow::shutDown()
 {
+    if (recorder_) recorder_->stop();
     if (paused_)
     {
         // A stopped process holds SIGHUP until it runs again: hang up, then continue, so
@@ -271,6 +277,7 @@ const char *TWibWobTerminalWindow::getTitle(short maxSize)
     else if (const char *s = Super::getTitle(maxSize))
         t = s;
     if (paused_) t += " (Paused)";
+    if (recorder_ && recorder_->active()) t += " (Rec)";
     titleBuf_ = t;
     return titleBuf_.empty() ? nullptr : titleBuf_.c_str();
 }
@@ -416,6 +423,7 @@ bool TWibWobTerminalWindow::pause(std::string &err)
     for (pid_t g : groups) kill(-g, SIGSTOP);
     stopped_ = groups;
     paused_ = true;
+    if (recorder_) recorder_->hold(true);
     pausedAt_ = std::chrono::steady_clock::now();
     transportChanged();
     return true;
@@ -428,6 +436,7 @@ bool TWibWobTerminalWindow::resume(std::string &err)
     for (auto it = stopped_.rbegin(); it != stopped_.rend(); ++it) kill(-*it, SIGCONT);
     stopped_.clear();
     paused_ = false;
+    if (recorder_) recorder_->hold(false);
     transportChanged();
     (void) err;
     return true;
@@ -466,6 +475,43 @@ bool TWibWobTerminalWindow::releaseKeyboard()
     if (!(state & sfModal)) return false;
     endModal(cmCancel);
     return true;
+}
+
+bool TWibWobTerminalWindow::startRecording(const std::string &path, std::string &err)
+{
+    if (!recorder_) { err = "this terminal cannot record"; return false; }
+    std::vector<std::string> screen;
+    std::string text = getOutputText(), line;
+    for (char ch : text)
+    {
+        if (ch == '\n') { screen.push_back(line); line.clear(); }
+        else line += ch;
+    }
+    while (!screen.empty() && screen.back().empty()) screen.pop_back();
+    const char *t = getTitle(0);
+    if (!recorder_->start(path, std::max(1, size.x - 2), std::max(1, size.y - 2), t ? t : "", screen, err))
+        return false;
+    if (paused_) recorder_->hold(true);
+    transportChanged();
+    return true;
+}
+
+long TWibWobTerminalWindow::stopRecording(std::string &err)
+{
+    long n = recorder_ ? recorder_->stop() : -1;
+    if (n < 0) err = "not recording";
+    transportChanged();
+    return n;
+}
+
+std::string TWibWobTerminalWindow::recordingPath() const
+{
+    return recorder_ ? recorder_->path() : std::string();
+}
+
+double TWibWobTerminalWindow::recordingSeconds() const
+{
+    return recorder_ ? recorder_->seconds() : 0;
 }
 
 void TWibWobTerminalWindow::transportChanged()
@@ -526,14 +572,51 @@ TFrame *TWibWobTerminalWindow::initTermFrame(TRect r)
 
 namespace {
 
+// Passes everything to tvterm's vterm emulator and gives the program's output, as it is
+// read from the pty, to the window's cast recorder (when it is recording).
+class RecordingEmulator final : public tvterm::TerminalEmulator
+{
+public:
+    RecordingEmulator(tvterm::TerminalEmulator &inner, std::shared_ptr<ww::CastRecorder> rec) :
+        inner_(inner), rec_(std::move(rec)) {}
+    ~RecordingEmulator() { delete &inner_; }
+    void handleEvent(const tvterm::TerminalEvent &ev) noexcept override
+    {
+        if (ev.type == tvterm::TerminalEventType::ClientDataRead && rec_)
+            rec_->output(ev.clientDataRead.data, ev.clientDataRead.size);
+        inner_.handleEvent(ev);
+    }
+    void updateState(tvterm::TerminalState &state) noexcept override { inner_.updateState(state); }
+private:
+    tvterm::TerminalEmulator &inner_;
+    std::shared_ptr<ww::CastRecorder> rec_;
+};
+
+class RecordingEmulatorFactory final : public tvterm::TerminalEmulatorFactory
+{
+public:
+    explicit RecordingEmulatorFactory(std::shared_ptr<ww::CastRecorder> rec) : rec_(std::move(rec)) {}
+    tvterm::TerminalEmulator &create(TPoint size, tvterm::Writer &w) noexcept override
+    {
+        return *new RecordingEmulator(inner_.create(size, w), rec_);
+    }
+    TSpan<const tvterm::EnvironmentVar> getCustomEnvironment() noexcept override
+    {
+        return inner_.getCustomEnvironment();
+    }
+private:
+    tvterm::VTermEmulatorFactory inner_;
+    std::shared_ptr<ww::CastRecorder> rec_;
+};
+
 // Wraps the vterm factory and adds the environment that makes tools/term_exec.sh the
 // terminal's program: SHELL points at the wrapper, WWDOS_TERM_EXEC carries the command.
 class ExecEmulatorFactory final : public tvterm::TerminalEmulatorFactory
 {
 public:
     ExecEmulatorFactory(const std::string &wrapper, const std::string &exec, bool hold,
-                        const std::string &pidFile) :
-        wrapper_(wrapper), exec_(exec), hold_(hold ? "1" : "0"), pidFile_(pidFile)
+                        const std::string &pidFile, std::shared_ptr<ww::CastRecorder> rec) :
+        inner_(rec), wrapper_(wrapper), exec_(exec), hold_(hold ? "1" : "0"), pidFile_(pidFile)
     {
         const char *sh = std::getenv("SHELL");
         shell_ = (sh && *sh && wrapper_ != sh) ? sh : "/bin/zsh";
@@ -557,7 +640,7 @@ public:
     }
 
 private:
-    tvterm::VTermEmulatorFactory inner_;
+    RecordingEmulatorFactory inner_;
     std::string wrapper_, exec_, hold_, pidFile_, shell_;
     tvterm::EnvironmentVar vars_[7];
 };
@@ -605,7 +688,8 @@ TWindow* createTerminalWindowExec(const TRect &bounds, const std::string &exec, 
     char pidFile[96];
     snprintf(pidFile, sizeof(pidFile), "/tmp/wwdos-term-%d-%u.pid", (int) getpid(), ++counter);
     unlink(pidFile);
-    ExecEmulatorFactory factory(wrapper, exec, hold, pidFile);
+    auto rec = std::make_shared<ww::CastRecorder>();
+    ExecEmulatorFactory factory(wrapper, exec, hold, pidFile, rec);
     TPoint viewSize = BasicTerminalWindow::viewSize(bounds);
     // No message box: this runs from the API with nobody at the keyboard.
     std::vector<pid_t> before = termChildPids();
@@ -615,13 +699,15 @@ TWindow* createTerminalWindowExec(const TRect &bounds, const std::string &exec, 
     auto *w = new TWibWobTerminalWindow(bounds, *termCtrl);
     w->setChildPidFile(pidFile);
     w->setLeaderPid(newChild(before));
+    w->setRecorder(rec);
     return w;
 }
 
 TWindow* createTerminalWindow(const TRect &bounds)
 {
     using namespace tvterm;
-    VTermEmulatorFactory factory;
+    auto rec = std::make_shared<ww::CastRecorder>();
+    RecordingEmulatorFactory factory(rec);
     TPoint viewSize = BasicTerminalWindow::viewSize(bounds);
     std::vector<pid_t> before = termChildPids();
     auto *termCtrl = TerminalController::create(viewSize, factory, onTermError);
@@ -629,6 +715,7 @@ TWindow* createTerminalWindow(const TRect &bounds)
         return nullptr;
     auto *w = new TWibWobTerminalWindow(bounds, *termCtrl);
     w->setLeaderPid(newChild(before));
+    w->setRecorder(rec);
     return w;
 }
 
