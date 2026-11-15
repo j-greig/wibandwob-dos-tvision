@@ -109,6 +109,12 @@ it either way, at the same times.
 jumps above four times the frames before), as times on the clock: the same times the ears give in `at_ms`.
 Neither changes anything or is logged.
 
+### A started drum machine is heard
+
+A new TR-808 opens with an empty pattern. `play` (the command, the window's key, a score's `do tr808 play`) on a
+pattern with no step and no accent on loads `classic-house` first, and the state says so in `start_preset`. A
+pattern with any step on plays as it is. The drum machine's sound is on unless `WWDOS_TR808_AUDIO=0`.
+
 ## Ears
 
 The synth and the TR-808 tell the ears every note and hit as the engine plays it: the window, the voice, the note
@@ -238,12 +244,13 @@ later call's speaker note replacing the one sounding, ten calls holding nine FM 
 sample, late counting, capture), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
 report, window filter, the keep limit), score (14: parsing, kinds, timing, and seven refused scores).
 
-`python3 tests/resident/test_machine_sound.py [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
+`python3 tests/resident/test_machine_sound.py [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
 (`tmux -L soundtest`, `WWDOS_SOUND_OUT=null`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
 the binary.
 
 | group | what it shows |
 |---|---|
+| drums | a new TR-808 is empty; play loads classic-house, the stream counts the hits it mixed and the ears hear them; a pattern with one step on plays as it is |
 | synth | wib opens the synth (owner wib, a glance sentence); wib's phrase by command, the person's C D E from z x c, Tab to the PC speaker and `]` to octave 5, and wob's key through `resident_key` each play and name their player; nothing reaches the speakers when silent (sent 0); the acts log has all three; `render` of the PC speaker's A-4 is 22050 samples with 439 upward zero crossings, the same twice, and plays nothing |
 | ears | silence first; right after wib's phrase starts, C-4 by wib is sounding; wob then hears C-4 E-4 G-4, 200 ms apart, as played, with a summary and 16 rows; with the TR-808 started by wob, every hit heard is a step the engine's pattern has on, names wob and 120 bpm; `window=` filters; hear is not logged; the synth window shows the meter |
 | hands | on a desktop of its own with a stand-in claude CLI: the capabilities list synth, open_synth and hear; Scramble's ACT line plays a tune on the synth as scramble, her prompt names the commands and her call still has no tools, the log and the ears name her; the chat's socket client (`app_socket.js`) plays and hears as wob |
