@@ -127,7 +127,8 @@ Scramble's model reply may end with lines such as
 The app takes them out of the reply (they are not shown) and runs each as actor `scramble` through the
 resident path, with her hand. Allowed: `resident_key`, `resident_mouse`, `resident_press`, `resident_menu`,
 `create_window`, `move_window`, `resize_window`, `close_window`, `window_title`, `describe`, `look_glance`,
-`look_read`. Anything else is refused and logged. `id=new` names the window her previous act opened. Her
+`look_read`, the sound commands, and the terminal transport (`terminal_pause`, `terminal_resume`, `terminal_toggle`,
+`terminal_state`, `terminal_release`, `cast_control`, `cast_state`; `docs/terminal-transport.md`). Anything else is refused and logged. `id=new` names the window her previous act opened. Her
 prompt carries the desktop's own window list (from the describers) and the asker's stamp; an instruction
 whose standing is `data` (read from a file) cannot make her act. Her model call runs with
 `--system-prompt`, `--setting-sources ""`, `--tools ""` and `--strict-mcp-config`: it returns text and

@@ -206,7 +206,12 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"terminal_pause", "Pause what runs in a terminal window: its program and everything it started stop (id=, default the focused terminal, else the only one)", false},
         {"terminal_resume", "Resume a paused terminal window's program from where it stopped (id=, default as terminal_pause)", false},
         {"terminal_toggle", "Pause a running terminal window's program, or resume a paused one (id=, default as terminal_pause)", false},
-        {"terminal_state", "A terminal window's program: state running|paused|exited, its name, seconds paused, and whether the window holds the keyboard (id=)", false},
+        {"terminal_state", "A terminal window's program: state running|paused|exited, its name, seconds paused, and keyboard grab|focus|none (grab: the window holds the keyboard) (id=)", false},
+        {"terminal_record", "Record a terminal window's output as an asciinema v2 cast: action=start file=<path.cast>, action=stop, action=state (id=)", false},
+        {"open_cast", "Open a cast player window for an asciinema v2 file (file=, optional x, y, speed=, loop=1, paused=1); no child process runs", false},
+        {"cast_control", "Drive a cast player window: action=play|pause|toggle, seek=<seconds>, speed=<0.25-8>, loop=0|1 (id=, default the focused player)", false},
+        {"cast_state", "A cast player window's file, size, duration, position, playing, speed and loop (id=)", false},
+        {"terminal_release", "Give the keyboard back from a terminal window that holds it (Window > Grab Keyboard); the person's chord is Alt-End (id=)", false},
         {"chat_receive", "Display a remote chat message in Scramble (sender + text params)", true},
         {"wibwob_ask", "Send a user message to the Wib&Wob chat window, triggering an AI response (text param)", true},
         {"get_chat_history", "Return Wib&Wob chat history as JSON array of {role, content} messages", false},
@@ -269,6 +274,10 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"get_life", "Whether the residents are awake or asleep, how long the person has been away, the dream and what was tidied, the kaomoji and status line shown", false},
         {"residents_sleep", "Put the residents to sleep now (they also sleep after WWDOS_SLEEP_MS without the person's input)", true},
         {"residents_wake", "Wake the residents (the person's first key or click at the console also wakes them)", true},
+        {"film_open", "Play a waking back from ACTS.TXT as a film of the desktop inside a window of its own (it opens no windows and sends no commands): waking= (default the last), speed=", false},
+        {"film_seek", "Scrub a film window: id=, ms= the film time, play=0|1, speed=", false},
+        {"film_frame", "A film's picture at ms= (waking=, w= h=), as film_export draws it, and the times of its acts", false},
+        {"film_export", "Write a waking's film as an asciinema v2 cast, FILMS/WAKING-N.cast: waking=, w= h= its size in characters (100x32)", false},
         {"tool_save", "Save a resident's tool: name= (1-8 letters), text= the program in the tools' BASIC; from the resident itself (actor=wib|wob|scramble source=resident); only a tool's author changes it", true},
         {"tool_run", "Open a tool as a window and run it: name=, optional x y w h", true},
         {"tool_list", "The residents' tools in TOOLS/: name, author, what it is", false},
@@ -359,7 +368,7 @@ static std::string exec_registry_command_inner(
         std::string r = sound_registry_command(name, kv, &handled);
         if (handled) return r;
     }
-    if (terminal_registry_command && name.rfind("terminal_", 0) == 0) {
+    if (terminal_registry_command && (name.rfind("terminal_", 0) == 0 || name.rfind("cast_", 0) == 0 || name == "open_cast")) {
         bool handled = false;
         std::string r = terminal_registry_command(name, kv, &handled);
         if (handled) return r;

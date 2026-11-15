@@ -36,7 +36,7 @@ static int hexDigit(char c) {
 }
 
 TTrackerView::TTrackerView(const TRect& bounds, const Song& song, const std::string& origin)
-    : TView(bounds), song_(song), origin_(origin) {
+    : TView(bounds), song_(song), origin_(origin), mute_(song.chans.size(), false), solo_(song.chans.size(), false) {
     growMode = gfGrowHiX | gfGrowHiY;
     options |= ofSelectable | ofFirstClick;
     eventMask |= evBroadcast | evKeyDown;
@@ -51,36 +51,50 @@ std::string TTrackerView::windowId() const {
     return (w && host().idOf) ? host().idOf(w) : "";
 }
 
-void TTrackerView::play(int fromRow) {
+// The block clipboard, shared by every tracker window: rows down, channels across.
+static std::vector<std::vector<TrackCell>> g_clip;
+static std::vector<ChanKind> g_clipKinds;   // the kind of channel each clipboard column came from
+
+bool TTrackerView::audible(int ch) const {
+    bool anySolo = false;
+    for (bool s : solo_) anySolo = anySolo || s;
+    if (anySolo) return solo_[ch];
+    return !mute_[ch];
+}
+
+void TTrackerView::play(int pos, int row, bool patternOnly) {
     if (timer_) { killTimer(timer_); timer_ = nullptr; }
     playing_ = true;
+    patternOnly_ = patternOnly;
     startedBy_ = currentActor();
-    fromRow = std::max(0, std::min(song_.rows() - 1, fromRow));
-    // Row fromRow plays now; startMs_ is where row 0 of this pass would have been.
-    startMs_ = clockMs() - fromRow * rowMs(song_);
-    nextRow_ = fromRow;
-    if (midi::clockOut()) midi::send({0xFA}, clockMs(), "tracker");
+    tempoNow_ = song_.tempo;
+    speedNow_ = speedOf(song_.rpb);
+    nextPos_ = std::max(0, std::min((int)song_.order.size() - 1, pos));
+    const int pat = patternOnly ? editPat_ : song_.order[nextPos_];
+    nextRowIdx_ = std::max(0, std::min(song_.rows(pat) - 1, row));
+    startMs_ = nextAt_ = clockMs();
+    if (midi::clockOut()) midi::send({0xFA}, nextAt_, "tracker");
     timer_ = setTimer(5, 5);
     tick();
 }
 
 void TTrackerView::stop() {
-    if (playing_ && midi::clockOut()) midi::send({0xFC}, clockMs(), "tracker");
+    if (playing_ && midi::clockOut()) midi::send({0xFC}, std::max(clockMs(), nextAt_), "tracker");
     playing_ = false;
     playRow_ = -1;
     if (timer_) { killTimer(timer_); timer_ = nullptr; }
     drawView();
 }
 
-void TTrackerView::playRow(int row, double atMs) {
+void TTrackerView::playRow(int pat, int row, double atMs, double rm) {
     const std::string wid = windowId();
     const int chans = (int)song_.chans.size();
-    // MIDI out: the row's clock ticks (24 a beat) and its notes: channel n+1 for tracker channel n, drums on 10.
     if (midi::clockOut()) {
-        const int ticks = std::max(1, 24 / std::max(1, song_.rpb));
-        for (int k = 0; k < ticks; ++k) midi::send({0xF8}, atMs + k * rowMs(song_) / ticks, "tracker");
+        const int ticks = std::max(1, speedNow_);
+        for (int k = 0; k < ticks; ++k) midi::send({0xF8}, atMs + k * rm / ticks, "tracker");
     }
-    for (const RowSound& r : rowSounds(song_, row)) {
+    for (const RowSound& r : rowSounds(song_, pat, row, rm)) {
+        if (!audible(r.chan)) continue;   // muted, or another channel soloed
         if (r.drum) {
             const uint8_t key = (uint8_t)midi::gmDrum(r.drum_voice);
             midi::send({0x99, key, (uint8_t)std::max(1, (int)std::lround(r.gain * 127))}, atMs + r.atMs, "tracker");
@@ -90,13 +104,13 @@ void TTrackerView::playRow(int row, double atMs) {
             midi::send({(uint8_t)(0x90 | ch), (uint8_t)r.note.midi, (uint8_t)r.note.vel}, atMs + r.atMs, "tracker");
             midi::send({(uint8_t)(0x80 | ch), (uint8_t)r.note.midi, 0}, atMs + r.atMs + r.note.durMs, "tracker");
         }
-    }
-    for (const RowSound& r : rowSounds(song_, row)) {
         Heard h;
         h.window = wid;
         h.channel = r.chan;
         h.channels = chans;
         h.cell = r.cell;
+        h.row = row;
+        h.rowAtMs = atMs + leadMs();
         h.who = startedBy_;
         h.startMs = atMs + leadMs() + r.atMs;
         if (r.drum) {
@@ -107,7 +121,7 @@ void TTrackerView::playRow(int row, double atMs) {
             h.voice = id;
             h.endMs = h.startMs + drumRingMs(id);
             h.level = r.gain;
-            h.tempo = song_.tempo;
+            h.tempo = tempoNow_;
             h.step = row;
         } else {
             if (streamRunning() && synthAudioEnabled())
@@ -128,22 +142,66 @@ void TTrackerView::playRow(int row, double atMs) {
 
 void TTrackerView::tick() {
     if (!playing_) return;
-    const double rm = rowMs(song_);
     const double now = clockMs();
-    while (playing_ && startMs_ + nextRow_ * rm <= now + 0.5) {
-        if (!loop_ && nextRow_ >= song_.rows()) { stop(); return; }
-        const int row = (int)(nextRow_ % song_.rows());
-        playRow(row, startMs_ + nextRow_ * rm);
-        playRow_ = row;
-        ++nextRow_;
+    int guard = 0;
+    while (playing_ && nextAt_ <= now + 0.5 && ++guard < 512) {
+        int pat = patternOnly_ ? editPat_ : song_.order[nextPos_];
+        if (nextRowIdx_ >= song_.rows(pat)) {   // the pattern is done: the next order position
+            nextRowIdx_ = 0;
+            if (!patternOnly_) {
+                if (nextPos_ + 1 >= (int)song_.order.size()) {
+                    if (!loop_) { stop(); return; }
+                    nextPos_ = 0;
+                } else ++nextPos_;
+                pat = song_.order[nextPos_];
+            } else if (!loop_) { stop(); return; }
+        }
+        // Tempo and speed effects take hold at their row.
+        const RowFx fx = rowEffects(song_, pat, nextRowIdx_);
+        if (fx.tempo > 0) tempoNow_ = std::max(30, fx.tempo);
+        if (fx.speed > 0) speedNow_ = fx.speed;
+        const double rm = rowMs(tempoNow_, speedNow_);
+        playRow(pat, nextRowIdx_, nextAt_, rm);
+        playPos_ = nextPos_;
+        playPat_ = pat;
+        playRow_ = nextRowIdx_;
+        ++nextRowIdx_;
+        nextAt_ += rm;
     }
     drawView();
 }
 
 void TTrackerView::moveCursor(int dr, int dc) {
-    curRow_ = (curRow_ + dr + song_.rows() * 4) % song_.rows();
+    curRow_ = (curRow_ + dr + rows() * 64) % rows();
     const int n = (int)song_.chans.size();
     curChan_ = (curChan_ + dc + n * 4) % n;
+}
+
+static void copyBlock(const Song& s, int pat, int row, int nrows, int ch, int nch) {
+    g_clip.clear();
+    g_clipKinds.clear();
+    for (int c = ch; c < std::min((int)s.chans.size(), ch + nch); ++c) g_clipKinds.push_back(s.chans[c].kind);
+    for (int r = row; r < std::min(s.rows(pat), row + nrows); ++r) {
+        std::vector<TrackCell> line;
+        for (int c = ch; c < std::min((int)s.chans.size(), ch + nch); ++c) line.push_back(s.cell(pat, r, c));
+        g_clip.push_back(line);
+    }
+}
+
+// Pastes the clipboard with its top left at (row, ch); cells past the pattern's edge are dropped.
+// A column copied from a drum channel lands only on drum channels, and a note column only on
+// FM and speaker channels; a cell that does not fit is left as it was.
+static int pasteBlock(Song& s, int pat, int row, int ch) {
+    int n = 0;
+    for (size_t i = 0; i < g_clip.size() && row + (int)i < s.rows(pat); ++i)
+        for (size_t j = 0; j < g_clip[i].size() && ch + (int)j < (int)s.chans.size(); ++j) {
+            const bool toDrum = s.chans[ch + j].kind == ChanKind::Drums;
+            const bool fromDrum = j < g_clipKinds.size() && g_clipKinds[j] == ChanKind::Drums;
+            if (toDrum != fromDrum) continue;
+            s.cell(pat, row + (int)i, ch + (int)j) = g_clip[i][j];
+            ++n;
+        }
+    return n;
 }
 
 void TTrackerView::handleEvent(TEvent& ev) {
@@ -156,7 +214,7 @@ void TTrackerView::handleEvent(TEvent& ev) {
     if (ev.keyDown.controlKeyState & kbAltShift) return;
     const ushort key = ev.keyDown.keyCode;
     const char ch = (char)ev.keyDown.charScan.charCode;
-    TrackCell& cell = song_.grid[curRow_][curChan_];
+    TrackCell& cell = at(curRow_, curChan_);
     const TrackChannel& chan = song_.chans[curChan_];
     bool handled = true;
     switch (key) {
@@ -172,8 +230,21 @@ void TTrackerView::handleEvent(TEvent& ev) {
             break;
         case kbTab: curField_ = 0; moveCursor(0, 1); break;
         case kbShiftTab: curField_ = 0; moveCursor(0, -1); break;
-        case kbEnter: if (playing_) stop(); else play(curRow_); break;
+        case kbEnter: if (playing_) stop(); else play(0, curRow_, true); break;
         case kbCtrlL: loop_ = !loop_; break;
+        // (Ctrl+B, N, O, S belong to the app's menus: mute, solo and new pattern take E, T and K.)
+        case kbCtrlE: mute_[curChan_] = !mute_[curChan_]; break;
+        case kbCtrlT: solo_[curChan_] = !solo_[curChan_]; break;
+        case kbCtrlC: copyBlock(song_, editPat_, curRow_, rows() - curRow_, curChan_, 1); break;   // the channel from here down
+        case kbCtrlV: pasteBlock(song_, editPat_, curRow_, curChan_); break;
+        case kbCtrlK: {   // a new pattern of the same length, edited at once
+            if (song_.pats.size() < 64) {
+                song_.pats.push_back(emptyPattern(song_, rows()));
+                editPat_ = (int)song_.pats.size() - 1;
+                curRow_ = 0;
+            }
+            break;
+        }
         case kbBack: case kbDel:
             if (curField_ == 0) cell = TrackCell();
             else if (curField_ == 1) cell.instr = -1;
@@ -183,10 +254,14 @@ void TTrackerView::handleEvent(TEvent& ev) {
     }
     if (!handled && ch) {
         handled = true;
-        if (ch == ' ') { if (playing_) stop(); else play(0); }
+        if (ch == ' ') { if (playing_) stop(); else play(0, 0, false); }
         else if (ch == '[') octave_ = std::max(0, octave_ - 1);
         else if (ch == ']') octave_ = std::min(8, octave_ + 1);
-        else if (ch == '.') {
+        else if (ch == '<' || ch == '>') {
+            const int n = (int)song_.pats.size();
+            editPat_ = (editPat_ + (ch == '<' ? n - 1 : 1)) % n;
+            curRow_ = std::min(curRow_, rows() - 1);
+        } else if (ch == '.') {
             if (curField_ == 0) cell = TrackCell();
             else if (curField_ == 1) cell.instr = -1;
             else { cell.fx = 0; cell.fxv = 0; }
@@ -213,7 +288,7 @@ void TTrackerView::handleEvent(TEvent& ev) {
         } else {
             const char up = (char)std::toupper((unsigned char)ch);
             const int d = hexDigit(ch);
-            if (!cell.fx && (up == 'A' || up == 'V' || up == 'G')) { cell.fx = up; cell.fxv = 0; }
+            if (!cell.fx && (up == 'A' || up == 'V' || up == 'G' || up == 'F')) { cell.fx = up; cell.fxv = 0; }
             else if (cell.fx && d >= 0) cell.fxv = ((cell.fxv << 4) | d) & 0xFF;
             else handled = false;
         }
@@ -240,42 +315,53 @@ void TTrackerView::draw() {
         playA = TColorAttr(bk, TColorRGB(0xAA, 0xAA, 0xAA));
     }
     const int W = size.x, H = size.y;
-    const int vis = std::max(1, H - 3);
-    const int focus = playing_ && playRow_ >= 0 ? playRow_ : curRow_;
-    const int top = std::max(0, std::min(focus - vis / 2, song_.rows() - vis));
+    const int vis = std::max(1, H - 4);
+    const bool showPlay = playing_ && playPat_ == editPat_ && playRow_ >= 0;
+    const int focus = showPlay ? playRow_ : curRow_;
+    const int top = std::max(0, std::min(focus - vis / 2, rows() - vis));
     for (int y = 0; y < H; ++y) {
         TDrawBuffer b;
         b.moveChar(0, ' ', base, (ushort)W);
         if (y == 0) {
-            char buf[160];
-            std::snprintf(buf, sizeof(buf), "TRACKER  %s  %d bpm  %d rows/beat  %s%s  oct %d  instr %s",
-                          song_.title.c_str(), song_.tempo, song_.rpb, playing_ ? "\u25b6 row " : "\u25a0 stopped",
-                          playing_ ? (std::to_string(playRow_) + "/" + std::to_string(song_.rows())).c_str() : "",
-                          octave_, instr_ < 0 ? ".." : std::to_string(instr_).c_str());
-            b.moveStr(1, std::string(buf) + (loop_ ? "  loop" : ""), bright);
+            std::ostringstream o;
+            o << "TRACKER  " << song_.title << "  " << (playing_ ? tempoNow_ : song_.tempo) << " bpm  speed "
+              << (playing_ ? speedNow_ : speedOf(song_.rpb)) << "  "
+              << (playing_ ? "\u25b6 pos " + std::to_string(playPos_) + " pat " + std::to_string(playPat_) + " row " + std::to_string(playRow_)
+                           : std::string("\u25a0 stopped"))
+              << (loop_ ? "  loop" : "") << "  oct " << octave_;
+            b.moveStr(1, o.str(), bright);
         } else if (y == 1) {
+            std::ostringstream o;
+            o << "pattern " << editPat_ << "/" << song_.pats.size() << " (" << rows() << " rows)  order";
+            for (size_t i = 0; i < song_.order.size() && i < 24; ++i)
+                o << ((playing_ && (int)i == playPos_) ? " [" : " ") << song_.order[i] << ((playing_ && (int)i == playPos_) ? "]" : "");
+            b.moveStr(1, o.str(), dim);
+        } else if (y == 2) {
             std::string h = "   ";
             for (size_t c = 0; c < song_.chans.size(); ++c) {
                 std::string n = chanName(song_.chans[c]);
+                if (mute_[c]) n = "(muted) " + n;
+                if (solo_[c]) n = "(solo) " + n;
                 n = n.substr(0, 10);
                 n.resize(10, ' ');
                 h += (c ? " | " : "") + n;
             }
             b.moveStr(1, h, dim);
-        } else if (y >= 2 && y < 2 + vis) {
-            const int r = top + (y - 2);
-            if (r < song_.rows()) {
+        } else if (y >= 3 && y < 3 + vis) {
+            const int r = top + (y - 3);
+            if (r < rows()) {
                 char head[8];
                 std::snprintf(head, sizeof(head), "%02d ", r);
-                const bool isPlay = playing_ && r == playRow_;
+                const bool isPlay = showPlay && r == playRow_;
                 b.moveStr(1, head, isPlay ? playA : (r % song_.rpb == 0 ? bright : dim));
                 int x = 4;
                 for (size_t c = 0; c < song_.chans.size(); ++c) {
                     if (c) { b.moveStr((ushort)x, " | ", dim); x += 3; }
-                    const std::string t = cellText(song_.chans[c], song_.grid[r][c]);   // "NNN II FFF"
+                    const TrackCell& tc = song_.cell(editPat_, r, (int)c);
+                    const std::string t = cellText(song_.chans[c], tc);
                     const int fs[3] = {0, 4, 7}, fl[3] = {3, 2, 3};
                     for (int f = 0; f < 3; ++f) {
-                        TColorAttr a = isPlay ? playA : (song_.grid[r][c].empty() ? dim : base);
+                        TColorAttr a = isPlay ? playA : ((tc.empty() || !audible((int)c)) ? dim : base);
                         if (r == curRow_ && (int)c == curChan_ && f == curField_) a = cur;
                         b.moveStr((ushort)(x + fs[f]), t.substr(fs[f], fl[f]), a);
                     }
@@ -283,7 +369,7 @@ void TTrackerView::draw() {
                 }
             }
         } else if (y == H - 1) {
-            b.moveStr(1, "z-m q-i notes  1 off  . clear  arrows move  [ ] octave  Space play  Enter from here  ^L loop", dim);
+            b.moveStr(1, "z-m q-i notes  1 off  . clear  < > pattern  ^K new  ^C ^V copy paste  ^E mute ^T solo  Space song  Enter pattern  ^L loop", dim);
         }
         writeLine(0, (short)y, (short)W, 1, b);
     }
@@ -291,16 +377,18 @@ void TTrackerView::draw() {
 
 std::string TTrackerView::describeState() const {
     int filled = 0;
-    for (const auto& row : song_.grid) for (const auto& c : row) if (!c.empty()) ++filled;
+    for (const auto& p : song_.pats) for (const auto& row : p.grid) for (const auto& c : row) if (!c.empty()) ++filled;
     std::ostringstream o;
-    o << "tracker \"" << song_.title << "\", " << song_.chans.size() << " channels, " << song_.rows() << " rows at "
-      << song_.tempo << " bpm, " << filled << " cells written; "
-      << (playing_ ? "playing row " + std::to_string(playRow_) + (loop_ ? ", looping" : "") : std::string("stopped"));
+    o << "tracker \"" << song_.title << "\", " << song_.chans.size() << " channels, " << song_.pats.size() << " pattern"
+      << (song_.pats.size() == 1 ? "" : "s") << " in an order of " << song_.order.size() << " at " << song_.tempo << " bpm, "
+      << filled << " cells written; editing pattern " << editPat_ << " (" << rows() << " rows); "
+      << (playing_ ? "playing pattern " + std::to_string(playPat_) + " row " + std::to_string(playRow_) + (loop_ ? ", looping" : "")
+                   : std::string("stopped"));
     return o.str();
 }
 
 bool TTrackerView::describeText(std::vector<std::string>& out) const {
-    for (int r = 0; r < song_.rows(); ++r) out.push_back(rowText(song_, r));
+    for (int r = 0; r < song_.rows(editPat_); ++r) out.push_back(rowText(song_, editPat_, r));
     return true;
 }
 
@@ -309,16 +397,27 @@ std::string TTrackerView::stateJson() const {
     o.setf(std::ios::fixed);
     o.precision(3);
     o << "{\"ok\":true,\"standing\":\"data\",\"title\":\"" << jsonEscape(song_.title) << "\",\"from\":\"" << jsonEscape(origin_)
-      << "\",\"tempo\":" << song_.tempo << ",\"rpb\":" << song_.rpb << ",\"rows\":" << song_.rows()
+      << "\",\"tempo\":" << song_.tempo << ",\"rpb\":" << song_.rpb << ",\"rows\":" << rows()
       << ",\"row_ms\":" << rowMs(song_) << ",\"playing\":" << (playing_ ? "true" : "false")
-      << ",\"loop\":" << (loop_ ? "true" : "false") << ",\"play_row\":" << playRow_
+      << ",\"loop\":" << (loop_ ? "true" : "false") << ",\"pattern_only\":" << (patternOnly_ ? "true" : "false")
+      << ",\"play_pos\":" << playPos_ << ",\"play_pattern\":" << playPat_ << ",\"play_row\":" << playRow_
+      << ",\"tempo_now\":" << tempoNow_ << ",\"speed_now\":" << speedNow_
       << ",\"started_ms\":" << startMs_ << ",\"lead_ms\":" << leadMs() << ",\"started_by\":\"" << jsonEscape(startedBy_) << "\""
-      << ",\"cursor\":{\"row\":" << curRow_ << ",\"ch\":" << curChan_ << ",\"field\":\""
+      << ",\"edit_pattern\":" << editPat_ << ",\"cursor\":{\"row\":" << curRow_ << ",\"ch\":" << curChan_ << ",\"field\":\""
       << (curField_ == 0 ? "note" : curField_ == 1 ? "instr" : "fx") << "\"},\"octave\":" << octave_
-      << ",\"channels\":[";
+      << ",\"clipboard\":[" << g_clip.size() << "," << (g_clip.empty() ? 0 : g_clip[0].size()) << "]";
+    o << ",\"order\":[";
+    for (size_t i = 0; i < song_.order.size(); ++i) o << (i ? "," : "") << song_.order[i];
+    o << "],\"patterns\":[";
+    for (size_t p = 0; p < song_.pats.size(); ++p) o << (p ? "," : "") << song_.pats[p].rows();
+    o << "],\"channels\":[";
     for (size_t c = 0; c < song_.chans.size(); ++c) o << (c ? "," : "") << "\"" << chanName(song_.chans[c]) << "\"";
+    o << "],\"mute\":[";
+    for (size_t c = 0; c < mute_.size(); ++c) o << (c ? "," : "") << (mute_[c] ? "true" : "false");
+    o << "],\"solo\":[";
+    for (size_t c = 0; c < solo_.size(); ++c) o << (c ? "," : "") << (solo_[c] ? "true" : "false");
     o << "],\"lines\":[";
-    for (int r = 0; r < song_.rows(); ++r) o << (r ? "," : "") << "\"" << rowText(song_, r) << "\"";
+    for (int r = 0; r < rows(); ++r) o << (r ? "," : "") << "\"" << rowText(song_, editPat_, r) << "\"";
     o << "]}";
     return o.str();
 }
@@ -335,17 +434,23 @@ static std::vector<std::string> words(const std::string& s) {
 }
 
 std::string TTrackerView::apiAction(const std::string& action, const std::map<std::string, std::string>& kv) {
+    // pat= names a pattern (default: the one being edited)
+    int pat = toInt(kvGet(kv, "pat"), editPat_);
+    if (pat < 0 || pat >= (int)song_.pats.size()) return "err pat out of range (0-" + std::to_string(song_.pats.size() - 1) + ")";
     auto chanArg = [&](int& c) {
         c = toInt(kvGet(kv, "ch"), curChan_);
         return c >= 0 && c < (int)song_.chans.size();
     };
     auto rowArg = [&](int& r) {
         r = toInt(kvGet(kv, "row"), curRow_);
-        return r >= 0 && r < song_.rows();
+        return r >= 0 && r < song_.rows(pat);
     };
     if (action.empty() || action == "state" || action == "open") {
     } else if (action == "play") {
-        play(toInt(kvGet(kv, "row"), 0));
+        play(toInt(kvGet(kv, "pos"), 0), toInt(kvGet(kv, "row"), 0), false);
+    } else if (action == "play_pattern") {
+        editPat_ = pat;
+        play(0, toInt(kvGet(kv, "row"), 0), true);
     } else if (action == "stop") {
         stop();
     } else if (action == "loop") {
@@ -358,9 +463,8 @@ std::string TTrackerView::apiAction(const std::string& action, const std::map<st
         TrackCell cell;
         std::string err;
         if (!parseCell(song_.chans[c], kvGet(kv, "cell", "---"), cell, err)) return "err " + err;
-        song_.grid[r][c] = cell;
+        song_.cell(pat, r, c) = cell;
     } else if (action == "write") {
-        // A column of notes from row= down: notes="C-2 . E-2 ===", every step= rows (default 1).
         int r, c;
         if (!rowArg(r)) return "err row out of range";
         if (!chanArg(c)) return "err ch out of range";
@@ -372,35 +476,77 @@ std::string TTrackerView::apiAction(const std::string& action, const std::map<st
         std::vector<std::pair<int, TrackCell>> cells;
         for (size_t i = 0; i < t.size(); ++i) {
             const int row = r + (int)i * step;
-            if (row >= song_.rows()) return "err notes run past the last row";
+            if (row >= song_.rows(pat)) return "err notes run past the last row";
             if (t[i] == ".") continue;
             TrackCell cell;
             std::string err;
             if (!parseCell(song_.chans[c], t[i] + (t[i] == "===" || t[i] == "---" ? "" : tail), cell, err)) return "err " + err;
             cells.push_back({row, cell});
         }
-        for (const auto& p : cells) song_.grid[p.first][c] = p.second;
+        for (const auto& p : cells) song_.cell(pat, p.first, c) = p.second;
     } else if (action == "clear") {
         if (truthy(kvGet(kv, "all"))) {
-            for (auto& row : song_.grid) for (auto& cell : row) cell = TrackCell();
+            for (auto& row : song_.pats[pat].grid) for (auto& cell : row) cell = TrackCell();
         } else {
             int r, c;
             if (!rowArg(r) || !chanArg(c)) return "err row or ch out of range";
-            song_.grid[r][c] = TrackCell();
+            song_.cell(pat, r, c) = TrackCell();
         }
     } else if (action == "tempo") {
         const int t = toInt(kvGet(kv, "value"), song_.tempo);
         if (t < 30 || t > 300) return "err tempo is 30 to 300";
         song_.tempo = t;
-        if (playing_) play(playRow_ < 0 ? 0 : playRow_);
-    } else if (action == "rows") {
-        const int n = toInt(kvGet(kv, "value"), song_.rows());
+        tempoNow_ = t;
+    } else if (action == "rows" || action == "pattern_rows") {
+        const int n = toInt(kvGet(kv, "value"), song_.rows(pat));
         if (n < 1 || n > 128) return "err rows is 1 to 128";
-        song_.grid.resize((size_t)n, std::vector<TrackCell>(song_.chans.size()));
-        curRow_ = std::min(curRow_, n - 1);
+        song_.pats[pat].grid.resize((size_t)n, std::vector<TrackCell>(song_.chans.size()));
+        if (pat == editPat_) curRow_ = std::min(curRow_, n - 1);
+    } else if (action == "pattern") {
+        const int p = toInt(kvGet(kv, "value"), editPat_);
+        if (p < 0 || p >= (int)song_.pats.size()) return "err no pattern " + std::to_string(p);
+        editPat_ = p;
+        curRow_ = std::min(curRow_, rows() - 1);
+    } else if (action == "new_pattern") {
+        if (song_.pats.size() >= 64) return "err at most 64 patterns";
+        if (kvHas(kv, "copy")) {
+            const int from = toInt(kvGet(kv, "copy"), -1);
+            if (from < 0 || from >= (int)song_.pats.size()) return "err no pattern " + kvGet(kv, "copy") + " to copy";
+            song_.pats.push_back(song_.pats[from]);
+        } else {
+            song_.pats.push_back(emptyPattern(song_, toInt(kvGet(kv, "rows"), rows())));
+        }
+        editPat_ = (int)song_.pats.size() - 1;
+        curRow_ = 0;
+    } else if (action == "order") {
+        std::vector<int> ord;
+        for (const auto& w : words(kvGet(kv, "value"))) {
+            const int p = std::atoi(w.c_str());
+            if (w.empty() || !std::isdigit((unsigned char)w[0]) || p >= (int)song_.pats.size()) return "err order names pattern " + w + ", which is not in the song";
+            ord.push_back(p);
+        }
+        if (ord.empty() || ord.size() > 256) return "err order holds 1 to 256 pattern numbers";
+        song_.order = ord;
+        if (nextPos_ >= (int)ord.size()) nextPos_ = 0;
+    } else if (action == "mute" || action == "solo") {
+        int c;
+        if (!chanArg(c)) return "err ch out of range";
+        auto& v = action == "mute" ? mute_ : solo_;
+        const std::string on = kvGet(kv, "on");
+        v[c] = on.empty() ? !v[c] : truthy(on);
+    } else if (action == "copy") {
+        int r, c;
+        if (!rowArg(r) || !chanArg(c)) return "err row or ch out of range";
+        copyBlock(song_, pat, r, std::max(1, toInt(kvGet(kv, "rows"), 1)), c, std::max(1, toInt(kvGet(kv, "chs"), 1)));
+    } else if (action == "paste") {
+        int r, c;
+        if (!rowArg(r) || !chanArg(c)) return "err row or ch out of range";
+        if (g_clip.empty()) return "err the clipboard is empty";
+        pasteBlock(song_, pat, r, c);
     } else if (action == "cursor") {
         int r, c;
         if (!rowArg(r) || !chanArg(c)) return "err row or ch out of range";
+        editPat_ = pat;
         curRow_ = r;
         curChan_ = c;
         const std::string f = kvGet(kv, "field", "note");
@@ -415,9 +561,11 @@ std::string TTrackerView::apiAction(const std::string& action, const std::map<st
         const bool was = playing_;
         stop();
         song_ = s;
+        mute_.assign(s.chans.size(), false);
+        solo_.assign(s.chans.size(), false);
         origin_ = kvGet(kv, "from", "text");
-        curRow_ = curChan_ = curField_ = 0;
-        if (was) play(0);
+        editPat_ = curRow_ = curChan_ = curField_ = 0;
+        if (was) play(0, 0, false);
     } else {
         return "err unknown action";
     }

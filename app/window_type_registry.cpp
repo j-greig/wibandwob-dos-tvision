@@ -37,6 +37,7 @@
 #include "paint/paint_window.h"
 #include "micropolis_ascii_view.h"
 #include "tvterm_view.h"
+#include "cast_player.h"
 #include "backrooms_tv_view.h"
 #include "figlet_text_view.h"
 #include "tr808_view.h"
@@ -320,6 +321,7 @@ static bool match_monster_portal(TWindow* w) { return has_child_view<TGenerative
 static bool match_paint(TWindow* w) { return dynamic_cast<TPaintWindow*>(w) != nullptr; }
 static bool match_micropolis_ascii(TWindow* w) { return has_child_view<TMicropolisAsciiView>(w); }
 static bool match_terminal(TWindow* w) { return dynamic_cast<TWibWobTerminalWindow*>(w) != nullptr; }
+static bool match_cast_player(TWindow* w) { return dynamic_cast<TCastPlayerWindow*>(w) != nullptr; }
 static bool match_wibwob(TWindow* w) { return dynamic_cast<TWibWobWindow*>(w) != nullptr; }
 static bool match_room_chat(TWindow* w) { return dynamic_cast<TRoomChatWindow*>(w) != nullptr; }
 static bool match_scramble(TWindow* w)    { return dynamic_cast<TScrambleWindow*>(w) != nullptr; }
@@ -373,6 +375,7 @@ static const WindowTypeSpec k_specs[] = {
     { "own_time",          nullptr,                 life::isOwnWindow       },  // a resident's time of its own
     { "tool",              nullptr,                 tools::isToolWindow     },  // a program a resident wrote
     { "tool_list",         nullptr,                 tools::isToolListWindow },  // the list of those programs
+    { "film",              nullptr,                 life::isFilmWindow      },  // a waking replayed from ACTS.TXT
     { "browser",           spawn_browser,           match_browser           },
     { "verse",             spawn_verse,             match_verse             },
     { "mycelium",          spawn_mycelium,          match_mycelium          },
@@ -413,6 +416,7 @@ static const WindowTypeSpec k_specs[] = {
     { "midi",              spawn_midi,             match_midi               },
     { "ascii_image",       nullptr,                match_ascii_image        },
     { "feed",              spawn_feed,             match_feed               },
+    { "cast_player",       nullptr,                match_cast_player        },   // open_cast file=
 };
 
 // ── Lookup implementations ────────────────────────────────────────────────────

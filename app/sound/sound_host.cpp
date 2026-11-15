@@ -327,11 +327,11 @@ static std::string openTracker(const KV& kv) {
         if (kvHas(kv, "tempo")) song.tempo = std::max(30, std::min(300, toInt(kvGet(kv, "tempo"), 120)));
     }
     const int w = std::min(160, 6 + 13 * (int)song.chans.size());
-    TWindow* win = new TTrackerWindow(boundsFrom(kv, std::max(60, w), std::min(36, song.rows() + 5)), song, origin);
+    TWindow* win = new TTrackerWindow(boundsFrom(kv, std::max(60, w), std::min(36, song.rows(0) + 6)), song, origin);
     const std::string id = g_host.insert ? g_host.insert(win) : "";
     if (truthy(kvGet(kv, "play"))) static_cast<TTrackerWindow*>(win)->view()->play(0);
     return "{\"ok\":true,\"id\":\"" + id + "\",\"title\":\"" + jsonEscape(song.title) + "\",\"rows\":" +
-           std::to_string(song.rows()) + ",\"channels\":" + std::to_string(song.chans.size()) + "}";
+           std::to_string(song.rows(0)) + ",\"patterns\":" + std::to_string(song.pats.size()) + ",\"channels\":" + std::to_string(song.chans.size()) + "}";
 }
 
 static std::string openScore(const KV& kv) {
@@ -447,10 +447,8 @@ std::string command(const std::string& name, const KV& kv) {
         // A tracker's window: the rows as the tracker prints them, on its own row grid.
         if (kvHas(kv, "window") && g_host.find)
             if (auto* tw = dynamic_cast<TTrackerWindow*>(g_host.find(kvGet(kv, "window")))) {
-                const TTrackerView* v = tw->view();
-                const double origin = v->startedMs() + leadMs();
-                auto cr = ears().cellRows(clockMs(), std::max(0.05, std::min(120.0, secs)) * 1000.0, rowMs(v->song()), origin,
-                                          kvGet(kv, "window"), v->song().rows());
+                (void)tw;
+                auto cr = ears().cellRows(clockMs(), std::max(0.05, std::min(120.0, secs)) * 1000.0, kvGet(kv, "window"));
                 std::string arr = "[";
                 for (size_t i = 0; i < cr.size(); ++i) arr += (i ? ",\"" : "\"") + jsonEscape(cr[i]) + "\"";
                 arr += "]";
