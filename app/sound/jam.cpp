@@ -294,6 +294,8 @@ std::string jamCommand(const KV& kv) {
         g.lastG = std::atol(str(ev, "last", 0, ev.size()).c_str());
         g.phraseFromMs = clockMs();
         g.active = false;
+        g.answers.clear();   // a jam is a session: its memory starts empty
+        g.memory.clear();
         resident::addAct(resident::currentWho(), "jam started: " + g.as + " answers the person's phrases (" + g.mode + ")", "", "");
     } else if (action == "stop") {
         g.on = false;

@@ -293,7 +293,8 @@ person's synth notes since the last answer, played live or by a tracker the pers
 drum machine has played at least three hits in the last two seconds, the answer takes the drums' smallest step and
 starts on their grid (`rhythm: "drums"`); otherwise it takes the person's rhythm.
 
-**Memory.** The jam keeps the session's last 8 phrases and answers (`memory` in the state). A phrase the person has
+**Memory.** The jam keeps the session's last 8 phrases and answers (`memory` in the state); `jam action=start` begins
+a new session with an empty memory. A phrase the person has
 played before gets the answer it got then (`chose: "memory"`). The model's prompt carries the memory as data.
 
 **The resident's mode** (`resident_mode`, the Laws of Jam) decides how it answers:
