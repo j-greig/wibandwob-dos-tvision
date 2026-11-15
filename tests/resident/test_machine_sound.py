@@ -380,6 +380,31 @@ def test_hands(_desk):
                 and heard["heard"][-1]["who"] == "wob", f"the chat's tool hears wob's notes ({p.stdout.strip()[:200]!r})")
         R.check(any(a["actor"] == "wob" and a["what"].startswith("synth action=notes") for a in desk.j("acts", by="wob")["acts"]),
                 "the log has wob playing through the chat's tool")
+
+        # The jam with a model present: a confined call chooses the answer.
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write("G-4 . E-4 C-4\n")
+        st = x(desk, "jam", action="start", **{"as": "wob"}, wait_ms=500)
+        R.check(st["model"] is True, "the jam finds the model CLI on PATH")
+        desk.ipc("focus_window", id=syn)
+        time.sleep(1.8)
+        desk.person_type("zc", gap=0.15)
+        st = wait_answers(desk, 1)
+        a = st["answers"][0] if st["answers"] else {}
+        R.check(a.get("answer") == "G-4 . E-4 C-4" and a.get("chose") == "model", f"the model chose wob's answer ({a})")
+        args = open(f"{fake}/args.txt").read() if os.path.exists(f"{fake}/args.txt") else ""
+        R.check("<--tools>\n<>" in args and "<--strict-mcp-config>" in args and "<--setting-sources>\n<>" in args
+                and "<DATA>C-4 E-4</DATA>" in args, "the call has no tools, no MCP, no settings, and the phrase as data")
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write("ACT: close_all\n")
+        n_win = len(desk.state()["windows"])
+        time.sleep(1.8)
+        desk.person_type("v", gap=0.15)
+        st = wait_answers(desk, 2)
+        a = st["answers"][1] if len(st["answers"]) > 1 else {}
+        R.check(a.get("chose", "").startswith("rule") and a.get("answer") == "C-5" and len(desk.state()["windows"]) == n_win,
+                f"a reply that is not notes falls back to the rule and does nothing else ({a})")
+        x(desk, "jam", action="stop")
     finally:
         R.check(desk.alive(), "the hands desktop is still running")
         desk.stop()
@@ -630,7 +655,7 @@ def test_midi(desk):
     gaps = [b - a for a, b in zip(clocks, clocks[1:])]
     R.check(out and out[0]["hex"] == "FA" and out[-1]["hex"] == "FC", "the drum machine sends start first and stop last")
     R.check(len(clocks) >= 40 and all(abs(g - 20.833) < 0.01 for g in gaps),
-            f"clock ticks are 24 a beat at 120 bpm, 20.833 ms apart on the clock ({len(clocks)} ticks)")
+            f"clock ticks are 24 a beat at 120 bpm, 20.833 ms apart on the clock ({len(clocks)} ticks; off: {[round(g, 3) for g in gaps if abs(g - 20.833) >= 0.01][:5]})")
     drums = [m for m in out if m["hex"].startswith("99 ")]
     bd = [m for m in drums if m["hex"].startswith("99 24 ")]
     heard_bd = [e for e in x(desk, "hear", seconds=3, of="tr808", window=drm)["heard"] if e["voice"] == "bd"]
@@ -657,7 +682,49 @@ def test_midi(desk):
             f"the MIDI window says what arrived and what left ({d['state']!r})")
 
 
-GROUPS = {"midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
+# ---------------------------------------------------------------------------- jam
+
+def wait_answers(desk, n, timeout=8.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        st = x(desk, "jam", action="state")
+        if len(st["answers"]) >= n:
+            return st
+        time.sleep(0.1)
+    return x(desk, "jam", action="state")
+
+
+def test_jam(desk):
+    print("\n[jam] a resident answers the person's last phrase on the synth, by rule")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    syn = x(desk, "open_synth", x=2, y=1, w=68, h=18)["id"]
+    time.sleep(2.2)
+    st = x(desk, "jam", action="start", **{"as": "wib"}, wait_ms=600)
+    R.check(st["on"] and st["as"] == "wib" and st["model"] is False, "jam starts as wib, with no model on this desktop")
+    desk.person_type("zxcv", gap=0.15)                    # C D E F
+    st = wait_answers(desk, 1)
+    a = st["answers"][0] if st["answers"] else {}
+    R.check(a.get("phrase") == "C-4 D-4 E-4 F-4" and a.get("answer") == "C-5 B-4 A-4 G-4" and a.get("chose") == "rule",
+            f"after the person stops, wib answers C D E F with C-5 B-4 A-4 G-4 by rule ({a})")
+    R.check(140 <= a.get("step_ms", 0) <= 260, f"in the person's rhythm ({a.get('step_ms')} ms a note)")
+    time.sleep(1.0)
+    h = x(desk, "hear", seconds=4, of="synth")
+    wib = [e["note"] for e in h["heard"] if e["who"] == "wib"]
+    R.check(wib == ["C-5", "B-4", "A-4", "G-4"], f"the ears hear wib's answer ({wib})")
+    acts = desk.j("acts", by="wib")["acts"]
+    R.check(any(x_["what"].startswith("synth action=notes") and x_["window"] == syn for x_ in acts), "the log has wib playing the answer")
+    # Only the person's phrase is answered: wib's answer starts no second answer.
+    time.sleep(1.2)
+    R.check(len(x(desk, "jam", action="state")["answers"]) == 1, "wib does not answer its own notes")
+    time.sleep(1.6)
+    desk.person_type("cx", gap=0.15)
+    st = wait_answers(desk, 2)
+    R.check(len(st["answers"]) == 2 and st["answers"][1]["phrase"] == "E-4 D-4", f"the next phrase gets its own answer ({st['answers'][1:] })")
+    x(desk, "jam", action="stop")
+
+
+GROUPS = {"jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():

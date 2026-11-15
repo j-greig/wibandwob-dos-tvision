@@ -306,6 +306,8 @@ bool TTrackerView::describeText(std::vector<std::string>& out) const {
 
 std::string TTrackerView::stateJson() const {
     std::ostringstream o;
+    o.setf(std::ios::fixed);
+    o.precision(3);
     o << "{\"ok\":true,\"standing\":\"data\",\"title\":\"" << jsonEscape(song_.title) << "\",\"from\":\"" << jsonEscape(origin_)
       << "\",\"tempo\":" << song_.tempo << ",\"rpb\":" << song_.rpb << ",\"rows\":" << song_.rows()
       << ",\"row_ms\":" << rowMs(song_) << ",\"playing\":" << (playing_ ? "true" : "false")
