@@ -43,6 +43,7 @@
 #include "resident_input.h"
 #include "resident_senses.h"
 #include "describe.h"
+#include "resident_hands.h"
 #include "core/json_utils.h"
 #include "gradient.h"
 #include "ui/ui_helpers.h"
@@ -135,6 +136,7 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 #include <cmath>
 #include <sys/stat.h>
 #include <cstdio>
+#include <cctype>
 #include <fstream>
 #include <vector>
 #include <cstring>
@@ -1112,8 +1114,28 @@ TWwdosApp::TWwdosApp() :
     residentHooks.typeOf = [](TWindow* w) { return std::string(windowTypeName(w)); };
     residentHooks.textOf = [](TWindow* w, std::vector<std::string>& out) { return residentTextOf(w, out); };
     residentHooks.stateOf = [](TWindow* w) { return residentStateOf(w); };
+    residentHooks.exec = [this](const std::string& name, const resident::KV& kv) {
+        // The socket's own dispatcher, in process: every command a socket caller can send, with the
+        // same authorship (actor=, source=) and the same act log.
+        std::string line = "cmd:" + name;
+        for (const auto& p : kv) {
+            line += " " + p.first + "=";
+            for (unsigned char c : p.second) {
+                if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') line += (char)c;
+                else { char b[4]; std::snprintf(b, sizeof b, "%%%02X", c); line += b; }
+            }
+        }
+        std::string r = ipcServer ? ipcServer->runLine(line) : exec_registry_command(*this, name, kv);
+        while (!r.empty() && (r.back() == '\n' || r.back() == '\r')) r.pop_back();
+        return r;
+    };
     resident::setHooks(residentHooks);
     ww::addExternalDescriber({"TFrameAnimationWindow", frameWindowMatches, frameWindowState, nullptr});
+    // Residents that live in the app: a reflex script chosen by whoever starts the app.
+    if (const char* rs = std::getenv("WWDOS_RESIDENTS")) {
+        std::string err;
+        if (*rs && !resident::loadReflexes(rs, err)) fprintf(stderr, "[residents] %s\n", err.c_str());
+    }
 
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
@@ -1124,6 +1146,8 @@ TWwdosApp::TWwdosApp() :
     if (inst && inst[0] != '\0')
         sockPath = std::string("/tmp/wibwob_") + inst + ".sock";
     fprintf(stderr, "[wibwob] IPC socket: %s\n", sockPath.c_str());
+    // The chat's bridge (app/llm/sdk_bridge) reaches the desktop through this socket.
+    setenv("WWDOS_SOCKET", sockPath.c_str(), 1);
 
     if (!ipcServer->start(sockPath)) {
         fprintf(stderr, "[wibwob] ERROR: IPC server failed to start on %s\n", sockPath.c_str());
@@ -3011,6 +3035,8 @@ void TWwdosApp::idle()
     if (ipcServer) ipcServer->poll();
     // Poll Scramble async LLM calls (non-blocking)
     scrambleEngine.poll();
+    // Residents inside the app answer the person's gestures (resident_hands.cpp).
+    resident::tickReflexes();
 
     // DISABLED: Update animated kaomoji in menu bar (causing crashes + freezes)
     // if (menuBar) {

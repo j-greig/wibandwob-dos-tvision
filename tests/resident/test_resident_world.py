@@ -9,7 +9,9 @@ Usage:
     python3 tests/resident/test_resident_world.py              # all groups
     python3 tests/resident/test_resident_world.py describe     # chosen groups
 Groups: describe (the describe contract, the audit, every window type), wheel (the mouse wheel while a
-resident's hand or reading mark is on screen), gestures (the person's acts as a stream a resident waits on).
+resident's hand or reading mark is on screen), gestures (the person's acts as a stream a resident waits on),
+hands (residents inside the app: reflexes, Scramble's paws, one command table; its own desktop with a
+stand-in claude CLI that answers with canned text).
 """
 
 import json
@@ -342,12 +344,156 @@ def test_gestures(desk):
     time.sleep(0.3)
 
 
+FAKE_CLAUDE = r"""#!/bin/sh
+# A stand-in for the claude CLI: says it is logged in, logs each call, answers with a canned reply.
+if [ "$1" = "auth" ]; then echo '{"loggedIn": true, "email": "test@example.invalid", "authMethod": "test"}'; exit 0; fi
+for a in "$@"; do printf '%s\n' "<$a>"; done > "$FAKE_DIR/args.txt"
+cat "$FAKE_DIR/reply.txt"
+"""
+
+REFLEXES = '''# Residents inside the app answer the person's gestures (docs/resident-world.md).
+start as wib -> notes: create_window type=text_editor x=100 y=1 w=55 h=22 title=residents
+on opened as wib: resident_key id={notes} text="wib: you opened a {type}\\n"
+on opened as wob: look_read id={window} reader=wob
+on closed as wob: resident_key id={notes} text="wob: the {type} is closed\\n"
+on typed type=text_editor as scramble: resident_key id={notes} text="scramble: you wrote {text}\\n"
+'''
+
+
+def wait_text(desk, wid, needle, timeout=6.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        r = desk.ipc("window_text", id=wid)
+        if r.startswith("{") and any(needle in l for l in json.loads(r)["lines"]):
+            return True
+        time.sleep(0.15)
+    return False
+
+
+def test_hands(_desk):
+    print("hands")
+    name = "handstest"
+    fake = f"/tmp/wibwob_{name}_fake"
+    os.makedirs(fake, exist_ok=True)
+    with open(f"{fake}/claude", "w") as f:
+        f.write(FAKE_CLAUDE)
+    os.chmod(f"{fake}/claude", 0o755)
+    with open(f"{fake}/reply.txt", "w") as f:
+        f.write("nothing yet\n")
+    script = f"/tmp/wibwob_{name}.reflex"
+    with open(script, "w") as f:
+        f.write(REFLEXES)
+    env = {"PATH": f"{fake}:/usr/bin:/bin:/usr/sbin:/sbin", "ANTHROPIC_API_KEY": "", "FAKE_DIR": fake,
+           "WWDOS_RESIDENTS": script}
+    desk = Desk(name, env=env).start()
+    try:
+        time.sleep(1.0)
+        # One command table: a registry-only command answers by its own name on the socket.
+        rf = desk.ipc("resident_reflexes")
+        R.check(rf.startswith("{"), f"registry commands answer on the socket by name ({rf[:40]!r})")
+        if not rf.startswith("{"):
+            return
+        rf = json.loads(rf)
+        notes = rf["bound"].get("notes")
+        own = desk.j("window_owner", id=notes) if notes else {}
+        R.check(notes and own.get("owner") == "wib", f"the reflex script's start line: wib opened its notes window {notes}")
+        t = desk.j("create_window", type="test_pattern", x=1, y=1, w=20, h=6, actor="setup")["id"]
+        desk.ipc("window_title", id=t, title="renamed", actor="setup")
+        time.sleep(0.2)
+        R.check(desk.windows()[t]["title"] == "renamed", "window_title (once reachable only through exec_command) works by name")
+        desk.ipc("close_window", id=t, actor="setup")
+        R.check(desk.ipc("resident_reflexes", load=script).startswith("err refused"),
+                "loading a reflex script from the socket is a rule, refused")
+
+        # The person opens a window: wib answers in its notes with its hand, wob reads the new window.
+        a0 = desk.j("acts", limit=1)["next"]
+        desk.person_keys("C-n")
+        ok = wait_text(desk, notes, "wib: you opened a test_pattern")
+        pat = [w for w in desk.state()["windows"] if w["type"] == "test_pattern"]
+        hands = {h["actor"]: h for h in desk.j("resident_hand")["hands"]}
+        marks = desk.j("look_mark")["marks"]
+        R.check(ok, "the person opens a test pattern; wib writes in its notes, through the resident path")
+        R.check("wib" in hands and hands["wib"]["steps"] > 0 and hands["wib"]["arrived_ms"] >= 0,
+                f"wib's hand glided to its notes before the keys landed ({hands.get('wib')})")
+        R.check(pat and any(m["reader"] == "wob" and m["window"] == pat[0]["id"] for m in marks),
+                f"wob looks at the window the person opened (its reading mark: {marks})")
+        # The person types in an editor of their own: Scramble answers when the typing pauses.
+        ed = desk.j("create_window", type="text_editor", x=2, y=10, w=40, h=8, title="mine", actor="setup")["id"]
+        w = desk.windows()[ed]
+        desk.person_mouse("down", w["x"] + 5, w["y"] + 3)
+        desk.person_mouse("up", w["x"] + 5, w["y"] + 3)
+        time.sleep(0.3)
+        desk.person_type("hi there")
+        R.check(wait_text(desk, notes, "scramble: you wrote hi there"),
+                "the person types; when the typing pauses Scramble writes what they wrote, with her own hand")
+        hands = {h["actor"]: h for h in desk.j("resident_hand")["hands"]}
+        R.check("scramble" in hands, "Scramble has a hand of her own")
+        # The person closes the pattern: wob notes it.
+        if pat:
+            desk.ipc("focus_window", id=pat[0]["id"])
+            time.sleep(1.6)
+            desk.person_keys("M-w")
+            time.sleep(0.4)
+            desk.person_keys("e")
+        R.check(wait_text(desk, notes, "wob: the test_pattern is closed"), "the person closes it; wob writes that down")
+        acts = desk.j("acts", since=a0)["acts"]
+        res = [a for a in acts if a["source"] == "resident"]
+        R.check({a["actor"] for a in res} >= {"wib", "wob", "scramble"} and
+                not any(a["actor"] == "person" and a["window"] == notes for a in acts),
+                f"every answer is an act by wib, wob or scramble ({len(res)} acts); none is the person's")
+        fired = desk.j("resident_reflexes")["fired"]
+        time.sleep(1.0)
+        R.check(desk.j("resident_reflexes")["fired"] == fired, "the residents' own acts never set off a reflex")
+
+        # Scramble's paws: her model's ACT lines act on the desktop as actor scramble; she sees only the desktop.
+        desk.ipc("open_scramble", actor="setup")
+        time.sleep(0.5)
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write(f'done. it says paw now. (=^..^=)\nACT: resident_key id={notes} text="paw\\n"\n'
+                    f'ACT: quit_app\n')
+        desk.ipc("scramble_say", text="which windows are open? and write paw in the notes", source="guest", actor="eri")
+        R.check(wait_text(desk, notes, "paw", 8), "Scramble's ACT line typed into the notes window")
+        args = open(f"{fake}/args.txt").read() if os.path.exists(f"{fake}/args.txt") else ""
+        R.check("<--tools>\n<>" in args and "<--strict-mcp-config>" in args,
+                "her model call has no tools and no MCP servers (it cannot touch the person's machine)")
+        R.check("THE DESKTOP" in args and f"- {notes} text_editor" in args and "[from eri | source guest" in args,
+                "her prompt carries the desktop's own windows and who is asking (eri, a guest)")
+        sacts = [a for a in desk.j("acts", by="scramble")["acts"]]
+        R.check(any(a["what"].startswith("key ") and a["window"] == notes for a in sacts) and desk.alive(),
+                "her keys are logged as hers; a command outside the paws (quit_app) is refused and the desk runs on")
+        # "open an editor and type hello" in one reply: id=new names the window her last act opened.
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write('ACT: create_window type=text_editor x=2 y=20 w=30 h=6 title=paws\nACT: resident_key id=new text=hello\nthere.\n')
+        time.sleep(2.5)
+        desk.ipc("scramble_say", text="open an editor and type hello", actor="setup")
+        t0 = time.time()
+        paws = []
+        while time.time() - t0 < 8 and not paws:
+            paws = [w for w in desk.state()["windows"] if w["title"] == "paws"]
+            time.sleep(0.2)
+        R.check(paws and wait_text(desk, paws[0]["id"], "hello") and desk.j("window_owner", id=paws[0]["id"])["owner"] == "scramble",
+                "Scramble opens an editor and types hello in it, in one reply; the window is hers")
+        sh = desk.j("describe", id=[w for w in desk.state()["windows"] if w["type"] == "scramble"][0]["id"])
+        R.check(not any("ACT:" in l for l in sh["text"]), "the ACT lines are not shown in her chat")
+        # The chat's tools reach this socket directly as wob (the bridge's client, no HTTP server, no npm packages).
+        node = subprocess.run(["node", os.path.join(REPO, "app/llm/sdk_bridge/app_socket.js"), "wob", "resident_key",
+                               f"id={notes}", "text=from the chat"], capture_output=True, text=True,
+                              env={**os.environ, "WWDOS_SOCKET": desk.sock})
+        R.check(node.returncode == 0 and wait_text(desk, notes, "from the chat")
+                and any(a["actor"] == "wob" and a["source"] == "resident" and a["window"] == notes
+                        for a in desk.j("acts", by="wob")["acts"]),
+                f"the chat's tool client acts on the desktop's own socket as wob ({node.stdout.strip()[:50]!r})")
+    finally:
+        R.check(desk.alive(), "the hands desktop is still running")
+        desk.stop()
+
+
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["describe", "wheel", "gestures"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["describe", "wheel", "gestures", "hands"]
     desk = Desk(os.environ.get("WORLD_TEST_NAME", "worldtest"), env=NO_LLM).start()
     try:
         for g in groups:
-            {"describe": test_describe, "wheel": test_wheel, "gestures": test_gestures}[g](desk)
+            {"describe": test_describe, "wheel": test_wheel, "gestures": test_gestures, "hands": test_hands}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()

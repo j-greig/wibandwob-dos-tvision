@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Residents' self-test with real model calls: each in-window resident gets one instruction over the
+socket and the desktop is checked for the result. Opt-in, because it calls models (haiku, a few cents):
+
+    WWDOS_SELFTEST_MODELS=1 python3 tests/resident/selftest_residents.py
+
+Starts its own desktop (tmux -L selftest) with the claude CLI on PATH and WWDOS_CHAT_MODEL=haiku, then:
+  scramble  "open a text editor and type hello"  -> an editor she owns holds hello
+            "which windows are open?"           -> her reply names a window that is on the desktop
+  wibwob    the same two, to the Wib&Wob chat    -> an editor owned by wib or wob holds hello; the reply
+                                                    names a window that is on the desktop
+Each instruction is sent as a visitor (actor selftest), so it carries that source and standing.
+Prints PASS or FAIL per resident and check; exits 1 if any failed. Needs the chat bridge's packages
+(npm install --prefix app/llm/sdk_bridge).
+"""
+
+import json
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(__file__))
+from resident_lib import REPO, Desk  # noqa: E402
+
+results = []
+
+
+def check(who, ok, what):
+    results.append((who, ok))
+    print(f"  {'PASS' if ok else 'FAIL'}: {who}: {what}")
+
+
+def editors_with(desk, text, owners):
+    out = []
+    for w in desk.state()["windows"]:
+        if w["type"] != "text_editor":
+            continue
+        r = desk.ipc("window_text", id=w["id"])
+        if r.startswith("{") and any(text in l.lower() for l in json.loads(r)["lines"]):
+            if desk.j("window_owner", id=w["id"])["owner"] in owners:
+                out.append(w["id"])
+    return out
+
+
+def wait(pred, timeout):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        v = pred()
+        if v:
+            return v
+        time.sleep(1.0)
+    return None
+
+
+def reply_lines(desk, wid, after):
+    d = desk.j("describe", id=wid)
+    return d["text"][after:]
+
+
+def names_a_window(desk, lines):
+    text = " ".join(lines).lower()
+    present = desk.state()["windows"]
+    return any(w["id"].lower() in text or w["type"].replace("_", " ") in text or w["type"] in text for w in present)
+
+
+def main():
+    if os.environ.get("WWDOS_SELFTEST_MODELS") != "1":
+        print("skipped: set WWDOS_SELFTEST_MODELS=1 to run (it calls models)")
+        return 0
+    desk = Desk("selftest", env={"WWDOS_CHAT_MODEL": "haiku"}).start()
+    try:
+        # Scramble
+        desk.ipc("open_scramble", actor="selftest")
+        time.sleep(0.8)
+        sid = [w for w in desk.state()["windows"] if w["type"] == "scramble"][0]["id"]
+        desk.ipc("scramble_say", text="open a text editor and type hello in it", source="visitor", actor="selftest")
+        got = wait(lambda: editors_with(desk, "hello", {"scramble"}), 60)
+        check("scramble", bool(got), f"opened an editor and typed hello ({got})")
+        n0 = len(desk.j("describe", id=sid)["text"])
+        time.sleep(3)
+        desk.ipc("scramble_say", text="which windows are open?", source="visitor", actor="selftest")
+        lines = wait(lambda: [l for l in reply_lines(desk, sid, n0 + 1) if l.startswith("scramble:")], 60) or []
+        check("scramble", names_a_window(desk, lines), f"named the desktop's windows: {' '.join(lines)[:120]!r}")
+
+        # The Wib&Wob chat
+        if not os.path.exists(os.path.join(REPO, "app/llm/sdk_bridge/node_modules/@anthropic-ai/claude-agent-sdk")):
+            check("wibwob", False, "the chat bridge is not installed: npm install --prefix app/llm/sdk_bridge")
+        else:
+            cid = desk.j("create_window", type="wibwob", x=2, y=1, w=70, h=20, actor="selftest").get("id")
+            time.sleep(1.0)
+            before = set(editors_with(desk, "hello", {"wib", "wob"}))
+            desk.ipc("wibwob_ask", text="open a text editor and type hello in it", source="visitor", actor="selftest")
+            got = wait(lambda: set(editors_with(desk, "hello", {"wib", "wob"})) - before, 150)
+            check("wibwob", bool(got), f"opened an editor and typed hello as wib or wob ({sorted(got or [])})")
+            n0 = len(desk.j("describe", id=cid)["text"])
+            time.sleep(5)
+            desk.ipc("wibwob_ask", text="which windows are open? answer in one line", source="visitor", actor="selftest")
+            lines = wait(lambda: (lambda t: t if t and not desk.j("describe", id=cid)["state"].endswith("arriving") else None)(
+                reply_lines(desk, cid, n0 + 1)), 150) or []
+            check("wibwob", names_a_window(desk, lines), f"named the desktop's windows: {' '.join(lines)[:120]!r}")
+    finally:
+        desk.stop()
+    for who in ("scramble", "wibwob"):
+        mine = [ok for w, ok in results if w == who]
+        print(f"{who}: {'PASS' if mine and all(mine) else 'FAIL'} ({sum(mine)}/{len(mine)})")
+    return 0 if all(ok for _, ok in results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

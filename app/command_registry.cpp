@@ -6,6 +6,7 @@
 #include "figlet_utils.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "resident_hands.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 
@@ -200,6 +201,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"describe", "What a window is: id= gives one window's sentence of state and its text from its own model (text_from model, cells or controls; limit= lines, text=0 for none); no id lists every window (text=1 adds text). Read-only", false},
         {"person_events", "The person's gestures since=G (typed, key, click, double-click, drag, scroll, command, menu, menu closed, opened, moved, resized, retitled, closed), in order; kinds= a comma list; never a resident's own acts. Read-only", false},
         {"person_wait", "Like person_events, but the socket holds the reply until a gesture after since=G arrives or ms= (default 10000, at most 60000) pass; then timeout is true", false},
+        {"resident_reflexes", "Residents inside the app: the reflex script that answers the person's gestures, what it bound and its last results; load=<file> and clear=1 are rules (the console with the key turned; WWDOS_RESIDENTS=<file> at start)", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -749,6 +751,7 @@ std::string exec_registry_command(
         if (name == "look_mark") return resident::cmdMark(kv);
     }
     if (name == "describe") return resident::cmdDescribe(kv);
+    if (name == "resident_reflexes") return resident::cmdReflexes(kv);
     if (name == "person_events" || name == "person_wait") return resident::cmdPersonEvents(kv);
     if (name == "acts") return resident::cmdActs(kv);
     if (name == "standing") return resident::cmdStanding(kv);

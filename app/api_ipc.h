@@ -33,6 +33,10 @@ public:
     // Stop and clean up.
     void stop();
 
+    // Run one command line ("cmd:name k=v ...") as if it came on the socket, without one:
+    // the residents' own hands inside the app (resident_hands.cpp) use it.
+    std::string runLine(const std::string& line) { std::string cmd; return dispatch(line, cmd); }
+
     // Push a newline-delimited JSON event to all active subscribers.
     // Cleans up disconnected subscriber fds automatically.
     void publish_event(const char* event_type, const std::string& payload_json = "{}");

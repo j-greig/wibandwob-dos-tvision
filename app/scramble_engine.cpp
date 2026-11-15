@@ -6,6 +6,7 @@
 /*---------------------------------------------------------*/
 
 #include "resident_senses.h"
+#include "resident_hands.h"
 #include "scramble_engine.h"
 #include "command_registry.h"
 #include "llm/base/auth_config.h"
@@ -101,9 +102,19 @@ std::string ScrambleHaikuClient::buildSystemPrompt() const
         "you exist in the liminal space between art and code. you're curious, dry-witted, and knowledgeable. "
         "you sometimes answer questions directly and usefully, but only if you feel like it, and in your own style. "
         "voice: lowercase. short paragraphs. max 3-4 sentences. deadpan but warm. "
-        "end each message with one kaomoji: (=^..^=) or /ᐠ｡ꞈ｡ᐟ\\ or variants of."
+        "end each message with one kaomoji: (=^..^=) or /ᐠ｡ﻌ｡ᐟ\\ or variants of. "
         "you know about ascii art, creative coding, symbients, and wibwobworld. "
-        "if asked something you don't know, say so honestly then share something interesting instead.";
+        "if asked something you don't know, say so honestly then share something interesting instead. "
+        "the only windows that exist for you are the ones listed under THE DESKTOP in each message; "
+        "you cannot see the person's computer, its files or its other programs, so never name any. "
+        "you have paws: to act on the desktop, put lines at the end of your reply, each one "
+        "ACT: <command> key=value ... (quote a value with spaces: text=\"hello there\"). commands: "
+        "resident_key id=<window> text=<words> | keys=<Enter Tab Up ...>; "
+        "resident_mouse id=<window> action=click|drag|scroll x= y= (x2= y2= for a drag; local=1 counts from the window's corner); "
+        "resident_press label=<button>; resident_menu choose=<Menu>Item>; "
+        "create_window type=<type> x= y= w= h= (after it, id=new names the window it opened); move_window id= x= y=; close_window id=; describe id=<window>. "
+        "your paw is seen moving to each window before you touch it. act only when asked or when it is kind; "
+        "never touch a window the person is typing in. the ACT lines are not shown; say in words what you did.";
 }
 
 std::string ScrambleHaikuClient::jsonEscape(const std::string& s)
@@ -131,7 +142,8 @@ std::string ScrambleHaikuClient::askViaCli(const std::string& question) const
 
     std::ostringstream cmd;
     // Run from /tmp to avoid picking up project CLAUDE.md/AGENTS.md context
-    cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence";
+    cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence"
+           " --tools '' --strict-mcp-config";   // no tools, no MCP: she answers from the prompt and acts by ACT lines
     cmd << " --append-system-prompt \"";
     for (char c : sysPrompt) {
         if (c == '"' || c == '\\' || c == '$' || c == '`') cmd << '\\';
@@ -332,7 +344,8 @@ std::string ScrambleHaikuClient::buildCliCommand(const std::string& question) co
     std::string sysPrompt = buildSystemPrompt();
     std::ostringstream cmd;
     // Run from /tmp to avoid picking up project CLAUDE.md/AGENTS.md context
-    cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence";
+    cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence"
+           " --tools '' --strict-mcp-config";   // no tools, no MCP: she answers from the prompt and acts by ACT lines
     cmd << " --append-system-prompt \"";
     for (char c : sysPrompt) {
         if (c == '"' || c == '\\' || c == '$' || c == '`') cmd << '\\';
@@ -690,8 +703,19 @@ bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
     fprintf(stderr, "[scramble] askAsync: starting non-blocking haiku call\n");
 
     // Wrap callback with voice filter
-    auto filteredCallback = [this, callback](const std::string& raw) {
-        std::string result = raw;
+    // Who is asking, with their standing in front (docs/resident-senses.md, Who is speaking).
+    const std::string asker = resident::standingOf(resident::currentWho());
+    const std::string stamped = resident::stampInstruction(input, "scramble");
+    auto filteredCallback = [this, callback, asker](const std::string& raw) {
+        // Her ACT lines run through the resident path as actor scramble (resident_hands.cpp): her paw is
+        // seen moving before each act, and every act is logged in her name. Text read from a file is
+        // data and never instructs: then her acts are refused.
+        std::vector<std::string> acted;
+        std::string result = asker == "data" ? raw : resident::takeActs(raw, "scramble", acted);
+        if (asker == "data" && raw.find("ACT:") != std::string::npos)
+            acted.push_back("refused: the instruction came from a file (standing data)");
+        for (const auto& a : acted) fprintf(stderr, "[scramble] act: %s\n", a.c_str());
+        if (result.empty() && !acted.empty()) result = "*does it*";
         if (result.empty()) {
             result = "(no response from model — try again)";
         } else {
@@ -700,7 +724,10 @@ bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
         if (callback) callback(result);
     };
 
-    bool started = haikuClient.startAsync(input, filteredCallback);
+    // What she knows of the desktop comes from the desktop: its windows, in front of the question.
+    const std::string withDesk = "THE DESKTOP (the only windows that exist for you, front first):\n" +
+                                 resident::deskForPrompt() + "\n" + stamped;
+    bool started = haikuClient.startAsync(withDesk, filteredCallback);
     if (started) {
         haikuClient.markCalled();  // Only consume rate-limit window on success
     }

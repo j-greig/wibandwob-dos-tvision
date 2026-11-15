@@ -10,6 +10,7 @@ const process = require('process');
 const readline = require('readline');
 const { createTuiMcpServer } = require('./mcp_tools');
 const { loadSdk } = require('./sdk_loader');
+const { confinedOptions } = require('./confine');
 
 class ClaudeSDKBridge {
     constructor() {
@@ -18,7 +19,7 @@ class ClaudeSDKBridge {
         this.sdkSessionId = null;        // SDK session ID for resume
         this.systemPrompt = null;        // Agent SDK uses 'systemPrompt' not 'customSystemPrompt'
         // this.allowedTools = ['Read', 'Write', 'Grep', 'Bash', 'LS', 'WebSearch', 'WebFetch'];
-        this.allowedTools = ['Read', 'Write', 'Grep', 'WebSearch', 'WebFetch'];
+        this.allowedTools = [];   // only the desktop's MCP tools (confine.js)
         this.maxTurns = 50;
         this.sdkSource = 'unknown';
         this.queryFn = null;
@@ -264,7 +265,7 @@ class ClaudeSDKBridge {
             console.error('DEBUG: MCP server initialized:', !!this.mcpServer);
             
             // Build allowed tools list — auto-derive MCP tool names from the server
-            const baseTools = this.sessionConfig.allowedTools || [];
+            const baseTools = [];   // built-in tools never: confine.js
             let mcpTools = [];
             if (this.mcpServer && this.mcpServer.tools) {
                 // Auto-derive from whatever tools mcp_tools.js defines
@@ -278,18 +279,16 @@ class ClaudeSDKBridge {
                 console.error(`[BRIDGE] Auto-derived ${mcpTools.length} MCP tool names from server`);
             }
             const toolList = [...new Set([...baseTools, ...mcpTools])];
-            const modelId = this.normalizeModelId(this.sessionConfig.model);
+            // WWDOS_CHAT_MODEL overrides the configured model (the residents' self-test uses haiku).
+            const modelId = this.normalizeModelId(process.env.WWDOS_CHAT_MODEL || this.sessionConfig.model);
 
-            const queryOptions = {
+            const queryOptions = confinedOptions({
                 systemPrompt: this.systemPrompt,
                 maxTurns: this.sessionConfig.maxTurns,
                 model: modelId,
-                allowedTools: toolList,
-                permissionMode: 'bypassPermissions',           // MCP tools are safe (localhost HTTP only)
-                allowDangerouslySkipPermissions: true,          // SDK Options field name
                 includePartialMessages: true,
                 stderr: (msg) => console.error('[CLAUDE STDERR]', String(msg).trim())
-            };
+            }, this.mcpServer, toolList);
 
             // Add resume option if we have a previous SDK session ID (multi-turn)
             if (this.sdkSessionId) {
@@ -298,9 +297,7 @@ class ClaudeSDKBridge {
             }
 
             // Only add MCP servers if server was successfully created
-            if (this.mcpServer) {
-                queryOptions.mcpServers = { "tui-control": this.mcpServer };
-            }
+            // mcpServers is set by confinedOptions.
 
             console.error('[BRIDGE] Query options:', JSON.stringify({
                 ...queryOptions,

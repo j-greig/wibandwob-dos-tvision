@@ -954,12 +954,12 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
                 resp = view->handleApiAction(action_it->second, kv) + "\n";
             }
         }
-    } else if (cmd.rfind("resident_", 0) == 0 || cmd.rfind("look_", 0) == 0 || cmd == "window_text" ||
-               cmd == "acts" || cmd == "window_owner" || cmd == "standing" || cmd == "residents_about" ||
-               cmd == "describe" || cmd == "person_events" || cmd == "person_wait") {
-        resp = exec_registry_command(*app_, cmd, kv) + "\n";
     } else {
-        resp = "err unknown cmd\n";
+        // One command table: any registry command is reachable by its own name, as through
+        // exec_command, the API server and MCP (command_registry.cpp).
+        bool known = false;
+        for (const auto& c : get_command_capabilities()) if (cmd == c.name) { known = true; break; }
+        resp = known ? exec_registry_command(*app_, cmd, kv) + "\n" : "err unknown cmd\n";
     }
 
     resident::ipcEnd(cmd, kv, resp);
