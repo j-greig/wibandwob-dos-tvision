@@ -112,7 +112,21 @@ void TFeedView::refresh(bool force) {
         runs.push_back(a);
         if (oneKey) runs.back().what = "typed \"" + ch + "\"";
     }
+    // desk-mosh moves many shard windows per step (owner and actor "mosh"): a run of its acts is one line.
+    std::vector<resident::ActRecord> folded;
+    int moshRun = 0;
     for (const auto& a : runs) {
+        if (a.actor == "mosh" && !folded.empty() && folded.back().actor == "mosh") {
+            ++moshRun;
+            folded.back().what = "mosh step: " + std::to_string(moshRun) + " acts (last: " + a.what + ")";
+            folded.back().ms = a.ms;
+            if (folded.back().window != a.window) folded.back().window = "";
+            continue;
+        }
+        moshRun = 1;
+        folded.push_back(a);
+    }
+    for (const auto& a : folded) {
         std::string tag = tagOf(a);
         if (!filter_.empty() && tag != filter_) continue;
         std::string who = a.actor;
