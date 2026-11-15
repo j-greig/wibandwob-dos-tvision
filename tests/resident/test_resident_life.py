@@ -460,7 +460,55 @@ def group_restore():
         d.stop()
 
 
-GROUPS = {"restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- the acts log on disk
+
+def group_acts():
+    print("acts: the acts log is appended to ACTS.TXT, rotated, and read back by the Feed window")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0", WWDOS_ACTS_MAX="3000").start()
+    try:
+        ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Alpha", **as_res("wib"))["id"]
+        d.j("move_window", id=ed, x=6, y=4, actor="v1", source="visitor")
+        time.sleep(1.0)
+        txt = read("ACTS.TXT") or ""
+        R.check(txt.startswith("; WIBWOB-DOS acts log.") and "\twib\tresident\t" + ed + "\topened text_editor \"Alpha\"" in txt,
+                "acts reach ACTS.TXT while the desk runs, one tab-separated line each")
+        for i in range(40):
+            d.j("move_window", id=ed, x=6 + i % 5, y=4, actor="v1", source="visitor")
+        R.check(d.quit(), "Exit ends the app")
+        rotated = os.path.exists(os.path.join(HOME, "ACTS.1"))
+        cur = os.path.join(HOME, "ACTS.TXT")
+        R.check(rotated and (not os.path.exists(cur) or os.path.getsize(cur) < 3000),
+                f"ACTS.TXT is rotated to ACTS.1 past WWDOS_ACTS_MAX ({sorted(f for f in os.listdir(HOME) if f.startswith('ACTS'))})")
+        lines = []
+        for f in sorted(os.listdir(HOME)):
+            if f.startswith("ACTS"):
+                lines += [l for l in read(f).splitlines() if l and not l.startswith(";")]
+        R.check(any("\tclosed (exit): self written to" in l for l in lines), "the close itself is on disk")
+        n1 = len([l for l in lines if l.startswith("1\t")])
+
+        d.start()
+        h = d.j("acts_history", limit=2000)
+        R.check(h["earlier"] == n1 and h["acts"][0]["what"].startswith("closed (exit)"),
+                f"acts_history reads every act of waking 1 back across the rotated files, newest first ({h['earlier']} of {n1})")
+        R.check(any(a["what"].startswith('opened text_editor "Alpha"') and a["actor"] == "wib" and a["waking"] == 1 for a in h["acts"]),
+                "with its actor and waking")
+        feed = d.j("create_window", type="feed", x=2, y=2, w=100, h=30)["id"]
+        time.sleep(0.3)
+        r = d.j("resident_key", id=feed, text="e", **as_res("wob"))
+        d.wait_seqs(r["first"], r["last"])
+        time.sleep(0.3)
+        fl = d.j("look_read", id=feed)["lines"]
+        R.check(fl and fl[0] == "---- waking 1 ----" and "---- this waking ----" in fl,
+                f"key e in the Feed window scrolls into waking 1, above this waking: {fl[:2]!r}")
+        R.check(any('wib: opened text_editor "Alpha"' in l for l in fl), "and shows its acts")
+        st = [w for w in glance(d) if w["id"] == feed][0]["state"]
+        R.check("acts of earlier wakings read from disk" in st, f"the Feed says so: {st!r}")
+    finally:
+        d.stop()
+
+
+GROUPS = {"acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():

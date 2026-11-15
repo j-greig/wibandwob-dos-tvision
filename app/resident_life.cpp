@@ -1470,6 +1470,120 @@ std::string cmdLife(const std::string& name, const KV&) {
     return os.str();
 }
 
+// ---------------------------------------------------------------- the acts log on disk
+
+// ACTS.TXT: every act, appended as it happens (flushed twice a second and at the close), one line,
+// tab-separated: waking, n, date and time, actor, source, window, what, result. Rotated to ACTS.1 ..
+// ACTS.9 when it passes WWDOS_ACTS_MAX bytes; ACTS.9 falls off.
+uint64_t g_actsFlushed = 0;
+long long g_actsNextFlush = 0;
+long g_actsMax = 1048576;
+const int kActsFiles = 9;
+
+std::string actsFile(int i) { return path(i == 0 ? "ACTS.TXT" : "ACTS." + std::to_string(i)); }
+
+std::string field(const std::string& s) {
+    std::string out;
+    for (unsigned char c : s) out += (c == '\t' || c == '\n' || c == '\r') ? ' ' : (char)c;
+    return out;
+}
+
+long fileSize(const std::string& p) {
+    struct stat st{};
+    return ::stat(p.c_str(), &st) == 0 ? (long)st.st_size : -1;
+}
+
+void rotateActs() {
+    if (g_actsMax <= 0 || fileSize(actsFile(0)) < g_actsMax) return;
+    std::remove(actsFile(kActsFiles).c_str());
+    for (int i = kActsFiles - 1; i >= 0; --i) std::rename(actsFile(i).c_str(), actsFile(i + 1).c_str());
+}
+
+void flushActs() {
+    std::vector<resident::ActRecord> acts;
+    resident::lastActs(4000, acts);
+    std::ostringstream os;
+    long long clockNow = resident::actsClockMs();
+    std::time_t wallNow = std::time(nullptr);
+    for (auto& a : acts) {
+        if (a.n <= g_actsFlushed) continue;
+        std::time_t t = wallNow - (std::time_t)((clockNow - a.ms) / 1000);
+        std::tm tm{};
+        localtime_r(&t, &tm);
+        char when[24];
+        std::strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", &tm);
+        os << g_self.boots << "\t" << a.n << "\t" << when << "\t" << field(a.actor) << "\t" << field(a.source) << "\t"
+           << field(a.window) << "\t" << field(a.what) << "\t" << field(a.result) << "\n";
+        g_actsFlushed = a.n;
+    }
+    std::string text = os.str();
+    if (text.empty()) return;
+    rotateActs();
+    if (fileSize(actsFile(0)) <= 0)
+        text = "; WIBWOB-DOS acts log. waking<TAB>n<TAB>date time<TAB>actor<TAB>source<TAB>window<TAB>what<TAB>result\n" + text;
+    appendFile(actsFile(0), text);
+    rotateActs();   // a file past the limit is set aside at once, not at the next act
+}
+
+struct DiskAct {
+    int waking = 0;
+    uint64_t n = 0;
+    std::string when, actor, source, window, what, result;
+};
+
+// Acts of earlier wakings, newest first: skip the first skip, return at most count.
+std::vector<DiskAct> earlierActsFromDisk(size_t skip, size_t count, size_t* total) {
+    std::vector<DiskAct> all;
+    for (int i = kActsFiles; i >= 0; --i) {   // oldest file first, so all ends oldest first
+        for (auto& l : readLines(actsFile(i))) {
+            if (l.empty() || l[0] == ';') continue;
+            std::vector<std::string> f;
+            size_t p = 0;
+            while (true) {
+                size_t tb = l.find('\t', p);
+                f.push_back(l.substr(p, tb == std::string::npos ? std::string::npos : tb - p));
+                if (tb == std::string::npos) break;
+                p = tb + 1;
+            }
+            if (f.size() < 8) continue;
+            DiskAct a;
+            a.waking = std::atoi(f[0].c_str());
+            if (a.waking >= g_self.boots) continue;   // this waking is in memory
+            a.n = std::strtoull(f[1].c_str(), nullptr, 10);
+            a.when = f[2];
+            a.actor = f[3];
+            a.source = f[4];
+            a.window = f[5];
+            a.what = f[6];
+            a.result = f[7];
+            all.push_back(a);
+        }
+    }
+    if (total) *total = all.size();
+    std::vector<DiskAct> out;
+    for (size_t k = skip; k < all.size() && out.size() < count; ++k) out.push_back(all[all.size() - 1 - k]);
+    return out;
+}
+
+std::string cmdActsHistory(const KV& kv) {
+    size_t skip = (size_t)std::max(0, std::atoi(str(kv, "skip", "0").c_str()));
+    size_t limit = (size_t)std::max(1, std::min(2000, std::atoi(str(kv, "limit", "100").c_str())));
+    size_t total = 0;
+    flushActs();
+    auto acts = earlierActsFromDisk(skip, limit, &total);
+    std::ostringstream os;
+    os << "{\"file\":" << q(actsFile(0)) << ",\"waking\":" << g_self.boots << ",\"earlier\":" << total
+       << ",\"skip\":" << skip << ",\"acts\":[";
+    for (size_t i = 0; i < acts.size(); ++i) {
+        auto& a = acts[i];
+        os << (i ? "," : "") << "{\"waking\":" << a.waking << ",\"n\":" << a.n << ",\"when\":" << q(a.when)
+           << ",\"actor\":" << q(a.actor) << ",\"source\":" << q(a.source) << ",\"window\":" << q(a.window)
+           << ",\"what\":" << q(a.what) << ",\"result\":" << q(a.result) << "}";
+    }
+    os << "]}";
+    return os.str();
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- public
@@ -1511,6 +1625,7 @@ void wake() {
     logInit();
     guestInit();
 
+    g_actsMax = envMs("WWDOS_ACTS_MAX", 1048576);
     g_bootLineMs = envMs("WWDOS_BOOT_MS", 120);
     g_bootHoldMs = envMs("WWDOS_BOOT_HOLD_MS", 20000);
     for (auto r : kResidents)
@@ -1539,9 +1654,14 @@ void close(const std::string& how) {
     writeDesk();
     writeSelfIni(false);
     resident::addAct(Who{"app", Source::App}, "closed (" + how + "): self written to " + home(), "", "");
+    flushActs();
 }
 
 void tick() {
+    if (g_woken && !g_closed && resident::actsClockMs() >= g_actsNextFlush) {
+        g_actsNextFlush = resident::actsClockMs() + 500;
+        flushActs();
+    }
     tickBoot();
     tickSleep();
     if (g_flashUntil && nowMs() >= g_flashUntil) {
@@ -1606,10 +1726,18 @@ std::string stateOf(TWindow* w) {
     return "";
 }
 
+size_t earlierActs(size_t skip, size_t count, std::vector<EarlierAct>& out) {
+    size_t total = 0;
+    out.clear();
+    for (auto& a : earlierActsFromDisk(skip, count, &total))
+        out.push_back(EarlierAct{a.waking, a.when, a.actor, a.source, a.window, a.what, a.result});
+    return total;
+}
+
 bool owns(const std::string& cmd) {
     static const char* names[] = {"get_self", "self_note", "get_note", "logbook_write", "logbook_open", "get_logbook",
                                   "guestbook_sign", "guestbook_open", "get_guestbook", "get_life",
-                                  "residents_sleep", "residents_wake"};
+                                  "residents_sleep", "residents_wake", "acts_history"};
     for (auto n : names) if (cmd == n) return true;
     return false;
 }
@@ -1619,6 +1747,7 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "self_note" || name == "get_note") return cmdNote(kv);
     if (name == "logbook_write" || name == "logbook_open" || name == "get_logbook") return cmdLog(name, kv);
     if (name == "guestbook_sign" || name == "guestbook_open" || name == "get_guestbook") return cmdGuests(name, kv);
+    if (name == "acts_history") return cmdActsHistory(kv);
     if (name == "get_life" || name == "residents_sleep" || name == "residents_wake") return cmdLife(name, kv);
     return "";
 }

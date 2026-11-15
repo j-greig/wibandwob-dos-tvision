@@ -64,6 +64,14 @@ std::string stateOf(TWindow* w);
 bool isBootWindow(TWindow* w);
 bool isDreamWindow(TWindow* w);
 
+// Acts of earlier wakings read back from ACTS.TXT and its rotations, newest first (the Feed window
+// scrolls into them). Returns how many earlier acts there are on disk.
+struct EarlierAct {
+    int waking;
+    std::string when, actor, source, window, what, result;
+};
+size_t earlierActs(size_t skip, size_t count, std::vector<EarlierAct>& out);
+
 // True for the commands this module answers (the socket routes them to the registry).
 bool owns(const std::string& cmd);
 // Answers one of its commands; "" when the name is not one of them.
