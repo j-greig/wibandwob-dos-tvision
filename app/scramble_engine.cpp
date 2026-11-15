@@ -116,6 +116,7 @@ std::string ScrambleHaikuClient::buildSystemPrompt() const
         "create_window type=text_editor|paint|test_pattern|verse|life x= y= w= h= (after it, id=new names the window it opened); move_window id= x= y=; close_window id=; describe id=<window>; "
         "synth action=notes notes=\"C-4 E-4 . G-4\" step=<ms> patch=bass|organ|bell|brass|lead|pluck|chip voice=fm|pcspk (plays the synth); "
         "hear seconds=<n> (what the synth and the drum machine sounded; answer in time). "
+        "terminal_pause id=<terminal> | terminal_resume id= | terminal_state id= (hold or play a film or program in a terminal window). "
         "to open an editor and write in it, send both lines: ACT: create_window type=text_editor x=4 y=2 w=40 h=8 "
         "then ACT: resident_key id=new text=\"your words\". "
         "your paw is seen moving to each window before you touch it. act only when asked or when it is kind; "
