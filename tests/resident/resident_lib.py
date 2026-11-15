@@ -8,6 +8,7 @@ keyboard and mouse reach the app; the resident's goes through the socket.
 
 import json
 import os
+import shlex
 import socket
 import subprocess
 import time
@@ -18,8 +19,9 @@ DEFAULT_BIN = os.path.join(REPO, "build-resident", "app", "wwdos")
 
 
 class Desk:
-    def __init__(self, name, binary=None, cols=160, rows=50):
+    def __init__(self, name, binary=None, cols=160, rows=50, env=None):
         self.name = name
+        self.env = env or {}
         self.binary = binary or os.environ.get("WWDOS_BIN", DEFAULT_BIN)
         self.cols, self.rows = cols, rows
         self.sock = f"/tmp/wibwob_{name}.sock"
@@ -28,7 +30,8 @@ class Desk:
     # ---------------------------------------------------------------- life
     def start(self, timeout=10.0):
         self.stop()
-        cmd = (f"cd {REPO} && WIBWOB_INSTANCE={self.name} WWDOS_TR808_AUDIO=0 "
+        extra = "".join(f"{k}={shlex.quote(v)} " for k, v in self.env.items())
+        cmd = (f"cd {REPO} && {extra}WIBWOB_INSTANCE={self.name} WWDOS_TR808_AUDIO=0 "
                f"{self.binary} 2>{self.log}")
         subprocess.run(["tmux", "-L", self.name, "new-session", "-d", "-s", self.name,
                         "-x", str(self.cols), "-y", str(self.rows), cmd], check=True)

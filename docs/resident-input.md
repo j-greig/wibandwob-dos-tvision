@@ -72,8 +72,11 @@ already in front when its entry appears.
 
 ### resident_manners
 
-    cmd:resident_manners share_ms=1500 wait_on_button=1
+    cmd:resident_manners                    # read them
     cmd:resident_manners clear=1            # drop everything queued (logged as refused: cleared)
+
+Changing `share_ms` or `wait_on_button` is a rule: only the console with the key turned changes it, so these values
+stay at their defaults from every socket or API caller (`docs/resident-senses.md`, Who is speaking).
 
 ### resident_front
 
@@ -229,8 +232,8 @@ printable keys arriving together as a paste (`kbPaste`), and the text editor vie
 
 ## Not done
 
-- **Who did what.** The log knows the resident's acts; the app does not record authorship of changes (item 6).
-- **A visible hand.** Resident input moves no cursor on screen; the show layer's cursors are separate.
+- **Who did what, a visible hand, looking without touching, who is speaking**: see `docs/resident-senses.md`
+  (`look_*`, `acts`, `resident_hand`, `standing`, the console key). Resident commands take `actor=` (the resident's name).
 - **Dialogs as non-modal windows.** A dialog opened by resident input is still run by `execView` (see the containment
   table). Making it a plain window needs each call site to take its result later instead of from `execView`.
 - **The person's dialogs.** A dialog the person opens still stops the person; the resident is not stopped by it.

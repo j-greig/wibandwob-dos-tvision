@@ -26,6 +26,8 @@
 #include <functional>
 #include <chrono>
 
+#include "resident_senses.h"
+
 // Forward declarations
 class WibWobEngine;
 class TWibWobWindow;
@@ -160,7 +162,7 @@ public:
     TWibWobInputView* getInputView() { return inputView; }
 
     // API: queue a user message to be processed when the engine is idle
-    void injectUserMessage(const std::string& text) { pendingAsk_ = text; }
+    void injectUserMessage(const std::string& text) { pendingAsk_ = text; pendingAskWho_ = resident::currentWho(); }
 
 private:
     static TFrame* initFrame(TRect r);
@@ -182,6 +184,7 @@ private:
     // Logging
     std::string sessionId;
     std::string pendingAsk_;  // queued self-prompt, drained when engine idle
+    resident::Who pendingAskWho_{"app", resident::Source::App};  // who queued it (resident_senses.h)
     bool speakNextUserMessage_ = false;  // TTS the self-prompted user message
     std::string logFilePath;
 

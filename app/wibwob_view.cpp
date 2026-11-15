@@ -5,6 +5,7 @@
 /*                                                         */
 /*---------------------------------------------------------*/
 
+#include "resident_senses.h"
 #include "wibwob_view.h"
 #include "wibwob_engine.h"
 #include "room_chat_view.h"  // cmApiKeyChanged
@@ -590,6 +591,7 @@ void TWibWobWindow::handleEvent(TEvent& event) {
                 std::string msg = std::move(pendingAsk_);
                 pendingAsk_.clear();
                 speakNextUserMessage_ = true;
+                resident::WhoScope asker(pendingAskWho_);
                 processUserInput(msg);
             }
         }
@@ -617,6 +619,7 @@ void TWibWobWindow::handleEvent(TEvent& event) {
         auto* text = static_cast<std::string*>(event.message.infoPtr);
         if (text && !text->empty()) {
             pendingAsk_ = *text;  // queue it, don't process immediately
+            pendingAskWho_ = resident::currentWho();   // the asker, for who is speaking
             // Ensure engine + poll timer are running so the pending ask is drained
             // even in headless / API-only sessions where no human has typed yet.
             ensureEngineInitialized();
@@ -703,6 +706,8 @@ void TWibWobWindow::processUserInput(const std::string& input) {
     if (input.empty() || engine->isBusy()) {
         return;
     }
+    // Who is speaking: the model gets the author, source and standing in front of the text.
+    const std::string stamped = resident::stampInstruction(input, "wibwob");
 
     // Check auth state — give clear guidance if no auth available.
     // Allow through if engine has a provider (e.g. API key injected at runtime).
@@ -859,7 +864,7 @@ void TWibWobWindow::processUserInput(const std::string& input) {
         logMessage("Stream", "[streaming] Trying SDK provider...");
         messageView->startStreamingMessage("");
         // Pass system prompt for auto-session-start
-        streamingStarted = sdkProvider->sendStreamingQuery(input, streamCallback, engine->getSystemPrompt());
+        streamingStarted = sdkProvider->sendStreamingQuery(stamped, streamCallback, engine->getSystemPrompt());
         logMessage("Stream", "[streaming] SDK sendStreamingQuery: " + std::string(streamingStarted ? "started" : "failed"));
     }
 
@@ -867,7 +872,7 @@ void TWibWobWindow::processUserInput(const std::string& input) {
     if (!streamingStarted) {
         logMessage("Stream", "[streaming] No streaming provider available, using fallback");
         messageView->cancelStreamingMessage();
-        fallbackToRegularQuery(input, start);
+        fallbackToRegularQuery(stamped, start);
     }
 }
 
