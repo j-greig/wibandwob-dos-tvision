@@ -1,0 +1,228 @@
+// Tests for the machine's sound: notes rendered to buffers and compared.
+// Run: build/app/sound_test (ctest name: sound).
+#include "ears.h"
+#include "score.h"
+#include "synth.h"
+
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <sys/stat.h>
+#include <vector>
+
+using namespace sound;
+
+static int g_pass = 0, g_fail = 0;
+static void check(bool ok, const std::string& what) {
+    if (ok) { ++g_pass; std::printf("  PASS: %s\n", what.c_str()); }
+    else { ++g_fail; std::printf("  FAIL: %s\n", what.c_str()); }
+}
+
+static Note note(Voice v, const char* name, double at, double dur, int vel = 100, const char* patch = "bass") {
+    Note n;
+    n.voice = v;
+    n.midi = parseNote(name);
+    n.atMs = at;
+    n.durMs = dur;
+    n.vel = vel;
+    n.patch = fmPatches()[patchIndex(patch)];
+    return n;
+}
+
+static size_t ms(double m) { return (size_t)std::floor(m * kRate / 1000.0 + 0.5); }
+
+static void testSynth() {
+    std::printf("[synth]\n");
+    check(parseNote("C-4") == 60 && parseNote("A-4") == 69 && parseNote("C#4") == 61 && parseNote("Db4") == 61 &&
+          parseNote("c4") == 60 && parseNote("60") == 60 && parseNote("B-3") == 59 && parseNote("C-0") == 12,
+          "note names parse in tracker form (C-4 = 60, A-4 = 69, C#4 = Db4 = 61)");
+    check(parseNote("H-4") < 0 && parseNote("") < 0 && parseNote("C") < 0 && parseNote("200") < 0, "bad note names are refused");
+    check(noteName(61) == "C#4" && noteName(60) == "C-4" && noteName(69) == "A-4", "note names print in tracker form");
+    check(speakerDivisor(69) == 2712 && std::fabs(speakerHz(69) - 439.966) < 0.01,
+          "PC speaker A-4 loads divisor 2712 into the timer chip and sounds at 439.97 Hz");
+
+    auto a = render({note(Voice::PcSpeaker, "A-4", 0, 1000)}, 1000);
+    const int cross = upCrossings(a, 0, a.size());
+    check(a.size() == 22050, "one second renders 22050 samples");
+    check(cross >= 438 && cross <= 441, "PC speaker A-4 crosses zero upward 440 times in a second (got " + std::to_string(cross) + ")");
+    bool twoLevels = true;
+    for (int16_t v : a) if (std::abs(v) != std::abs(a[0]) || v == 0) { twoLevels = false; break; }
+    check(twoLevels, "PC speaker output holds two levels only (a square wave)");
+
+    auto a2 = render({note(Voice::PcSpeaker, "A-4", 0, 1000)}, 1000);
+    check(fnv1a(a) == fnv1a(a2), "the same notes render the same samples");
+
+    // One speaker: the second note cuts the first.
+    auto mono = render({note(Voice::PcSpeaker, "C-4", 0, 1000), note(Voice::PcSpeaker, "C-6", 500, 500)}, 1000);
+    const int c1 = upCrossings(mono, ms(100), ms(400)), c2 = upCrossings(mono, ms(600), ms(900));
+    check(c1 >= 76 && c1 <= 80 && c2 >= 312 && c2 <= 316,
+          "the PC speaker is one voice: C-6 replaces C-4 when it starts (" + std::to_string(c1) + ", " + std::to_string(c2) + " crossings in 300 ms)");
+
+    // FM: sounds through the gate, rings out over the release, then silence.
+    const Note b = note(Voice::Fm, "C-3", 0, 250);
+    auto fb = render({b}, 600);
+    const double during = rms(fb, 0, ms(250));
+    const double after = rms(fb, ms(250 + b.patch.releaseMs + 1), fb.size());
+    check(during > 0.05, "FM bass note has level during its gate (rms " + std::to_string(during) + ")");
+    check(after == 0.0, "FM bass note is silent after gate plus release");
+    auto quiet = render({note(Voice::Fm, "C-3", 0, 250, 30)}, 600);
+    check(rms(quiet, 0, ms(250)) < during * 0.5, "a soft FM note is quieter than a loud one");
+    auto bell = render({note(Voice::Fm, "C-5", 0, 250, 100, "bell")}, 600);
+    check(fnv1a(bell) != fnv1a(render({note(Voice::Fm, "C-5", 0, 250, 100, "organ")}, 600)), "patches sound different (bell, organ)");
+
+    // Nine FM channels: a tenth note at once takes the first channel.
+    std::vector<Note> ten;
+    for (int i = 0; i < 10; ++i) ten.push_back(note(Voice::Fm, "C-3", i * 1.0, 400, 100, "organ"));
+    auto tenS = render(ten, 600);
+    check(peak(tenS) > 0 && peak(tenS) <= 32767, "ten FM notes at once render and stay in range");
+
+    // Envelope.
+    const Patch& br = fmPatches()[patchIndex("brass")];
+    check(envelope(br, 0, 500) == 0.0 && std::fabs(envelope(br, br.attackMs, 500) - 1.0) < 1e-9 &&
+          std::fabs(envelope(br, 400, 500) - br.sustain) < 1e-9 && envelope(br, 500 + br.releaseMs, 500) == 0.0,
+          "envelope: 0 at start, 1 after attack, sustain while held, 0 after release");
+
+    // WAV file.
+    const char* path = "/tmp/wwdos_sound_test.wav";
+    check(writeWav(path, a), "writes a WAV file");
+    struct stat st;
+    check(::stat(path, &st) == 0 && st.st_size == 44 + 2 * 22050, "WAV is 44 header bytes plus 2 per sample");
+    std::remove(path);
+}
+
+static Heard synthHeard(const char* n, double at, double dur, const std::string& who) {
+    Heard h;
+    const Patch& p = fmPatches()[patchIndex("bass")];
+    h.startMs = at;
+    h.durMs = dur;
+    h.endMs = at + dur + p.releaseMs;
+    h.source = "synth";
+    h.window = "w1";
+    h.voice = "fm";
+    h.patch = "bass";
+    h.midi = parseNote(n);
+    h.level = 100 / 127.0;
+    h.who = who;
+    h.hasEnvelope = true;
+    h.envPatch = p;
+    return h;
+}
+
+static Heard drumHeard(const char* v, int step, double at, const std::string& who) {
+    Heard h;
+    h.startMs = at;
+    h.endMs = at + drumRingMs(v);
+    h.source = "tr808";
+    h.window = "w2";
+    h.voice = v;
+    h.step = step;
+    h.level = 0.9;
+    h.tempo = 120;
+    h.who = who;
+    return h;
+}
+
+static size_t codePoints(const std::string& s) {
+    size_t n = 0;
+    for (unsigned char c : s) if ((c & 0xC0) != 0x80) ++n;
+    return n;
+}
+
+static void testEars() {
+    std::printf("[ears]\n");
+    Ears e;
+    e.hear(synthHeard("C-4", 1000, 100, "wib"));
+    e.hear(drumHeard("bd", 0, 1000, "person"));
+    e.hear(synthHeard("G-4", 1250, 100, "wib"));     // arrives before E-4: kept in start order
+    e.hear(synthHeard("E-4", 1125, 100, "wib"));
+    e.hear(drumHeard("ch", 1, 1125, "person"));
+    auto all = e.since(2000, 2000);
+    check(all.size() == 5 && all[2].startMs == 1125 && all[4].midi == parseNote("G-4"), "the ears keep what they heard in start order");
+    auto s = e.sounding(1050);
+    check(s.size() == 2 && s[0].midi == 60 && s[1].voice == "bd", "at 1050 ms the C-4 and the bass drum are sounding");
+    check(e.sounding(2000).empty(), "at 2000 ms nothing sounds");
+    check(e.since(2000, 500).empty() && e.since(2000, 1000).size() == 5, "since: nothing in the last 500 ms, all five in the last second");
+    check(e.sounding(1050, "synth").size() == 1 && e.since(2000, 1000, "tr808").size() == 2, "a source filter keeps the synth or the TR-808");
+    check(std::fabs(Ears::levelAt(all[0], 1000 + 2) - all[0].level) < 1e-9, "a synth note's level after its attack is its velocity level");
+    const Heard bd = all[1];
+    check(std::fabs(Ears::levelAt(bd, 1200) - 0.45) < 1e-9, "a bass drum halfway through its 400 ms ring is at half level");
+
+    auto rows = e.rows(1500, 500, 125);
+    check(rows.size() == 4, "rows: 500 ms in 125 ms rows is four rows");
+    check(rows[0].find("C-4") != std::string::npos && rows[0].find("BD") != std::string::npos && rows[0].find("-0.500") == 0,
+          "row one: -0.500, C-4 and BD (" + rows[0] + ")");
+    check(rows[1].find("E-4") != std::string::npos && rows[1].find("CH") != std::string::npos, "row two: E-4 and CH (" + rows[1] + ")");
+    check(rows[3].find("---") != std::string::npos && rows[3].find("..") != std::string::npos, "row four is empty: --- and .. (" + rows[3] + ")");
+    const std::string m = e.meter(1500, 500, 125);
+    check(codePoints(m) == 4 && m != "    ", "meter: one character per row, not blank (" + m + ")");
+    const std::string sum = e.summary(1500, 1000);
+    check(sum.find("synth 3 notes (C-4 to G-4) by wib 3") != std::string::npos &&
+          sum.find("tr808 2 hits (bd 1, ch 1) at 120 bpm, started by person") != std::string::npos,
+          "summary: " + sum);
+    const std::string rep = e.report(1500, 1, "", 125);
+    check(rep.find("\"standing\":\"data\"") != std::string::npos && rep.find("\"counts\":{\"synth\":3,\"tr808\":2}") != std::string::npos,
+          "report is marked data and counts 3 notes and 2 hits");
+    const std::string rw = e.report(1500, 1, "", 125, "w2");
+    check(rw.find("\"counts\":{\"synth\":0,\"tr808\":2}") != std::string::npos, "report for window w2 holds only its hits");
+    Ears small(3);
+    for (int i = 0; i < 5; ++i) small.hear(drumHeard("bd", i, i * 125.0, "app"));
+    check(small.size() == 3 && small.since(1000, 1000).front().step == 2, "the ears keep the newest N and drop the oldest");
+}
+
+static void testScore() {
+    std::printf("[score]\n");
+    const char* text =
+        "# a test score\n"
+        "title Two bars each\n"
+        "tempo 240\n"
+        "part person the person\n"
+        "part wib a resident\n"
+        "1 all listen\n"
+        "do tr808 preset electro\n"
+        "do tr808 play\n"
+        "2 person play a phrase\n"
+        "2 wib answer the last phrase\n"
+        "1 all rest one bar\n"
+        "do tr808 stop\n";
+    Score s;
+    std::string err;
+    check(parseScore(text, s, err), "a score parses (" + err + ")");
+    check(s.title == "Two bars each" && s.tempo == 240 && s.parts.size() == 2 && s.sections.size() == 4,
+          "title, tempo, two parts and four sections");
+    check(s.sections[0].acts.size() == 2 && s.sections[0].acts[0].text() == "tr808 preset electro" &&
+          s.sections[3].acts[0].text() == "tr808 stop", "do lines belong to the section before them");
+    check(s.sections[1].kind == "open" && s.sections[2].kind == "answer" && s.sections[3].kind == "rest",
+          "kinds: open, answer, rest from the instruction's words");
+    check(barMs(s) == 1000 && totalMs(s) == 6000 && sectionStartMs(s, 2) == 3000, "at 240 bpm a bar is 1 s; six bars are 6 s");
+    ScorePos p = positionAt(s, 3600);
+    check(p.section == 2 && p.bar == 0 && p.beat == 2 && std::fabs(p.leftMs - 1400) < 1e-9 && !p.done,
+          "at 3.6 s: section 3, bar 1, beat 3, 1.4 s left");
+    check(positionAt(s, 6000).done && positionAt(s, 0).section == 0, "at 6 s the score is done; at 0 it is in section 1");
+
+    struct Bad { const char* text; const char* why; };
+    const Bad bad[] = {
+        {"part p x\n1 p go\ndo shell rm\n", "do acts on tr808 or synth only"},
+        {"part p x\n1 p go\ndo tr808 load_preset x\n", "tr808 does play"},
+        {"1 nobody go\n", "no part named nobody"},
+        {"do tr808 play\n", "a do line follows"},
+        {"tempo 5000\n1 all go\n", "tempo is 30 to 600"},
+        {"exec_command name=close_all\n", "unknown line"},
+        {"# only a comment\n", "at least one section"},
+    };
+    for (const auto& b : bad) {
+        Score x;
+        std::string e;
+        const bool ok = parseScore(b.text, x, e);
+        check(!ok && e.find(b.why) != std::string::npos, std::string("refused: ") + e);
+    }
+}
+
+int main(int argc, char** argv) {
+    std::string only = argc > 1 ? argv[1] : "";
+    if (only.empty() || only == "synth") testSynth();
+    if (only.empty() || only == "ears") testEars();
+    if (only.empty() || only == "score") testScore();
+    std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
+    return g_fail ? 1 : 0;
+}
