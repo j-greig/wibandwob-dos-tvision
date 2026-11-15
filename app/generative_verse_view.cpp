@@ -214,3 +214,8 @@ private:
 
 TWindow* createGenerativeVerseWindow(const TRect &bounds) { auto *w = new TGenerativeVerseWindow(bounds); w->setup(/*periodMs=*/50); return w; }
 
+std::string TGenerativeVerseView::describeState() const {
+    static const char* modes[] = {"flow", "swirl", "weave"};
+    return std::string("verse field in ") + modes[mode] + " mode, palette " + std::to_string(paletteIndex) + ", frame " +
+           std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

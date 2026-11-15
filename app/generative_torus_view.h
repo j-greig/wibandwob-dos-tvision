@@ -15,10 +15,12 @@
 #define Uses_TDrawBuffer
 #define Uses_TEvent
 #define Uses_TColorAttr
+#include "describe.h"
 #include <tvision/tv.h>
 
-class TGenerativeTorusView : public TView {
+class TGenerativeTorusView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TGenerativeTorusView(const TRect &bounds, unsigned periodMs = 40);
     virtual ~TGenerativeTorusView();
 

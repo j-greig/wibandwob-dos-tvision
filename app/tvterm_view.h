@@ -1,6 +1,8 @@
 #ifndef TVTERM_VIEW_H
 #define TVTERM_VIEW_H
 
+#include "describe.h"
+
 #ifdef __EMSCRIPTEN__
 // Browser build: there is no PTY, so the terminal window is a placeholder
 // with the same interface. Implementation: wasm/tvterm_stub.cpp.
@@ -12,9 +14,10 @@
 
 namespace tvterm { struct TVTermConstants { ushort cmCheckTerminalUpdates; }; }
 
-class TWibWobTerminalWindow : public TWindow
+class TWibWobTerminalWindow : public TWindow, public ww::Describable
 {
 public:
+    std::string describeState() const override { return "terminal (not available in this build)"; }
     static const tvterm::TVTermConstants termConsts;
     TWibWobTerminalWindow(const TRect &bounds) noexcept;
     void sendText(const std::string &) {}
@@ -41,9 +44,11 @@ TWindow* createTerminalWindowExec(const TRect &bounds, const std::string &exec, 
 
 #include <string>
 
-class TWibWobTerminalWindow : public tvterm::BasicTerminalWindow
+class TWibWobTerminalWindow : public tvterm::BasicTerminalWindow, public ww::Describable
 {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     static const tvterm::TVTermConstants termConsts;
 
     TWibWobTerminalWindow(const TRect &bounds, tvterm::TerminalController &termCtrl) noexcept;

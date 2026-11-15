@@ -135,3 +135,6 @@ private: static TFrame* initFrame(TRect r){ return new TNoTitleFrame(r);} };
 
 TWindow* createGenerativeOrbitWindow(const TRect &bounds){ auto *w=new TGenerativeOrbitWindow(bounds); w->setup(50); return w; }
 
+std::string TGenerativeOrbitView::describeState() const {
+    return "orbit field, palette " + std::to_string(paletteIndex) + ", frame " + std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

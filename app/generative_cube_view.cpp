@@ -131,3 +131,7 @@ private:
 };
 
 TWindow* createGenerativeCubeWindow(const TRect &bounds){ auto *w=new TGenerativeCubeWindow(bounds); w->setup(45); return w; }
+
+std::string TGenerativeCubeView::describeState() const {
+    return "spinning cube, palette " + std::to_string(paletteIndex) + ", frame " + std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

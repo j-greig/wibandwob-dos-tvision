@@ -20,6 +20,7 @@
 #define Uses_TKeys
 #define Uses_TProgram
 #define Uses_TDeskTop
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -31,9 +32,10 @@
 /*   Extends TScroller for proper scroll bar support     */
 /*---------------------------------------------------------*/
 
-class TTransparentTextView : public TScroller
-{
+class TTransparentTextView : public TScroller, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TTransparentTextView(const TRect& bounds, TScrollBar* hScroll,
                          TScrollBar* vScroll, const std::string& filePath);
     virtual ~TTransparentTextView() {}

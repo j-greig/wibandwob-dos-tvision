@@ -427,3 +427,21 @@ TWindow* createWibWobTestWindowC(const TRect& bounds, const std::string& title) 
 
     return win;
 }
+
+std::string TWibWobTestViewA::describeState() const {
+    return "chat scroll test (layout A) with " + std::to_string(messages.size()) + " messages";
+}
+bool TWibWobTestViewA::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    for (const auto& m : messages) out.push_back(m.sender + ": " + m.content);
+    return true;
+}
+std::string TWibWobTestViewB::describeState() const {
+    return "chat scroll test (layout B) with " + std::to_string(messages.size()) + " messages, scrolled to line " +
+           std::to_string(delta.y + 1);
+}
+bool TWibWobTestViewB::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    for (const auto& m : messages) out.push_back(m.sender + ": " + m.content);
+    return true;
+}

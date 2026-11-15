@@ -114,3 +114,6 @@ private: static TFrame* initFrame(TRect r){ return new TNoTitleFrame(r);} };
 
 TWindow* createGenerativeMyceliumWindow(const TRect &bounds){ auto *w=new TGenerativeMyceliumWindow(bounds); w->setup(55); return w; }
 
+std::string TGenerativeMyceliumView::describeState() const {
+    return "mycelium field, palette " + std::to_string(paletteIndex) + ", frame " + std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

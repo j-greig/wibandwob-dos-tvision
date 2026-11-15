@@ -16,6 +16,7 @@
 #define Uses_TScrollBar
 #define Uses_TDrawBuffer
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 #include <vector>
 #include <string>
@@ -62,8 +63,10 @@ private:
 // TBackroomsTvView — scrolling text view fed by BackroomsBridge pipe.
 // ---------------------------------------------------------------------------
 
-class TBackroomsTvView : public TScroller {
+class TBackroomsTvView : public TScroller, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     static const int kPadding = 3;      // cells of padding on each edge
     static const int kMaxLines = 500;   // ring buffer cap
 

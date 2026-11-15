@@ -15,6 +15,8 @@ set(TV_COMMON_SOURCES
     resident_input.cpp
     resident_senses.cpp
     resident_acts.cpp
+    describe.cpp
+    resident_hands.cpp
     wibwob_background.cpp
     window_type_registry.cpp
     theme_manager.cpp
@@ -86,6 +88,7 @@ add_executable(wwdos
     figlet_utils.cpp
     figlet_text_view.cpp
     backrooms_tv_view.cpp
+    feed_view.cpp
 )
 target_include_directories(wwdos PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # The TR-808 finds modules/tr808/samples in the source tree when run from elsewhere.
@@ -182,6 +185,8 @@ add_executable(command_registry_test EXCLUDE_FROM_ALL
     resident_input.cpp
     resident_senses.cpp
     resident_acts.cpp
+    describe.cpp
+    resident_hands.cpp
 )
 target_link_libraries(command_registry_test PRIVATE tvision)
 
@@ -195,6 +200,8 @@ add_executable(scramble_engine_test EXCLUDE_FROM_ALL
     resident_input.cpp
     resident_senses.cpp
     resident_acts.cpp
+    describe.cpp
+    resident_hands.cpp
     llm/base/auth_config.cpp
 )
 target_link_libraries(scramble_engine_test PRIVATE tvision)

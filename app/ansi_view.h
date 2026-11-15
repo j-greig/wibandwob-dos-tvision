@@ -38,6 +38,7 @@
 #define Uses_TColorAttr
 #define Uses_TWindow
 #define Uses_TFrame
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -53,8 +54,9 @@ struct AnsiLine {
     int length = 0; // printable length (after tab expand)
 };
 
-class TAnsiMiniView : public TScroller {
+class TAnsiMiniView : public TScroller, public ww::Describable {
 public:
+    std::string describeState() const override;
     TAnsiMiniView(const TRect& bounds, TScrollBar* hScroll, TScrollBar* vScroll);
     bool loadFile(const std::string &path);
     virtual void draw() override;

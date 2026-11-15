@@ -18,6 +18,7 @@
 #define Uses_TProgram
 #define Uses_TDeskTop
 #define Uses_TBackground
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -187,9 +188,10 @@ private:
 /* TScrambleWindow - minimal-chrome wrapper                */
 /*---------------------------------------------------------*/
 
-class TScrambleWindow : public TWindow
-{
+class TScrambleWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TScrambleWindow(const TRect& bounds, ScrambleDisplayState initialState = sdsSmol);
 
     TScrambleView* getView() { return scrambleView; }
