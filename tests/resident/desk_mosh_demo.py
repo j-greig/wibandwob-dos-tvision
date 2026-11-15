@@ -56,7 +56,7 @@ def main():
     t0 = time.time()
     for k in range(n):
         if k % int(a.fps * 4) == int(a.fps * 2):
-            d.person_type(lines[(k // int(a.fps * 4)) % len(lines)], gap=0.01)
+            d.person_type(lines[(k // int(a.fps * 4)) % len(lines)], gap=0.05)
         open(os.path.join(a.out, f"frame-{k:04d}.ans"), "w").write(cap(d))
         time.sleep(max(0, t0 + (k + 1) / a.fps - time.time()))
     st = d.ipc("exec_command", name="mosh_status")

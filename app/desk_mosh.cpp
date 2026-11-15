@@ -92,7 +92,11 @@ int lumOf(int idx) {
     return (int)(((v >> 16) & 255) * 0.3 + ((v >> 8) & 255) * 0.59 + (v & 255) * 0.11);
 }
 int nearestEga(TColorRGB c) {
+    static std::map<uint32_t, int> cache;   // the desktop uses a few dozen colours
     uint32_t v = (uint32_t) c;
+    auto hit = cache.find(v);
+    if (hit != cache.end()) return hit->second;
+    if (cache.size() > 4096) cache.clear();
     int r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255, best = 0, bd = 1 << 30;
     for (int i = 0; i < 16; ++i) {
         uint32_t e = (uint32_t) ww::egaRGB(i);
@@ -100,6 +104,7 @@ int nearestEga(TColorRGB c) {
         int d = dr * dr + dg * dg + db * db;
         if (d < bd) { bd = d; best = i; }
     }
+    cache[v] = best;
     return best;
 }
 int idxOf(TColor c, bool fg) {
