@@ -5,6 +5,7 @@
 #include "core/json_utils.h"
 #include "figlet_utils.h"
 #include "resident_input.h"
+#include "resident_senses.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 
@@ -192,6 +193,11 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"resident_front", "What is in front: the modal dialog or open menu, its controls with labels and kinds, and how to accept or cancel; the focused window; other dialogs", false},
         {"resident_press", "Press a dialog control by its label (label=, item= for a list or cluster entry, value= for an input line; id= or the dialog in front)", true},
         {"resident_menu", "List the menu bar as names, or choose=File>Open a menu item by name (id= sends the command to that window first)", true},
+        {"look_glance", "Every window, one line each: id, type, title, rect, z, owner, whether the person can see it (seen all|part|none), one sentence of state; reader= adds what changed since that reader last looked. Changes nothing", false},
+        {"look_read", "One window's text (id=): the model's text for editor, terminal, chat and paint windows, else its cells as drawn; from=, limit= page the lines. Marks the window's frame for the person (reader=). Changes nothing else", false},
+        {"look_study", "A rectangle of cells (x, y, w, h in desktop cells; screen=1 for screen rows; id= for a window's own picture) with text, colour runs [x,n,fg,bg] and a ruler of column numbers. Changes nothing", false},
+        {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
+        {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
@@ -726,6 +732,13 @@ std::string exec_registry_command(
         auto id_it = kv.find("id");
         if (id_it == kv.end()) return "err missing id";
         return api_window_text(app, id_it->second);
+    }
+    if (name.rfind("look_", 0) == 0) {
+        if (name == "look_glance") return resident::cmdGlance(kv);
+        if (name == "look_read") return resident::cmdRead(kv);
+        if (name == "look_study") return resident::cmdStudy(kv);
+        if (name == "look_changes") return resident::cmdChanges(kv);
+        if (name == "look_mark") return resident::cmdMark(kv);
     }
     if (name.rfind("resident_", 0) == 0) {
         if (name == "resident_key") return resident::cmdKey(kv);

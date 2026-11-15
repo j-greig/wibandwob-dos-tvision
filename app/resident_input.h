@@ -11,6 +11,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <vector>
 
 class TView;
 class TWindow;
@@ -25,9 +26,20 @@ struct Hooks {
     std::function<TWindow*(const std::string&)> findWindow;
     // Window -> its API id ("" when it has none).
     std::function<std::string(TWindow*)> idOf;
+    // Window -> its type slug (window type registry).
+    std::function<std::string(TWindow*)> typeOf;
+    // Text a window holds in its own model (editor lines, terminal output, chat,
+    // paint canvas); false when the type has none and its cells are the text.
+    std::function<bool(TWindow*, std::vector<std::string>&)> textOf;
+    // One sentence of state for types whose model says more than their cells; "" otherwise.
+    std::function<std::string(TWindow*)> stateOf;
 };
 
 void setHooks(const Hooks& h);
+const Hooks& hooks();
+
+// Who opened a window: "resident" for windows resident input opened, else "person".
+std::string ownerOf(TView* v);
 
 // Event loop integration, called from the application's getEvent()/putEvent().
 // takeEvent runs before the base getEvent: true means ev is final (skip the base).

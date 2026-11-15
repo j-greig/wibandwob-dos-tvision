@@ -1050,6 +1050,11 @@ private:
 // Static member definition
 std::string TWwdosApp::runtimeApiKey;
 
+// Readers for the resident's senses (resident_senses.cpp), defined below.
+static const char* windowTypeName(TWindow* w);
+static bool residentTextOf(TWindow* w, std::vector<std::string>& out);
+static std::string residentStateOf(TWindow* w);
+
 // Accessor for runtime API key (used by wibwob_view.cpp)
 std::string getAppRuntimeApiKey() {
     return TWwdosApp::runtimeApiKey;
@@ -1091,6 +1096,9 @@ TWwdosApp::TWwdosApp() :
         auto it = winToId.find(w);
         return it == winToId.end() ? std::string() : it->second;
     };
+    residentHooks.typeOf = [](TWindow* w) { return std::string(windowTypeName(w)); };
+    residentHooks.textOf = [](TWindow* w, std::vector<std::string>& out) { return residentTextOf(w, out); };
+    residentHooks.stateOf = [](TWindow* w) { return residentStateOf(w); };
     resident::setHooks(residentHooks);
 
     // Start IPC server for local API control (best-effort; ignore failures)
@@ -3236,6 +3244,92 @@ static const char* windowTypeName(TWindow* w) {
     }
     // Fallback to first registry entry (canonical default type slug).
     return specs.empty() ? "test_pattern" : specs.front().type;
+}
+
+static std::vector<std::string> splitLines(const std::string& s) {
+    std::vector<std::string> out;
+    size_t p = 0;
+    while (p <= s.size()) {
+        size_t nl = s.find('\n', p);
+        if (nl == std::string::npos) nl = s.size();
+        std::string l = s.substr(p, nl - p);
+        while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
+        out.push_back(l);
+        p = nl + 1;
+    }
+    while (!out.empty() && out.back().empty()) out.pop_back();
+    return out;
+}
+
+// The text a window's model holds, for look_read: editor lines, terminal output,
+// chat messages, paint canvas. Other types are read from their cells.
+static bool residentTextOf(TWindow* w, std::vector<std::string>& out) {
+    out.clear();
+    if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
+        if (!tw->getEditorView()) return false;
+        out = tw->getEditorView()->getLines();
+        return true;
+    }
+    if (auto* term = dynamic_cast<TWibWobTerminalWindow*>(w)) {
+        out = splitLines(term->getOutputText());
+        return true;
+    }
+    if (auto* chat = dynamic_cast<TWibWobWindow*>(w)) {
+        auto* mv = chat->getMessageView();
+        if (!mv) return false;
+        for (const auto& m : mv->getMessages()) {
+            auto lines = splitLines(m.content);
+            std::string who = m.sender.empty() ? "Wib&Wob" : m.sender;
+            if (lines.empty()) lines.push_back("");
+            out.push_back(who + ": " + lines[0]);
+            for (size_t i = 1; i < lines.size(); ++i) out.push_back("  " + lines[i]);
+        }
+        return true;
+    }
+    if (auto* pw = dynamic_cast<TPaintWindow*>(w)) {
+        if (!pw->getCanvas()) return false;
+        out = splitLines(pw->getCanvas()->exportText());
+        return true;
+    }
+    return false;
+}
+
+static std::string residentStateOf(TWindow* w) {
+    std::vector<std::string> lines;
+    if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
+        if (!tw->getEditorView()) return "";
+        const auto& l = tw->getEditorView()->getLines();
+        size_t chars = 0;
+        for (auto& s : l) chars += s.size();
+        std::string top;
+        for (auto& s : l) if (!s.empty()) { top = s.size() > 40 ? s.substr(0, 37) + "..." : s; break; }
+        return "text editor holding " + std::to_string(l.size()) + " lines, " + std::to_string(chars) +
+               " characters" + (top.empty() ? "" : "; first line: \"" + top + "\"");
+    }
+    if (auto* term = dynamic_cast<TWibWobTerminalWindow*>(w)) {
+        const char* t = term->getTitle(0);
+        lines = splitLines(term->getOutputText());
+        return std::string("terminal") + (t && *t ? std::string(" \"") + t + "\"" : "") + " showing " +
+               std::to_string(lines.size()) + " lines of output";
+    }
+    if (auto* chat = dynamic_cast<TWibWobWindow*>(w)) {
+        auto* mv = chat->getMessageView();
+        if (!mv) return "";
+        const auto& m = mv->getMessages();
+        if (m.empty()) return "chat with no messages yet";
+        std::string last = m.back().sender.empty() ? "Wib&Wob" : m.back().sender;
+        return "chat with " + std::to_string(m.size()) + " messages; the last from " + last;
+    }
+    if (auto* pw = dynamic_cast<TPaintWindow*>(w)) {
+        auto* c = pw->getCanvas();
+        if (!c) return "";
+        lines = splitLines(c->exportText());
+        int ink = 0;
+        for (auto& s : lines) for (char ch : s) if (ch != ' ') ++ink;
+        return "paint canvas " + std::to_string(c->getCols()) + "x" + std::to_string(c->getRows()) + " with " +
+               std::to_string(ink) + " cells inked";
+    }
+    return "";
 }
 
 // Text of a window that holds text (the text editor), for checking what input produced.

@@ -30,6 +30,7 @@
 #include <tvision/tv.h>
 
 #include "resident_input.h"
+#include "resident_senses.h"
 
 #include <algorithm>
 #include <chrono>
@@ -491,6 +492,9 @@ void routePerson(TEvent& ev) {
 // ---------------------------------------------------------------- loop hooks
 
 void setHooks(const Hooks& h) { g_hooks = h; }
+const Hooks& hooks() { return g_hooks; }
+
+std::string ownerOf(TView* v) { return g_owned.count(v) ? "resident" : "person"; }
 
 bool takeEvent(TEvent& ev) {
     // 1. Between the resident's mouse down and up, its own pointer events come first.
@@ -566,6 +570,7 @@ bool takeEvent(TEvent& ev) {
 }
 
 void afterBase(TEvent& ev) {
+    tickSenses();
     if (ev.what & (evMouse | evKeyDown)) {
         observePerson(ev);
         if (residentLoop()) {
