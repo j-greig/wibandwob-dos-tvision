@@ -561,7 +561,11 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
     }
     // Every command below runs as the caller it names (actor=, source=) and is logged as an act.
     resident::ipcBegin(cmd, kv);
-    if (cmd == "get_capabilities") {
+    // The Laws of Jam: a resident in WITNESS may not act; in FOLLOW it acts only after someone else.
+    const std::string modeRefusal = resident::modeGate(cmd == "exec_command" ? kv["name"] : cmd, kv);
+    if (!modeRefusal.empty()) {
+        resp = modeRefusal + "\n";
+    } else if (cmd == "get_capabilities") {
         resp = get_command_capabilities_json() + "\n";
     } else if (cmd == "get_window_types") {
         resp = get_window_types_json() + "\n";
