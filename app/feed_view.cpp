@@ -1,5 +1,6 @@
 // The Feed window. See feed_view.h.
 #define Uses_TWindow
+#define Uses_TFrame
 #define Uses_TScroller
 #define Uses_TScrollBar
 #define Uses_TDrawBuffer
@@ -92,6 +93,16 @@ void TFeedView::refresh(bool force) {
     unsigned long long rev = resident::actsRevision();
     if (!force && rev == seenRevision_) return;
     seenRevision_ = rev;
+    // The title carries each resident's mode as its face (Laws of Jam): "Feed  wib つ◎‿◎༽つ WITNESS".
+    if (auto* fw = dynamic_cast<TWindow*>(owner)) {
+        std::string modes = resident::modesLine();
+        std::string want = modes.empty() ? "Feed" : "Feed  " + modes;
+        if (!fw->title || want != fw->title) {
+            delete[] (char*)fw->title;
+            fw->title = newStr(want.c_str());
+            if (fw->frame) fw->frame->drawView();
+        }
+    }
     std::vector<resident::ActRecord> acts;
     resident::lastActs(1000, acts);
     lines_.clear();

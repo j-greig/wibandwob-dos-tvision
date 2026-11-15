@@ -233,6 +233,53 @@ def test_menu_ids(desk):
     R.check(bool(feed), "the Feed has its own menu command")
 
 
+def test_jam(desk):
+    print("jam")
+    desk.ipc("close_all", actor="setup")
+    time.sleep(0.3)
+    fid = desk.j("open_feed", x=0, y=26, w=150, h=14, actor="setup")["id"]
+    ed = desk.j("create_window", type="text_editor", x=2, y=1, w=40, h=8, title="jam", actor="setup")["id"]
+    WIB = dict(actor="wib", source="resident")
+    WOB = dict(actor="wob", source="resident")
+    # WITNESS: wib may look and talk, not act.
+    m = desk.j("resident_mode", mode="witness", **WIB)
+    r = desk.ipc("resident_key", id=ed, text="x", **WIB)
+    g = desk.ipc("look_glance", **WIB)
+    R.check(r.startswith("err refused") and "WITNESS" in r and g.startswith("{"),
+            f"in WITNESS wib may look but not act: {r[:80]!r}")
+    r = desk.ipc("create_window", type="test_pattern", **WIB)
+    R.check(r.startswith("err refused"), "nor open a window")
+    time.sleep(0.3)
+    title = desk.j("describe", id=fid)["title"]
+    R.check("wib つ◎‿◎༽つ WITNESS" in title, f"its mode shows as its face in the Feed's title: {title!r}")
+    R.check(any("held back resident_key" in l and "refused" in l for l in desk.j("describe", id=fid)["text"]),
+            "the held-back act is a Feed line with the reason")
+    # Only wib (or the console) sets wib's mode.
+    r = desk.ipc("resident_mode", who="wib", mode="flow", **WOB)
+    R.check(r.startswith("err refused") and "own mode" in r, "wob cannot set wib's mode")
+    # FOLLOW: wib acts only after someone else has acted since its own last act.
+    desk.j("resident_mode", mode="follow", **WIB)
+    desk.ipc("send_text", id=ed, content="from setup", mode="replace", actor="setup")   # someone else acts
+    r1 = desk.ipc("move_window", id=ed, x=4, y=2, **WIB)
+    r2 = desk.ipc("move_window", id=ed, x=6, y=3, **WIB)
+    R.check(r1.startswith("{") and r2.startswith("err refused") and "FOLLOW" in r2,
+            f"in FOLLOW wib acts once after another's act, then waits: {r1[:30]!r} / {r2[:70]!r}")
+    desk.ipc("move_window", id=ed, x=8, y=3, **WOB)                                   # wob acts
+    r3 = desk.ipc("move_window", id=ed, x=10, y=4, **WIB)
+    R.check(r3.startswith("{"), "after wob acts, wib may act again")
+    # OPPOSE and FLOW act freely; resident_mode lists faces.
+    desk.j("resident_mode", mode="oppose", **WOB)
+    r4 = desk.ipc("move_window", id=ed, x=12, y=4, **WOB)
+    r5 = desk.ipc("move_window", id=ed, x=14, y=4, **WOB)
+    lst = desk.j("resident_mode")
+    modes = {x["actor"]: (x["mode"], x["face"]) for x in lst["residents"]}
+    R.check(r4.startswith("{") and r5.startswith("{") and modes.get("wob", ("",))[0] == "oppose"
+            and modes.get("wib", ("",))[0] == "follow", f"OPPOSE acts freely; modes and faces are listed: {modes}")
+    desk.j("resident_mode", mode="flow", **WIB)
+    desk.j("resident_mode", mode="flow", **WOB)
+    desk.ipc("close_all", actor="setup")
+
+
 def test_undo(desk):
     print("undo")
     desk.ipc("close_all", actor="setup")
@@ -316,11 +363,11 @@ def test_rehearse(desk):
 
 
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "undo", "rehearse"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "jam", "undo", "rehearse"]
     desk = Desk(NAME, env=NO_LLM).start()
     try:
         for g in groups:
-            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
+            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "jam": test_jam, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
