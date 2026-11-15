@@ -17,8 +17,9 @@ class ClaudeSDKBridge {
         this.sessionId = null;           // Our internal session ID
         this.sdkSessionId = null;        // SDK session ID for resume
         this.systemPrompt = null;        // Agent SDK uses 'systemPrompt' not 'customSystemPrompt'
-        // this.allowedTools = ['Read', 'Write', 'Grep', 'Bash', 'LS', 'WebSearch', 'WebFetch'];
-        this.allowedTools = ['Read', 'Write', 'Grep', 'WebSearch', 'WebFetch'];
+        // The chat's agent acts only through the desktop's own tools (mcp_tools.js). No file, shell or web tools:
+        // those reach the person's machine.
+        this.allowedTools = [];
         this.maxTurns = 50;
         this.sdkSource = 'unknown';
         this.queryFn = null;
@@ -145,7 +146,7 @@ class ClaudeSDKBridge {
             this.sessionConfig = {
                 systemPrompt: this.systemPrompt,
                 maxTurns: data.maxTurns || this.maxTurns,
-                allowedTools: data.allowedTools || this.allowedTools,
+                allowedTools: this.allowedTools,                // the app's list is ignored: desktop tools only
                 model: data.model || 'claude-sonnet-4-6'  // Default to sonnet 4.6 if not specified
             };
 
@@ -277,7 +278,10 @@ class ClaudeSDKBridge {
                 }).filter(n => n !== 'mcp__tui-control__');
                 console.error(`[BRIDGE] Auto-derived ${mcpTools.length} MCP tool names from server`);
             }
-            const toolList = [...new Set([...baseTools, ...mcpTools])];
+            // The desktop's own tools are always allowed, by server name and by tool name.
+            const deskTools = ['mcp__tui-control', 'mcp__tui-control__tui_list_commands',
+                               'mcp__tui-control__tui_menu_command', 'mcp__tui-control__tui_batch_layout'];
+            const toolList = [...new Set([...baseTools, ...mcpTools, ...deskTools])];
             const modelId = this.normalizeModelId(this.sessionConfig.model);
 
             const queryOptions = {
@@ -285,8 +289,11 @@ class ClaudeSDKBridge {
                 maxTurns: this.sessionConfig.maxTurns,
                 model: modelId,
                 allowedTools: toolList,
-                permissionMode: 'bypassPermissions',           // MCP tools are safe (localhost HTTP only)
-                allowDangerouslySkipPermissions: true,          // SDK Options field name
+                permissionMode: 'default',                      // only the listed desktop tools run; nothing else is approved
+                disallowedTools: ['Bash', 'BashOutput', 'KillShell', 'KillBash', 'Read', 'Write', 'Edit', 'MultiEdit',
+                                  'NotebookEdit', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'Agent',
+                                  'TodoWrite', 'Skill', 'SlashCommand', 'ExitPlanMode'],
+                settingSources: [],                             // the person's own Claude settings are not loaded
                 includePartialMessages: true,
                 stderr: (msg) => console.error('[CLAUDE STDERR]', String(msg).trim())
             };
@@ -505,9 +512,7 @@ class ClaudeSDKBridge {
     }
     
     configure(data) {
-        if (data.allowedTools) {
-            this.allowedTools = data.allowedTools;
-        }
+        // data.allowedTools is ignored: the chat's agent keeps to the desktop's own tools.
         if (data.maxTurns) {
             this.maxTurns = data.maxTurns;
         }
