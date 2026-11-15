@@ -7,7 +7,7 @@ set(APP ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(WWDOS_WEB_SOURCES
     wwdos_app.cpp
     test_pattern.cpp gradient.cpp glitch_engine.cpp frame_capture.cpp api_ipc.cpp
-    command_registry.cpp wibwob_background.cpp window_type_registry.cpp theme_manager.cpp
+    command_registry.cpp resident_input.cpp wibwob_background.cpp window_type_registry.cpp theme_manager.cpp
     ega_theme.cpp wibwob_view.cpp wibwob_engine.cpp room_chat_view.cpp
     llm/base/auth_config.cpp llm/base/llm_config.cpp llm/base/llm_provider_factory.cpp
     llm/base/tool_executor.cpp llm/providers/claude_code_sdk_provider.cpp

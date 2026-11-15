@@ -4,6 +4,9 @@
 #include "backrooms_tv_view.h"
 #include "core/json_utils.h"
 #include "figlet_utils.h"
+#include "resident_input.h"
+
+extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 
 #include <cstdint>
 #include <sys/stat.h>
@@ -181,6 +184,14 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"paint_cell", "Set a single cell on a paint canvas (id, x, y, fg, bg params)", true},
         {"paint_text", "Write text on a paint canvas (id, x, y, text, fg, bg params)", true},
         {"paint_line", "Draw a line on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
+        {"window_text", "Text held by a window (text editor windows): id param; returns its lines", false},
+        {"resident_key", "Resident input: keys (keys='Ctrl+S Enter F2' and/or text=...) to window id= without moving the person's focus; no id: the focused window, as the person's keys go. Queued, in order; result names the seq range", true},
+        {"resident_mouse", "Resident input: action=click|double|down|up|move|drag|scroll at desktop cells x,y (drag: x2,y2; scroll: dir, count; button, mods); id= delivers to that window without raising or focusing it", true},
+        {"resident_status", "Resident input queue, delivery log since=seq, the person's state and the windows the resident owns", false},
+        {"resident_manners", "Resident manners: share_ms (how long a window stays the person's after their last input), wait_on_button, clear=1 drops the queue", true},
+        {"resident_front", "What is in front: the modal dialog or open menu, its controls with labels and kinds, and how to accept or cancel; the focused window; other dialogs", false},
+        {"resident_press", "Press a dialog control by its label (label=, item= for a list or cluster entry, value= for an input line; id= or the dialog in front)", true},
+        {"resident_menu", "List the menu bar as names, or choose=File>Open a menu item by name (id= sends the command to that window first)", true},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
@@ -710,6 +721,20 @@ std::string exec_registry_command(
            << ",\"window_height\":" << ((fh > 0 ? fh : totalLines) + 3)
            << "}";
         return os.str();
+    }
+    if (name == "window_text") {
+        auto id_it = kv.find("id");
+        if (id_it == kv.end()) return "err missing id";
+        return api_window_text(app, id_it->second);
+    }
+    if (name.rfind("resident_", 0) == 0) {
+        if (name == "resident_key") return resident::cmdKey(kv);
+        if (name == "resident_mouse") return resident::cmdMouse(kv);
+        if (name == "resident_status") return resident::cmdStatus(kv);
+        if (name == "resident_manners") return resident::cmdManners(kv);
+        if (name == "resident_front") return resident::cmdFront(kv);
+        if (name == "resident_press") return resident::cmdPress(kv);
+        if (name == "resident_menu") return resident::cmdMenu(kv);
     }
     if (name == "inject_command") {
         auto id_it = kv.find("cmd_id");

@@ -12,6 +12,7 @@ set(TV_COMMON_SOURCES
     frame_capture.cpp
     api_ipc.cpp
     command_registry.cpp
+    resident_input.cpp
     wibwob_background.cpp
     window_type_registry.cpp
     theme_manager.cpp
@@ -176,6 +177,7 @@ add_test(NAME tr808_engine COMMAND tr808_engine_test)
 add_executable(command_registry_test EXCLUDE_FROM_ALL
     command_registry_test.cpp
     command_registry.cpp
+    resident_input.cpp
 )
 target_link_libraries(command_registry_test PRIVATE tvision)
 
@@ -186,6 +188,7 @@ add_executable(scramble_engine_test EXCLUDE_FROM_ALL
     scramble_engine_test.cpp
     scramble_engine.cpp
     command_registry.cpp
+    resident_input.cpp
     llm/base/auth_config.cpp
 )
 target_link_libraries(scramble_engine_test PRIVATE tvision)

@@ -40,6 +40,7 @@
 #include <tvision/tv.h>
 
 #include "test_pattern.h"
+#include "resident_input.h"
 #include "core/json_utils.h"
 #include "gradient.h"
 #include "ui/ui_helpers.h"
@@ -762,6 +763,9 @@ class TWwdosApp : public TApplication
 public:
     TWwdosApp();
     virtual void handleEvent(TEvent& event);
+    // Resident input (resident_input.cpp) joins the person's event stream here.
+    virtual void getEvent(TEvent& event) override;
+    virtual void putEvent(TEvent& event) override;
     virtual void idle();
     virtual void run();
     virtual TPalette& getPalette() const;
@@ -953,6 +957,7 @@ private:
     friend bool api_open_workspace_path(TWwdosApp&, const std::string&);
     friend void api_screenshot(TWwdosApp&);
     friend std::string api_get_state(TWwdosApp&);
+    friend std::string api_window_text(TWwdosApp&, const std::string&);
     friend std::string api_move_window(TWwdosApp&, const std::string&, int, int);
     friend std::string api_resize_window(TWwdosApp&, const std::string&, int, int);
     friend std::string api_focus_window(TWwdosApp&, const std::string&);
@@ -1078,6 +1083,15 @@ TWwdosApp::TWwdosApp() :
         openAnimationFilePath(bw.file, TRect(bw.x, bw.y, bw.x + bw.w, bw.y + bw.h), false, false, bw.title);
     return;
 #endif
+
+    resident::Hooks residentHooks;
+    residentHooks.findWindow = [this](const std::string& id) { return findWindowById(id); };
+    residentHooks.idOf = [this](TWindow* w) {
+        findWindowById("");  // gives unregistered windows (dialogs) a stable id without an event
+        auto it = winToId.find(w);
+        return it == winToId.end() ? std::string() : it->second;
+    };
+    resident::setHooks(residentHooks);
 
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
@@ -2935,6 +2949,19 @@ void TWwdosApp::stepSweep()
     if (sweepDone_ >= rows) sweepOn_ = false;
 }
 
+void TWwdosApp::getEvent(TEvent& event)
+{
+    if (resident::takeEvent(event)) return;
+    TApplication::getEvent(event);
+    resident::afterBase(event);
+}
+
+void TWwdosApp::putEvent(TEvent& event)
+{
+    if (resident::interceptPut(event)) return;
+    TApplication::putEvent(event);
+}
+
 void TWwdosApp::idle()
 {
     TApplication::idle();
@@ -3209,6 +3236,19 @@ static const char* windowTypeName(TWindow* w) {
     }
     // Fallback to first registry entry (canonical default type slug).
     return specs.empty() ? "test_pattern" : specs.front().type;
+}
+
+// Text of a window that holds text (the text editor), for checking what input produced.
+std::string api_window_text(TWwdosApp& app, const std::string& id) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "err window not found";
+    auto* tw = dynamic_cast<TTextEditorWindow*>(w);
+    if (!tw || !tw->getEditorView()) return "err no text reader for this window type";
+    std::string out = "{\"id\":\"" + id + "\",\"type\":\"text_editor\",\"lines\":[";
+    const auto& lines = tw->getEditorView()->getLines();
+    for (size_t i = 0; i < lines.size(); ++i) out += (i ? ",\"" : "\"") + json_escape(lines[i]) + "\"";
+    out += "]}";
+    return out;
 }
 
 std::string api_get_state(TWwdosApp& app) {
