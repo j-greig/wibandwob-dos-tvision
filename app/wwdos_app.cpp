@@ -2969,6 +2969,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("Guest~b~ook (GUESTS.TXT)", life::cmLifeGuestbook, kbNoKey) +
                     *new TMenuItem("Sign the ~g~uestbook", life::cmLifeSign, kbNoKey) +
                     *new TMenuItem("Write the ~w~ill", life::cmLifeWill, kbNoKey) +
+                    *new TMenuItem("~T~ime of their own", life::cmLifeOwn, kbNoKey) +
                     newLine() +
                     *new TMenuItem("~A~bout the residents", resident::cmResidentAbout, kbNoKey)
             ) +

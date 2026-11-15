@@ -369,6 +369,7 @@ static const WindowTypeSpec k_specs[] = {
     { "text_editor",       spawn_text_editor,       match_text_editor       },
     { "boot",              nullptr,                 life::isBootWindow      },  // the residents' boot screen
     { "dream",             nullptr,                 life::isDreamWindow     },  // a resident's dream while asleep
+    { "own_time",          nullptr,                 life::isOwnWindow       },  // a resident's time of its own
     { "browser",           spawn_browser,           match_browser           },
     { "verse",             spawn_verse,             match_verse             },
     { "mycelium",          spawn_mycelium,          match_mycelium          },

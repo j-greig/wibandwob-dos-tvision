@@ -1405,6 +1405,12 @@ public:
     }
 };
 
+// Time of its own (below): the sleep clock starts it and a waking ends it.
+int g_ownRotation = 0;
+bool g_ownThisSleep = false;
+long g_ownStepMs = 60000, g_ownAfterMs = 600000;
+std::string ownJson();
+
 class TDreamWindow : public TWindow, public ww::Describable {
 public:
     std::string describeState() const override { return stateOf(const_cast<TDreamWindow*>(this)); }
@@ -1623,6 +1629,7 @@ void tidy() {
 
 void fallAsleep(const std::string& why) {
     if (g_asleep) return;
+    g_ownThisSleep = false;
     g_asleep = true;
     g_sleepAt = nowMs();
     ++g_sleeps;
@@ -1639,8 +1646,10 @@ void fallAsleep(const std::string& why) {
     redrawChrome();
 }
 
+void endOwnOnWaking();
 void wakeUp(const Who& by, const std::string& how) {
     if (!g_asleep) return;
+    endOwnOnWaking();
     g_asleep = false;
     g_lastPerson = nowMs();
     long long slept = (nowMs() - g_sleepAt) / 1000;
@@ -1691,10 +1700,15 @@ void noticeVisitors() {
     }
 }
 
+void startOwnFromSleep();
 void tickSleep() {
     if (g_sleepMs <= 0) return;
     noticeVisitors();
     long long t = nowMs();
+    if (g_asleep && !g_ownThisSleep && g_ownAfterMs > 0 && t - g_sleepAt >= g_ownAfterMs) {
+        g_ownThisSleep = true;
+        startOwnFromSleep();
+    }
     if (!g_asleep) {
         if (t - g_lastPerson >= g_sleepMs) fallAsleep("nobody here");
         return;
@@ -1727,7 +1741,7 @@ std::string cmdLife(const std::string& name, const KV&) {
        << ",\"person_idle_ms\":" << (t - g_lastPerson) << ",\"asleep_ms\":" << (g_asleep ? t - g_sleepAt : 0)
        << ",\"sleeps\":" << g_sleeps << ",\"dreaming\":" << (dreamAlive() ? "true" : "false")
        << ",\"dream\":" << q(dreamAlive() ? resident::hooks().idOf(g_dream) : "")
-       << ",\"dream_by\":" << q(g_dreamByMind ? "mind" : "rule") << ",\"mind\":" << (mindOn() ? "true" : "false") << ",\"dream_lines\":[";
+       << ",\"own\":" << ownJson() << ",\"dream_by\":" << q(g_dreamByMind ? "mind" : "rule") << ",\"mind\":" << (mindOn() ? "true" : "false") << ",\"dream_lines\":[";
     for (size_t i = 0; i < g_dreamLines.size(); ++i) os << (i ? "," : "") << q(g_dreamLines[i]);
     os << "],\"tidied\":[";
     for (size_t i = 0; i < g_tidyLog.size(); ++i) os << (i ? "," : "") << q(g_tidyLog[i]);
@@ -1931,6 +1945,267 @@ std::string cmdWill(const KV&) {
     return "{\"ok\":true,\"file\":" + q(f) + ",\"bytes\":" + std::to_string(fileSize(f)) + ",\"sections\":7}";
 }
 
+// ---------------------------------------------------------------- time of its own
+
+// A stretch with no request in it: every WWDOS_OWN_STEP_MS the resident takes one turn and thinks,
+// draws, writes a line in the log or does nothing. Started by the person (Tools > Residents > Time
+// of their own, resident_own_time) or by the sleep clock; bounded by minutes and by a number of
+// turns (each turn at most one model call). With a mind present the resident chooses through the
+// confined call; without one, or when the call fails, a rule chooses from real state.
+class TOwnView : public TView {
+public:
+    TOwnView(const TRect& r) : TView(r) { growMode = gfGrowHiX | gfGrowHiY; }
+    std::vector<std::string> lines;
+    void draw() override {
+        TColorAttr c(TColorBIOS(15), TColorBIOS(0));
+        size_t top = lines.size() > (size_t)size.y ? lines.size() - size.y : 0;
+        for (int y = 0; y < size.y; ++y) {
+            TDrawBuffer b;
+            b.moveChar(0, ' ', c, size.x);
+            size_t i = top + y;
+            if (i < lines.size()) b.moveStr(1, lines[i].c_str(), c);
+            writeLine(0, y, size.x, 1, b);
+        }
+    }
+};
+
+struct OwnTime {
+    bool on = false;
+    std::string r;
+    Who by{"", Source::App};
+    bool fromSleep = false;
+    long long start = 0, until = 0, next = 0, jobAt = 0;
+    int turns = 0, turnsMax = 6;
+    int thought = 0, drew = 0, logged = 0, nothing = 0;
+    std::shared_ptr<MindJob> job;
+    std::string ended;
+};
+OwnTime g_own;
+
+class TOwnWindow : public TWindow, public ww::Describable {
+public:
+    TOwnWindow(const TRect& r, const std::string& title)
+        : TWindowInit(&TOwnWindow::initFrame), TWindow(r, title.c_str(), wnNoNumber) {
+        TRect in = getExtent();
+        in.grow(-1, -1);
+        view = new TOwnView(in);
+        insert(view);
+    }
+    std::string describeState() const override {
+        std::string s = "time of " + displayName(who) + "'s own: " + std::to_string(turns) + " turns taken";
+        return s + (endedWhy.empty() ? ", going on" : ", ended (" + endedWhy + ")") + "; " +
+               std::to_string(view->lines.size()) + " lines";
+    }
+    bool describeText(std::vector<std::string>& out) const override {
+        out = view->lines;
+        return true;
+    }
+    TOwnView* view;
+    std::string who, endedWhy;
+    int turns = 0;
+};
+TOwnWindow* g_ownWin = nullptr;
+
+bool ownWinAlive() {
+    if (!g_ownWin) return false;
+    for (TWindow* w : deskWindows()) if (w == g_ownWin) return true;
+    g_ownWin = nullptr;
+    return false;
+}
+
+void ownLine(const std::string& s) {
+    if (!ownWinAlive()) return;
+    g_ownWin->view->lines.push_back(oneLine(s, 200));
+    g_ownWin->view->drawView();
+}
+
+void ownAct(const std::string& what) {
+    resident::addAct(Who{g_own.r, Source::Resident}, "own time: " + what, ownWinAlive() ? resident::hooks().idOf(g_ownWin) : "", "");
+}
+
+void ownApply(const std::string& kind, const std::string& text, const std::vector<std::string>& drawing, bool mind) {
+    std::string by = mind ? " (mind)" : " (by rule)";
+    if (kind == "DRAW" && !drawing.empty()) {
+        ++g_own.drew;
+        ownLine("drew:");
+        for (auto& l : drawing) ownLine("  " + l);
+        ownAct("drew " + std::to_string(drawing.size()) + " lines" + by);
+    } else if (kind == "LOG" && !text.empty()) {
+        ++g_own.logged;
+        logAppend(g_own.r, text);
+        ownLine("wrote in the log: " + text);
+        ownAct("wrote in the log" + by);
+    } else if (kind == "NOTHING") {
+        ++g_own.nothing;
+        ownLine("(nothing)");
+        ownAct("did nothing" + by);
+    } else {
+        ++g_own.thought;
+        ownLine("thought: " + text);
+        ownAct("thought \"" + frag(text, 50) + "\"" + by);
+    }
+    if (ownWinAlive()) g_ownWin->turns = g_own.turns;
+}
+
+// A turn chosen by rule from real state, in a fixed order that differs per resident.
+void ownRuleTurn() {
+    std::vector<std::string> titles;
+    for (TWindow* w : deskWindows())
+        if (keepsOnDesk(w) && w != g_ownWin && !titleOf(w).empty()) titles.push_back(frag(titleOf(w), 24));
+    int base = g_own.r == "wib" ? 1 : g_own.r == "wob" ? 2 : 3;
+    int k = (g_own.turns - 1 + base) % 4;
+    if (k == 0) {
+        ownApply("THINK", titles.empty() ? "about the empty desk" : "about \"" + titles[(g_own.turns - 1) % titles.size()] + "\"", {}, false);
+    } else if (k == 1) {
+        std::vector<std::string> d;
+        std::string stars;
+        for (size_t i = 0; i < std::min<size_t>(titles.size(), 8); ++i) stars += "* ";
+        std::string name = displayName(g_own.r);
+        d.push_back("+------------+");
+        d.push_back("| " + name + std::string(11 - std::min<size_t>(11, name.size()), ' ') + "|");
+        d.push_back("| " + stars + std::string(11 - std::min<size_t>(11, stars.size()), ' ') + "|");
+        d.push_back("+------------+");
+        ownApply("DRAW", "", d, false);
+    } else if (k == 2) {
+        auto log = readLog();
+        ownApply("LOG", "Time of my own: " + std::to_string(titles.size()) + " windows open, " +
+                            std::to_string(readGuests().size()) + " guest notes in the book, " +
+                            std::to_string(log.size()) + " lines in this log.", {}, false);
+    } else {
+        ownApply("NOTHING", "", {}, false);
+    }
+}
+
+void ownMindReply(const std::string& reply) {
+    auto lines = cleanLines(reply, 10, 900);
+    if (lines.empty()) { ownRuleTurn(); return; }
+    std::string first = lines[0];
+    std::string up = upper(first.substr(0, 8));
+    auto rest = [&](size_t n) { std::string t = first.substr(std::min(first.size(), n)); size_t p = t.find_first_not_of(' '); return p == std::string::npos ? std::string() : t.substr(p); };
+    if (up.rfind("DRAW:", 0) == 0) {
+        std::vector<std::string> d;
+        if (!rest(5).empty()) d.push_back(frag(rest(5), 40));
+        for (size_t i = 1; i < lines.size() && d.size() < 8; ++i) d.push_back(frag(lines[i], 40));
+        ownApply("DRAW", "", d, true);
+    } else if (up.rfind("LOG:", 0) == 0) ownApply("LOG", frag(rest(4), 160), {}, true);
+    else if (up.rfind("NOTHING", 0) == 0) ownApply("NOTHING", "", {}, true);
+    else if (up.rfind("THINK:", 0) == 0) ownApply("THINK", frag(rest(6), 160), {}, true);
+    else ownApply("THINK", frag(first, 160), {}, true);
+}
+
+void endOwn(const std::string& why) {
+    if (!g_own.on) return;
+    g_own.on = false;
+    g_own.job = nullptr;
+    g_own.ended = why;
+    std::string s = "Time of my own ended (" + why + "): " + std::to_string(g_own.thought) + " thoughts, " +
+                    std::to_string(g_own.drew) + " drawings, " + std::to_string(g_own.logged) + " log lines, " +
+                    std::to_string(g_own.nothing) + " times nothing.";
+    logAppend(g_own.r, s);
+    ownLine("-- " + s);
+    ownAct("ended (" + why + ")");
+    if (ownWinAlive()) {
+        g_ownWin->endedWhy = why;
+        g_ownWin->drawView();
+    }
+}
+
+std::string startOwn(const std::string& r, int minutes, int turns, const Who& by, bool fromSleep) {
+    if (g_own.on) return "err " + g_own.r + " is already having time of its own";
+    g_own = OwnTime();
+    g_own.on = true;
+    g_own.r = r;
+    g_own.by = by;
+    g_own.fromSleep = fromSleep;
+    g_own.start = nowMs();
+    g_own.until = g_own.start + (long long)minutes * 60000;
+    g_own.turnsMax = turns;
+    g_own.next = g_own.start + std::min<long>(g_ownStepMs, 2000);
+    if (TProgram::deskTop) {
+        TRect d = TProgram::deskTop->getExtent();
+        int w = std::min(d.b.x - 2, 56), h = std::min(d.b.y - 2, 14);
+        int x = 1, y = std::max(0, d.b.y - h - 1);
+        resident::WhoScope ws(Who{r, Source::Resident});
+        auto* ow = new TOwnWindow(TRect(x, y, x + w, y + h), upper(r) + "'S OWN TIME");
+        ow->who = r;
+        g_ownWin = ow;
+        if (g_hooks.insertWindow) g_hooks.insertWindow(ow);
+        else TProgram::deskTop->insert(ow);
+        resident::settle();
+    }
+    std::string giver = fromSleep ? "the sleep clock" : by.actor + " (" + resident::sourceName(by.source) + ")";
+    ownLine("Given time of my own by " + giver + ": " + std::to_string(minutes) + " min, " + std::to_string(turns) + " turns.");
+    logAppend(r, "Given time of my own by " + giver + " (" + std::to_string(minutes) + " min, " + std::to_string(turns) + " turns).");
+    ownAct("began, given by " + giver + (mindOn() ? "; a mind chooses" : "; a rule chooses"));
+    return "";
+}
+
+void tickOwn() {
+    if (!g_own.on) return;
+    long long t = nowMs();
+    if (g_own.job) {
+        std::string reply;
+        if (jobReply(g_own.job, reply)) { g_own.job = nullptr; ownMindReply(reply); }
+        else if (jobDone(g_own.job) || t - g_own.jobAt > g_mindWaitMs) { g_own.job = nullptr; ownRuleTurn(); }
+        return;
+    }
+    if (t >= g_own.until) { endOwn("the time is up"); return; }
+    if (g_own.turns >= g_own.turnsMax) { endOwn("the budget of turns is spent"); return; }
+    if (t < g_own.next) return;
+    ++g_own.turns;
+    g_own.next = t + g_ownStepMs;
+    if (mindOn()) {
+        g_own.jobAt = t;
+        std::string prompt =
+            "You have time of your own: no one has asked you for anything. You may think, draw, write one line "
+            "in the logbook, or do nothing. Answer with exactly one of these forms and nothing else:\n"
+            "THINK: <one thought>\nDRAW: <then up to 8 lines of characters, each under 40 wide>\nLOG: <one line for "
+            "the logbook>\nNOTHING\n\nWhat you have done so far in this time: " + std::to_string(g_own.thought) +
+            " thoughts, " + std::to_string(g_own.drew) + " drawings, " + std::to_string(g_own.logged) +
+            " log lines.\n\n" + mindRecord(g_own.r, allActs());
+        g_own.job = askMind(mindSystem(g_own.r), prompt);
+    } else {
+        ownRuleTurn();
+    }
+}
+
+std::string ownJson() {
+    std::ostringstream os;
+    os << "{\"on\":" << (g_own.on ? "true" : "false") << ",\"resident\":" << q(g_own.r) << ",\"turns\":" << g_own.turns
+       << ",\"turns_max\":" << g_own.turnsMax << ",\"thought\":" << g_own.thought << ",\"drew\":" << g_own.drew
+       << ",\"logged\":" << g_own.logged << ",\"nothing\":" << g_own.nothing << ",\"from_sleep\":"
+       << (g_own.fromSleep ? "true" : "false") << ",\"ended\":" << q(g_own.ended) << ",\"window\":"
+       << q(ownWinAlive() ? resident::hooks().idOf(g_ownWin) : "") << "}";
+    return os.str();
+}
+
+void startOwnFromSleep() {
+    if (g_own.on) return;
+    startOwn(kResidents[g_ownRotation++ % 3], 60, (int)envMs("WWDOS_OWN_TURNS", 6), Who{"app", Source::App}, true);
+}
+void endOwnOnWaking() {
+    if (g_own.on && g_own.fromSleep) endOwn("a visitor woke us");
+}
+
+std::string cmdOwnTime(const KV& kv) {
+    Who w = resident::currentWho();
+    if (str(kv, "stop") == "1") {
+        if (!g_own.on) return "{\"ok\":true,\"on\":false}";
+        endOwn("stopped by " + w.actor);
+        return "{\"ok\":true,\"own\":" + ownJson() + "}";
+    }
+    if (!kv.count("resident") && !kv.count("minutes") && !kv.count("turns") && str(kv, "start") != "1")
+        return "{\"own\":" + ownJson() + "}";   // no args: report
+    std::string r = str(kv, "resident");
+    if (r.empty()) r = kResidents[g_ownRotation++ % 3];
+    if (!isResident(r)) return "err resident= wib|wob|scramble";
+    int minutes = std::max(1, std::min(240, std::atoi(str(kv, "minutes", "60").c_str())));
+    int turns = std::max(1, std::min(20, std::atoi(str(kv, "turns", std::to_string(envMs("WWDOS_OWN_TURNS", 6))).c_str())));
+    std::string err = startOwn(r, minutes, turns, w, false);
+    if (!err.empty()) return err;
+    return "{\"ok\":true,\"own\":" + ownJson() + "}";
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- public
@@ -1973,6 +2248,8 @@ void wake() {
     guestInit();
 
     g_actsMax = envMs("WWDOS_ACTS_MAX", 1048576);
+    g_ownStepMs = envMs("WWDOS_OWN_STEP_MS", 60000);
+    g_ownAfterMs = envMs("WWDOS_OWN_AFTER_MS", 600000);
     mindInit();
     g_bootLineMs = envMs("WWDOS_BOOT_MS", 120);
     g_bootHoldMs = envMs("WWDOS_BOOT_HOLD_MS", 20000);
@@ -2007,6 +2284,7 @@ void close(const std::string& how) {
 }
 
 void tick() {
+    tickOwn();
     if (g_woken && !g_closed && resident::actsClockMs() >= g_actsNextFlush) {
         g_actsNextFlush = resident::actsClockMs() + 500;
         flushActs();
@@ -2048,6 +2326,7 @@ bool consoleInput(TEvent& ev) {
 
 bool isBootWindow(TWindow* w) { return w && dynamic_cast<TBootWindow*>(w) != nullptr; }
 bool isDreamWindow(TWindow* w) { return w && dynamic_cast<TDreamWindow*>(w) != nullptr; }
+bool isOwnWindow(TWindow* w) { return w && dynamic_cast<TOwnWindow*>(w) != nullptr; }
 
 bool textOf(TWindow* w, std::vector<std::string>& out) {
     if (auto* d = dynamic_cast<TDreamWindow*>(w)) {
@@ -2088,7 +2367,8 @@ size_t earlierActs(size_t skip, size_t count, std::vector<EarlierAct>& out) {
 bool owns(const std::string& cmd) {
     static const char* names[] = {"get_self", "self_note", "get_note", "logbook_write", "logbook_open", "get_logbook",
                                   "guestbook_sign", "guestbook_open", "get_guestbook", "get_life",
-                                  "residents_sleep", "residents_wake", "acts_history", "residents_will"};
+                                  "residents_sleep", "residents_wake", "acts_history", "residents_will",
+                                  "resident_own_time"};
     for (auto n : names) if (cmd == n) return true;
     return false;
 }
@@ -2100,6 +2380,7 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "guestbook_sign" || name == "guestbook_open" || name == "get_guestbook") return cmdGuests(name, kv);
     if (name == "acts_history") return cmdActsHistory(kv);
     if (name == "residents_will") return cmdWill(kv);
+    if (name == "resident_own_time") return cmdOwnTime(kv);
     if (name == "get_life" || name == "residents_sleep" || name == "residents_wake") return cmdLife(name, kv);
     return "";
 }
@@ -2125,6 +2406,11 @@ bool handleCommand(unsigned short cmd) {
     if (cmd == cmLifeLogbook) { openBook("LOG.TXT", "LOG.TXT"); return true; }
     if (cmd == cmLifeGuestbook) { openBook("GUESTS.TXT", "GUESTS.TXT"); return true; }
     if (cmd == cmLifeSign) { openSignPage(resident::currentWho()); return true; }
+    if (cmd == cmLifeOwn) {
+        std::string err = startOwn(kResidents[g_ownRotation++ % 3], 60, (int)envMs("WWDOS_OWN_TURNS", 6), resident::currentWho(), false);
+        if (!err.empty()) flash(err.substr(4));
+        return true;
+    }
     if (cmd == cmLifeWill) {
         std::string f = writeWill(resident::currentWho());
         resident::addAct(resident::currentWho(), "wrote the residents' will: " + f, "", f.empty() ? "error" : "");
