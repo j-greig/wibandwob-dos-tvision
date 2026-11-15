@@ -107,6 +107,37 @@ std::vector<std::string> Ears::rows(double now, double ms, double rowMs, const s
     return out;
 }
 
+std::vector<std::string> Ears::cellRows(double now, double ms, double rowMs, double originMs, const std::string& window,
+                                        int songRows) const {
+    std::vector<std::string> out;
+    if (rowMs <= 0 || songRows <= 0) return out;
+    long k0 = (long)std::ceil((now - ms - originMs) / rowMs - 1e-9);
+    long k1 = (long)std::ceil((now - originMs) / rowMs - 1e-9);   // rows k0..k1-1 started in [now - ms, now)
+    k0 = std::max(0L, k0);
+    if (k1 - k0 > 256) k0 = k1 - 256;
+    for (long k = k0; k < k1; ++k) {
+        int chans = 0;
+        std::map<int, std::string> cells;
+        const double a = originMs + k * rowMs;
+        for (const auto& h : log_) {
+            if (h.window != window || h.channel < 0 || h.startMs < a - 1e-6 || h.startMs >= a + rowMs - 1e-6) continue;
+            chans = std::max(chans, h.channels);
+            if (!cells.count(h.channel)) cells[h.channel] = h.cell;
+        }
+        if (!chans) continue;   // a row where nothing sounded
+        char head[8];
+        std::snprintf(head, sizeof(head), "%02ld ", k % songRows);
+        std::string line = head;
+        for (int c = 0; c < chans; ++c) {
+            if (c) line += " | ";
+            auto it = cells.find(c);
+            line += it == cells.end() ? std::string("--- .. ...") : it->second;
+        }
+        out.push_back(line);
+    }
+    return out;
+}
+
 std::string Ears::summary(double now, double ms, const std::string& source) const {
     const auto hs = since(now, ms, source);
     std::ostringstream o;
