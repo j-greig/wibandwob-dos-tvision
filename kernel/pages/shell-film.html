@@ -48,9 +48,9 @@
   var prog = gl.createProgram();
   gl.attachShader(prog, shader(gl.VERTEX_SHADER, [
     '#version 300 es', 'precision highp float;',
-    'in uint a_glyph; in vec4 a_fg; in vec4 a_bg;',
+    'in uint a_glyph; in vec4 a_fg; in vec4 a_bg; in uint a_under; in vec4 a_uink;',
     'uniform vec2 u_px; uniform int u_cols; uniform vec2 u_atlas;',
-    'out vec4 fg; out vec4 bg; out vec2 st; out vec2 uv;',
+    'out vec4 fg; out vec4 bg; out vec2 st; out vec2 uv; flat out uint gi; flat out uint ug; out vec4 uink;',
     'void main(){',
     '  vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));',
     '  vec2 cell = vec2(float(gl_InstanceID % u_cols), float(gl_InstanceID / u_cols));',
@@ -58,15 +58,29 @@
     '  gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);',
     '  uint cols = uint(u_atlas.x);',
     '  vec2 ac = vec2(float(a_glyph % cols), float(a_glyph / cols));',
-    '  st = (c + ac) / u_atlas; uv = c; fg = a_fg; bg = a_bg;',
+    '  st = (c + ac) / u_atlas; uv = c; fg = a_fg; bg = a_bg; gi = a_glyph; ug = a_under; uink = a_uink;',
     '}'].join('\n')));
   gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, [
     '#version 300 es', 'precision highp float;',
-    'uniform sampler2D u_tex; in vec4 fg; in vec4 bg; in vec2 st; in vec2 uv; out vec4 o;',
+    'uniform sampler2D u_tex; uniform int u_clear; in vec4 fg; in vec4 bg; in vec2 st; in vec2 uv;',
+    'flat in uint gi; flat in uint ug; in vec4 uink; out vec4 o;',
+    'ivec2 at(uint g) { return ivec2(int(g % 32u) * 8, int(g / 32u) * 16); }',
     'void main(){',
     '  float m = texture(u_tex, st).r;',
     '  if (fg.a > 0.5 && uv.y > 0.9) m = 1.0;',   // underline row
-    '  o = vec4(mix(bg.rgb, fg.rgb, m), 1.0);',
+    '  vec3 paper = bg.rgb;',
+    // An under-glyph cell (bg.a 0): the desktop pattern's glyph in its own ink and paper, under the cell's glyph.
+    // With clearance on, the pattern is left out within one font pixel of the glyph's ink.
+    '  if (bg.a < 0.5) {',
+    '    ivec2 p = clamp(ivec2(floor(uv * vec2(8.0, 16.0))), ivec2(0), ivec2(7, 15));',
+    '    float u = texelFetch(u_tex, at(ug) + p, 0).r;',
+    '    if ((u_clear == 1 || (u_clear == 2 && uink.a > 0.5)) && u > 0.5) for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {',
+    '      ivec2 n = p + ivec2(dx, dy);',
+    '      if (n.x >= 0 && n.x < 8 && n.y >= 0 && n.y < 16 && texelFetch(u_tex, at(gi) + n, 0).r > 0.5) u = 0.0;',
+    '    }',
+    '    paper = mix(bg.rgb, uink.rgb, u);',
+    '  }',
+    '  o = vec4(mix(paper, fg.rgb, m), 1.0);',
     '}'].join('\n')));
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
@@ -85,7 +99,8 @@
     return b;
   }
   var bGlyph = attrib('a_glyph', 1, gl.UNSIGNED_SHORT, false),
-      bFg = attrib('a_fg', 4, gl.UNSIGNED_BYTE, true), bBg = attrib('a_bg', 4, gl.UNSIGNED_BYTE, true);
+      bFg = attrib('a_fg', 4, gl.UNSIGNED_BYTE, true), bBg = attrib('a_bg', 4, gl.UNSIGNED_BYTE, true),
+      bUnder = attrib('a_under', 1, gl.UNSIGNED_SHORT, false), bUink = attrib('a_uink', 4, gl.UNSIGNED_BYTE, true);
 
   // ---- grid size follows the window; cells are 8x16 font pixels at an integer device scale ----
   // Viewer options. URL: ?scale=1..4 (css px per font px) &bars=0 (no menu bar or status line)
@@ -95,6 +110,11 @@
   if (q.has('bars')) opts.bars = q.get('bars') | 0;
   if (q.has('paused')) opts.paused = q.get('paused') | 0;
   var noDraw = q.get('draw') === '0';     // tools that read cells, not pixels (tools/stagepage.py)
+  // Under line art on a dotted desktop the pattern is left out within one font pixel of the line: &clearance=1 always,
+  // &clearance=0 never; by default only in a cell whose line is not clearly lighter or darker than both the pattern's
+  // ink and paper (see under below). docs/stage.md § Line art on a patterned desktop.
+  if (q.has('clearance')) opts.clearance = q.get('clearance') | 0;
+  gl.uniform1i(gl.getUniformLocation(prog, 'u_clear'), opts.clearance === 1 ? 1 : opts.clearance === 0 ? 0 : 2);
   // &t=S (stage pages) seeks to S seconds once the app is up; with &paused=1 that frame is drawn and held.
   if (q.has('t')) opts.t = parseFloat(q.get('t'));
   var dpr = window.devicePixelRatio || 1;
@@ -104,7 +124,10 @@
   var SZ = window.wwdosScene && window.wwdosScene.files && window.wwdosScene.files['stage.txt'] && !scale &&
            /^size (\d+) (\d+)/.exec(window.wwdosScene.scene || '');
   var devScale = 1, cols = 80, rows = 25, cellCssW = 8, cellCssH = 16;
-  var glyphs, fgs, bgs, last = null, lastCols = 0, lastRows = 0;
+  var glyphs, fgs, bgs, unders, uinks, last = null, lastCols = 0, lastRows = 0;
+  // The engine's under-glyph list (Module.wwdosUnder, minimal_app.cpp drawLayers): seven words per line-art mark cell
+  // on a patterned desktop: x | y << 16, the mark's code point, ink and paper, the pattern's code point, ink and paper.
+  var under = null;
   function measure() {
     var w = window.innerWidth, h = window.innerHeight;
     dpr = window.devicePixelRatio || 1;
@@ -156,7 +179,7 @@
   function draw(cells, c, r, cx, cy) {
     var t0 = performance.now();
     var n = c * r;
-    if (!glyphs || glyphs.length !== n) { glyphs = new Uint16Array(n); fgs = new Uint8Array(n * 4); bgs = new Uint8Array(n * 4); }
+    if (!glyphs || glyphs.length !== n) { glyphs = new Uint16Array(n); fgs = new Uint8Array(n * 4); bgs = new Uint8Array(n * 4); unders = new Uint16Array(n); uinks = new Uint8Array(n * 4); }
     var prevGlyph = BLANK, prevWide = 0;
     for (var i = 0; i < n; i++) {
       var w = cells[i * 3], fg = cells[i * 3 + 1], bg = cells[i * 3 + 2], g;
@@ -168,9 +191,35 @@
       fgs[i * 4] = (fg >> 16) & 255; fgs[i * 4 + 1] = (fg >> 8) & 255; fgs[i * 4 + 2] = fg & 255; fgs[i * 4 + 3] = (fg >> 24) & 1 ? 255 : 0;
       bgs[i * 4] = (bg >> 16) & 255; bgs[i * 4 + 1] = (bg >> 8) & 255; bgs[i * 4 + 2] = bg & 255; bgs[i * 4 + 3] = 255;
     }
+    // Under-glyphs: a listed cell that still shows its mark (same character, ink and paper; not the caret or the
+    // pointer) gets the pattern's glyph under it and the pattern's paper (bg alpha 0 tells the shader).
+    var nu = 0;
+    if (under) for (var k = 0; k + 6 < under.length; k += 7) {
+      var ux = under[k] & 0xFFFF, uy = under[k] >>> 16, j = uy * c + ux;
+      if (ux >= c || uy >= r || (cx === ux && cy === uy) || (j === mouseCell && c === mouseCols)) continue;
+      var cw = cells[j * 3];
+      if ((cw & 0x40000000) || (cw & 0x1FFFFF) !== under[k + 1] || (cells[j * 3 + 1] & 0xFFFFFF) !== under[k + 2] ||
+          (cells[j * 3 + 2] & 0xFFFFFF) !== under[k + 3]) continue;
+      var ug = glyphOf.get(under[k + 4]);
+      if (ug === undefined) continue;
+      var ui = under[k + 5], ub = under[k + 6];
+      // Automatic clearance (uink alpha): the line reads plainly on the dots when its luminance is at least 32 above
+      // or below both the pattern's ink and paper (white on grey-on-blue, black on white-on-cyan); a line between
+      // them (green trees on bright-green-on-black) gets the dots kept one pixel off it.
+      var lm = lum(under[k + 2]), li = lum(ui), lp = lum(ub);
+      var plain = lm >= Math.max(li, lp) + 32 || lm <= Math.min(li, lp) - 32;
+      unders[j] = ug; uinks[j * 4] = (ui >> 16) & 255; uinks[j * 4 + 1] = (ui >> 8) & 255; uinks[j * 4 + 2] = ui & 255;
+      uinks[j * 4 + 3] = plain ? 0 : 255;
+      bgs[j * 4] = (ub >> 16) & 255; bgs[j * 4 + 1] = (ub >> 8) & 255; bgs[j * 4 + 2] = ub & 255; bgs[j * 4 + 3] = 0;
+      nu++;
+    }
+    window.wwdosUnderCells = nu;
     gl.bindBuffer(gl.ARRAY_BUFFER, bGlyph); gl.bufferData(gl.ARRAY_BUFFER, glyphs, gl.DYNAMIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, bFg); gl.bufferData(gl.ARRAY_BUFFER, fgs, gl.DYNAMIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, bBg); gl.bufferData(gl.ARRAY_BUFFER, bgs, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bUnder); gl.bufferData(gl.ARRAY_BUFFER, unders, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bUink); gl.bufferData(gl.ARRAY_BUFFER, uinks, gl.DYNAMIC_DRAW);
+    if (nu) { unders.fill(0); uinks.fill(0); }
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
     window.wwdosFrames = (window.wwdosFrames | 0) + 1;
     window.wwdosDrawMs = (window.wwdosDrawMs || 0) + performance.now() - t0;   // tools/paint_bench.py
@@ -182,6 +231,7 @@
     wwdosOpts: opts,
     wwdosQueue: [], wwdosResized: false, wwdosWake: null,
     wwdosWrite: function () {},           // ANSI mode-set sequences from TermIO: nothing to do here
+    wwdosUnder: function (u) { under = u; },   // the under-glyph list, sent with every draw of a desktop with marks
     wwdosCols: function () { return cols; },
     wwdosRows: function () { return rows; },
     wwdosGrid: function (cells, c, r, cx, cy) {
@@ -607,7 +657,9 @@
       return s.replace(/\s+$/, '');
     } }; } } },
     // every cell of the last grid as [codepoint|flags, fg, bg] (tests/stage/test_seek_play.py compares two of them)
-    cells: function () { return last ? Array.from(last) : []; }
+    cells: function () { return last ? Array.from(last) : []; },
+    // the engine's under-glyph list as it stands (seven numbers per cell, see "under" above)
+    under: function () { return under ? Array.from(under) : []; }
   };
   // Stage clock for tools: seek(S) applies at the next stage tick (within one clock period).
   window.wwdosStage = {
