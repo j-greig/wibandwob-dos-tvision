@@ -579,7 +579,152 @@ def group_score():
         d.stop()
 
 
-GROUPS = {"follow": group_follow, "bleed": group_bleed, "hold": group_hold, "sound": group_sound,
+def group_timelag():
+    print("timelag")
+    d, ed, pr = new_desk("moshtime")
+    try:
+        m(d, "mosh_way", way="timelag"); m(d, "mosh_tempo", bpm="0"); m(d, "mosh_on")
+        letters = "abcdefghijklmnopqrstuvwxyz0123"
+        for k in range(30):
+            d.person_text(letters[k])
+            time.sleep(0.06)
+            m(d, "mosh_step", hits="tick")
+        time.sleep(0.3)
+        now = d.text(ed)[0]
+        shown = plain(cap(d)).split("\n")[1 + 3][3:3 + 40].rstrip()   # the editor's first line on screen
+        st = m(d, "mosh_status")
+        R.check(now == letters and shown and shown != now and now.startswith(shown),
+                f"timelag shows the editor as it was steps ago: {shown!r} of {now!r} (map {st['lag_map']}, lag {st['lag']} s)")
+        for _ in range(40):
+            m(d, "mosh_step", hits="tick")
+        st = m(d, "mosh_status")
+        R.check(st["ring_frames"] <= 48 and st["ring_bytes"] <= 48 * 160 * 48 * 32, f"the ring of past frames is bounded ({st['ring_frames']} frames, {st['ring_bytes']} bytes)")
+        l0 = st["lag"]
+        for _ in range(4):
+            m(d, "mosh_step", hits="kick,metal")
+        l1 = m(d, "mosh_status")["lag"]
+        R.check(l1 > l0, f"drum hits widen the lag ({l0} -> {l1} s)")
+        d.ipc("exec_command", name="synth", action="notes", notes="C-4", step="3000")
+        time.sleep(0.3)
+        for _ in range(4):
+            m(d, "mosh_step", hits="tick")
+        l2 = m(d, "mosh_status")["lag"]
+        R.check(l2 < l1 * 0.6, f"a held synth note narrows it ({l1} -> {l2} s)")
+        m(d, "mosh_off"); time.sleep(0.3)
+    finally:
+        d.stop()
+
+
+def group_live():
+    print("live")
+    d = Desk("moshlive", cols=160, rows=50).start()
+    try:
+        time.sleep(0.8)
+        d.ipc("exec_command", name="open_terminal", x="4", y="3", w="60", h="16", title="film",
+              exec="sh -c 'i=0; while true; do i=$((i+1)); printf \"\\033[2J\\033[HFRAME %d\\n\" $i; sleep 0.25; done'")
+        time.sleep(1.2)
+        m(d, "mosh_tempo", bpm="0"); m(d, "mosh_way", way="tear"); m(d, "mosh_amount", value="20"); m(d, "mosh_on")
+        steps(d, ["tick"])
+        a = re.findall(r"FRAME (\d+)", plain(cap(d)))
+        time.sleep(1.2)                        # no steps: the film plays on in the shards
+        b = re.findall(r"FRAME (\d+)", plain(cap(d)))
+        st = m(d, "mosh_status")
+        R.check(a and b and max(map(int, b)) > max(map(int, a)) and st["step"] == 1,
+                f"a film in a terminal window moshes as a live source: frames {a[:1]} -> {b[:1]} with no new step")
+        m(d, "mosh_off")
+    finally:
+        d.stop()
+
+
+def group_keys():
+    print("keys")
+    d = Desk("moshkeys", cols=160, rows=50, env={"WWDOS_MIDI": "null", "WWDOS_SOUND_OUT": "null", "WWDOS_SYNTH_AUDIO": "0"}).start()
+    try:
+        time.sleep(0.8)
+        ed = d.editor(2, 2, 50, 14, title="notes")
+        m(d, "mosh_tempo", bpm="0"); m(d, "mosh_way", way="tear"); m(d, "mosh_on")
+        s0 = m(d, "mosh_status")["step"]
+        for k in ("S-F1", "S-F2", "S-F4", "S-F5", "S-F6"):
+            d.person_keys(k); time.sleep(0.2)
+        st = m(d, "mosh_status")
+        R.check(st["step"] == s0 + 5, f"Shift+F1, F2, F4, F5, F6 play hits by hand ({s0} -> {st['step']} steps)")
+        R.check(d.text(ed)[0] == "", "the keys are used up, not typed")
+        d.person_keys("S-F7"); time.sleep(0.3)
+        R.check(m(d, "mosh_status")["way"] == "mosh", f"Shift+F7 changes way ({m(d, 'mosh_status')['way']})")
+        d.person_keys("S-F8"); time.sleep(0.3)
+        st = m(d, "mosh_status")
+        d.person_keys("S-F1"); time.sleep(0.3)
+        R.check(st["frozen"] and m(d, "mosh_status")["step"] == st["step"], "Shift+F8 freezes: hits take no step")
+        d.person_keys("S-F8"); time.sleep(0.3)
+        R.check(not m(d, "mosh_status")["frozen"], "Shift+F8 again releases")
+        d.person_keys("S-F9"); time.sleep(0.2)
+        d.person_keys("S-F10"); time.sleep(0.2)
+        d.person_keys("S-F9"); time.sleep(0.2)
+        R.check(m(d, "mosh_status")["amount"] == 60, "Shift+F9 and Shift+F10 take the amount down and up by 10")
+        s1 = m(d, "mosh_status")["step"]
+        d.ipc("exec_command", name="midi", action="in", data="99 24 70")
+        d.ipc("exec_command", name="midi", action="in", data="99 26 70")
+        time.sleep(0.3)
+        R.check(m(d, "mosh_status")["step"] == s1 + 2, "a MIDI keyboard's drum notes play hits")
+        d.ipc("exec_command", name="midi", action="in", data="B0 01 20")
+        time.sleep(0.2)
+        R.check(m(d, "mosh_status")["amount"] == 25, f"the mod wheel (CC 1) sets the amount ({m(d, 'mosh_status')['amount']})")
+        d.ipc("exec_command", name="midi", action="in", data="B0 40 7F"); time.sleep(0.2)
+        fz = m(d, "mosh_status")["frozen"]
+        d.ipc("exec_command", name="midi", action="in", data="B0 40 00"); time.sleep(0.2)
+        R.check(fz and not m(d, "mosh_status")["frozen"], "the sustain pedal (CC 64) freezes while held")
+        m(d, "mosh_off")
+        d.ipc("exec_command", name="midi", action="in", data="90 3C 64"); time.sleep(0.3)
+        R.check(m(d, "mosh_status")["step"] == 0 or not m(d, "mosh_status")["on"], "with the mosh off MIDI notes go to the synth as before")
+    finally:
+        d.stop()
+
+
+def group_record():
+    print("record")
+    rec, cast = "/tmp/wibwob_moshrec.mosh", "/tmp/wibwob_moshrec.cast"
+    d, ed, pr = new_desk("moshrec")
+    try:
+        before = cap(d)
+        m(d, "mosh_seed", n="5"); m(d, "mosh_way", way="all")
+        r = m(d, "mosh_record", value="on", path=rec, cast=cast)
+        R.check(r["recording"] and r["on"], "recording starts a fresh mosh")
+        for h in BEAT * 2:
+            m(d, "mosh_step", hits=h)
+        m(d, "mosh_way", way="timelag")
+        d.person_keys("S-F7"); time.sleep(0.2)
+        m(d, "mosh_hit", hits="kick,metal")
+        for h in BEAT:
+            m(d, "mosh_step", hits=h)
+        time.sleep(0.3)
+        a = cap(d)
+        m(d, "mosh_record", value="off")
+        m(d, "mosh_off"); time.sleep(0.3)
+        lines = open(rec).read().splitlines()
+        R.check(lines[1] == "seed 5" and sum(1 for l in lines if " step " in l) == len(BEAT) * 3 + 1,
+                f"the recording holds the seed and every step ({len(lines)} lines)")
+        m(d, "mosh_seed", n="99"); m(d, "mosh_way", way="tear")
+        p = m(d, "mosh_play", path=rec, fast="1")
+        time.sleep(0.5)
+        b = cap(d)
+        R.check(a == b, "playing it back gives the same frame, byte for byte")
+        st = m(d, "mosh_status")
+        R.check(st["seed"] == 5 and not st["playing"], "playback takes the recording's seed and ends")
+        cl = open(cast).read().splitlines()
+        hdr = json.loads(cl[0])
+        evs = [json.loads(x) for x in cl[1:]]
+        R.check(hdr["version"] == 2 and hdr["width"] == 160 and hdr["height"] == 50 and len(evs) >= len(BEAT) * 2,
+                f"the cast is asciicast v2, 160x50, {len(evs)} frames")
+        R.check(all(e[1] == "o" for e in evs) and evs == sorted(evs, key=lambda e: e[0]) and "notes" in "".join(e[2] for e in evs),
+                "its frames are output events in time order, with the desktop's text")
+        m(d, "mosh_off"); time.sleep(0.3)
+        R.check(cap(d) == before, "the desktop comes back after playback")
+    finally:
+        d.stop()
+
+
+GROUPS = {"timelag": group_timelag, "live": group_live, "keys": group_keys, "record": group_record,
+          "follow": group_follow, "bleed": group_bleed, "hold": group_hold, "sound": group_sound,
           "residents": group_residents, "score": group_score, "screen": group_screen, "ways": group_ways, "input": group_input, "restore": group_restore, "seed": group_seed,
           "log": group_log, "scope": group_scope, "bench": group_bench}
 

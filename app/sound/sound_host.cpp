@@ -195,11 +195,15 @@ static std::string openSynth(const KV& kv) {
     return "{\"ok\":true,\"id\":\"" + id + "\"}";
 }
 
+static bool (*g_midiTap)(const std::vector<uint8_t>&) = nullptr;
+void setMidiTap(bool (*fn)(const std::vector<uint8_t>&)) { g_midiTap = fn; }
+
 void poll() {
     jamTick();
     auto msgs = midi::takeIn();
     if (msgs.empty()) return;
     for (const auto& m : msgs) {
+        if (g_midiTap && g_midiTap(m.bytes)) continue;   // the desk mosh played it
         if (m.bytes.size() < 3) continue;
         const int kind = m.bytes[0] & 0xF0;
         if (kind != 0x90 && kind != 0x80) continue;

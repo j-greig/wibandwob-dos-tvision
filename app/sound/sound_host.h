@@ -49,6 +49,10 @@ bool synthAudioAvailable();
 // Returns true when sent, false when silenced or no output.
 bool sendToSpeakers(const std::vector<Note>& notes, double nowMs);
 
+// A tap on MIDI input, asked first for every message; true means it used the message
+// (the desk mosh plays drum notes and two controllers while it runs).
+void setMidiTap(bool (*fn)(const std::vector<uint8_t>&));
+
 // Small helpers shared by the sound files.
 std::string jsonEscape(const std::string& s);
 std::string kvGet(const KV& kv, const char* k, const std::string& dflt = "");
