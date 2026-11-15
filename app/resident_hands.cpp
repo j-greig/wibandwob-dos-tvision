@@ -16,6 +16,10 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 namespace resident {
 
@@ -355,6 +359,55 @@ std::string deskForPrompt() {
         v = v->next;
     } while (v != f && n < 40);
     return n ? os.str() : "(no windows are open)";
+}
+
+// ---------------------------------------------------------------- rehearsal desk
+
+namespace {
+std::map<std::string, std::string> g_rehearsal;   // actor -> its rehearsal window id
+
+std::string exePath() {
+#ifdef __APPLE__
+    char buf[4096];
+    uint32_t n = sizeof buf;
+    if (_NSGetExecutablePath(buf, &n) == 0) return buf;
+#endif
+    char b[4096];
+    ssize_t k = readlink("/proc/self/exe", b, sizeof b - 1);
+    if (k > 0) { b[k] = 0; return b; }
+    return "wwdos";
+}
+}  // namespace
+
+std::string cmdRehearse(const KV& kv) {
+    Who w = currentWho();
+    std::string actor = w.source == Source::Console ? "person" : w.actor;
+    std::string inst = "rehearse_" + actor;
+    std::string sock = "/tmp/wibwob_" + inst + ".sock";
+    auto it = kv.find("close");
+    if (it != kv.end() && it->second == "1") {
+        auto r = g_rehearsal.find(actor);
+        if (r == g_rehearsal.end()) return "err no rehearsal desk is open for " + actor;
+        std::string resp = actAs(actor, "close_window", {{"id", r->second}});
+        g_rehearsal.erase(r);
+        return "{\"closed\":true,\"socket\":\"" + sock + "\"}";
+    }
+    if (g_rehearsal.count(actor)) {
+        return "{\"open\":true,\"window\":\"" + g_rehearsal[actor] + "\",\"socket\":\"" + sock + "\"}";
+    }
+    // A second WIBWOB-DOS in a terminal window the resident owns, with its own socket: what it tries
+    // there touches nothing on the public desk, and the person sees the tries in the window.
+    std::string exec = "env -u WWDOS_RESIDENTS WIBWOB_INSTANCE=" + inst + " WWDOS_REHEARSAL=1 WWDOS_TR808_AUDIO=0 '" +
+                       exePath() + "' 2>/tmp/wibwob_" + inst + ".stderr";
+    KV args{{"exec", exec}, {"title", "rehearsal: " + actor}};
+    for (const char* k : {"x", "y", "w", "h"}) { auto a = kv.find(k); if (a != kv.end()) args[k] = a->second; }
+    if (!args.count("x")) { args["x"] = "4"; args["y"] = "2"; args["w"] = "84"; args["h"] = "26"; }
+    std::string resp = w.source == Source::Console ? hooks().exec("open_terminal", args) : actAs(actor, "open_terminal", args);
+    std::string id = jsonStr(resp, "id");
+    if (id.empty()) return "err the rehearsal desk did not open: " + resp.substr(0, 80);
+    g_rehearsal[actor] = id;
+    return "{\"open\":true,\"window\":\"" + id + "\",\"socket\":\"" + sock +
+           "\",\"note\":\"send commands to this socket; what happens there stays there; resident_rehearse close=1 ends it\"}";
 }
 
 }  // namespace resident
