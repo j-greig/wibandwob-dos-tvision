@@ -55,6 +55,7 @@ private:
     int cursor_ = 0;
     size_t presetIdx_ = 0;
     TTimerId timer_ = nullptr;
+    std::string startedBy_ = "app";   // who started the pattern (the ears name it)
 };
 
 class TTR808Window : public TWindow {

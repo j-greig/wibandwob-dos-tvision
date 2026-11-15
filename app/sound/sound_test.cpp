@@ -1,5 +1,6 @@
 // Tests for the machine's sound: notes rendered to buffers and compared.
 // Run: build/app/sound_test (ctest name: sound).
+#include "ears.h"
 #include "synth.h"
 
 #include <cmath>
@@ -89,9 +90,89 @@ static void testSynth() {
     std::remove(path);
 }
 
+static Heard synthHeard(const char* n, double at, double dur, const std::string& who) {
+    Heard h;
+    const Patch& p = fmPatches()[patchIndex("bass")];
+    h.startMs = at;
+    h.durMs = dur;
+    h.endMs = at + dur + p.releaseMs;
+    h.source = "synth";
+    h.window = "w1";
+    h.voice = "fm";
+    h.patch = "bass";
+    h.midi = parseNote(n);
+    h.level = 100 / 127.0;
+    h.who = who;
+    h.hasEnvelope = true;
+    h.envPatch = p;
+    return h;
+}
+
+static Heard drumHeard(const char* v, int step, double at, const std::string& who) {
+    Heard h;
+    h.startMs = at;
+    h.endMs = at + drumRingMs(v);
+    h.source = "tr808";
+    h.window = "w2";
+    h.voice = v;
+    h.step = step;
+    h.level = 0.9;
+    h.tempo = 120;
+    h.who = who;
+    return h;
+}
+
+static size_t codePoints(const std::string& s) {
+    size_t n = 0;
+    for (unsigned char c : s) if ((c & 0xC0) != 0x80) ++n;
+    return n;
+}
+
+static void testEars() {
+    std::printf("[ears]\n");
+    Ears e;
+    e.hear(synthHeard("C-4", 1000, 100, "wib"));
+    e.hear(drumHeard("bd", 0, 1000, "person"));
+    e.hear(synthHeard("G-4", 1250, 100, "wib"));     // arrives before E-4: kept in start order
+    e.hear(synthHeard("E-4", 1125, 100, "wib"));
+    e.hear(drumHeard("ch", 1, 1125, "person"));
+    auto all = e.since(2000, 2000);
+    check(all.size() == 5 && all[2].startMs == 1125 && all[4].midi == parseNote("G-4"), "the ears keep what they heard in start order");
+    auto s = e.sounding(1050);
+    check(s.size() == 2 && s[0].midi == 60 && s[1].voice == "bd", "at 1050 ms the C-4 and the bass drum are sounding");
+    check(e.sounding(2000).empty(), "at 2000 ms nothing sounds");
+    check(e.since(2000, 500).empty() && e.since(2000, 1000).size() == 5, "since: nothing in the last 500 ms, all five in the last second");
+    check(e.sounding(1050, "synth").size() == 1 && e.since(2000, 1000, "tr808").size() == 2, "a source filter keeps the synth or the TR-808");
+    check(std::fabs(Ears::levelAt(all[0], 1000 + 2) - all[0].level) < 1e-9, "a synth note's level after its attack is its velocity level");
+    const Heard bd = all[1];
+    check(std::fabs(Ears::levelAt(bd, 1200) - 0.45) < 1e-9, "a bass drum halfway through its 400 ms ring is at half level");
+
+    auto rows = e.rows(1500, 500, 125);
+    check(rows.size() == 4, "rows: 500 ms in 125 ms rows is four rows");
+    check(rows[0].find("C-4") != std::string::npos && rows[0].find("BD") != std::string::npos && rows[0].find("-0.500") == 0,
+          "row one: -0.500, C-4 and BD (" + rows[0] + ")");
+    check(rows[1].find("E-4") != std::string::npos && rows[1].find("CH") != std::string::npos, "row two: E-4 and CH (" + rows[1] + ")");
+    check(rows[3].find("---") != std::string::npos && rows[3].find("..") != std::string::npos, "row four is empty: --- and .. (" + rows[3] + ")");
+    const std::string m = e.meter(1500, 500, 125);
+    check(codePoints(m) == 4 && m != "    ", "meter: one character per row, not blank (" + m + ")");
+    const std::string sum = e.summary(1500, 1000);
+    check(sum.find("synth 3 notes (C-4 to G-4) by wib 3") != std::string::npos &&
+          sum.find("tr808 2 hits (bd 1, ch 1) at 120 bpm, started by person") != std::string::npos,
+          "summary: " + sum);
+    const std::string rep = e.report(1500, 1, "", 125);
+    check(rep.find("\"standing\":\"data\"") != std::string::npos && rep.find("\"counts\":{\"synth\":3,\"tr808\":2}") != std::string::npos,
+          "report is marked data and counts 3 notes and 2 hits");
+    const std::string rw = e.report(1500, 1, "", 125, "w2");
+    check(rw.find("\"counts\":{\"synth\":0,\"tr808\":2}") != std::string::npos, "report for window w2 holds only its hits");
+    Ears small(3);
+    for (int i = 0; i < 5; ++i) small.hear(drumHeard("bd", i, i * 125.0, "app"));
+    check(small.size() == 3 && small.since(1000, 1000).front().step == 2, "the ears keep the newest N and drop the oldest");
+}
+
 int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     if (only.empty() || only == "synth") testSynth();
+    if (only.empty() || only == "ears") testEars();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

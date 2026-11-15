@@ -5,7 +5,9 @@
 #include <tvision/tv.h>
 
 #include "resident_senses.h"
+#include "ears.h"
 #include "synth_view.h"
+#include "tr808_view.h"
 #include "tr808_audio.h"
 
 #include <algorithm>
@@ -169,11 +171,19 @@ static std::string openSynth(const KV& kv) {
 }
 
 bool handles(const std::string& name) {
-    return name == "open_synth" || name == "synth";
+    return name == "open_synth" || name == "synth" || name == "hear";
 }
 
 std::string command(const std::string& name, const KV& kv) {
     if (name == "open_synth") return openSynth(kv);
+    if (name == "hear") {
+        // of= (not source=, which names the caller's standing)
+        const std::string src = kvGet(kv, "of", "all");
+        if (src != "all" && src != "synth" && src != "tr808") return "err of is all|synth|tr808";
+        const double secs = kvHas(kv, "seconds") ? std::atof(kvGet(kv, "seconds").c_str()) : 4.0;
+        return ears().report(clockMs(), secs, src == "all" ? "" : src, toInt(kvGet(kv, "row_ms"), 125),
+                             kvGet(kv, "window"));
+    }
     if (name == "synth") {
         const std::string action = kvGet(kv, "action");
         auto* w = findOrFront<TSynthWindow>(kv);
@@ -193,6 +203,16 @@ std::string command(const std::string& name, const KV& kv) {
 
 std::string stateOf(TWindow* w) {
     if (auto* s = dynamic_cast<TSynthWindow*>(w)) return s->view()->sentence();
+    if (auto* t = dynamic_cast<TTR808Window*>(w)) {
+        const tr808::Engine& e = t->view()->engine();
+        int programmed = 0;
+        for (int v = 0; v < tr808::kVoices; ++v) if (e.countSteps(v)) ++programmed;
+        std::string s = std::string("TR-808 drum machine, ") + (e.playing() ? "playing" : "stopped") + " pattern " +
+                        e.slotLabel() + " at " + std::to_string(e.tempo()) + " bpm";
+        if (e.playing()) s += ", step " + std::to_string(e.step() + 1) + " of " + std::to_string(e.pattern().lastStep);
+        s += "; " + std::to_string(programmed) + " instruments programmed; sound " + (tr808::audioEnabled() ? "on" : "off");
+        return s;
+    }
     return "";
 }
 

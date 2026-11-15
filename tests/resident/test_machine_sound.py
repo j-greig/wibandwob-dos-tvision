@@ -8,7 +8,7 @@ it after. Binary: WWDOS_BIN or build-resident/app/wwdos.
 Usage:
     python3 tests/resident/test_machine_sound.py            # all groups
     python3 tests/resident/test_machine_sound.py synth      # chosen groups
-Groups: synth.
+Groups: synth, ears.
 """
 
 import json
@@ -131,7 +131,67 @@ def test_synth(desk):
     R.check(xraw(desk, "synth", id=wid, action="note", note="H-9").startswith("err"), "a bad note is refused with err")
 
 
-GROUPS = {"synth": test_synth}
+# ---------------------------------------------------------------------------- ears
+
+def test_ears(desk):
+    print("\n[ears] what sounds now and what sounded, for the synth and the TR-808")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    syn = x(desk, "open_synth", x=2, y=1, w=60, h=18)["id"]
+    drm = x(desk, "open_tr808", x=10, y=20, w=118, h=28)["id"]
+    time.sleep(2.2)   # the ears outlive closed windows: let the last group's notes age past 2 s
+
+    n0 = last_act(desk)
+    h = x(desk, "hear", seconds=2, actor="wib", source="resident")
+    R.check(h["standing"] == "data" and h["counts"] == {"synth": 0, "tr808": 0} and "silence" in h["summary"],
+            f"before anything plays the ears hear silence ({h['summary']!r})")
+
+    # wib plays a phrase; the ears hear it at once, the first note sounding.
+    x(desk, "synth", id=syn, action="notes", notes="C-4 E-4 G-4", step=200, dur=150, actor="wib", source="resident")
+    h = x(desk, "hear", seconds=2, of="synth", actor="wob")
+    R.check(any(s["note"] == "C-4" and s["who"] == "wib" for s in h["sounding"]),
+            f"right after the phrase starts, C-4 by wib is sounding ({h['sounding']})")
+    time.sleep(0.9)
+    h = x(desk, "hear", seconds=2, of="synth", actor="wob")
+    R.check([e["note"] for e in h["heard"]] == ["C-4", "E-4", "G-4"] and all(e["who"] == "wib" for e in h["heard"]),
+            f"wob hears wib's phrase: C-4 E-4 G-4 ({[e['note'] for e in h['heard']]})")
+    gaps = [h["heard"][i]["ago_ms"] - h["heard"][i + 1]["ago_ms"] for i in range(2)]
+    R.check(all(abs(g - 200) <= 2 for g in gaps), f"the notes are heard 200 ms apart, as played ({gaps})")
+    R.check(h["sounding"] == [] and "Nothing sounds now" in h["summary"], "after the phrase nothing sounds")
+    R.check("synth 3 notes (C-4 to G-4) by wib 3" in h["summary"], f"summary: {h['summary']!r}")
+    R.check(any("C-4" in r for r in h["rows"]) and len(h["rows"]) == 16, f"tracker rows of 125 ms cover the 2 s ({len(h['rows'])} rows)")
+
+    # wob starts the drum machine; the ears hear its steps as the engine plays them.
+    st = desk.j("exec_command", name="tr808", id=drm, action="state")
+    preset = st["presets"][0]
+    x(desk, "tr808", id=drm, action="load_preset", preset=preset)
+    x(desk, "tr808", id=drm, action="play", actor="wob", source="resident")
+    time.sleep(1.3)
+    h = x(desk, "hear", seconds=1, of="tr808")
+    st = x(desk, "tr808", id=drm, action="state")
+    pat = {i["id"]: i["steps"] for i in st["instruments"]}
+    hits = h["heard"]
+    R.check(len(hits) > 0 and h["counts"]["synth"] == 0, f"the ears hear {len(hits)} TR-808 hits in the last second and no synth")
+    R.check(all(pat[e["voice"]][e["step"]] == "x" for e in hits),
+            "every hit heard is a step the pattern has on (voice and step match the engine's pattern)")
+    R.check(all(e["who"] == "wob" and e["tempo"] == 120 for e in hits), "each hit names wob, who started it, and 120 bpm")
+    steps = sorted({e["step"] for e in hits})
+    R.check(len(steps) >= 4, f"the hits come from at least four steps ({steps})")
+    R.check("tr808" in h["summary"] and "started by wob" in h["summary"], f"summary: {h['summary']!r}")
+    hw = x(desk, "hear", seconds=1, window=syn)
+    R.check(hw["counts"]["tr808"] == 0, "hear window= keeps one window's sounds")
+    g = glance_of(desk, drm) or {}
+    R.check(g.get("state", "").startswith(f"TR-808 drum machine, playing pattern A1-A at 120 bpm, step"),
+            f"look_glance gives the drum machine one sentence: {g.get('state')!r}")
+    x(desk, "tr808", id=drm, action="stop")
+
+    # Hearing changes nothing and logs nothing.
+    acts = [a for a in acts_since(desk, n0) if "hear" in a["what"]]
+    R.check(acts == [], "hear is not logged as an act (it changes nothing)")
+    R.check(any(line.find(" ears ") >= 0 for line in desk.screen()), "the synth window shows the ears' meter to the person")
+
+
+GROUPS = {"synth": test_synth, "ears": test_ears}
 
 
 def main():

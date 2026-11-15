@@ -175,6 +175,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"tr808", "Drive the TR-808 (action=play|stop|toggle|tempo bpm|select instrument|toggle_step step instrument?|set_step instrument step active|set_param instrument param value|load_preset preset|clear all?|instrument?|set_pattern bank number variation|swing value|scale value|accent value|master value|last_step value|mute instrument|solo instrument|audio on|random density|copy|paste|cursor step|text text|state; optional id). Steps are 0-15. Publishes tr808_step events on steps with hits", false},
         {"open_synth", "Open the synth: a PC speaker square voice and an FM voice (optional voice=pcspk|fm, patch, octave, gate, audio=0|1, x, y, w, h)", false},
         {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
+        {"hear", "The ears: what the synth and the TR-808 sound now and sounded in the last seconds= (default 4): voices, notes, steps, levels, who, a meter and tracker rows; of=all|synth|tr808, row_ms=, window=. Changes nothing", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},

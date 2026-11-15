@@ -5,6 +5,7 @@
 #define Uses_TProgram
 #include <tvision/tv.h>
 
+#include "ears.h"
 #include "sound_host.h"
 
 #include <algorithm>
@@ -56,11 +57,27 @@ int TSynthView::keyToSemitone(char ch) const {
 void TSynthView::playNotes(const std::vector<Note>& notes, const std::string& who) {
     if (notes.empty()) return;
     const double now = clockMs();
+    TWindow* win = dynamic_cast<TWindow*>(owner);
+    const std::string wid = (win && host().idOf) ? host().idOf(win) : "";
     for (const auto& n : notes) {
         Played p{n.midi, n.voice, n.voice == Voice::Fm ? n.patch.name : std::string("square"), n.vel,
                  now + n.atMs, n.durMs, now + n.atMs + soundingMs(n), who};
         recent_.push_back(p);
         while (recent_.size() > 32) recent_.pop_front();
+        Heard h;
+        h.startMs = p.startMs;
+        h.endMs = p.endMs;
+        h.source = "synth";
+        h.window = wid;
+        h.voice = voiceId(n.voice);
+        h.patch = p.patch;
+        h.midi = n.midi;
+        h.level = n.voice == Voice::Fm ? (n.vel / 127.0) * n.patch.level : speakerPatch().level;
+        h.who = who;
+        h.hasEnvelope = n.voice == Voice::Fm;
+        h.envPatch = n.patch;
+        h.durMs = n.durMs;
+        ears().hear(h);
     }
     played_ += (long)notes.size();
     if (sendToSpeakers(notes)) sent_ += (long)notes.size();
@@ -73,6 +90,7 @@ void TSynthView::tick() {
     const double now = clockMs();
     bool any = false;
     for (const auto& p : recent_) if (p.endMs > now) { any = true; break; }
+    if (ears().lastStartMs() > now - 4000) any = true;   // the ears line still moving
     if (!any && timer_) { killTimer(timer_); timer_ = nullptr; }
     drawView();
 }
@@ -195,6 +213,10 @@ void TSynthView::draw() {
                 }
                 b.moveStr((ushort)(x + 1), g, ca);
             }
+        } else if (y == 6) {
+            // What the ears hear from every source over the last 4 s, oldest on the left.
+            b.moveStr(1, "ears ", dim);
+            b.moveStr(6, ears().meter(now, 4000, 125), bright);
         } else if (y >= 7 && y < H - 1) {
             // The last notes, newest first.
             const int k = y - 7;

@@ -80,3 +80,39 @@ machine share one audio path. The files are removed when the app exits normally.
 
 `WWDOS_SYNTH_AUDIO=0` starts the synth silent; `action=audio on=0|1` and the `0` key switch it. Silent, notes
 are still played, logged and heard by the ears; `sent` and `silenced` count where they went. Tests run silent.
+
+## Ears
+
+The synth and the TR-808 tell the ears every note and hit as the engine plays it: the window, the voice, the note
+or step, the level, and who played it (the synth) or who started the pattern (the TR-808). The ears hear with the
+sound on or off, so a silent desktop in a test hears the same as a loud one. They keep the last 4096 sounds in
+memory, across closed windows.
+
+    exec_command name=hear [seconds=4] [of=all|synth|tr808] [row_ms=125] [window=w3]
+
+(`of=`, because `source=` names the caller's standing.) The answer is marked `"standing":"data"`, changes
+nothing and is not logged as an act.
+
+    {"standing":"data","now_ms":48210,"seconds":"2.00","source":"all","row_ms":125,
+     "sounding":[{"source":"synth","window":"w1","voice":"fm","note":"E-4","midi":64,"patch":"bass",
+                  "level":0.51,"left_ms":160,"who":"wib"}],
+     "heard":[{"ago_ms":1210,"source":"tr808","window":"w2","voice":"bd","step":0,"accent":true,"tempo":120,
+               "level":1.13,"who":"wob"},
+              {"ago_ms":200,"source":"synth","window":"w1","voice":"fm","note":"C-4","midi":60,"patch":"bass",
+               "dur_ms":150,"level":0.79,"who":"wib"}, ...],
+     "dropped":0,"counts":{"synth":3,"tr808":14},
+     "summary":"in the last 2 s: synth 3 notes (C-4 to G-4) by wib 3; tr808 14 hits (bd 4, ch 8, sd 2) at 120 bpm, started by wob. Sounding now: E-4 fm (wib).",
+     "meter":"▃▅█▆▃▂▁▁▂▅█▆▃▂▁▁",
+     "rows":["-2.000   ---             | BD CH", "-1.875   ---             | CH", ...]}
+
+- `sounding`: what sounds at this moment, with its level now (the synth by its envelope, a drum decaying over its
+  ring: bd 400 ms, sd 200 ms, cy 900 ms, ch 60 ms ...) and how long it has left.
+- `heard`: what started in the window of time, oldest first (at most 400; `dropped` counts the rest).
+  `level` for the synth is velocity times the patch level (0-1); for the TR-808 it is the hit's playback volume
+  (`afplay -v`, 1.0 = sample level; accents go above 1).
+- `rows`: one tracker row per `row_ms`, seconds ago on the left, synth notes, then drum voices.
+- `meter`: one character per row, the summed level of everything sounding in it (` ▁▂▃▄▅▆▇█`).
+
+The person sees the same meter: the synth window's `ears` line shows the last 4 s of every source.
+`look_glance` now gives the TR-808 a sentence too: `TR-808 drum machine, playing pattern A1-A at 120 bpm, step 5
+of 16; 4 instruments programmed; sound off`.
