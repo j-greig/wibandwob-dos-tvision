@@ -20,6 +20,7 @@
 
 #include "resident_senses.h"
 #include "resident_overlay.h"
+#include "desk_mosh.h"
 
 #include <algorithm>
 #include <chrono>
@@ -477,6 +478,7 @@ void updateAct(uint64_t rseq, const std::string& result) {
 }
 
 std::string ownerName(TView* v) {
+    if (deskmosh::isShard(v)) return "mosh";
     auto it = g_owner.find(v);
     return it == g_owner.end() ? "" : it->second.actor;
 }
@@ -486,6 +488,7 @@ void settle() {
     noteMenu(w);
     auto wins = deskWindows();
     for (TWindow* win : wins) {
+        if (deskmosh::isShard(win)) continue;   // the mosh logs itself: one act on, one off
         auto it = g_known.find(win);
         TRect r = win->getBounds();
         if (it == g_known.end()) {
