@@ -78,7 +78,7 @@ window.WWDOS_ATLAS={cps:[32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,5
     '  if (bg.a < 0.5) {',
     '    ivec2 p = clamp(ivec2(floor(uv * vec2(8.0, 16.0))), ivec2(0), ivec2(7, 15));',
     '    float u = texelFetch(u_tex, at(ug) + p, 0).r;',
-    '    if (u_clear == 1 && u > 0.5) for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {',
+    '    if ((u_clear == 1 || (u_clear == 2 && uink.a > 0.5)) && u > 0.5) for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {',
     '      ivec2 n = p + ivec2(dx, dy);',
     '      if (n.x >= 0 && n.x < 8 && n.y >= 0 && n.y < 16 && texelFetch(u_tex, at(gi) + n, 0).r > 0.5) u = 0.0;',
     '    }',
@@ -114,10 +114,11 @@ window.WWDOS_ATLAS={cps:[32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,5
   if (q.has('bars')) opts.bars = q.get('bars') | 0;
   if (q.has('paused')) opts.paused = q.get('paused') | 0;
   var noDraw = q.get('draw') === '0';     // tools that read cells, not pixels (tools/stagepage.py)
-  // &clearance=1: under a line-art mark on a patterned desktop, leave the pattern out within one font pixel of the
-  // line (default: the pattern runs on right up to the line). docs/stage.md § Marks.
+  // Under line art on a dotted desktop the pattern is left out within one font pixel of the line: &clearance=1 always,
+  // &clearance=0 never; by default only in a cell whose line is not clearly lighter or darker than both the pattern's
+  // ink and paper (see under below). docs/stage.md § Line art on a patterned desktop.
   if (q.has('clearance')) opts.clearance = q.get('clearance') | 0;
-  gl.uniform1i(gl.getUniformLocation(prog, 'u_clear'), opts.clearance === 1 ? 1 : 0);
+  gl.uniform1i(gl.getUniformLocation(prog, 'u_clear'), opts.clearance === 1 ? 1 : opts.clearance === 0 ? 0 : 2);
   // &t=S (stage pages) seeks to S seconds once the app is up; with &paused=1 that frame is drawn and held.
   if (q.has('t')) opts.t = parseFloat(q.get('t'));
   var dpr = window.devicePixelRatio || 1;
@@ -206,7 +207,13 @@ window.WWDOS_ATLAS={cps:[32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,5
       var ug = glyphOf.get(under[k + 4]);
       if (ug === undefined) continue;
       var ui = under[k + 5], ub = under[k + 6];
+      // Automatic clearance (uink alpha): the line reads plainly on the dots when its luminance is at least 32 above
+      // or below both the pattern's ink and paper (white on grey-on-blue, black on white-on-cyan); a line between
+      // them (green trees on bright-green-on-black) gets the dots kept one pixel off it.
+      var lm = lum(under[k + 2]), li = lum(ui), lp = lum(ub);
+      var plain = lm >= Math.max(li, lp) + 32 || lm <= Math.min(li, lp) - 32;
       unders[j] = ug; uinks[j * 4] = (ui >> 16) & 255; uinks[j * 4 + 1] = (ui >> 8) & 255; uinks[j * 4 + 2] = ui & 255;
+      uinks[j * 4 + 3] = plain ? 0 : 255;
       bgs[j * 4] = (ub >> 16) & 255; bgs[j * 4 + 1] = (ub >> 8) & 255; bgs[j * 4 + 2] = ub & 255; bgs[j * 4 + 3] = 0;
       nu++;
     }
