@@ -474,3 +474,9 @@ TWindow* createSnakeWindow(const TRect &bounds) {
     w->setup();
     return w;
 }
+
+std::string TSnakeView::describeState() const {
+    return std::string("Snake game, ") + (gameOver ? "game over" : paused ? "paused" : "playing") + ": length " +
+           std::to_string(body.size()) + ", score " + std::to_string(score) + " (high " + std::to_string(highScore) + "), " +
+           std::to_string(eaten) + " eaten";
+}

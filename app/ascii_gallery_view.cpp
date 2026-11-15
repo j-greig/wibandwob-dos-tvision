@@ -836,3 +836,13 @@ TWindow* createAsciiGalleryWindow(const TRect& bounds)
     std::string primerDir = galleryFindPrimerDir();
     return new TGalleryWindow(bounds, primerDir);
 }
+
+std::string TGalleryWindow::describeState() const {
+    std::string search = lastSearchText;
+    return "primer gallery on tab " + std::to_string(getSelected()) + " with " + std::to_string(allFiles.size()) + " files" +
+           (search.empty() ? std::string("") : "; search \"" + ww::clipText(search, 30) + "\"");
+}
+bool TGalleryWindow::describeText(std::vector<std::string>& out) const {
+    out = allFiles;
+    return true;
+}

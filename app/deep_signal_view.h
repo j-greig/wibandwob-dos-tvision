@@ -14,6 +14,7 @@
 #define Uses_TView
 #define Uses_TDrawBuffer
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 #include <vector>
 #include <string>
@@ -72,8 +73,10 @@ struct SignalLog {
 extern const ushort cmDeepSignalTerminal;
 
 // ── Main view ────────────────────────────────────────────
-class TDeepSignalView : public TView {
+class TDeepSignalView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     static constexpr int MAP_W = 80;
     static constexpr int MAP_H = 40;
     static constexpr int SCAN_RANGE = 12;

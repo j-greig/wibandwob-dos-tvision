@@ -14,6 +14,7 @@
 #define Uses_TKeys
 #define Uses_TEvent
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -82,8 +83,10 @@ private:
 };
 
 // ── Gallery window ──────────────────────────────────────
-class TGalleryWindow : public TWindow {
+class TGalleryWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TGalleryWindow(const TRect& bounds, const std::string& primerDir);
     virtual void handleEvent(TEvent& event) override;
     int getSelected() const;

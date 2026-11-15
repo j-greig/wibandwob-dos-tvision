@@ -24,6 +24,7 @@
 #define Uses_TProgram
 #define Uses_TDeskTop
 #define Uses_TWindowInit
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -56,6 +57,7 @@ struct RoomParticipant {
 
 class TRoomParticipantStrip : public TView {
 public:
+    const std::vector<RoomParticipant>& participants() const { return participants_; }
     explicit TRoomParticipantStrip(const TRect& bounds);
 
     virtual void draw() override;
@@ -85,6 +87,7 @@ public:
 
     void addMessage(const RoomChatMessage& msg);
     void scrollToBottom();
+    const std::vector<RoomChatMessage>& messages() const { return messages_; }
 
 private:
     std::vector<RoomChatMessage> messages_;
@@ -98,8 +101,10 @@ private:
 // Handles cmRoomChatReceive and cmRoomPresence from IPC,
 // and cmRoomChatSend from its own input line.
 
-class TRoomChatWindow : public TWindow {
+class TRoomChatWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TRoomChatWindow(const TRect& bounds, const char* title, int num);
     virtual ~TRoomChatWindow();
 

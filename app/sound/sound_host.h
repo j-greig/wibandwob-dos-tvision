@@ -30,8 +30,6 @@ const Host& host();
 // True for the names command() answers: open_synth, synth, hear, open_event_score, event_score.
 bool handles(const std::string& name);
 std::string command(const std::string& name, const KV& kv);
-// One sentence of state for look_glance; "" when w is not a sound window.
-std::string stateOf(TWindow* w);
 
 // Milliseconds on a steady clock since the first call (the app's start, in practice).
 double clockMs();

@@ -1,35 +1,17 @@
 /**
- * MCP Tools for TUI Application Control (SDK Bridge)
+ * MCP tools for the Wib&Wob chat: the desktop's own command table, through the desktop's socket.
  *
- * ARCHITECTURE:
- *   Two tools. That's it.
- *   - tui_list_commands: discovers all available commands from the C++ registry
- *   - tui_menu_command: executes any command by name with args
+ *   tui_list_commands  every command, from the app's registry (get_capabilities)
+ *   tui_menu_command   one command by name, run as wib or wob (as=), source resident
  *
- *   New C++ commands are instantly available. Never touch this file.
+ * The tools reach the app's socket directly (app_socket.js): no HTTP server needs to run. Each act is
+ * logged in the resident's name and its hand is seen moving to the window first. Rule commands (the
+ * residents' manners, marks, hand, owners, reflexes) are refused from here as from every socket caller.
  */
 
 const { createSdkMcpServer, tool } = require('@anthropic-ai/claude-agent-sdk');
 const { z } = require('zod');
-const axios = require('axios');
-
-const API_BASE_URL = 'http://127.0.0.1:8089';
-
-const apiClient = axios.create({
-    baseURL: API_BASE_URL,
-    timeout: 5000,
-    headers: { 'Content-Type': 'application/json' }
-});
-
-apiClient.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        if (error.code === 'ECONNREFUSED') {
-            throw new Error('API server not running. Please start the TUI application first.');
-        }
-        throw error;
-    }
-);
+const { send, act, socketPath } = require('./app_socket');
 
 function mcpResult(text) {
     return { content: [{ type: "text", text }] };
@@ -38,88 +20,46 @@ function mcpError(text) {
     return { content: [{ type: "text", text }], isError: true };
 }
 
+const SOCKET_COMMANDS = 'Also on the socket (not in the registry list): get_state, create_window type= x= y= w= h= title=, ' +
+    'move_window id= x= y=, resize_window id= width= height=, focus_window id=, close_window id=.';
+
 function createTuiMcpServer() {
     return createSdkMcpServer({
         name: "tui-control",
-        version: "3.0.0",
-        description: "Two tools to discover and execute any TUI command",
+        version: "4.0.0",
+        description: "The WibWob-DOS desktop's commands, run as Wib or Wob",
 
         tools: [
             tool(
                 "tui_list_commands",
-                "Discover ALL available TUI commands with descriptions and parameter hints. Call this FIRST to see what you can do, then use tui_menu_command to execute any command by name. Returns the full live C++ command registry.",
+                "List every command the desktop has, with what each does. Start with describe (no args) to see which windows are open. " + SOCKET_COMMANDS,
                 {},
                 async () => {
                     try {
-                        const response = await apiClient.get('/commands');
-                        return mcpResult(JSON.stringify(response.data, null, 2));
+                        return mcpResult((await send('get_capabilities')) + '\n' + SOCKET_COMMANDS);
                     } catch (error) {
-                        return mcpError(`Error listing commands: ${error.message}`);
+                        return mcpError(`The desktop's socket (${socketPath()}) did not answer: ${error.message}`);
                     }
                 }
             ),
 
             tool(
                 "tui_menu_command",
-                "Execute any TUI command by name. Use tui_list_commands first to discover available commands. Covers everything: window management (cascade, tile, close_all), apps (open_gallery, open_terminal, open_scramble), text (send_text, send_figlet), paint canvas, screenshots, themes, and more. For resize_window: pass aspect param (16:9, 4:3, square, portrait, golden, A4, or W:H) with w or h to auto-compute proportions.",
+                "Run one desktop command by name, as Wib or Wob. Examples: describe; resident_key id=w3 text=hello; " +
+                "resident_mouse id=w3 action=click x=5 y=2 local=1; resident_menu choose=Window>Text Editor; " +
+                "create_window type=text_editor x=2 y=1 w=40 h=10 title=notes.",
                 {
                     command: z.string().describe("Command name from tui_list_commands"),
-                    args: z.record(z.union([z.string(), z.number()]).transform(v => String(v))).optional().describe("Command arguments as key-value pairs (values are coerced to strings)")
+                    as: z.enum(["wib", "wob"]).optional().describe("Who acts: wib or wob (default wib)"),
+                    args: z.record(z.union([z.string(), z.number()]).transform(v => String(v))).optional()
+                        .describe("Command arguments as key-value pairs")
                 },
                 async (params) => {
                     try {
-                        const payload = { command: params.command };
-                        if (params.args && Object.keys(params.args).length > 0) {
-                            payload.args = params.args;
-                        }
-                        const response = await apiClient.post('/menu/command', payload);
-                        return mcpResult(JSON.stringify(response.data, null, 2));
+                        const r = await act(params.as || 'wib', params.command, params.args || {});
+                        return r.startsWith('err') ? mcpError(r) : mcpResult(r);
                     } catch (error) {
-                        const detail = error.response?.data?.detail || error.message;
-                        return mcpError(`Command '${params.command}' failed: ${detail}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_get_state",
-                "Get the current desktop state: all open windows with id/type/rect/z-order, desktop dimensions (w, h, cell_aspect for layout maths), theme, and pattern mode. Use this to plan window arrangements before moving/resizing.",
-                {},
-                async () => {
-                    try {
-                        const response = await apiClient.get('/state');
-                        return mcpResult(JSON.stringify(response.data, null, 2));
-                    } catch (error) {
-                        return mcpError(`Error getting state: ${error.message}`);
-                    }
-                }
-            ),
-
-            tool(
-                "tui_batch_layout",
-                "Move, resize, create, or close multiple windows in a single call. Much faster than individual commands for arranging many windows. Each op: {op: 'move_resize', window_id, bounds: {x,y,w,h}} or {op: 'create', view_type, bounds: {x,y,w,h}} or {op: 'close', window_id}. Also supports macro.create_grid for spawning N windows in a grid pattern.",
-                {
-                    request_id: z.string().describe("Unique ID for idempotency"),
-                    ops: z.array(z.object({
-                        op: z.enum(["create", "move_resize", "close"]).describe("Operation type"),
-                        window_id: z.string().optional().describe("Target window ID (for move_resize/close)"),
-                        view_type: z.string().optional().describe("Window type to create (for create op)"),
-                        bounds: z.object({
-                            x: z.number().describe("X position"),
-                            y: z.number().describe("Y position"),
-                            w: z.number().describe("Width in cells"),
-                            h: z.number().describe("Height in cells")
-                        }).optional().describe("Position and size")
-                    })).describe("Array of operations to execute atomically"),
-                    dry_run: z.boolean().optional().describe("If true, validate but don't apply")
-                },
-                async (params) => {
-                    try {
-                        const response = await apiClient.post('/windows/batch_layout', params);
-                        return mcpResult(JSON.stringify(response.data, null, 2));
-                    } catch (error) {
-                        const detail = error.response?.data?.detail || error.message;
-                        return mcpError(`Batch layout failed: ${detail}`);
+                        return mcpError(`Command '${params.command}' failed: ${error.message}`);
                     }
                 }
             ),
@@ -127,7 +67,4 @@ function createTuiMcpServer() {
     });
 }
 
-module.exports = {
-    createTuiMcpServer,
-    API_BASE_URL
-};
+module.exports = { createTuiMcpServer };

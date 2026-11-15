@@ -33,6 +33,8 @@ struct Hooks {
     std::function<bool(TWindow*, std::vector<std::string>&)> textOf;
     // One sentence of state for types whose model says more than their cells; "" otherwise.
     std::function<std::string(TWindow*)> stateOf;
+    // Run a registry command in the app (resident_hands.cpp: actAs).
+    std::function<std::string(const std::string&, const KV&)> exec;
 };
 
 void setHooks(const Hooks& h);

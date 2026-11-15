@@ -210,9 +210,9 @@ static std::string openScore(const KV& kv) {
     } else if (kvHas(kv, "text")) {
         text = kvGet(kv, "text");
         origin = "text";
-    } else {
+    } else if (!readScoreFile("call-and-answer", text, origin)) {
         return "err open_event_score needs score=<name> (scores/<name>.score) or text=";
-    }
+    }   // neither given: the worked example
     Score s;
     std::string err;
     if (!parseScore(text, s, err)) return "err score " + err;
@@ -254,22 +254,6 @@ std::string command(const std::string& name, const KV& kv) {
         return withId(w, w->view()->apiAction(action, kv));
     }
     return "err unknown sound command";
-}
-
-std::string stateOf(TWindow* w) {
-    if (auto* s = dynamic_cast<TSynthWindow*>(w)) return s->view()->sentence();
-    if (auto* sc = dynamic_cast<TScoreWindow*>(w)) return sc->view()->sentence();
-    if (auto* t = dynamic_cast<TTR808Window*>(w)) {
-        const tr808::Engine& e = t->view()->engine();
-        int programmed = 0;
-        for (int v = 0; v < tr808::kVoices; ++v) if (e.countSteps(v)) ++programmed;
-        std::string s = std::string("TR-808 drum machine, ") + (e.playing() ? "playing" : "stopped") + " pattern " +
-                        e.slotLabel() + " at " + std::to_string(e.tempo()) + " bpm";
-        if (e.playing()) s += ", step " + std::to_string(e.step() + 1) + " of " + std::to_string(e.pattern().lastStep);
-        s += "; " + std::to_string(programmed) + " instruments programmed; sound " + (tr808::audioEnabled() ? "on" : "off");
-        return s;
-    }
-    return "";
 }
 
 }  // namespace sound

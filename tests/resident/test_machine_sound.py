@@ -181,7 +181,7 @@ def test_ears(desk):
     hw = x(desk, "hear", seconds=1, window=syn)
     R.check(hw["counts"]["tr808"] == 0, "hear window= keeps one window's sounds")
     g = glance_of(desk, drm) or {}
-    R.check(g.get("state", "").startswith(f"TR-808 drum machine, playing pattern A1-A at 120 bpm, step"),
+    R.check(g.get("state", "").startswith("TR-808 drum machine, playing at step"),
             f"look_glance gives the drum machine one sentence: {g.get('state')!r}")
     x(desk, "tr808", id=drm, action="stop")
 
@@ -295,7 +295,8 @@ def test_score(desk):
 
     # The older open_score (the animated Score window) still opens its own window.
     n_before = len(desk.state()["windows"])
-    R.check(xraw(desk, "open_score") == "ok" and len(desk.state()["windows"]) == n_before + 1,
+    r = xraw(desk, "open_score")
+    R.check((r == "ok" or r.startswith('{"ok":true')) and len(desk.state()["windows"]) == n_before + 1,
             "open_score still opens the animated Score window")
 
     # The worked example in the repo.

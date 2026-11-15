@@ -12,6 +12,7 @@
 #define Uses_TScrollBar
 #define Uses_TDrawBuffer
 #define Uses_TKeys
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -75,8 +76,10 @@ public:
 };
 
 // The window wrapping it all
-class TAppLauncherWindow : public TWindow {
+class TAppLauncherWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TAppLauncherWindow(const TRect& bounds);
     virtual void handleEvent(TEvent& event) override;
 

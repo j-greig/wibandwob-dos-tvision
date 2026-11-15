@@ -6,6 +6,7 @@
 #include "figlet_utils.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "resident_hands.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 // The machine's sound (app/sound/sound_host.cpp). Weak, so tests that link the
@@ -67,6 +68,7 @@ extern void api_spawn_paint(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_micropolis_ascii(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_quadra(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_snake(TWwdosApp& app, const TRect* bounds);
+extern void api_spawn_feed(TWwdosApp& app, const TRect* bounds, const std::string& by);
 extern void api_spawn_tr808(TWwdosApp& app, const TRect* bounds, const std::map<std::string, std::string>& kv);
 extern std::string api_tr808_action(TWwdosApp& app, const std::map<std::string, std::string>& kv);
 extern void api_spawn_rogue(TWwdosApp& app, const TRect* bounds);
@@ -171,12 +173,13 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_quadra", "Open Quadra falling blocks game", false},
         {"open_snake", "Open Snake game", false},
         // ── Music ────────────────────────────────────────────────────────
+        {"open_feed", "Open the Feed: the act log live, one line per act with a tag for who acted (PER WIB WOB SCR VIS GST API SYS); by=person|wib|wob|scramble|visitor|system filters; x y w h", false},
         {"open_tr808", "Open the TR-808 drum machine (optional preset, play=1, audio=0|1, tempo, x, y, w, h)", false},
         {"tr808", "Drive the TR-808 (action=play|stop|toggle|tempo bpm|select instrument|toggle_step step instrument?|set_step instrument step active|set_param instrument param value|load_preset preset|clear all?|instrument?|set_pattern bank number variation|swing value|scale value|accent value|master value|last_step value|mute instrument|solo instrument|audio on|random density|copy|paste|cursor step|text text|state; optional id). Steps are 0-15. Publishes tr808_step events on steps with hits", false},
         {"open_synth", "Open the synth: a PC speaker square voice and an FM voice (optional voice=pcspk|fm, patch, octave, gate, audio=0|1, x, y, w, h)", false},
         {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
         {"hear", "The ears: what the synth and the TR-808 sound now and sounded in the last seconds= (default 4): voices, notes, steps, levels, who, a meter and tracker rows; of=all|synth|tr808, row_ms=, window=. Changes nothing", false},
-        {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself); start=1 starts it; optional x, y, w, h", false},
+        {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
         {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
@@ -206,6 +209,10 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"look_read", "One window's text (id=): the model's text for editor, terminal, chat and paint windows, else its cells as drawn; from=, limit= page the lines. Marks the window's frame for the person (reader=). Changes nothing else", false},
         {"look_study", "A rectangle of cells (x, y, w, h in desktop cells; screen=1 for screen rows; id= for a window's own picture) with text, colour runs [x,n,fg,bg] and a ruler of column numbers. Changes nothing", false},
         {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
+        {"describe", "What a window is: id= gives one window's sentence of state and its text from its own model (text_from model, cells or controls; limit= lines, text=0 for none); no id lists every window (text=1 adds text). Read-only", false},
+        {"person_events", "The person's gestures since=G (typed, key, click, double-click, drag, scroll, command, menu, menu closed, opened, moved, resized, retitled, closed), in order; kinds= a comma list; never a resident's own acts. Read-only", false},
+        {"person_wait", "Like person_events, but the socket holds the reply until a gesture after since=G arrives or ms= (default 10000, at most 60000) pass; then timeout is true", false},
+        {"resident_reflexes", "Residents inside the app: the reflex script that answers the person's gestures, what it bound and its last results; load=<file> and clear=1 are rules (the console with the key turned; WWDOS_RESIDENTS=<file> at start)", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -264,7 +271,27 @@ std::string get_command_capabilities_json() {
     return os.str();
 }
 
+static std::string exec_registry_command_inner(
+    TWwdosApp& app,
+    const std::string& name,
+    const std::map<std::string, std::string>& kv);
+
+// Every command that opens a window answers with the window's id, so the caller (a resident, a
+// model's tool call) can act on the window it opened instead of guessing.
 std::string exec_registry_command(
+    TWwdosApp& app,
+    const std::string& name,
+    const std::map<std::string, std::string>& kv) {
+    (void)api_take_last_registered_window_id(app);   // forget a window registered before this command
+    std::string r = exec_registry_command_inner(app, name, kv);
+    if (r == "ok") {
+        std::string id = api_take_last_registered_window_id(app);
+        if (!id.empty()) return "{\"ok\":true,\"id\":\"" + id + "\"}";
+    }
+    return r;
+}
+
+static std::string exec_registry_command_inner(
     TWwdosApp& app,
     const std::string& name,
     const std::map<std::string, std::string>& kv) {
@@ -366,6 +393,18 @@ std::string exec_registry_command(
     if (name == "open_quadra") {
         api_spawn_quadra(app, nullptr);
         return "ok";
+    }
+    if (name == "open_feed") {
+        TRect r;
+        const TRect* b = nullptr;
+        if (kv.count("x") && kv.count("y") && kv.count("w") && kv.count("h")) {
+            int x = std::atoi(kv.at("x").c_str()), y = std::atoi(kv.at("y").c_str());
+            r = TRect(x, y, x + std::atoi(kv.at("w").c_str()), y + std::atoi(kv.at("h").c_str()));
+            b = &r;
+        }
+        api_spawn_feed(app, b, kv.count("by") ? kv.at("by") : "");
+        std::string id = api_take_last_registered_window_id(app);
+        return id.empty() ? "ok" : "{\"ok\":true,\"id\":\"" + id + "\"}";
     }
     if (name == "open_tr808") {
         TRect r;
@@ -759,6 +798,9 @@ std::string exec_registry_command(
         if (name == "look_changes") return resident::cmdChanges(kv);
         if (name == "look_mark") return resident::cmdMark(kv);
     }
+    if (name == "describe") return resident::cmdDescribe(kv);
+    if (name == "resident_reflexes") return resident::cmdReflexes(kv);
+    if (name == "person_events" || name == "person_wait") return resident::cmdPersonEvents(kv);
     if (name == "acts") return resident::cmdActs(kv);
     if (name == "standing") return resident::cmdStanding(kv);
     if (name == "residents_about") return resident::cmdAbout(kv);

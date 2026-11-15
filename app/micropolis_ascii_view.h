@@ -5,13 +5,15 @@
 #define Uses_TRect
 #define Uses_TEvent
 #define Uses_TKeys
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
 #include "micropolis/micropolis_bridge.h"
 
-class TMicropolisAsciiView : public TView {
+class TMicropolisAsciiView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TMicropolisAsciiView(const TRect &bounds);
     virtual ~TMicropolisAsciiView();
 

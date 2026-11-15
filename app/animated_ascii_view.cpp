@@ -322,3 +322,12 @@ TWindow* createAnimatedAsciiWindow(const TRect &bounds)
     w->setup();
     return w;
 }
+
+std::string TAnimatedAsciiView::describeState() const {
+    return "layered ASCII animation of " + std::to_string(animatedLines.size()) + " lines at phase " + std::to_string(phase) +
+           ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}
+bool TAnimatedAsciiView::describeText(std::vector<std::string>& out) const {
+    out = asciiArtLines;
+    return true;
+}

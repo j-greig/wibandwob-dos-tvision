@@ -172,3 +172,7 @@ TWindow* createAnimatedGradientWindow(const TRect &bounds)
     w->setup();
     return w;
 }
+
+std::string TAnimatedHGradientView::describeState() const {
+    return "animated horizontal colour gradient at phase " + std::to_string(phase) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

@@ -210,22 +210,33 @@ ClaudeCodeSDKProvider::~ClaudeCodeSDKProvider() {
     shutdownSDK();
 }
 
+// Why the bridge cannot run ("" when it can): read by the chat window to say so in one line.
+static std::string g_bridgeProblem;
+const std::string& claudeBridgeProblem() { return g_bridgeProblem; }
+
 bool ClaudeCodeSDKProvider::isAvailable() const {
-    // Check if Node.js is available
-    int result = system("which node > /dev/null 2>&1");
-    if (result != 0) {
-        fprintf(stderr, "DEBUG: Node.js not available\n");
+    // Checked once: the answer does not change while the app runs, and the check forks.
+    static int cached = -1;
+    if (cached >= 0) return cached == 1;
+    cached = 0;
+    if (system("which node > /dev/null 2>&1") != 0) {
+        g_bridgeProblem = "The chat needs Node.js (node on PATH).";
         return false;
     }
-    
     // Check if bridge script exists (search upward so this works from repo root or build/app).
     const std::string resolvedScriptPath = ww_find_first_existing_upwards({nodeScriptPath}, 6);
     if (resolvedScriptPath.empty()) {
-        fprintf(stderr, "DEBUG: Bridge script not found (searched upwards). Configured path: %s\n", nodeScriptPath.c_str());
+        g_bridgeProblem = "The chat's bridge script is missing: " + nodeScriptPath;
         return false;
     }
-    
-    fprintf(stderr, "DEBUG: claude_code_sdk provider is available\n");
+    // Its packages: a fresh checkout or worktree has none until npm install has run there.
+    std::string dir = resolvedScriptPath.substr(0, resolvedScriptPath.find_last_of('/'));
+    std::string sdk = dir + "/node_modules/@anthropic-ai/claude-agent-sdk/package.json";
+    if (access(sdk.c_str(), R_OK) != 0) {
+        g_bridgeProblem = "The chat's bridge is not installed. Run: npm install --prefix " + dir + "  then reopen the chat.";
+        return false;
+    }
+    cached = 1;
     return true;
 }
 

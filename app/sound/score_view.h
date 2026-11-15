@@ -13,10 +13,11 @@
 #include <string>
 #include <vector>
 
+#include "describe.h"
 #include "ega_theme.h"
 #include "score.h"
 
-class TScoreView : public TView {
+class TScoreView : public TView, public ww::Describable {
 public:
     TScoreView(const TRect& bounds, const sound::Score& score, const std::string& origin);
     ~TScoreView() override;
@@ -28,6 +29,9 @@ public:
     std::string apiAction(const std::string& action, const std::map<std::string, std::string>& kv);
     std::string stateJson() const;
     std::string sentence() const;
+    std::string describeState() const override { return sentence(); }
+    // The score's sections, one line each.
+    bool describeText(std::vector<std::string>& out) const override;
 
     void start();
     void stop(const char* why);

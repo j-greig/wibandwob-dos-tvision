@@ -10,6 +10,7 @@
 #define Uses_TView
 #define Uses_TDrawBuffer
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 #include <vector>
 #include <string>
@@ -17,8 +18,10 @@
 
 // Multi-layer animated ASCII art view where different character types
 // move with different patterns (waves flow, faces bob, circles drift, etc.)
-class TAnimatedAsciiView : public TView {
+class TAnimatedAsciiView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     explicit TAnimatedAsciiView(const TRect &bounds, unsigned periodMs = 120);
     virtual ~TAnimatedAsciiView();
 

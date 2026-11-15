@@ -191,6 +191,28 @@ struct PeekMenuView2 : TMenuView {
     static TMenu* TMenuView::*menu_() { return &PeekMenuView2::menu; }
 };
 
+struct PeekMenuCurrent : TMenuView {
+    static TMenuItem* TMenuView::*current_() { return &PeekMenuCurrent::current; }
+};
+
+// The menu the person (or anyone) has open: the menu bar's highlighted item while a menu
+// view runs its loop; "" when none.
+std::string g_menuOpen;
+void noteMenu(const Who& w) {
+    std::string now;
+    if (auto* mv = dynamic_cast<TMenuView*>(TheTopView)) {
+        TMenuView* bar = TProgram::menuBar;
+        TMenuItem* it = bar ? bar->*PeekMenuCurrent::current_() : nullptr;
+        if (!it && mv != bar) it = mv->*PeekMenuCurrent::current_();
+        if (it && it->name) for (const char* p = it->name; *p; ++p) if (*p != '~') now += *p;
+        if (now.empty()) now = "menu";
+    }
+    if (now == g_menuOpen) return;
+    if (!now.empty()) addAct(w, "opened menu " + now, "menu", "");
+    else addAct(w, "closed menu " + g_menuOpen, "menu", "");
+    g_menuOpen = now;
+}
+
 std::string commandName(ushort cmd) {
     TMenuView* bar = TProgram::menuBar;
     TMenu* m = bar ? bar->*PeekMenuView2::menu_() : nullptr;
@@ -210,8 +232,50 @@ struct Act {
 
 std::deque<Act> g_acts;
 uint64_t g_actN = 1;
+uint64_t g_actRevision = 1;   // grows on every add, merge or result change (the feed redraws on it)
 uint64_t g_actDropped = 0;
 const size_t kActsMax = 4000;
+
+// ---------------------------------------------------------------- gestures
+
+// The person's acts as an ordered stream a resident can wait on (person_events, person_wait,
+// subscribe_events). Fed from the act log, so only acts by the console reach it: a resident's
+// own acts, and what they cause, never arrive as the person's.
+struct Gesture {
+    uint64_t g;
+    uint64_t act;
+    long long ms;
+    std::string kind, what, window, type;
+    bool update;
+};
+std::deque<Gesture> g_gestures;
+uint64_t g_gestureN = 1;
+const size_t kGesturesMax = 2000;
+
+std::string windowTypeOf(const std::string& id) {
+    if (id.empty() || !hooks().findWindow) return "";
+    TWindow* w = hooks().findWindow(id);
+    return w ? typeOfV(w) : "";
+}
+
+void emitGesture(const Act& a, bool update, const std::string& type = "") {
+    if (update) ++g_actRevision;   // a merged act changed (typing, a drag, a run of moves)
+    if (a.source != Source::Console) return;
+    std::string kind = a.what.substr(0, a.what.find(' '));
+    if (kind == "opened" && a.what.rfind("opened menu", 0) == 0) kind = "menu";
+    if (kind == "closed" && a.what.rfind("closed menu", 0) == 0) kind = "menu closed";
+    std::string t = !type.empty() ? type : windowTypeOf(a.window);
+    // A continued act (typing, a drag, a scroll, a run of moves) replaces its own unread update.
+    if (update && !g_gestures.empty() && g_gestures.back().act == a.n && g_gestures.back().update) {
+        Gesture& last = g_gestures.back();
+        last.what = a.what;
+        last.ms = a.ms;
+        last.g = g_gestureN++;
+        return;
+    }
+    g_gestures.push_back(Gesture{g_gestureN++, a.n, a.ms, kind, a.what, a.window, t, update});
+    while (g_gestures.size() > kGesturesMax) g_gestures.pop_front();
+}
 
 // Fold this act into the last one when it continues it (typing, a drag, a scroll).
 bool mergeLast(const Who& w, const std::string& prefix, const std::string& window, long long withinMs, Act*& out) {
@@ -238,7 +302,7 @@ void logPerson(const TEvent& ev) {
         if (printable) {
             std::string ch(ev.keyDown.text, ev.keyDown.textLength);
             Act* a = nullptr;
-            if (mergeLast(p, "typed ", win, 2000, a)) { a->what += ch; a->ms = nowMs(); return; }
+            if (mergeLast(p, "typed ", win, 2000, a)) { a->what += ch; a->ms = nowMs(); emitGesture(*a, true); return; }
             addAct(p, "typed " + ch, win, "");
             return;
         }
@@ -255,7 +319,11 @@ void logPerson(const TEvent& ev) {
     if (ev.what & evMouseUp) {
         if (g_downAct && (ev.mouse.where.x != g_downAt.x || ev.mouse.where.y != g_downAt.y)) {
             for (auto it = g_acts.rbegin(); it != g_acts.rend(); ++it)
-                if (it->n == g_downAct) { it->what = "drag " + where(g_downAt) + " to " + where(ev.mouse.where); break; }
+                if (it->n == g_downAct) {
+                    it->what = "drag " + where(g_downAt) + " to " + where(ev.mouse.where);
+                    emitGesture(*it, true);
+                    break;
+                }
         }
         g_downAct = 0;
         return;
@@ -271,6 +339,7 @@ void logPerson(const TEvent& ev) {
             if (x != std::string::npos) n = std::atoi(a->what.c_str() + x + 2);
             a->what = what + " x" + std::to_string(n + 1);
             a->ms = nowMs();
+            emitGesture(*a, true);
             return;
         }
         addAct(p, what, win, "");
@@ -393,15 +462,18 @@ void noteOrigin(const TEvent& ev, bool fromPut) {
     g_eventWho = Who{"app", Source::App};
 }
 
-void addAct(const Who& w, const std::string& what, const std::string& window, const std::string& result, uint64_t rseq) {
+void addAct(const Who& w, const std::string& what, const std::string& window, const std::string& result, uint64_t rseq,
+            const std::string& type) {
     g_acts.push_back(Act{g_actN++, nowMs(), w.actor, w.source, what, window, result, rseq});
+    ++g_actRevision;
+    emitGesture(g_acts.back(), false, type);
     while (g_acts.size() > kActsMax) { g_acts.pop_front(); ++g_actDropped; }
 }
 
 void updateAct(uint64_t rseq, const std::string& result) {
     if (!rseq) return;
     for (auto it = g_acts.rbegin(); it != g_acts.rend(); ++it)
-        if (it->rseq == rseq) { it->result = result; return; }
+        if (it->rseq == rseq) { it->result = result; ++g_actRevision; return; }
 }
 
 std::string ownerName(TView* v) {
@@ -411,6 +483,7 @@ std::string ownerName(TView* v) {
 
 void settle() {
     Who w = currentWho();
+    noteMenu(w);
     auto wins = deskWindows();
     for (TWindow* win : wins) {
         auto it = g_known.find(win);
@@ -427,7 +500,7 @@ void settle() {
             bool sized = (k.r.b.x - k.r.a.x) != (r.b.x - r.a.x) || (k.r.b.y - k.r.a.y) != (r.b.y - r.a.y);
             std::string what = std::string(sized ? "resized " : "moved ") + "to " + rectWords(r);
             Act* a = nullptr;
-            if (mergeLast(w, sized ? "resized " : "moved ", k.id, 3000, a)) { a->what = what; a->ms = nowMs(); }
+            if (mergeLast(w, sized ? "resized " : "moved ", k.id, 3000, a)) { a->what = what; a->ms = nowMs(); emitGesture(*a, true); }
             else addAct(w, what, k.id, "");
             k.r = r;
         }
@@ -439,7 +512,7 @@ void settle() {
     }
     for (auto it = g_known.begin(); it != g_known.end();) {
         if (std::find(wins.begin(), wins.end(), (TWindow*)it->first) == wins.end()) {
-            addAct(w, "closed " + it->second.type + " \"" + it->second.title + "\"", it->second.id, "");
+            addAct(w, "closed " + it->second.type + " \"" + it->second.title + "\"", it->second.id, "", 0, it->second.type);
             g_owner.erase(it->first);
             it = g_known.erase(it);
         } else {
@@ -455,7 +528,7 @@ namespace {
 bool readOnly(const std::string& name, const KV& kv) {
     static const char* names[] = {"get_state", "get_canvas_size", "get_capabilities", "get_window_types", "window_text",
                                   "acts", "residents_about", "standing", "desktop_get", "terminal_read",
-                                  "get_chat_history", "subscribe_events", "ping", "figlet_list_fonts",
+                                  "get_chat_history", "subscribe_events", "ping", "describe", "person_events", "person_wait", "resident_reflexes", "figlet_list_fonts",
                                   "list_figlet_fonts", "preview_figlet", "gallery_list", "paint_export", "batch",
                                   "exec_command", "resident_status", "resident_front", "resident_key",
                                   "resident_mouse", "resident_press", "resident_menu"};
@@ -626,6 +699,63 @@ std::string cmdActs(const KV& kv) {
         first = false;
     }
     os << "]}";
+    return os.str();
+}
+
+// ---------------------------------------------------------------- gestures: public
+
+std::string gestureJson(uint64_t g) {
+    for (auto it = g_gestures.rbegin(); it != g_gestures.rend(); ++it) {
+        if (it->g != g) continue;
+        const Gesture& x = *it;
+        std::ostringstream os;
+        os << "{\"g\":" << x.g << ",\"act\":" << x.act << ",\"ms\":" << x.ms << ",\"actor\":\"person\",\"kind\":" << q(x.kind)
+           << ",\"what\":" << q(x.what) << ",\"window\":" << q(x.window) << ",\"type\":" << q(x.type)
+           << ",\"update\":" << (x.update ? "true" : "false");
+        if (x.kind == "typed") os << ",\"text\":" << q(x.what.substr(6));
+        os << "}";
+        return os.str();
+    }
+    return "";
+}
+
+uint64_t gestureLast() { return g_gestureN - 1; }
+
+uint64_t actsRevision() { return g_actRevision; }
+
+void lastActs(size_t count, std::vector<ActRecord>& out) {
+    out.clear();
+    size_t start = g_acts.size() > count ? g_acts.size() - count : 0;
+    for (size_t i = start; i < g_acts.size(); ++i) {
+        const Act& a = g_acts[i];
+        out.push_back(ActRecord{a.n, a.ms, a.actor, sourceName(a.source), a.what, a.window, a.result});
+    }
+}
+
+long long actsClockMs() { return nowMs(); }
+
+std::string gesturesSince(uint64_t since, int limit, const std::string& kinds, int& count) {
+    count = 0;
+    std::ostringstream os;
+    os << "[";
+    for (const auto& x : g_gestures) {
+        if (x.g <= since) continue;
+        if (!kinds.empty() && ("," + kinds + ",").find("," + x.kind + ",") == std::string::npos) continue;
+        if (count >= limit) break;
+        os << (count ? "," : "") << gestureJson(x.g);
+        ++count;
+    }
+    os << "]";
+    return os.str();
+}
+
+std::string cmdPersonEvents(const KV& kv) {
+    uint64_t since = (uint64_t)std::strtoull(str(kv, "since", "0").c_str(), nullptr, 10);
+    int limit = std::max(1, std::min(num(kv, "limit", 200), (int)kGesturesMax));
+    int count = 0;
+    std::string list = gesturesSince(since, limit, str(kv, "kinds"), count);
+    std::ostringstream os;
+    os << "{\"last\":" << gestureLast() << ",\"count\":" << count << ",\"timeout\":false,\"gestures\":" << list << "}";
     return os.str();
 }
 

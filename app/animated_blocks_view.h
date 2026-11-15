@@ -10,14 +10,16 @@
 #define Uses_TView
 #define Uses_TDrawBuffer
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 #include <vector>
 
 // Simple animated view that renders colored block characters. On each
 // timer tick, rows shift one cell horizontally; even rows move right,
 // odd rows move left. Colors repeat across columns.
-class TAnimatedBlocksView : public TView {
+class TAnimatedBlocksView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TAnimatedBlocksView(const TRect &bounds, unsigned periodMs = 42);
     virtual ~TAnimatedBlocksView();
 

@@ -258,6 +258,14 @@ std::string TScoreView::stateJson() const {
     return o.str();
 }
 
+bool TScoreView::describeText(std::vector<std::string>& out) const {
+    for (size_t i = 0; i < score_.sections.size(); ++i) {
+        const ScoreSection& s = score_.sections[i];
+        out.push_back(std::to_string(i + 1) + ". " + std::to_string(s.bars) + " bar" + (s.bars == 1 ? "" : "s") + ", " + s.who + ": " + s.text);
+    }
+    return true;
+}
+
 std::string TScoreView::sentence() const {
     std::ostringstream o;
     o << "event score \"" << score_.title << "\"";

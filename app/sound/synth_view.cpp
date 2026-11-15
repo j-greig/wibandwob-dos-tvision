@@ -269,6 +269,14 @@ std::string TSynthView::stateJson() const {
     return o.str();
 }
 
+bool TSynthView::describeText(std::vector<std::string>& out) const {
+    for (size_t i = 0; i < recent_.size(); ++i) {
+        const Played& p = recent_[recent_.size() - 1 - i];
+        out.push_back(noteName(p.midi) + " " + voiceId(p.voice) + " " + p.patch + " v" + std::to_string(p.vel) + " " + p.who);
+    }
+    return true;
+}
+
 std::string TSynthView::sentence() const {
     std::ostringstream o;
     o << "synth, " << (voice_ == Voice::Fm ? "FM voice with patch " + fmPatches()[patch_].name : std::string("PC speaker voice"))

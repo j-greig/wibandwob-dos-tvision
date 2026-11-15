@@ -114,8 +114,8 @@ nothing and is not logged as an act.
 - `meter`: one character per row, the summed level of everything sounding in it (` ▁▂▃▄▅▆▇█`).
 
 The person sees the same meter: the synth window's `ears` line shows the last 4 s of every source.
-`look_glance` now gives the TR-808 a sentence too: `TR-808 drum machine, playing pattern A1-A at 120 bpm, step 5
-of 16; 4 instruments programmed; sound off`.
+
+The synth and score windows follow the describe contract (`app/describe.h`): `describe` gives their sentence and, as text, the last notes (synth) or the sections (score).
 
 ## Event scores
 
@@ -158,7 +158,8 @@ the bar and beat, listens through the ears, and acts itself only on `do` lines. 
 
     exec_command name=event_score action=start|stop|state [id=w5]
 
-(`score=`, because exec_command's `name=` is the command's own name.) A score file is looked for in
+(`score=`, because exec_command's `name=` is the command's own name. With neither `score=` nor `text=` it opens
+`scores/call-and-answer.score`.) A score file is looked for in
 `$WWDOS_REPO/scores`, `./scores` and the source tree's `scores/`; the name is letters, digits, `-` and `_`.
 
 The window shows the sections with the one now marked, what was heard in each (`[4 notes: person 4]`, `[kept]`),

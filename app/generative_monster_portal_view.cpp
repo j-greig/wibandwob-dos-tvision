@@ -256,3 +256,10 @@ private:
 };
 
 TWindow* createGenerativeMonsterPortalWindow(const TRect &bounds){ auto *w=new TGenerativeMonsterPortalWindow(bounds); w->setup(90); return w; }
+
+std::string TGenerativeMonsterPortalView::describeState() const {
+    static const char* eps[] = {"breathe", "haunt", "flame", "collapse"};
+    return std::string("monster portal in its ") + eps[episode] + " episode (" + std::to_string(epFrame) + " of " +
+           std::to_string(epDuration) + " frames), glitch " + std::to_string((int)(glitch * 100)) + "%, frame " +
+           std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

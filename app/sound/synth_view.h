@@ -14,10 +14,11 @@
 #include <string>
 #include <vector>
 
+#include "describe.h"
 #include "ega_theme.h"
 #include "synth.h"
 
-class TSynthView : public TView {
+class TSynthView : public TView, public ww::Describable {
 public:
     explicit TSynthView(const TRect& bounds);
     ~TSynthView() override;
@@ -30,6 +31,9 @@ public:
     std::string apiAction(const std::string& action, const std::map<std::string, std::string>& kv);
     std::string stateJson() const;
     std::string sentence() const;
+    std::string describeState() const override { return sentence(); }
+    // The last notes played, newest first, one line each.
+    bool describeText(std::vector<std::string>& out) const override;
 
     // Plays notes now (each note's atMs counts from now) as `who`.
     void playNotes(const std::vector<sound::Note>& notes, const std::string& who);

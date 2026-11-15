@@ -715,3 +715,9 @@ TWindow* createTR808Window(const TRect& bounds, const std::map<std::string, std:
     if (has(kv, "tempo")) v->engine().setTempo(toInt(get(kv, "tempo"), 120), 0);
     return w;
 }
+
+std::string TTR808View::describeState() const {
+    return std::string("TR-808 drum machine, ") + (eng_.playing() ? "playing at step " + std::to_string(eng_.step() + 1) : std::string("stopped")) +
+           ", tempo " + std::to_string(eng_.tempo()) + " BPM, preset " + std::to_string(presetIdx_) + ", cursor on step " +
+           std::to_string(cursor_ + 1);
+}

@@ -418,3 +418,12 @@ void TFigletTextWindow::changeBounds(const TRect& bounds) {
     setState(sfExposed, True);
     redraw();
 }
+
+std::string TFigletTextView::describeState() const {
+    return "FIGlet lettering of \"" + ww::clipText(text_, 40) + "\" in the font " + font_ + ", " +
+           std::to_string(renderedLines_.size()) + " rows tall";
+}
+bool TFigletTextView::describeText(std::vector<std::string>& out) const {
+    out = ww::splitText(text_);
+    return true;
+}

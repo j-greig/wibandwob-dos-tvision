@@ -10,13 +10,15 @@
 #define Uses_TView
 #define Uses_TDrawBuffer
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 #include <vector>
 
 // Animated horizontal gradient view that shifts colors over time.
 // Colors flow horizontally (left to right) with configurable speed.
-class TAnimatedHGradientView : public TView {
+class TAnimatedHGradientView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TAnimatedHGradientView(
         const TRect &bounds, 
         unsigned periodMs = 100,
