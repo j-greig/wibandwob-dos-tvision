@@ -472,7 +472,36 @@ def test_stream(desk):
     R.check(x(desk, "tr808", id=drm, action="state")["transport"] == "stopped", "the drums stopped with the score")
 
 
-GROUPS = {"synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
+# ---------------------------------------------------------------------------- drums
+
+def test_drums(desk):
+    print("\n[drums] a drum machine started with an empty pattern is heard")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    drm = x(desk, "open_tr808", x=2, y=2, w=118, h=26)["id"]
+    st = x(desk, "tr808", id=drm, action="state")
+    R.check(all("x" not in i["steps"] for i in st["instruments"]) and st["start_preset"] == "",
+            "a new drum machine opens with an empty pattern")
+    x(desk, "tr808", id=drm, action="audio", on=1)    # the test desktop starts it off (WWDOS_TR808_AUDIO=0)
+    h0 = x(desk, "sound", action="state")["hits"]
+    st = x(desk, "tr808", id=drm, action="play", actor="wob")
+    R.check(st["start_preset"] == "classic-house" and any("x" in i["steps"] for i in st["instruments"]),
+            f"play on an empty pattern loads classic-house first ({st['start_preset']!r})")
+    time.sleep(1.2)
+    s = x(desk, "sound", action="state")
+    heard = x(desk, "hear", seconds=1, of="tr808", window=drm)["counts"]["tr808"]
+    R.check(s["hits"] - h0 > 0 and heard > 0, f"the stream counts the hits it mixed ({s['hits'] - h0}) and the ears hear them ({heard})")
+    x(desk, "tr808", id=drm, action="stop")
+    x(desk, "tr808", id=drm, action="clear", all=1)
+    x(desk, "tr808", id=drm, action="set_step", instrument="bd", step=0, active=1)
+    st = x(desk, "tr808", id=drm, action="play")
+    R.check([i["steps"] for i in st["instruments"] if i["id"] == "bd"][0] == "x..............." and
+            sum("x" in i["steps"] for i in st["instruments"]) == 1, "a pattern with any step on is played as it is")
+    x(desk, "tr808", id=drm, action="stop")
+    x(desk, "tr808", id=drm, action="audio", on=0)
+
+
+GROUPS = {"drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():

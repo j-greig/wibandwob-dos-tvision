@@ -9,6 +9,7 @@
 
 #include "feed_view.h"
 #include "resident_senses.h"
+#include "resident_life.h"
 
 #include <algorithm>
 #include <chrono>
@@ -22,7 +23,10 @@ std::set<TFeedView*>& feeds() {
     return s;
 }
 
-std::string tagOf(const resident::ActRecord& a) {
+std::string tagFor(const std::string& actor, const std::string& source);
+std::string tagOf(const resident::ActRecord& a) { return tagFor(a.actor, a.source); }
+std::string tagFor(const std::string& actor, const std::string& source) {
+    struct { std::string actor, source; } a{actor, source};
     if (a.source == "console") return "PER";
     if (a.source == "app") return "SYS";
     if (a.actor == "wib") return "WIB";
@@ -142,11 +146,56 @@ void TFeedView::refresh(bool force) {
         tags_.push_back(tag);
         refused_.push_back(refused);
     }
+    if (!olderLines_.empty()) {   // earlier wakings, read from disk, above this waking's acts
+        std::vector<std::string> l2, t2;
+        std::vector<bool> r2;
+        for (size_t i = 0; i < olderLines_.size(); ++i) {
+            if (!filter_.empty() && olderTags_[i] != "---" && olderTags_[i] != filter_) continue;
+            l2.push_back(olderLines_[i]);
+            t2.push_back(olderTags_[i]);
+            r2.push_back(false);
+        }
+        l2.push_back("---- this waking ----");
+        t2.push_back("---");
+        r2.push_back(false);
+        lines_.insert(lines_.begin(), l2.begin(), l2.end());
+        tags_.insert(tags_.begin(), t2.begin(), t2.end());
+        refused_.insert(refused_.begin(), r2.begin(), r2.end());
+    }
     int width = 0;
     for (auto& l : lines_) width = std::max(width, (int)l.size());
     setLimit(width + 1, (int)lines_.size());
     if (follow_) scrollTo(0, std::max(0, (int)lines_.size() - size.y));
     drawView();
+}
+
+size_t TFeedView::loadEarlier(size_t n) {
+    std::vector<life::EarlierAct> acts;
+    olderTotal_ = life::earlierActs(0, olderLoaded_ + n, acts);   // newest first
+    size_t added = acts.size() - std::min(acts.size(), olderLoaded_);
+    olderLoaded_ = acts.size();
+    olderLines_.clear();
+    olderTags_.clear();
+    int waking = -1;
+    for (auto it = acts.rbegin(); it != acts.rend(); ++it) {
+        if (it->waking != waking) {
+            waking = it->waking;
+            olderLines_.push_back("---- waking " + std::to_string(waking) + " ----");
+            olderTags_.push_back("---");
+        }
+        std::string tag = tagFor(it->actor, it->source);
+        std::string time = it->when.size() >= 19 ? it->when.substr(11, 8) : it->when;
+        std::string line = time + " " + tag + " " + it->actor + ": " + it->what;
+        if (!it->window.empty()) line += "  [" + it->window + "]";
+        if (!it->result.empty() && it->result != "ok" && it->result != "delivered") line += "  " + it->result;
+        olderLines_.push_back(line);
+        olderTags_.push_back(tag);
+    }
+    follow_ = false;
+    refresh(true);
+    scrollTo(delta.x, 0);
+    drawView();
+    return added;
 }
 
 void TFeedView::draw() {
@@ -157,7 +206,8 @@ void TFeedView::draw() {
         if (i >= 0 && i < (int)lines_.size()) {
             const std::string& l = lines_[i];
             std::string shown = (int)l.size() > delta.x ? l.substr(delta.x) : "";
-            TColorAttr c = refused_[i] ? TColorAttr(TColorBIOS(12), TColorBIOS(0)) : colourOf(tags_[i]);
+            TColorAttr c = refused_[i] ? TColorAttr(TColorBIOS(12), TColorBIOS(0))
+                         : tags_[i] == "---" ? TColorAttr(TColorBIOS(8), TColorBIOS(0)) : colourOf(tags_[i]);
             b.moveStr(0, shown.c_str(), c);
         }
         writeLine(0, y, size.x, 1, b);
@@ -169,6 +219,11 @@ void TFeedView::handleEvent(TEvent& ev) {
         char ch = ev.keyDown.charScan.charCode;
         if (ch && std::string(kFilterKeys).find(ch) != std::string::npos) {
             setFilter(filterForKey(ch));
+            clearEvent(ev);
+            return;
+        }
+        if (ch == 'e' || ((ev.keyDown.keyCode == kbUp || ev.keyDown.keyCode == kbPgUp) && delta.y == 0)) {
+            loadEarlier();   // into earlier wakings, from disk
             clearEvent(ev);
             return;
         }
@@ -197,7 +252,8 @@ std::string TFeedWindow::describeState() const {
     if (!view_) return "feed of the act log";
     return "feed of the act log: " + std::to_string(view_->lines().size()) + " lines" +
            (view_->filter().empty() ? std::string(", every actor") : ", only " + view_->filter()) +
-           (view_->following() ? ", following the newest" : ", scrolled back");
+           (view_->following() ? ", following the newest" : ", scrolled back") +
+           (view_->earlierLoaded() ? "; " + std::to_string(view_->earlierLoaded()) + " acts of earlier wakings read from disk" : "");
 }
 
 bool TFeedWindow::describeText(std::vector<std::string>& out) const {

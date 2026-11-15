@@ -33,6 +33,11 @@ public:
     bool following() const { return follow_; }
     const std::vector<std::string>& lines() const { return lines_; }
     static void tickAll();                   // called from the application's idle()
+    // Reads n more acts of earlier wakings from disk (ACTS.TXT, resident_life.cpp) above the live
+    // ones; key e, or Up / PgUp at the top. Returns how many were added.
+    size_t loadEarlier(size_t n = 200);
+    size_t earlierLoaded() const { return olderLoaded_; }
+    size_t earlierOnDisk() const { return olderTotal_; }
 
 private:
     std::vector<std::string> lines_;
@@ -41,6 +46,8 @@ private:
     std::string filter_;
     bool follow_ = true;
     unsigned long long seenRevision_ = 0;
+    std::vector<std::string> olderLines_, olderTags_;   // earlier wakings, oldest first, with separators
+    size_t olderLoaded_ = 0, olderTotal_ = 0;
 };
 
 class TFeedWindow : public TWindow, public ww::Describable {

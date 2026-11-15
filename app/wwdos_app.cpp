@@ -158,6 +158,11 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 // SIGTERM or SIGHUP (a shutdown, a closed terminal): the residents write their self to disk
 // from idle(), then the app quits. tvision's own SIGTERM handler chains to this one.
 static volatile sig_atomic_t g_quitSignal = 0;
+// Defined below; the residents' self saves and restores windows through them (resident_life.cpp).
+std::string api_paint_export(TWwdosApp& app, const std::string& id);
+std::string api_paint_save(TWwdosApp& app, const std::string& id, const std::string& path);
+std::string api_paint_load(TWwdosApp& app, const std::string& id, const std::string& path);
+std::string api_window_title(TWwdosApp& app, const std::string& id, const std::string& title);
 static void onQuitSignal(int signo) { g_quitSignal = signo; }
 #include "window_type_registry.h"
 
@@ -1176,6 +1181,10 @@ TWwdosApp::TWwdosApp() :
         registerWindow(w);
     };
     lifeHooks.modelPresent = []() { return AuthConfig::instance().mode() != AuthMode::NoAuth; };
+    lifeHooks.modelCli = []() {
+        const AuthConfig& auth = AuthConfig::instance();
+        return auth.isClaudeCode() ? auth.claudePath() : std::string();
+    };
     lifeHooks.openEditor = [this](const std::string& title, const std::vector<std::string>& lines,
                                   std::function<void(const std::vector<std::string>&)> onClose) -> TWindow* {
         // A text editor holding a file's lines; onClose gets what it holds when it closes.
@@ -1203,6 +1212,48 @@ TWwdosApp::TWwdosApp() :
         deskTop->insert(w);
         registerWindow(w);
         return w;
+    };
+    lifeHooks.saveState = [this](TWindow* w, const std::string& dir, const std::string& base) -> std::string {
+        if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
+            if (!tw->getEditorView()) return "";
+            std::ofstream f(dir + "/" + base + ".TXT", std::ios::trunc);
+            for (auto& l : tw->getEditorView()->getLines()) f << l << "\n";
+            return f ? base + ".TXT" : "";
+        }
+        if (dynamic_cast<TPaintWindow*>(w)) {
+            std::string id = registerWindow(w, false);
+            std::ofstream txt(dir + "/" + base + ".TXT", std::ios::trunc);   // the drawing as text, for a person
+            txt << api_paint_export(*this, id) << "\n";
+            return api_paint_save(*this, id, dir + "/" + base + ".WWP").rfind("ok", 0) == 0 ? base + ".WWP" : "";
+        }
+        return "";
+    };
+    lifeHooks.restoreWindow = [this](const std::string& type, int x, int y, int w, int h, const std::string& title,
+                                     const std::string& stateFile, std::string& err) -> TWindow* {
+        const WindowTypeSpec* spec = find_window_type_by_name(type);
+        if (!spec || !spec->spawn) { err = "no way to open a " + type; return nullptr; }
+        std::map<std::string, std::string> kv{{"x", std::to_string(x)}, {"y", std::to_string(y)},
+                                              {"w", std::to_string(w)}, {"h", std::to_string(h)}};
+        if (!title.empty()) kv["title"] = title;
+        lastRegisteredWindowId_.clear();
+        if (const char* e = spec->spawn(*this, kv)) { err = e; return nullptr; }
+        TWindow* win = lastRegisteredWindowId_.empty() ? nullptr : findWindowById(lastRegisteredWindowId_);
+        if (!win) { err = "it opened no window"; return nullptr; }
+        { TRect at(x, y, x + w, y + h); win->locate(at); }
+        if (!title.empty() && std::string(win->getTitle(0) ? win->getTitle(0) : "") != title)
+            api_window_title(*this, lastRegisteredWindowId_, title);
+        if (stateFile.empty()) return win;
+        if (auto* tw = dynamic_cast<TTextEditorWindow*>(win)) {
+            std::ifstream f(stateFile);
+            std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            while (!text.empty() && text.back() == '\n') text.pop_back();
+            if (!f && text.empty()) err = "its text was not found";
+            if (!text.empty() && tw->getEditorView()) tw->getEditorView()->sendText(text, "replace");
+        } else if (dynamic_cast<TPaintWindow*>(win)) {
+            std::string r = api_paint_load(*this, lastRegisteredWindowId_, stateFile);
+            if (r.rfind("ok", 0) != 0) err = r;
+        }
+        return win;
     };
     life::setHooks(lifeHooks);
 
