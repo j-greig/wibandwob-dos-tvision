@@ -610,7 +610,7 @@ def group_fixes():
         d.person_text("z")
         wait(lambda: not of_type(d, "boot"))
 
-        console_menu(d, "l")
+        console_menu(d, "o")
         ed = wait(lambda: [w for w in glance(d) if w["title"] == "LOG.TXT"])
         R.check(bool(ed) and ed[0]["focused"], "Tools > Residents > Logbook opens LOG.TXT for the person")
         d.person_type("EDITED ")

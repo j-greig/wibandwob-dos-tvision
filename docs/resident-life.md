@@ -254,7 +254,7 @@ the file if it was changed, with any entries the residents wrote while it was op
 of whoever closed it (`edited LOG.TXT in the editor (42 lines saved)`). GUESTS.TXT opens as a copy: visitors' words are
 not edited. Tools > Residents > Sign the guestbook opens an empty editor
 titled `SIGN THE GUESTBOOK`; when the person closes it, what it holds is signed `person (console)` (a resident that opens it
-signs under its own name). A sign page or LOG.TXT window still open when the app closes is signed or saved then. Menu keys from the desktop: Alt+T, s, then l, b or g.
+signs under its own name). A sign page or LOG.TXT window still open when the app closes is signed or saved then. Menu keys from the desktop: Alt+T, s, then o, b or g.
 
 ## Asleep and awake
 
