@@ -29,5 +29,8 @@ When a session touches both, SAY SO explicitly at each switch: name the repo and
 - The on-chain repo (`wibandwob-dos-onchain`) builds films from a pinned copy (`tools/vendor_sync.py` there; `--check`,
   `--to-core`). Keep `app/film/CMakeLists.txt` flags and source order equal to its `wwdos-min` target: the two wasm
   files are compared byte for byte. Its token build is frozen; `app/film/boot/` is compared there, never copied.
+- `tfilm/base/film.html` is the built film page, byte-identical to the on-chain `dist/wwdos-min-webgl.html`. After a
+  change to the film engine, its views, `kernel/pages/` or `kernel/tools/bundle.py`, run `tfilm/scripts/check-base.sh`
+  and commit the new page with the change when the difference is intended.
 - After changing `app/stage/stage.cpp`'s lists or adding a command: `python3 tests/stage/test_commands_def.py`.
 - Director surface: `tools/api_server/show_ops.py` (batch, names, place, scene, timeline, dive). Window names live in the API process, not the app: restarting the API forgets them, and windows then show their title or id in `/show/scene`.
