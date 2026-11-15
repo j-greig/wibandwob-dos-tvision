@@ -5323,6 +5323,7 @@ void api_spawn_snake(TWwdosApp& app, const TRect* bounds) {
 // Publishes a TR-808 event with the window's API id (tr808_step, tr808_transport).
 void tr808_event_sink(TWindow* w, const char* type, const std::string& body) {
     deskmosh::noteTr808(type, body);   // the drum steps move a desk mosh
+    if (std::strcmp(type, "tr808_tick") == 0) return;   // silent steps are for the app alone
     TWwdosApp* app = tr808_app;
     if (!app || !app->ipcServer) return;
     std::string id;

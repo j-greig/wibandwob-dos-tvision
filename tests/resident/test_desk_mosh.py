@@ -339,7 +339,238 @@ def group_screen():
         d.stop()
 
 
-GROUPS = {"screen": group_screen, "ways": group_ways, "input": group_input, "restore": group_restore, "seed": group_seed,
+def colour_atoms(s):
+    """The colours a capture uses, fg and bg alike: SGR codes as (kind, value)."""
+    atoms = set()
+    for seq in re.findall(r"\x1b\[([0-9;]*)m", s):
+        p = [int(x) if x else 0 for x in seq.split(";")]
+        i = 0
+        while i < len(p):
+            c = p[i]
+            if c in (38, 48) and i + 1 < len(p) and p[i + 1] == 2 and i + 4 < len(p):
+                atoms.add(("rgb", tuple(p[i + 2:i + 5]))); i += 5; continue
+            if c in (38, 48) and i + 1 < len(p) and p[i + 1] == 5 and i + 2 < len(p):
+                atoms.add(("x", p[i + 2])); i += 3; continue
+            if 30 <= c <= 37 or 40 <= c <= 47:
+                atoms.add(("x", c % 10))
+            elif 90 <= c <= 97 or 100 <= c <= 107:
+                atoms.add(("x", 8 + c % 10))
+            i += 1
+    return atoms
+
+
+def shard_rects(desk):
+    return [(w["x"], w["y"], w["w"], w["h"], w["z"], w["title"]) for w in desk.j("look_glance", shards="1")["windows"]
+            if w["type"] == "mosh_shard"]
+
+
+def covered(rects, x, y):
+    return any(rx <= x < rx + rw and ry <= y < ry + rh for rx, ry, rw, rh, _, _ in rects)
+
+
+def group_follow():
+    print("follow")
+    d, ed, pr = new_desk("moshfollow")
+    try:
+        m(d, "mosh_way", way="tear"); m(d, "mosh_on")
+        steps(d, ["tick"])
+        old = d.windows()[pr]
+        d.ipc("move_window", id=pr, x=96, y=27)
+        steps(d, ["tick", "tick"])
+        rows = plain(cap(d)).split("\n")
+        at_old = any("wibbler" in rows[y + 1][max(0, old["x"] - 8):old["x"] + old["w"] + 8] for y in range(old["y"], old["y"] + 2))
+        at_new = any("wibbler" in rows[y + 1][88:150] for y in range(27, 30))
+        R.check(not at_old and at_new, f"a moved window's shards take the new picture (old place {at_old}, new place {at_new})")
+        d.ipc("close_window", id=ed)
+        steps(d, ["tick", "tick"])
+        R.check("notes" not in plain(cap(d)), "a closed window leaves nothing in the shards")
+        m(d, "mosh_off"); time.sleep(0.3)
+        e2 = d.editor(4, 30, 40, 10, title="scoped")
+        m(d, "mosh_scope", scope="window", id=e2); m(d, "mosh_on")
+        steps(d, ["kick", "tick"])
+        d.ipc("close_window", id=e2)
+        m(d, "mosh_step", hits="tick")
+        time.sleep(0.5)
+        st = m(d, "mosh_status")
+        acts = [a["what"] for a in d.j("acts", limit="500")["acts"]]
+        R.check(not st["on"] and st["shards"] == 0 and any("its window closed" in a for a in acts),
+                "a scoped mosh's shards die with its window, and the log says why")
+    finally:
+        d.stop()
+
+
+def group_bleed():
+    print("bleed")
+    d, ed, pr = new_desk("moshbleed", tr808=True)
+    try:
+        before = cap(d)
+        a0 = colour_atoms(before)
+        m(d, "mosh_way", way="bleed"); m(d, "mosh_amount", value="85"); m(d, "mosh_on")
+        steps(d, ["snare", "tick", "kick", "snare,metal", "tick", "snare"])
+        on = cap(d)
+        a1 = colour_atoms(on)
+        R.check(a1 <= a0, f"bleed keeps to the desktop's own palette ({len(a1 - a0)} foreign colours)")
+        shade = sum(plain(on).count(c) for c in "░▓█") - sum(plain(before).count(c) for c in "░▓█")
+        R.check(shade > 50, f"bleed decays glyphs to shade blocks ({shade})")
+        blank = plain(on).count(" ") - plain(before).count(" ")
+        R.check(blank < 300, f"decay leaves texture, not blank areas ({blank} more blank cells)")
+        R.check(d.windows()[ed] and m(d, "mosh_status")["on"], "real windows keep their own colours (no window recolouring)")
+        m(d, "mosh_off")
+    finally:
+        d.stop()
+
+
+def group_hold():
+    print("hold")
+    d, ed, pr = new_desk("moshhold")
+    try:
+        d.person_type("abc")
+        m(d, "mosh_way", way="tear"); m(d, "mosh_on")
+        steps(d, ["tick", "tick"])
+        rects = shard_rects(d)
+        front = sorted([r for r in rects if r[0] > 4 and r[1] > 20 and r[0] + r[2] < 150 and r[1] < 40 and r[2] >= 3], key=lambda r: r[4])
+        sx, sy = front[0][0] + 1, front[0][1]
+        d.person_mouse("down", sx, sy + 1)
+        time.sleep(0.7)
+        for k in range(1, 4):
+            d.person_mouse("drag", sx + 2 * k, sy + 1 + k)
+            time.sleep(0.2)
+        time.sleep(0.3)
+        d.person_mouse("up", sx + 6, sy + 4)
+        time.sleep(0.4)
+        st = m(d, "mosh_status")
+        moved = [r for r in shard_rects(d) if (r[0], r[1]) == (front[0][0] + 6, front[0][1] + 3)]
+        R.check(st["held"] >= 1 and moved, f"a left press held still grabs a frameless shard and drags it (held {st['held']})")
+        d.ipc("focus_window", id=ed)
+        steps(d, ["tick"])
+        cur = subprocess.run(["tmux", "-L", d.name, "display", "-p", "-t", d.name, "#{cursor_x},#{cursor_y},#{cursor_flag}"],
+                             capture_output=True, text=True).stdout.strip().split(",")
+        cx, cy, flag = int(cur[0]), int(cur[1]) - 1, cur[2]
+        caret = m(d, "mosh_status")["caret"]
+        steps(d, ["tick"])
+        rects = shard_rects(d)
+        cx, cy = caret
+        R.check(caret == [6, 3] and not covered(rects, cx, cy), f"the caret (after abc, at {caret}) is not covered")
+        R.check(all(covered(rects, x, y) for x, y in ((cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1))),
+                "the hole around the caret is one cell: its four neighbours are shards")
+        m(d, "mosh_off")
+    finally:
+        d.stop()
+
+
+def group_sound():
+    print("sound")
+    d = Desk("moshsound", cols=160, rows=50, env={"WWDOS_SOUND_OUT": "null", "WWDOS_SYNTH_AUDIO": "0"}).start()
+    try:
+        time.sleep(0.8)
+        d.editor(2, 2, 50, 14, title="notes")
+        tid = d.j("create_window", type="tr808", x=20, y=20, w=118, h=27)["id"]
+        d.ipc("exec_command", name="tr808", action="clear", all="1")
+        d.ipc("exec_command", name="tr808", action="toggle_step", instrument="bd", step="0")
+        d.ipc("exec_command", name="tr808", action="tempo", bpm="120")
+        m(d, "mosh_tempo", bpm="0"); m(d, "mosh_way", way="mosh"); m(d, "mosh_on")
+        d.ipc("exec_command", name="tr808", action="play")
+        time.sleep(2.2)
+        st = m(d, "mosh_status")
+        d.ipc("exec_command", name="tr808", action="stop")
+        R.check(st["step"] >= 12 and st["clock"] == "tr808", f"silent drum steps move the mosh: {st['step']} steps from 2 hits a bar")
+        m(d, "mosh_off"); time.sleep(0.3)
+        m(d, "mosh_way", way="sound"); m(d, "mosh_on")
+        d.ipc("exec_command", name="synth", action="notes", notes="C-2", step="200")
+        time.sleep(0.5)
+        s1 = m(d, "mosh_status")
+        d.ipc("exec_command", name="synth", action="notes", notes="E-5 G-5", step="120")
+        time.sleep(0.5)
+        s2 = m(d, "mosh_status")
+        R.check(s1["showing"] == "wrap" and s1["step"] >= 1, f"a bass note wraps ({s1['showing']}, {s1['step']} steps)")
+        R.check(s2["showing"] == "tear" and s2["step"] > s1["step"], f"note-ons tear ({s2['showing']})")
+        m(d, "mosh_off")
+    finally:
+        d.stop()
+
+
+def group_residents():
+    print("residents")
+    from test_resident_world import FAKE_CLAUDE
+    fake = "/tmp/wibwob_moshres_fake"
+    os.makedirs(fake, exist_ok=True)
+    with open(f"{fake}/claude", "w") as f:
+        f.write(FAKE_CLAUDE)
+    os.chmod(f"{fake}/claude", 0o755)
+    with open(f"{fake}/reply.txt", "w") as f:
+        f.write("nothing yet\n")
+    env = {"PATH": f"{fake}:/usr/bin:/bin:/usr/sbin:/sbin", "ANTHROPIC_API_KEY": "", "FAKE_DIR": fake}
+    d = Desk("moshres", cols=160, rows=50, env=env).start()
+    try:
+        time.sleep(1.0)
+        d.editor(2, 2, 50, 14, title="notes")
+        m(d, "mosh_tempo", bpm="0")
+        d.ipc("open_scramble", actor="setup")
+        time.sleep(0.5)
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write('there. the windows are coming apart. (=^..^=)\nACT: mosh args="way tear"\nACT: mosh args="on"\n')
+        d.ipc("scramble_say", text="make the desk mosh", actor="setup")
+        t0 = time.time()
+        while time.time() - t0 < 8 and not m(d, "mosh_status")["on"]:
+            time.sleep(0.2)
+        st = m(d, "mosh_status")
+        R.check(st["on"] and st["way"] == "tear" and st["by"] == "scramble", f"Scramble's paws start and steer the mosh ({st['by']}, {st['way']})")
+        args = open(f"{fake}/args.txt").read() if os.path.exists(f"{fake}/args.txt") else ""
+        R.check("mosh args=" in args, "her prompt names the mosh among her paws")
+        steps(d, ["kick", "tick"])
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write('stopped. (=^..^=)\nACT: mosh_off\n')
+        time.sleep(2.5)
+        d.ipc("scramble_say", text="stop it", actor="setup")
+        t0 = time.time()
+        while time.time() - t0 < 8 and m(d, "mosh_status")["on"]:
+            time.sleep(0.2)
+        R.check(not m(d, "mosh_status")["on"], "Scramble stops the mosh")
+        node = subprocess.run(["node", os.path.join(REPO, "app/llm/sdk_bridge/app_socket.js"), "wob", "mosh_on", "way=mosh"],
+                              capture_output=True, text=True, env={**os.environ, "WWDOS_SOCKET": d.sock})
+        st = m(d, "mosh_status")
+        R.check(node.returncode == 0 and st["on"] and st["by"] == "wob", f"the chat's tool starts it as wob ({node.stdout.strip()[:40]!r})")
+        caps = d.ipc("get_capabilities")
+        R.check("mosh_on" in caps and "mosh_score" in caps, "the mosh commands are in the list the chat's tool reads")
+        steps(d, ["kick", "tick"])
+        rects = sorted([r for r in shard_rects(d) if 30 < r[0] < 90 and 10 < r[1] < 30], key=lambda r: r[4])
+        sx, sy = rects[0][0], rects[0][1]
+        d.ipc("resident_mouse", action="drag", button="right", x=sx, y=sy, x2=sx + 40, y2=sy + 6, steps="3",
+              actor="wib", source="resident")
+        time.sleep(2.5)
+        st = m(d, "mosh_status")
+        acts = [(a["actor"], a["what"]) for a in d.j("acts", limit="800")["acts"]]
+        R.check(st["held"] >= 1 and any(a == "wib" and ("threw" in w or "grabbed" in w) for a, w in acts),
+                f"a resident's hand grabs a shard ({[w for a, w in acts if 'shard' in w][-1:]})")
+        R.check(any(a == "wib" and "threw" in w for a, w in acts), "and throws it")
+        m(d, "mosh_off")
+    finally:
+        d.stop()
+
+
+def group_score():
+    print("score")
+    d, ed, pr = new_desk("moshscore")
+    try:
+        r = m(d, "mosh_score", path="scores/catmosh.mosh")
+        R.check(r["score_bars"] == 40, f"the catmosh score loads: 5 parts, {r['score_bars']} bars")
+        m(d, "mosh_on")
+        seen = []
+        for bar in range(40):
+            seen.append(m(d, "mosh_step", hits="tick", n="16")["showing"])
+        want = ["wrap"] * 5 + ["tear"] * 9 + ["mosh"] * 7 + ["bleed"] * 12 + ["raw"] * 7
+        R.check(seen == want, f"the mosh follows the score bar by bar in the film's order ({seen[::4]})")
+        m(d, "mosh_step", hits="tick")
+        time.sleep(0.5)
+        R.check(not m(d, "mosh_status")["on"], "at the score's end the mosh stops")
+        bad = d.ipc("exec_command", name="mosh_score", text="bars 2 wobble")
+        R.check(bad.startswith("err"), f"a bad score is refused with its line ({bad})")
+    finally:
+        d.stop()
+
+
+GROUPS = {"follow": group_follow, "bleed": group_bleed, "hold": group_hold, "sound": group_sound,
+          "residents": group_residents, "score": group_score, "screen": group_screen, "ways": group_ways, "input": group_input, "restore": group_restore, "seed": group_seed,
           "log": group_log, "scope": group_scope, "bench": group_bench}
 
 if __name__ == "__main__":

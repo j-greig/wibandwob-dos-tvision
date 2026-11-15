@@ -173,10 +173,17 @@ void TTR808View::fire(const StepEvent& ev) {
             sound::ears().hear(h);
         }
     }
-    // Only steps with hits (a voice or an accent) are published.
-    if (ev.voices.empty() && !ev.accent) return;
+    // Steps with hits are published as tr808_step. A silent step goes out as tr808_tick for
+    // the app alone (the desk mosh keeps time on it; the sink does not pass it to subscribers).
+    const double heardMs = ev.atMs + sound::leadMs();   // when the step is heard, on the sound clock
+    if (ev.voices.empty() && !ev.accent) {
+        std::ostringstream t;
+        t << "\"step\":" << ev.step << ",\"tempo\":" << eng_.tempo() << ",\"clock_ms\":" << heardMs;
+        publish("tr808_tick", t.str());
+        return;
+    }
     std::ostringstream o;
-    o << "\"step\":" << ev.step << ",\"voices\":[" << voices.str() << "]"
+    o << "\"step\":" << ev.step << ",\"clock_ms\":" << heardMs << ",\"voices\":[" << voices.str() << "]"
       << ",\"levels\":{" << levels.str() << "}"
       << ",\"accent\":" << (ev.accent ? "true" : "false")
       << ",\"accent_level\":" << eng_.accentLevel() << ",\"master\":" << eng_.master()
