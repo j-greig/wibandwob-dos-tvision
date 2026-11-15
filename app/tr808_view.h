@@ -39,7 +39,7 @@ public:
     std::string apiAction(const std::string& action, const std::map<std::string, std::string>& kv);
     std::string stateJson() const;
 
-    void play();
+    void play(double atMs = -1.0);
     void stop();
 
 private:

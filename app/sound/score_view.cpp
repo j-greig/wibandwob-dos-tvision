@@ -8,8 +8,11 @@
 #include "ears.h"
 #include "resident_senses.h"
 #include "sound_host.h"
+#include "stream.h"
 
 #include <algorithm>
+#include <cmath>
+#include <string>
 #include <cstdio>
 #include <sstream>
 
@@ -73,6 +76,8 @@ void TScoreView::enter(int i) {
             KV kv{{"action", a.verb == "preset" ? "load_preset" : a.verb}};
             if (a.verb == "preset") kv["preset"] = a.arg;
             if (a.verb == "tempo") kv["bpm"] = a.arg;
+            // Start the drums on the section's bar line, so bars and steps share one origin on one clock.
+            if (a.verb == "play") kv["at_ms"] = std::to_string(startMs_ + sectionStartMs(score_, i));
             r = host().tr808 ? host().tr808(kv) : "err no tr808 route";
         } else {
             r = command("synth", {{"action", a.verb}, {"value", a.arg}});
@@ -206,7 +211,8 @@ std::string TScoreView::stateJson() const {
     o << "{\"ok\":true,\"standing\":\"data\",\"title\":\"" << jsonEscape(score_.title) << "\",\"from\":\""
       << jsonEscape(origin_) << "\",\"tempo\":" << score_.tempo << ",\"beats\":" << score_.beatsPerBar
       << ",\"bar_ms\":" << (long)barMs(score_) << ",\"running\":" << (running_ ? "true" : "false")
-      << ",\"done\":" << (done_ ? "true" : "false") << ",\"started_by\":\"" << jsonEscape(startedBy_) << "\"";
+      << ",\"done\":" << (done_ ? "true" : "false") << ",\"started_by\":\"" << jsonEscape(startedBy_) << "\""
+      << ",\"started_ms\":" << (long long)std::llround(startMs_ * 1000) / 1000.0 << ",\"lead_ms\":" << leadMs();
     o << ",\"parts\":[";
     for (size_t i = 0; i < score_.parts.size(); ++i)
         o << (i ? "," : "") << "{\"name\":\"" << jsonEscape(score_.parts[i].first) << "\",\"is\":\""
