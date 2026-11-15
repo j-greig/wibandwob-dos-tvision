@@ -34,6 +34,10 @@ bool pawCommandAllowed(const std::string& name);
 // Returns the reply without them; results get one line per act.
 std::string takeActs(const std::string& reply, const std::string& actor, std::vector<std::string>& results);
 
+// A rehearsal desk: a nested WIBWOB-DOS in a terminal window the resident owns, at its own socket
+// (/tmp/wibwob_rehearse_<actor>.sock). close=1 ends it.
+std::string cmdRehearse(const KV& kv);   // resident_rehearse
+
 // The desktop's windows as plain lines for a model's prompt (from describe).
 std::string deskForPrompt();
 

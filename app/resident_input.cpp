@@ -378,6 +378,7 @@ void deliverAddressed(Item& it) {
     Frame f{'R', it.target, TheTopView, d ? d->current : nullptr, ++g_frameSerial, it.actor};
     std::vector<TView*> before;
     collectWindows(before);
+    if (it.kind == Kind::Event && (it.ev.what & evKeyDown)) noteTextBefore(it.actor, it.target);   // for resident_undo
     // Logged before the dispatch: a dialog the input opens runs inside it.
     noteDelivered(it, "delivered");
     g_frames.push_back(f);

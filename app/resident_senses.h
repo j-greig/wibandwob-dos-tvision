@@ -106,6 +106,11 @@ std::string gesturesSince(uint64_t since, int limit, const std::string& kinds, i
 std::string cmdHand(const KV& kv);    // resident_hand
 std::string cmdOwner(const KV& kv);   // window_owner
 
+// Undo of a resident's own last change (open, move or resize, retitle, a run of typing in an editor).
+// It refuses when someone else changed the window since. The person's changes are not kept.
+void noteTextBefore(const std::string& actor, TView* window);   // before a resident's keys reach an editor
+std::string cmdUndo(const KV& kv);   // resident_undo (list=1 shows the stack)
+
 // ---------------------------------------------------------------- who is speaking
 
 // Menu commands of the Residents menu (handled by handleCommand).

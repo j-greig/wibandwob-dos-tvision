@@ -9,7 +9,8 @@ Usage:
     python3 tests/resident/test_resident_room.py            # all groups
     python3 tests/resident/test_resident_room.py chat       # chosen groups
 Groups: chat (typing while a reply streams), feed (waits, hands, mosh steps in the Feed), child (a child
-process that died is a system line), teach (errors that teach, help, the resident's self-test).
+process that died is a system line), teach (errors that teach, help, the resident's self-test), undo (a resident undoes its
+own last change), rehearse (a nested desk to try things in).
 """
 
 import json
@@ -212,12 +213,114 @@ def test_teach(desk):
     R.check(not any(w["title"] == "self-test" for w in desk.state()["windows"]), "it leaves no window behind")
 
 
+def test_menu_ids(desk):
+    print("menu ids")
+    tree = desk.j("resident_menu")
+    by_cmd = {}
+
+    def walk(items, path):
+        for it in items if isinstance(items, list) else []:
+            name = path + ">" + it.get("name", "") if path else it.get("name", "")
+            if it.get("items"):
+                walk(it["items"], name)
+            elif it.get("command"):
+                by_cmd.setdefault(it["command"], []).append(name)
+    walk(tree.get("menus", []), "")
+    # the same item listed in two submenus (a FIGlet font in two categories) may share its command
+    shared = {c: n for c, n in by_cmd.items() if len({x.split(">")[-1].strip() for x in n}) > 1}
+    R.check(len(by_cmd) > 20 and not shared, f"no two menu items share a command id ({len(by_cmd)} commands; shared: {shared})")
+    feed = [n for c, n in by_cmd.items() if any("Feed" in x for x in n)]
+    R.check(bool(feed), "the Feed has its own menu command")
+
+
+def test_undo(desk):
+    print("undo")
+    desk.ipc("close_all", actor="setup")
+    time.sleep(0.4)
+    W = dict(actor="wib", source="resident")
+    # Undo an open.
+    e = desk.j("create_window", type="test_pattern", x=2, y=1, w=20, h=6, **W)["id"]
+    u = desk.j("resident_undo", **W)
+    time.sleep(0.2)
+    R.check(e not in desk.windows() and u["undid"].startswith("opened"), f"wib undoes its own open: {u}")
+    # Undo a move.
+    p = desk.j("create_window", type="text_editor", x=2, y=1, w=40, h=10, title="person's", actor="setup")["id"]
+    time.sleep(0.2)
+    desk.ipc("move_window", id=p, x=30, y=6, **W)
+    time.sleep(0.2)
+    u = desk.j("resident_undo", **W)
+    time.sleep(0.2)
+    w = desk.windows()[p]
+    R.check((w["x"], w["y"]) == (2, 1), f"wib undoes its move: back at {w['x']},{w['y']}")
+    # Undo a run of typing in someone's editor: the text before the run comes back.
+    desk.ipc("send_text", id=p, content="before", mode="replace", actor="setup")
+    k = desk.j("resident_key", id=p, keys="End", text=" and after", **W)
+    desk.wait_seqs(k["first"], k["last"])
+    time.sleep(0.2)
+    mid = desk.j("describe", id=p)["text"]
+    u = desk.j("resident_undo", **W)
+    time.sleep(0.3)
+    R.check(mid == ["before and after"] and desk.j("describe", id=p)["text"] == ["before"],
+            f"wib undoes its typing: {mid} -> {desk.j('describe', id=p)['text']}")
+    # Someone else changed the window since: undo refuses and says who.
+    desk.ipc("move_window", id=p, x=10, y=3, **W)
+    time.sleep(0.2)
+    desk.ipc("focus_window", id=p)
+    time.sleep(0.2)
+    w = desk.windows()[p]
+    desk.person_mouse("down", w["x"] + 8, w["y"] + 1)
+    for i in range(1, 4):
+        desk.person_mouse("drag", w["x"] + 8 + i, w["y"] + 1 + i)
+        time.sleep(0.03)
+    desk.person_mouse("up", w["x"] + 11, w["y"] + 4)
+    time.sleep(0.4)
+    r = desk.ipc("resident_undo", **W)
+    R.check(r.startswith("err cannot undo") and "person changed" in r, f"undo refuses to undo the person's change: {r[:110]!r}")
+    r = desk.ipc("resident_undo", actor="wob2", source="resident")
+    R.check(r.startswith("err nothing of yours"), "another resident cannot undo wib's changes")
+    acts = [a["what"] for a in desk.j("acts", by="wib")["acts"]]
+    R.check(sum(a.startswith("undid: ") for a in acts) == 3, "each undo is an act in wib's name")
+    desk.ipc("close_all", actor="setup")
+
+
+def test_rehearse(desk):
+    print("rehearse")
+    W = dict(actor="wob", source="resident")
+    r = desk.j("resident_rehearse", **W)
+    sock = r.get("socket", "")
+    R.check(r.get("open") and sock.endswith("rehearse_wob.sock"), f"wob opens a rehearsal desk: {r}")
+    inner = Desk("rehearse_wob")   # talk to the nested desk's own socket
+    def answers():
+        try:
+            return os.path.exists(sock) and inner.ipc("get_canvas_size", timeout=1).startswith("{")
+        except OSError:
+            return False
+    up = wait_for(answers, 15, 0.3)
+    R.check(bool(up), "the rehearsal desk answers on its own socket")
+    if up:
+        t = inner.j("create_window", type="text_editor", x=1, y=1, w=30, h=6, title="try", actor="wob", source="resident")
+        inner.ipc("send_text", id=t["id"], content="a try", mode="replace", actor="wob")
+        tried = inner.j("describe", id=t["id"])["text"]
+        public = [w for w in desk.state()["windows"] if w["title"] == "try"]
+        R.check(tried == ["a try"] and not public, "what wob tries there stays there: the public desk has no such window")
+    owner = desk.j("window_owner", id=r["window"])["owner"] if r.get("window") else ""
+    R.check(owner == "wob", f"the rehearsal window is wob's ({owner})")
+    c = desk.j("resident_rehearse", close="1", **W)
+    def down():
+        try:
+            return not os.path.exists(sock) or not inner.ipc("get_canvas_size", timeout=1).startswith("{")
+        except OSError:
+            return True
+    gone = wait_for(down, 8, 0.3)
+    R.check(c.get("closed") and gone, "closing it ends the nested desk")
+
+
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "undo", "rehearse"]
     desk = Desk(NAME, env=NO_LLM).start()
     try:
         for g in groups:
-            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach}[g](desk)
+            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
