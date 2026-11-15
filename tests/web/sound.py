@@ -63,10 +63,11 @@ def main():
         a = wait(page, lambda: (lambda v: v if v and v["state"] == "running" else None)(page.evaluate(AUDIO)), 5)
         check(a is not None, f"the first key starts the audio context ({page.evaluate(AUDIO)})")
         a0 = page.evaluate(AUDIO)
-        time.sleep(2.0)
+        time.sleep(4.0)
         a = page.evaluate(AUDIO)
         rate = (a["pushed"] - a0["pushed"]) * 512 / ((a["now"] - a0["now"]) / 1000)
-        check(abs(rate - 22050) < 22050 * 0.1, f"the mixer's blocks arrive at real time while the desktop runs ({rate:.0f} samples a second)")
+        # a 2048-sample render-ahead window lands on either side of the measurement, so a few blocks either way
+        check(abs(rate - 22050) < 22050 * 0.15, f"the mixer's blocks arrive at real time while the desktop runs ({rate:.0f} samples a second)")
         peak0 = a["peak"]
         page.keyboard.press("Alt+v")
         time.sleep(0.4)

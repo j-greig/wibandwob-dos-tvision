@@ -30,7 +30,7 @@ set(WWDOS_WEB_SOURCES
     tvterm_view.cpp figlet_utils.cpp figlet_text_view.cpp backrooms_tv_view.cpp
     # the residents, the describe contract, the feed, desk mosh and terminal casts (as in app/CMakeLists.txt)
     resident_senses.cpp resident_acts.cpp resident_hands.cpp resident_life.cpp resident_tool.cpp
-    resident_teach.cpp resident_listen.cpp describe.cpp feed_view.cpp desk_mosh.cpp
+    resident_teach.cpp resident_listen.cpp resident_room.cpp describe.cpp feed_view.cpp desk_mosh.cpp
     terminal_transport.cpp cast_record.cpp
     # the machine's sound: in the browser the stream is WebAudio (sound/stream.cpp)
     sound/synth.cpp sound/mixer.cpp sound/stream.cpp sound/sound_host.cpp sound/synth_view.cpp sound/ears.cpp
