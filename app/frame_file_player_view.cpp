@@ -49,9 +49,9 @@ namespace {
     // Linear interpolation between two colors
     TColorRGB interpolateColors(TColorRGB start, TColorRGB end, float t) {
         t = std::max(0.0f, std::min(1.0f, t));
-        uint8_t r = static_cast<uint8_t>(start.r + (end.r - start.r) * t);
-        uint8_t g = static_cast<uint8_t>(start.g + (end.g - start.g) * t);
-        uint8_t b = static_cast<uint8_t>(start.b + (end.b - start.b) * t);
+        uint8_t r = static_cast<uint8_t>(start.getRed() + (end.getRed() - start.getRed()) * t);
+        uint8_t g = static_cast<uint8_t>(start.getGreen() + (end.getGreen() - start.getGreen()) * t);
+        uint8_t b = static_cast<uint8_t>(start.getBlue() + (end.getBlue() - start.getBlue()) * t);
         return TColorRGB(r, g, b);
     }
     
@@ -93,35 +93,35 @@ namespace {
                 
             case TBackgroundType::Solid: {
                 const TColorRGB &bg = kAnsiBg[config.solidColorIndex];
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::HorizontalGradient: {
                 TColorRGB bg = getHorizontalGradientColor(x, width, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::VerticalGradient: {
                 TColorRGB bg = getVerticalGradientColor(y, height, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::RadialGradient: {
                 TColorRGB bg = getRadialGradientColor(x, y, width, height, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::DiagonalGradient: {
                 TColorRGB bg = getDiagonalGradientColor(x, y, width, height, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
@@ -644,7 +644,7 @@ public:
                 int idx = ry*cols + cx;
                 if (idx >= 16) break;
                 const TColorRGB &bg = kAnsiBg[idx];
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 TColorAttr attr(fg, bg);
                 int sw = std::min(cellW-1, 12);
@@ -718,7 +718,7 @@ public:
                 int idx = ry*cols + cx;
                 if (idx >= 16) break;
                 const TColorRGB &bg = kAnsiBg[idx];
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 TColorAttr attr(fg, bg);
                 int sw = std::min(cellW-1, 12);

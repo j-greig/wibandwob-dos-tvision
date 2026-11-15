@@ -382,8 +382,8 @@ public:
         eventMask |= evMouseWheel;
     }
     virtual void handleEvent(TEvent& ev) override {
-        // Mouse wheel scroll
-        if (ev.what == evMouseWheel) {
+        // Mouse wheel scroll (vertical only: Turbo Vision also reports mwLeft/mwRight)
+        if (ev.what == evMouseWheel && (ev.mouse.wheel == mwUp || ev.mouse.wheel == mwDown)) {
             int delta = (ev.mouse.wheel == mwUp) ? -3 : 3;
             focusItem(std::max(0, std::min((int)range - 1, focused + delta)));
             message(owner, evBroadcast, cmStampFocus, this);

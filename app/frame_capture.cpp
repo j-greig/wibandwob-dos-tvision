@@ -38,7 +38,7 @@ FrameCapture& getFrameCapture() {
 TScreenCell CapturedFrame::getCell(int x, int y) const {
     if (!isValidPosition(x, y)) {
         TScreenCell empty;
-        ::setCell(empty, ' ', TColorAttr{});
+        empty = TScreenCell(' ', TColorAttr{});
         return empty;
     }
     return cells[y * width + x];
@@ -57,7 +57,7 @@ bool CapturedFrame::isValidPosition(int x, int y) const {
 void CapturedFrame::clear() {
     cells.clear();
     TScreenCell empty;
-    ::setCell(empty, ' ', TColorAttr{});
+    empty = TScreenCell(' ', TColorAttr{});
     cells.resize(width * height, empty);
     corruptedCellCount = 0;
     corruptionIntensity = 0.0f;
@@ -194,7 +194,7 @@ std::string FrameCapture::exportAsAnsi(const CapturedFrame& frame, const Capture
     }
     
     TScreenCell prevCell;
-    ::setCell(prevCell, ' ', TColorAttr{});
+    prevCell = TScreenCell(' ', TColorAttr{});
     
     for (int y = 0; y < frame.height; y++) {
         for (int x = 0; x < frame.width; x++) {
@@ -291,7 +291,7 @@ std::string FrameCapture::exportAsJson(const CapturedFrame& frame, const Capture
             oss << "{\"char\":\"" << escapeHtml(s) << "\"";
             if (options.includeColors) {
                 // Add color information (simplified)
-                oss << ",\"color\":" << static_cast<int>(cell.attr);
+                oss << ",\"color\":" << static_cast<int>(cell.attribute);
             }
             if (options.includePositions) {
                 oss << ",\"x\":" << x << ",\"y\":" << y;
@@ -399,7 +399,7 @@ TScreenCell FrameCapture::readScreenCell(int x, int y) {
     // Direct access to TScreen's raw buffer
     if (x < 0 || x >= TScreen::screenWidth || y < 0 || y >= TScreen::screenHeight) {
         TScreenCell empty;
-        ::setCell(empty, ' ', TColorAttr{});
+        empty = TScreenCell(' ', TColorAttr{});
         return empty;
     }
     
@@ -410,7 +410,7 @@ TScreenCell FrameCapture::readScreenCell(int x, int y) {
     
     // Fallback if buffer not available
     TScreenCell fallback;
-    ::setCell(fallback, '?', TColorAttr{});
+    fallback = TScreenCell('?', TColorAttr{});
     return fallback;
 }
 
@@ -418,7 +418,7 @@ std::string FrameCapture::cellToAnsi(const TScreenCell& cell, const TScreenCell*
     std::ostringstream oss;
     
     // Simple ANSI color implementation
-    if (!prevCell || cell.attr != prevCell->attr) {
+    if (!prevCell || cell.attribute != prevCell->attribute) {
         // Add ANSI color codes based on cell attributes
         oss << "\033[0m"; // Reset first
         // Add specific color codes here based on cell.attr
@@ -487,7 +487,7 @@ std::string FrameCapture::getCurrentTimestamp() {
 }
 
 std::string FrameCapture::screenCellToText(const TScreenCell& cell) {
-    const TCellChar &ch = cell._ch;
+    const TScreenCharacter &ch = cell.character;
     if (ch.isWideCharTrail())
         return " ";
     TStringView tv = ch.getText();

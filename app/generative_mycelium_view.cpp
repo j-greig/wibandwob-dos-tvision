@@ -85,7 +85,7 @@ void TGenerativeMyceliumView::draw(){
             auto to8=[&](float x)->uchar{ int v=(int)std::round(clampf(x)*255.f); return (uchar)std::max(0,std::min(255,v)); };
             TColorRGB fg(to8(c.r),to8(c.g),to8(c.b)); float bgk=0.05f + 0.2f*r;
             TColorRGB bg(to8(bgk),to8(bgk*0.96f),to8(bgk*0.92f));
-            ::setCell(row[(size_t)x], ch, TColorAttr(fg,bg));
+            row[(size_t)x] = TScreenCell(ch, TColorAttr(fg,bg));
         }
         writeLine(0,y,W,1,row.data());
     }

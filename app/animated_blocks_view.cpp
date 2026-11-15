@@ -86,7 +86,7 @@ void TAnimatedBlocksView::draw() {
             int shifted = moveRight ? (x + phase) : (x - phase);
             int idx = shifted % 16;
             if (idx < 0) idx += 16;
-            setCell(lineBuf[x], '\xDB', kAnsi16[idx]);
+            lineBuf[x] = TScreenCell('\xDB', kAnsi16[idx]);
         }
         writeLine(0, y, W, 1, lineBuf.data());
     }

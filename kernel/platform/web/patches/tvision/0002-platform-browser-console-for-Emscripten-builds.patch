@@ -19,7 +19,7 @@ __EMSCRIPTEN__ guards; native builds are unchanged.
 
 diff --git a/include/tvision/internal/wasmcon.h b/include/tvision/internal/wasmcon.h
 new file mode 100644
-index 0000000..fecaaef
+index 0000000..17e5ed7
 --- /dev/null
 +++ b/include/tvision/internal/wasmcon.h
 @@ -0,0 +1,87 @@
@@ -111,10 +111,10 @@ index 0000000..fecaaef
 +
 +#endif // TVISION_WASMCON_H
 diff --git a/include/tvision/util.h b/include/tvision/util.h
-index f71c7e7..f2fb513 100644
+index 61551f4..acda39c 100644
 --- a/include/tvision/util.h
 +++ b/include/tvision/util.h
-@@ -108,7 +108,9 @@ int vsnprintf( char _FAR *buffer, size_t size, const char _FAR *format,
+@@ -111,7 +111,9 @@ int vsnprintf( char _FAR *buffer, size_t size, const char _FAR *format,
  
  int stricmp( const char *s1, const char *s2 ) noexcept;
  int strnicmp( const char *s1, const char *s2, size_t maxlen ) noexcept;
@@ -213,7 +213,7 @@ index 77b09ac..5f9e9b8 100644
  #else
  
 diff --git a/source/platform/platform.cpp b/source/platform/platform.cpp
-index 18c7eee..77899bb 100644
+index 889509c..de1abd2 100644
 --- a/source/platform/platform.cpp
 +++ b/source/platform/platform.cpp
 @@ -10,6 +10,7 @@
@@ -224,7 +224,7 @@ index 18c7eee..77899bb 100644
  
  namespace tvision
  {
-@@ -32,7 +33,17 @@ Platform &Platform::getInstance() noexcept
+@@ -37,7 +38,17 @@ Platform &Platform::getInstance() noexcept
  
  ConsoleAdapter &Platform::createConsole() noexcept
  {
@@ -244,7 +244,7 @@ index 18c7eee..77899bb 100644
  #else
      auto &con = ConsoleCtl::getInstance();
 diff --git a/source/platform/strings.cpp b/source/platform/strings.cpp
-index 630c8d2..ac27382 100644
+index ba7b122..cd691ea 100644
 --- a/source/platform/strings.cpp
 +++ b/source/platform/strings.cpp
 @@ -74,6 +74,7 @@ int strnicmp( const char *s1, const char *s2, size_t maxlen ) noexcept
@@ -265,7 +265,7 @@ index 630c8d2..ac27382 100644
  // It won't provide the expected results in some cases, but at least will not
 diff --git a/source/platform/wasmcon.cpp b/source/platform/wasmcon.cpp
 new file mode 100644
-index 0000000..478dadb
+index 0000000..575ee9d
 --- /dev/null
 +++ b/source/platform/wasmcon.cpp
 @@ -0,0 +1,548 @@
@@ -400,7 +400,7 @@ index 0000000..478dadb
 +
 +WasmDisplay::WasmDisplay(ConsoleCtl &aCon) noexcept :
 +    con(aCon),
-+    ansiScreenWriter(aCon, TermCap::getDisplayCapabilities(aCon, *this))
++    ansiScreenWriter(aCon, TermCap::getDisplayCapabilities(aCon, getColorCount()))
 +{
 +}
 +
@@ -493,7 +493,7 @@ index 0000000..478dadb
 +uint32_t xtermToRGB(uint8_t i) noexcept
 +{
 +    if (i < 16)
-+        return biosPalette[XTerm16toBIOS(i)];
++        return biosPalette[TColorConversion::XTerm16toBIOS(i)];
 +    if (i < 232)
 +    {
 +        i -= 16;
@@ -505,12 +505,12 @@ index 0000000..478dadb
 +    return (v << 16) | (v << 8) | v;
 +}
 +
-+uint32_t desiredToRGB(TColorDesired c, bool fg) noexcept
++uint32_t desiredToRGB(TColor c, bool fg) noexcept
 +{
 +    if (c.isRGB())
 +    {
 +        TColorRGB rgb = c.asRGB();
-+        return (uint32_t(rgb.r) << 16) | (uint32_t(rgb.g) << 8) | rgb.b;
++        return (uint32_t(rgb.getRed()) << 16) | (uint32_t(rgb.getGreen()) << 8) | rgb.getBlue();
 +    }
 +    if (c.isBIOS())
 +        return biosPalette[c.asBIOS() & 0xF];
@@ -567,9 +567,9 @@ index 0000000..478dadb
 +{
 +    if (pos.x < 0 || pos.y < 0 || pos.x >= gridSize.x || pos.y >= gridSize.y)
 +        return;
-+    uint32_t fg = desiredToRGB(::getFore(attr), true);
-+    uint32_t bg = desiredToRGB(::getBack(attr), false);
-+    ushort style = ::getStyle(attr);
++    uint32_t fg = desiredToRGB(attr.getForeground(), true);
++    uint32_t bg = desiredToRGB(attr.getBackground(), false);
++    ushort style = attr.getStyle();
 +    if (style & slReverse)
 +    {
 +        uint32_t t = fg; fg = bg; bg = t;

@@ -184,9 +184,9 @@ std::shared_ptr<Picture> get(const std::string& path)
 
 TColorRGB apply(const Fx& fx, TColorRGB c)
 {
-    int r = c.r * fx.tint.r / 255, g = c.g * fx.tint.g / 255, b = c.b * fx.tint.b / 255;
+    int r = c.getRed() * fx.tint.getRed() / 255, g = c.getGreen() * fx.tint.getGreen() / 255, b = c.getBlue() * fx.tint.getBlue() / 255;
     if (fx.fade > 0) {
-        r += (fx.fadeTo.r - r) * fx.fade / 255; g += (fx.fadeTo.g - g) * fx.fade / 255; b += (fx.fadeTo.b - b) * fx.fade / 255;
+        r += (fx.fadeTo.getRed() - r) * fx.fade / 255; g += (fx.fadeTo.getGreen() - g) * fx.fade / 255; b += (fx.fadeTo.getBlue() - b) * fx.fade / 255;
     }
     return TColorRGB((uint8_t) r, (uint8_t) g, (uint8_t) b);
 }
@@ -200,9 +200,9 @@ void drawRow(const Picture& p, const std::vector<Cell>& fr, int y, TScreenCell* 
         const Cell& c = row[x];
         if (c.ink == NONE) continue;
         TScreenCell& o = out[x0 + x];
-        TColorDesired back = c.paper == NONE ? ::getBack(o.attr) : TColorDesired(pal[c.paper]);
-        o._ch.moveMultiByteChar(c.ch);
-        ::setAttr(o, TColorAttr(pal[c.ink], back));
+        TColor back = c.paper == NONE ? o.attribute.getBackground() : TColor(pal[c.paper]);
+        o.character.initWithMultiByteChar(c.ch);
+        o.attribute = TColorAttr(pal[c.ink], back);
     }
 }
 

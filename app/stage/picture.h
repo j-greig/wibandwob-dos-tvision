@@ -44,7 +44,7 @@ bool isPicture(const std::string& path);
 std::shared_ptr<Picture> get(const std::string& path);
 
 // A transformed palette: fade toward a colour by a (0-255) and multiply by a tint, for one draw.
-struct Fx { TColorRGB fadeTo {0, 0, 0}; int fade = 0; TColorRGB tint {255, 255, 255}; bool any() const { return fade > 0 || tint.r != 255 || tint.g != 255 || tint.b != 255; } };
+struct Fx { TColorRGB fadeTo {0, 0, 0}; int fade = 0; TColorRGB tint {255, 255, 255}; bool any() const { return fade > 0 || tint.getRed() != 255 || tint.getGreen() != 255 || tint.getBlue() != 255; } };
 TColorRGB apply(const Fx& fx, TColorRGB c);
 
 // Row y of a frame drawn into out[0..outW) with its left edge at column x0 (cells outside are clipped). Transparent

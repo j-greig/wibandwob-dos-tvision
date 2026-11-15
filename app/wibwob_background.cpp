@@ -123,7 +123,7 @@ void TWibWobBackground::draw()
     if (useRgb_) {
         color = TColorAttr(TColorRGB(rgbFg_), TColorRGB(rgbBg_));
     } else {
-        color = TColorAttr(fgColor, bgColor);
+        color = TColorAttr(TColorBIOS(fgColor), TColorBIOS(bgColor));
     }
     b.moveChar(0, pattern, color, size.x);
     writeLine(0, 0, size.x, size.y, b);

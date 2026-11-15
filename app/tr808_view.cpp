@@ -75,7 +75,7 @@ TTR808View::Pal TTR808View::palette() const {
     TColorAttr themed;
     if (ww::contentAttr(this, 15, themed)) {
         // EGA theme or an explicit window colour: EGA colours on the window background.
-        const TColorDesired bg = ::getBack(themed);
+        const TColor bg = themed.getBackground();
         auto on = [&](int idx) { return TColorAttr(ww::egaRGB(idx), bg); };
         p.base = themed;
         p.dim = on(7);

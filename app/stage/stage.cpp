@@ -160,14 +160,14 @@ namespace {
 // white ink have equal contrast. The 16 BIOS colours use the VGA values; light are green, cyan, light grey and
 // 10 to 15 (light green, light cyan, light red, light magenta, yellow, white); dark are black, blue, red, magenta,
 // brown, dark grey and light blue. The terminal's default background counts as dark.
-bool lightBack(TColorDesired c)
+bool lightBack(TColor c)
 {
     static const uint8_t vga[16][3] = {
         {0, 0, 0}, {0, 0, 170}, {0, 170, 0}, {0, 170, 170}, {170, 0, 0}, {170, 0, 170}, {170, 85, 0}, {170, 170, 170},
         {85, 85, 85}, {85, 85, 255}, {85, 255, 85}, {85, 255, 255}, {255, 85, 85}, {255, 85, 255}, {255, 255, 85}, {255, 255, 255}};
     static const uint8_t xtermToBios[16] = {0, 4, 2, 6, 1, 5, 3, 7, 8, 12, 10, 14, 9, 13, 11, 15};
     int r, g, b;
-    if (c.isRGB()) { TColorRGB k = c.asRGB(); r = k.r; g = k.g; b = k.b; }
+    if (c.isRGB()) { TColorRGB k = c.asRGB(); r = k.getRed(); g = k.getGreen(); b = k.getBlue(); }
     else if (c.isBIOS()) { const uint8_t* k = vga[uint8_t(c.asBIOS()) & 15]; r = k[0]; g = k[1]; b = k[2]; }
     else if (c.isXTerm()) {
         int i = uint8_t(c.asXTerm());
@@ -181,8 +181,8 @@ bool lightBack(TColorDesired c)
 
 bool blankCell(const TScreenCell& c)
 {
-    if (c._ch.isWideCharTrail()) return false;
-    TStringView t = c._ch.getText();
+    if (c.character.isWideCharTrail()) return false;
+    TStringView t = c.character.getText();
     return t.size() == 0 || (t.size() == 1 && (t[0] == ' ' || t[0] == 0));
 }
 
@@ -203,7 +203,7 @@ void StageWindow::draw()
     state |= sfVisible;
     // 2. the window's own ink over it
     TScreenCell blank;
-    blank._ch.moveChar(' ');
+    blank.character.initWithChar(' ');
     auto under = [&](int x, int y) -> TScreenCell {
         if (x < 0 || y < 0 || x >= desk->size.x || y >= desk->size.y) return blank;
         if (desk->buffer) return desk->buffer[y * desk->size.x + x];
@@ -218,21 +218,21 @@ void StageWindow::draw()
         for (int x = 0; x < W; ++x) {
             const TScreenCell& o = buffer[y * W + x];
             TScreenCell u = under(mine.a.x + x, mine.a.y + y);
-            bool ink = o._ch.isWideCharTrail() ? (x > 0 && own[x - 1] && row[x - 1]._ch.isWide()) : !blankCell(o);
+            bool ink = o.character.isWideCharTrail() ? (x > 0 && own[x - 1] && row[x - 1].character.isWide()) : !blankCell(o);
             own[x] = ink;
             if (!ink) { row[x] = u; continue; }
-            TColorAttr a = ::getAttr(o);
-            TColorDesired back = ::getBack(::getAttr(u));
-            ::setBack(a, back);
-            if (contrast) ::setFore(a, lightBack(back) ? TColorDesired(TColorBIOS(0)) : TColorDesired(TColorBIOS(15)));
+            TColorAttr a = o.attribute;
+            TColor back = u.attribute.getBackground();
+            a.setBackground(back);
+            if (contrast) a.setForeground(lightBack(back) ? TColor(TColorBIOS(0)) : TColor(TColorBIOS(15)));
             row[x] = o;
-            ::setAttr(row[x], a);
+            row[x].attribute = a;
         }
         // a wide character cut in two by the sprite's edge becomes a space
         for (int x = 0; x < W; ++x) {
-            bool cut = row[x]._ch.isWideCharTrail() ? (x > 0 && own[x - 1] != own[x])
-                     : (row[x]._ch.isWide() && x + 1 < W && own[x + 1] != own[x]);
-            if (cut) { TColorAttr a = ::getAttr(row[x]); row[x] = blank; ::setAttr(row[x], a); }
+            bool cut = row[x].character.isWideCharTrail() ? (x > 0 && own[x - 1] != own[x])
+                     : (row[x].character.isWide() && x + 1 < W && own[x + 1] != own[x]);
+            if (cut) { TColorAttr a = row[x].attribute; row[x] = blank; row[x].attribute = a; }
         }
         writeBuf(0, y, W, 1, row.data());
     }

@@ -164,7 +164,7 @@ void TPaintCanvasView::draw()
             uint8_t attr = (bgc << 4) | (fgc & 0x0F);
             TColorAttr a{attr};
             if ((state & sfFocused) && x == curX && by == curY)
-                a = reverseAttribute(a);
+                a = a.reversed();
             // Write glyph (may be multibyte UTF-8, width 1)
             b.moveStr(filled, TStringView(glyph), a);
             ++filled;
