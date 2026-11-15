@@ -469,7 +469,7 @@ def group_acts():
     try:
         ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Alpha", **as_res("wib"))["id"]
         d.j("move_window", id=ed, x=6, y=4, actor="v1", source="visitor")
-        time.sleep(1.0)
+        time.sleep(5.0)   # acts are written once they are 4 s old
         txt = read("ACTS.TXT") or ""
         R.check(txt.startswith("; WIBWOB-DOS acts log.") and "\twib\tresident\t" + ed + "\topened text_editor \"Alpha\"" in txt,
                 "acts reach ACTS.TXT while the desk runs, one tab-separated line each")
@@ -857,7 +857,65 @@ def group_selftest():
         d.stop()
 
 
-GROUPS = {"selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- the session as a film
+
+def group_film():
+    print("film: a waking's acts on disk play back as a film of the desktop, scrubbable, and export as a cast")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0").start()
+    try:
+        ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Plans", **as_res("wib"))["id"]
+        time.sleep(0.3)
+        d.person_type("hi there")
+        time.sleep(0.5)
+        d.j("move_window", id=ed, x=30, y=8, **as_res("wob"))
+        tp = d.j("create_window", type="test_pattern", x=80, y=2, w=30, h=10, title="Gone", **as_res("wob"))["id"]
+        time.sleep(0.3)
+        d.j("close_window", id=tp, **as_res("wob"))
+        time.sleep(0.3)
+        R.check(d.quit(), "a waking with an editor typed in, moved, and a window opened and closed")
+        d.start()
+        n0 = len(glance(d))
+        r = d.j("film_open", **as_res("wob"))
+        R.check(r.get("ok") is True and r["waking"] == 1, f"film_open plays the last waking: {r}")
+        fid = r["id"]
+        fw = [w for w in glance(d) if w["id"] == fid][0]
+        R.check(fw["type"] == "film" and fw["state"].startswith("film of waking 1 from the acts log"), f"look_glance: {fw['state']!r}")
+        s = d.j("film_seek", id=fid, ms=0, play=0)
+        frame0 = d.j("look_read", id=fid)["lines"]
+        R.check(not any("Plans" in l for l in frame0), "at 0:00 the film's desk is empty")
+        d.j("film_seek", id=fid, ms=s["length"])
+        frame = d.j("look_read", id=fid)["lines"]
+        R.check(any("Plans" in l for l in frame) and any("hi there" in l for l in frame),
+                "at its end Plans is on the film's desk with the text the person typed")
+        R.check(not any("Gone" in l for l in frame), "and the window that was closed is gone")
+        mid = [l for l in frame if "Plans" in l]
+        R.check(mid and mid[0].index("Plans") > 10, "Plans stands where wob moved it, not where it opened")
+        R.check(len(glance(d)) == n0 + 1 and not [w for w in glance(d) if w["title"] == "Plans"],
+                "the live desk got the film window and nothing else")
+        q = d.j("resident_key", id=fid, keys="Home", **as_res("wob"))
+        d.wait_seqs(q["first"], q["last"])
+        R.check(d.j("film_seek", id=fid)["ms"] == 0, "Home scrubs to the start")
+        d.j("film_seek", id=fid, ms=0, play=1, speed=16)
+        R.check(wait(lambda: not d.j("film_seek", id=fid)["playing"], timeout=s["length"] / 16000 + 5),
+                "played at x16 it reaches the end and stops")
+        x = d.j("film_export", w=100, h=32)
+        R.check(x.get("ok") is True and x["file"].endswith("FILMS/WAKING-1.cast"), f"film_export writes a cast: {x}")
+        lines = open(x["file"], encoding="utf-8").read().splitlines() if x.get("ok") else []
+        head = json.loads(lines[0]) if lines else {}
+        R.check(head.get("version") == 2 and head.get("width") == 100 and head.get("height") == 32,
+                "an asciinema v2 header")
+        ev = [json.loads(l) for l in lines[1:]]
+        R.check(ev and all(e[1] == "o" for e in ev) and all(ev[i][0] <= ev[i + 1][0] for i in range(len(ev) - 1)),
+                f"{len(ev)} output events in time order")
+        R.check(ev and "Plans" in ev[-1][2] and "hi there" in ev[-1][2], "its last frame shows the desk at the end")
+        console_menu(d, "f")
+        R.check(wait(lambda: len(of_type(d, "film")) == 2), "Tools > Residents > Film of the last waking opens another")
+    finally:
+        d.stop()
+
+
+GROUPS = {"film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():

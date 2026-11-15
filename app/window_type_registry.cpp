@@ -373,6 +373,7 @@ static const WindowTypeSpec k_specs[] = {
     { "own_time",          nullptr,                 life::isOwnWindow       },  // a resident's time of its own
     { "tool",              nullptr,                 tools::isToolWindow     },  // a program a resident wrote
     { "tool_list",         nullptr,                 tools::isToolListWindow },  // the list of those programs
+    { "film",              nullptr,                 life::isFilmWindow      },  // a waking replayed from ACTS.TXT
     { "browser",           spawn_browser,           match_browser           },
     { "verse",             spawn_verse,             match_verse             },
     { "mycelium",          spawn_mycelium,          match_mycelium          },
