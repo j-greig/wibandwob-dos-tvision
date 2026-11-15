@@ -70,6 +70,7 @@ std::string stateOf(TWindow* w);
 bool isBootWindow(TWindow* w);
 bool isDreamWindow(TWindow* w);
 bool isOwnWindow(TWindow* w);   // a resident's time of its own
+bool isFilmWindow(TWindow* w);  // a waking played back from the acts log
 
 // Acts of earlier wakings read back from ACTS.TXT and its rotations, newest first (the Feed window
 // scrolls into them). Returns how many earlier acts there are on disk.
@@ -97,6 +98,7 @@ const unsigned short cmLifeSign = 9942;
 const unsigned short cmLifeWill = 9943;
 const unsigned short cmLifeOwn = 9944;
 const unsigned short cmLifeTools = 9945;
+const unsigned short cmLifeFilm = 9946;
 
 // Inserts a window the residents' life made (tools, film) on the desktop and gives it an id.
 void insertLifeWindow(TWindow* w);

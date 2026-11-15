@@ -1817,7 +1817,9 @@ void rotateActs() {
 
 void noteSelftest(const resident::ActRecord& a, const std::string& when);
 
-void flushActs() {
+// An act can still grow for a few seconds after it is logged (a run of typing, a run of moves), so
+// acts are written once they are 4 s old; all=true (the close, the will, a film) writes the rest.
+void flushActs(bool all = false) {
     std::vector<resident::ActRecord> acts;
     resident::lastActs(4000, acts);
     std::ostringstream os;
@@ -1825,6 +1827,7 @@ void flushActs() {
     std::time_t wallNow = std::time(nullptr);
     for (auto& a : acts) {
         if (a.n <= g_actsFlushed) continue;
+        if (!all && clockNow - a.ms < 4000) break;
         std::time_t t = wallNow - (std::time_t)((clockNow - a.ms) / 1000);
         std::tm tm{};
         localtime_r(&t, &tm);
@@ -1832,14 +1835,14 @@ void flushActs() {
         std::strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", &tm);
         if (a.what.rfind("self-test: ", 0) == 0 && a.what.find(" passed") != std::string::npos) noteSelftest(a, when);
         os << g_self.boots << "\t" << a.n << "\t" << when << "\t" << field(a.actor) << "\t" << field(a.source) << "\t"
-           << field(a.window) << "\t" << field(a.what) << "\t" << field(a.result) << "\n";
+           << field(a.window) << "\t" << field(a.what) << "\t" << field(a.result) << "\t" << a.ms << "\n";
         g_actsFlushed = a.n;
     }
     std::string text = os.str();
     if (text.empty()) return;
     rotateActs();
     if (fileSize(actsFile(0)) <= 0)
-        text = "; WIBWOB-DOS acts log. waking<TAB>n<TAB>date time<TAB>actor<TAB>source<TAB>window<TAB>what<TAB>result\n" + text;
+        text = "; WIBWOB-DOS acts log. waking<TAB>n<TAB>date time<TAB>actor<TAB>source<TAB>window<TAB>what<TAB>result<TAB>ms\n" + text;
     appendFile(actsFile(0), text);
     rotateActs();   // a file past the limit is set aside at once, not at the next act
 }
@@ -1867,11 +1870,12 @@ void noteSelftest(const resident::ActRecord& a, const std::string& when) {
 struct DiskAct {
     int waking = 0;
     uint64_t n = 0;
+    long long ms = -1;   // ms since that waking's start (-1 in lines written before the column existed)
     std::string when, actor, source, window, what, result;
 };
 
 // Acts of earlier wakings, newest first: skip the first skip, return at most count.
-std::vector<DiskAct> earlierActsFromDisk(size_t skip, size_t count, size_t* total) {
+std::vector<DiskAct> earlierActsFromDisk(size_t skip, size_t count, size_t* total, int onlyWaking = 0) {
     std::vector<DiskAct> all;
     for (int i = kActsFiles; i >= 0; --i) {   // oldest file first, so all ends oldest first
         for (auto& l : readLines(actsFile(i))) {
@@ -1887,7 +1891,7 @@ std::vector<DiskAct> earlierActsFromDisk(size_t skip, size_t count, size_t* tota
             if (f.size() < 8) continue;
             DiskAct a;
             a.waking = std::atoi(f[0].c_str());
-            if (a.waking >= g_self.boots) continue;   // this waking is in memory
+            if (onlyWaking ? a.waking != onlyWaking : a.waking >= g_self.boots) continue;   // this waking is in memory
             a.n = std::strtoull(f[1].c_str(), nullptr, 10);
             a.when = f[2];
             a.actor = f[3];
@@ -1895,6 +1899,7 @@ std::vector<DiskAct> earlierActsFromDisk(size_t skip, size_t count, size_t* tota
             a.window = f[5];
             a.what = f[6];
             a.result = f[7];
+            if (f.size() > 8) a.ms = std::atoll(f[8].c_str());
             all.push_back(a);
         }
     }
@@ -1986,7 +1991,7 @@ std::string writeWill(const Who& by) {
     section("6. THE GUESTBOOK (GUESTS.TXT)");
     fileBody("GUESTS.TXT");
     section("7. THE LAST 500 ACTS");
-    flushActs();
+    flushActs(true);
     std::vector<std::string> acts;
     for (int i = kActsFiles; i >= 0; --i)
         for (auto& l : readLines(actsFile(i))) if (!l.empty() && l[0] != ';') acts.push_back(l);
@@ -2265,6 +2270,314 @@ std::string cmdOwnTime(const KV& kv) {
     return "{\"ok\":true,\"own\":" + ownJson() + "}";
 }
 
+// ---------------------------------------------------------------- the session as a film
+
+// A waking's acts from ACTS.TXT played back as a film of the desktop: windows open, move, take
+// their titles and typed text, and close at the recorded times. The film is drawn inside its own
+// window from the record: it opens no windows and sends no commands, so it cannot touch the live
+// desk. film_export writes the same film as an asciinema v2 cast.
+struct FilmWin {
+    std::string id, type, title;
+    int x = 0, y = 0, w = 10, h = 4;
+    std::vector<std::string> text;
+};
+
+struct FilmEvent {
+    long long t = 0;   // ms from the film's start
+    DiskAct a;
+};
+
+struct Film {
+    int waking = 0;
+    std::vector<FilmEvent> events;
+    long long length = 0;
+    int deskW = 80, deskH = 24;
+};
+
+bool parseRect(const std::string& s, size_t from, int& x, int& y, int& w, int& h) {
+    return std::sscanf(s.c_str() + from, "%d,%d %dx%d", &x, &y, &w, &h) == 4;
+}
+
+bool loadFilm(int waking, Film& f, std::string& err) {
+    if (waking == g_self.boots) flushActs(true);
+    size_t total = 0;
+    auto acts = earlierActsFromDisk(0, 1000000, &total, waking);
+    if (acts.empty()) { err = "no acts of waking " + std::to_string(waking) + " on disk"; return false; }
+    std::reverse(acts.begin(), acts.end());   // oldest first
+    f = Film();
+    f.waking = waking;
+    long long t0 = -1;
+    std::tm tm0{};
+    for (auto& a : acts) {
+        long long ms = a.ms;
+        if (ms < 0) {   // older lines: whole seconds from the date
+            std::tm tm{};
+            if (std::sscanf(a.when.c_str(), "%d-%d-%d %d:%d:%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday, &tm.tm_hour, &tm.tm_min, &tm.tm_sec) == 6) {
+                tm.tm_year -= 1900; tm.tm_mon -= 1; tm.tm_isdst = -1;
+                ms = (long long)std::mktime(&tm) * 1000;
+            } else ms = 0;
+        }
+        if (t0 < 0) t0 = ms;
+        FilmEvent e;
+        e.t = std::max(0LL, ms - t0);
+        e.a = a;
+        f.events.push_back(e);
+        int x, y, w, h;
+        size_t at = a.what.rfind(" at ");
+        if (a.what.rfind("opened ", 0) == 0 && at != std::string::npos && parseRect(a.what, at + 4, x, y, w, h)) {
+            f.deskW = std::max(f.deskW, x + w);
+            f.deskH = std::max(f.deskH, y + h);
+        }
+    }
+    (void)tm0;
+    for (size_t i = 1; i < f.events.size(); ++i) f.events[i].t = std::max(f.events[i].t, f.events[i - 1].t);
+    f.length = f.events.empty() ? 0 : f.events.back().t;
+    return true;
+}
+
+// The desk at film time t: the windows, back to front.
+std::vector<FilmWin> deskAt(const Film& f, long long t) {
+    std::vector<FilmWin> ws;
+    auto find = [&](const std::string& id) -> int {
+        for (size_t i = 0; i < ws.size(); ++i) if (ws[i].id == id) return (int)i;
+        return -1;
+    };
+    auto front = [&](int i) { if (i >= 0 && i + 1 < (int)ws.size()) { FilmWin w = ws[i]; ws.erase(ws.begin() + i); ws.push_back(w); } };
+    for (auto& e : f.events) {
+        if (e.t > t) break;
+        const std::string& w = e.a.what;
+        int i = find(e.a.window);
+        int x, y, wd, ht;
+        if (w.rfind("opened ", 0) == 0) {
+            FilmWin fw;
+            fw.id = e.a.window;
+            size_t q1 = w.find('"'), q2 = w.find('"', q1 + 1), at = w.rfind(" at ");
+            fw.type = w.substr(7, q1 == std::string::npos ? std::string::npos : q1 - 8);
+            if (q1 != std::string::npos && q2 != std::string::npos) fw.title = w.substr(q1 + 1, q2 - q1 - 1);
+            if (at != std::string::npos) parseRect(w, at + 4, fw.x, fw.y, fw.w, fw.h);
+            if (i >= 0) ws.erase(ws.begin() + i);
+            ws.push_back(fw);
+        } else if (i < 0) {
+            continue;
+        } else if ((w.rfind("moved to ", 0) == 0 || w.rfind("resized to ", 0) == 0) &&
+                   parseRect(w, w.find(" to ") + 4, x, y, wd, ht)) {
+            ws[i].x = x; ws[i].y = y; ws[i].w = wd; ws[i].h = ht;
+        } else if (w.rfind("retitled \"", 0) == 0) {
+            ws[i].title = w.substr(10, w.size() - 11);
+        } else if (w.rfind("closed ", 0) == 0) {
+            ws.erase(ws.begin() + i);
+        } else if (w.rfind("typed ", 0) == 0 || w.rfind("send_text content=", 0) == 0) {
+            std::string s = w.rfind("typed ", 0) == 0 ? w.substr(6) : w.substr(18);
+            if (s.size() > 3 && s.substr(s.size() - 3) == "...") s.resize(s.size() - 3);
+            if (ws[i].text.empty()) ws[i].text.push_back("");
+            ws[i].text.back() += s;
+            front(i);
+        } else if (w.rfind("click ", 0) == 0 || w.rfind("raise_window", 0) == 0 || w.rfind("focus_window", 0) == 0) {
+            front(i);
+        }
+    }
+    return ws;
+}
+
+// The film's picture at time t on a W x H grid of characters (the desk scaled to fit).
+std::vector<std::string> filmFrame(const Film& f, long long t, int W, int H) {
+    std::vector<std::u32string> g(H, std::u32string(W, U'░'));
+    double sx = std::min(1.0, (double)W / f.deskW), sy = std::min(1.0, (double)H / f.deskH);
+    auto put = [&](int x, int y, char32_t c) { if (x >= 0 && y >= 0 && x < W && y < H) g[y][x] = c; };
+    for (auto& w : deskAt(f, t)) {
+        int x0 = (int)(w.x * sx), y0 = (int)(w.y * sy);
+        int x1 = std::max(x0 + 3, (int)((w.x + w.w) * sx) - 1), y1 = std::max(y0 + 2, (int)((w.y + w.h) * sy) - 1);
+        for (int y = y0; y <= y1; ++y)
+            for (int x = x0; x <= x1; ++x) {
+                char32_t c = U' ';
+                bool top = y == y0, bot = y == y1, l = x == x0, r = x == x1;
+                if (top && l) c = U'┌'; else if (top && r) c = U'┐'; else if (bot && l) c = U'└';
+                else if (bot && r) c = U'┘'; else if (top || bot) c = U'─'; else if (l || r) c = U'│';
+                put(x, y, c);
+            }
+        std::string title = w.title.empty() ? w.type : w.title;
+        for (size_t k = 0; k < title.size() && x0 + 2 + (int)k < x1; ++k)
+            put(x0 + 2 + (int)k, y0, (unsigned char)title[k] < 0x80 ? (char32_t)title[k] : U'?');
+        for (size_t ln = 0; ln < w.text.size() && y0 + 1 + (int)ln < y1; ++ln)
+            for (size_t k = 0; k < w.text[ln].size() && x0 + 1 + (int)k < x1; ++k)
+                put(x0 + 1 + (int)k, y0 + 1 + (int)ln, (unsigned char)w.text[ln][k] < 0x80 ? (char32_t)w.text[ln][k] : U'?');
+    }
+    std::vector<std::string> out;
+    for (auto& row : g) {
+        std::string s;
+        for (char32_t c : row) {
+            if (c < 0x80) s += (char)c;
+            else if (c < 0x800) { s += (char)(0xC0 | (c >> 6)); s += (char)(0x80 | (c & 0x3F)); }
+            else { s += (char)(0xE0 | (c >> 12)); s += (char)(0x80 | ((c >> 6) & 0x3F)); s += (char)(0x80 | (c & 0x3F)); }
+        }
+        out.push_back(s);
+    }
+    return out;
+}
+
+std::string mmss(long long ms) {
+    char b[16];
+    std::snprintf(b, sizeof b, "%02lld:%02lld", ms / 60000, (ms / 1000) % 60);
+    return b;
+}
+
+class TFilmView : public TView {
+public:
+    TFilmView(const TRect& r) : TView(r) { growMode = gfGrowHiX | gfGrowHiY; options |= ofSelectable; eventMask |= evKeyDown; }
+    Film film;
+    long long t = 0, last = 0;
+    bool playing = true;
+    int speed = 1;
+    void draw() override {
+        auto rows = filmFrame(film, t, size.x, std::max(1, (int)size.y - 1));
+        TColorAttr c(TColorBIOS(7), TColorBIOS(0)), bar(TColorBIOS(0), TColorBIOS(7));
+        for (int y = 0; y < size.y; ++y) {
+            TDrawBuffer b;
+            if (y < (int)rows.size()) { b.moveChar(0, ' ', c, size.x); b.moveStr(0, rows[y].c_str(), c); }
+            else {
+                std::string s = " WAKING " + std::to_string(film.waking) + "  " + mmss(t) + " / " + mmss(film.length) + "  x" +
+                                std::to_string(speed) + "  " + (playing ? "PLAYING" : "PAUSED") + "   Space Left Right 0-9 + -";
+                b.moveChar(0, ' ', bar, size.x);
+                b.moveStr(0, s.c_str(), bar);
+            }
+            writeLine(0, y, size.x, 1, b);
+        }
+    }
+    void seek(long long to) { t = std::max(0LL, std::min(film.length, to)); last = nowMs(); drawView(); }
+    void tick() {
+        long long n = nowMs();
+        if (playing && t < film.length) {
+            t = std::min(film.length, t + (n - last) * speed);
+            drawView();
+        }
+        if (t >= film.length && playing) { playing = false; drawView(); }
+        last = n;
+    }
+    void handleEvent(TEvent& ev) override {
+        if (ev.what == evKeyDown) {
+            char ch = ev.keyDown.charScan.charCode;
+            ushort k = ev.keyDown.keyCode;
+            bool used = true;
+            if (ch == ' ') { if (t >= film.length) t = 0; playing = !playing; last = nowMs(); drawView(); }
+            else if (k == kbLeft) seek(t - 5000);
+            else if (k == kbRight) seek(t + 5000);
+            else if (k == kbHome) seek(0);
+            else if (k == kbEnd) seek(film.length);
+            else if (ch >= '0' && ch <= '9') seek(film.length * (ch - '0') / 10);
+            else if (ch == '+') { speed = std::min(16, speed * 2); drawView(); }
+            else if (ch == '-') { speed = std::max(1, speed / 2); drawView(); }
+            else used = false;
+            if (used) { clearEvent(ev); return; }
+        }
+        TView::handleEvent(ev);
+    }
+};
+
+class TFilmWindow : public TWindow, public ww::Describable {
+public:
+    TFilmWindow(const TRect& r, const Film& f)
+        : TWindowInit(&TFilmWindow::initFrame), TWindow(r, ("FILM OF WAKING " + std::to_string(f.waking)).c_str(), wnNoNumber) {
+        TRect in = getExtent();
+        in.grow(-1, -1);
+        view = new TFilmView(in);
+        view->film = f;
+        view->last = nowMs();
+        insert(view);
+    }
+    std::string describeState() const override {
+        return "film of waking " + std::to_string(view->film.waking) + " from the acts log: " + mmss(view->t) + " of " +
+               mmss(view->film.length) + ", " + std::to_string(deskAt(view->film, view->t).size()) + " windows on its desk, " +
+               (view->playing ? "playing" : "paused") + " at x" + std::to_string(view->speed);
+    }
+    bool describeText(std::vector<std::string>& out) const override {
+        out = filmFrame(view->film, view->t, view->size.x, std::max(1, (int)view->size.y - 1));
+        return true;
+    }
+    TFilmView* view;
+};
+
+std::vector<TFilmWindow*> openFilms() {
+    std::vector<TFilmWindow*> out;
+    for (TWindow* w : deskWindows()) if (auto* f = dynamic_cast<TFilmWindow*>(w)) out.push_back(f);
+    return out;
+}
+
+int filmWaking(const KV& kv) {
+    int w = std::atoi(str(kv, "waking", "0").c_str());
+    return w > 0 ? w : std::max(1, g_self.boots - 1);
+}
+
+std::string openFilm(int waking, int speed, std::string& id) {
+    Film f;
+    std::string err;
+    if (!loadFilm(waking, f, err)) return err;
+    TRect d = TProgram::deskTop->getExtent();
+    int w = std::min(d.b.x - 2, 100), h = std::min(d.b.y - 2, 34);
+    auto* fw = new TFilmWindow(TRect(1, 1, 1 + w, 1 + h), f);
+    fw->view->speed = std::max(1, std::min(16, speed));
+    insertLifeWindow(fw);
+    resident::settle();
+    id = resident::hooks().idOf(fw);
+    return "";
+}
+
+std::string jsonEsc(const std::string& s) { return json_escape(s); }
+
+std::string exportFilm(int waking, int W, int H, std::string& file) {
+    Film f;
+    std::string err;
+    if (!loadFilm(waking, f, err)) return err;
+    mkdirs(path("FILMS"));
+    file = path("FILMS/WAKING-" + std::to_string(waking) + ".cast");
+    std::ostringstream os;
+    os << "{\"version\":2,\"width\":" << W << ",\"height\":" << H << ",\"timestamp\":" << (long long)std::time(nullptr)
+       << ",\"title\":\"WibWob-DOS, film of waking " << waking << "\",\"env\":{\"TERM\":\"xterm-256color\"}}\n";
+    std::vector<std::string> prev;
+    int frames = 0;
+    std::vector<long long> times{0};
+    for (auto& e : f.events) if (e.t != times.back()) times.push_back(e.t);
+    for (long long t : times) {
+        auto rows = filmFrame(f, t, W, H);
+        if (rows == prev) continue;
+        std::string data = std::string(frames ? "" : "\x1b[2J") + "\x1b[H";
+        for (size_t i = 0; i < rows.size(); ++i) data += rows[i] + (i + 1 < rows.size() ? "\r\n" : "");
+        char ts[32];
+        std::snprintf(ts, sizeof ts, "%.3f", t / 1000.0);
+        os << "[" << ts << ", \"o\", \"" << jsonEsc(data) << "\"]\n";
+        prev = rows;
+        ++frames;
+    }
+    if (!writeFile(file, os.str())) return "could not write " + file;
+    return "";
+}
+
+std::string cmdFilm(const std::string& name, const KV& kv) {
+    if (name == "film_open") {
+        std::string id;
+        std::string err = openFilm(filmWaking(kv), std::atoi(str(kv, "speed", "1").c_str()), id);
+        if (!err.empty()) return "err " + err;
+        return "{\"ok\":true,\"id\":" + q(id) + ",\"waking\":" + std::to_string(filmWaking(kv)) + "}";
+    }
+    if (name == "film_seek") {
+        for (auto* f : openFilms()) {
+            if (resident::hooks().idOf(f) != str(kv, "id")) continue;
+            if (kv.count("ms")) f->view->seek(std::atoll(str(kv, "ms").c_str()));
+            if (kv.count("play")) { f->view->playing = str(kv, "play") == "1"; f->view->last = nowMs(); f->view->drawView(); }
+            if (kv.count("speed")) f->view->speed = std::max(1, std::min(16, std::atoi(str(kv, "speed").c_str())));
+            return "{\"ok\":true,\"ms\":" + std::to_string(f->view->t) + ",\"length\":" + std::to_string(f->view->film.length) +
+                   ",\"playing\":" + (f->view->playing ? "true" : "false") + "}";
+        }
+        return "err no film window " + str(kv, "id");
+    }
+    // film_export
+    int W = std::max(20, std::min(240, std::atoi(str(kv, "w", "100").c_str())));
+    int H = std::max(8, std::min(80, std::atoi(str(kv, "h", "32").c_str())));
+    std::string file;
+    std::string err = exportFilm(filmWaking(kv), W, H, file);
+    if (!err.empty()) return "err " + err;
+    return "{\"ok\":true,\"file\":" + q(file) + ",\"bytes\":" + std::to_string(fileSize(file)) + "}";
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- public
@@ -2340,7 +2653,7 @@ void close(const std::string& how) {
     writeDesk();
     writeSelfIni(false);
     resident::addAct(Who{"app", Source::App}, "closed (" + how + "): self written to " + home(), "", "");
-    flushActs();
+    flushActs(true);
 }
 
 void insertLifeWindow(TWindow* w) {
@@ -2351,6 +2664,7 @@ void insertLifeWindow(TWindow* w) {
 void tick() {
     tickOwn();
     tools::tick();
+    for (auto* f : openFilms()) f->view->tick();
     if (g_woken && !g_closed && resident::actsClockMs() >= g_actsNextFlush) {
         g_actsNextFlush = resident::actsClockMs() + 500;
         flushActs();
@@ -2393,6 +2707,7 @@ bool consoleInput(TEvent& ev) {
 bool isBootWindow(TWindow* w) { return w && dynamic_cast<TBootWindow*>(w) != nullptr; }
 bool isDreamWindow(TWindow* w) { return w && dynamic_cast<TDreamWindow*>(w) != nullptr; }
 bool isOwnWindow(TWindow* w) { return w && dynamic_cast<TOwnWindow*>(w) != nullptr; }
+bool isFilmWindow(TWindow* w) { return w && dynamic_cast<TFilmWindow*>(w) != nullptr; }
 
 bool textOf(TWindow* w, std::vector<std::string>& out) {
     if (auto* d = dynamic_cast<TDreamWindow*>(w)) {
@@ -2435,7 +2750,7 @@ bool owns(const std::string& cmd) {
     static const char* names[] = {"get_self", "self_note", "get_note", "logbook_write", "logbook_open", "get_logbook",
                                   "guestbook_sign", "guestbook_open", "get_guestbook", "get_life",
                                   "residents_sleep", "residents_wake", "acts_history", "residents_will",
-                                  "resident_own_time"};
+                                  "resident_own_time", "film_open", "film_seek", "film_export"};
     for (auto n : names) if (cmd == n) return true;
     return false;
 }
@@ -2449,6 +2764,7 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "acts_history") return cmdActsHistory(kv);
     if (name == "residents_will") return cmdWill(kv);
     if (name == "resident_own_time") return cmdOwnTime(kv);
+    if (name == "film_open" || name == "film_seek" || name == "film_export") return cmdFilm(name, kv);
     if (name == "get_life" || name == "residents_sleep" || name == "residents_wake") return cmdLife(name, kv);
     return "";
 }
@@ -2475,6 +2791,11 @@ bool handleCommand(unsigned short cmd) {
     if (cmd == cmLifeGuestbook) { openBook("GUESTS.TXT", "GUESTS.TXT"); return true; }
     if (cmd == cmLifeSign) { openSignPage(resident::currentWho()); return true; }
     if (cmd == cmLifeTools) { tools::openList(); return true; }
+    if (cmd == cmLifeFilm) {
+        std::string id, err = openFilm(std::max(1, g_self.boots - 1), 1, id);
+        if (!err.empty()) flash(err);
+        return true;
+    }
     if (cmd == cmLifeOwn) {
         std::string err = startOwn(kResidents[g_ownRotation++ % 3], 60, (int)envMs("WWDOS_OWN_TURNS", 6), resident::currentWho(), false);
         if (!err.empty()) flash(err.substr(4));

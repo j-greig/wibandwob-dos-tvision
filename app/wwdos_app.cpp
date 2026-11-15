@@ -2975,6 +2975,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("Write the ~w~ill", life::cmLifeWill, kbNoKey) +
                     *new TMenuItem("~T~ime of their own", life::cmLifeOwn, kbNoKey) +
                     *new TMenuItem("Their ~p~rograms (TOOLS)", life::cmLifeTools, kbNoKey) +
+                    *new TMenuItem("~F~ilm of the last waking", life::cmLifeFilm, kbNoKey) +
                     newLine() +
                     *new TMenuItem("~A~bout the residents", resident::cmResidentAbout, kbNoKey)
             ) +
