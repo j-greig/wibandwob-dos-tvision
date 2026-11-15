@@ -74,6 +74,9 @@ release archive; the font is not in this repository) and run:
 uv run kernel/tools/make_atlas.py --font /path/to/unifont-16.0.04.otf [--extra "chars"] [--png sheet.png]
 ```
 
+`kernel/pages/atlas-film.js`, the film page's atlas, comes from `make_atlas.py --film` (the on-chain repository's glyph
+set: the film desktop's interface characters, the primers and the film sources; see `tfilm/README.md`).
+
 ## Test
 
 ```
