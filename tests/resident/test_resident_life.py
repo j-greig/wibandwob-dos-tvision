@@ -827,7 +827,37 @@ def group_tools():
         d.stop()
 
 
-GROUPS = {"tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- the self-test on the boot screen
+
+def group_selftest():
+    print("selftest: the last self-test's result is kept and shown on the boot screen")
+    fresh_home()
+    d = desk().start()
+    try:
+        boot_done(d)
+        R.check("SELFTEST ..... never run" in screen_text(d), "a first boot says the self-test has never run")
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        r = d.ipc("resident_selftest", start=1, **as_res("wob"))
+        R.check(r.startswith("{"), f"wob starts its self-test: {r[:60]}")
+        st = wait(lambda: (lambda j: j if not j["running"] and j["passed"] + j["failed"] > 0 else None)(d.j("resident_selftest")), timeout=40)
+        R.check(bool(st), "it finishes")
+        total = st["passed"] + st["failed"] if st else 0
+        time.sleep(1.0)
+        line = [l for l in (read("SELFTEST.TXT") or "").splitlines() if l and not l.startswith(";")]
+        R.check(len(line) == 1 and line[0].split("\t")[1] == "wob" and f"{st['passed']} of {total} passed" in line[0],
+                f"SELFTEST.TXT records who ran it and the result: {line}")
+        R.check(d.quit(), "Exit")
+        d.start()
+        boot_done(d)
+        sc = screen_text(d)
+        R.check(f"SELFTEST ..... last run" in sc and f"by wob: {st['passed']} of {total} passed" in sc,
+                "the next boot shows the last result")
+    finally:
+        d.stop()
+
+
+GROUPS = {"selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():
