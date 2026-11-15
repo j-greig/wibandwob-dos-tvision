@@ -759,7 +759,105 @@ def group_own():
         d.stop()
 
 
-GROUPS = {"own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- tools in a language of their own
+
+def group_tools():
+    print("tools: residents write small programs in a BASIC of the app's own, and they become windows")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0").start()
+    try:
+        tl = {t["name"]: t for t in d.j("tool_list")["tools"]}
+        R.check(tl.get("CLOCK", {}).get("author") == "wob" and tl.get("ETCH", {}).get("author") == "wib",
+                f"two worked tools are in TOOLS/, CLOCK.BAS by wob and ETCH.BAS by wib: {list(tl)}")
+        R.check((read("TOOLS/CLOCK.BAS") or "").startswith("REM AUTHOR: wob (resident, seeded with the app)"),
+                "a tool is plain text with its author in the first line")
+        r = d.j("tool_run", name="clock", x=2, y=2, w=30, h=7, **as_res("wob"))
+        time.sleep(0.8)
+        clk = [w for w in glance(d) if w["id"] == r["id"]][0]
+        R.check(clk["type"] == "tool" and clk["owner"] == "wob" and clk["state"].startswith("tool CLOCK.BAS by wob, running"),
+                f"CLOCK opens as a tool window: {clk['state']!r}")
+        import re
+        lines = d.j("look_read", id=r["id"])["lines"]
+        R.check(any(re.search(r"\d\d:\d\d:\d\d", l) for l in lines) and any("." in l or "#" in l for l in lines),
+                f"it shows the time and the seconds bar: {lines}")
+        e = d.j("tool_run", name="ETCH", x=40, y=2, w=24, h=9, **as_res("wib"))
+        q = d.j("resident_key", id=e["id"], keys="Right Right Right Down Down", **as_res("wib"))
+        d.wait_seqs(q["first"], q["last"])
+        time.sleep(0.2)
+        lines = d.j("look_read", id=e["id"])["lines"]
+        R.check(sum(l.count("*") for l in lines) == 5 and sum(l.count("@") for l in lines) == 1,
+                f"ETCH draws a trail with the arrow keys: {lines}")
+        q = d.j("resident_key", id=e["id"], text="c", **as_res("wib"))
+        d.wait_seqs(q["first"], q["last"])
+        time.sleep(0.2)
+        R.check(sum(l.count("*") for l in d.j("look_read", id=e["id"])["lines"]) == 0, "and c clears it")
+
+        prog = 'REM says hello\nON START\n  AT 0, 0 PRINT "HELLO " + STR$(2 + 3)\n  CALL "logbook_write", "text=from-a-tool"\nEND\n'
+        s = d.j("tool_save", name="hello", text=prog, **as_res("wib"))
+        R.check(s.get("ok") is True and (read("TOOLS/HELLO.BAS") or "").startswith("REM AUTHOR: wib (resident)"),
+                "wib saves a tool of its own, signed")
+        h = d.j("tool_run", name="hello", x=70, y=2, w=20, h=4, **as_res("wib"))
+        time.sleep(0.3)
+        R.check(d.j("look_read", id=h["id"])["lines"][0].startswith("HELLO 5"), "it runs: HELLO 5")
+        R.check(any(x["author"] == "WIB" and x["text"] == "from-a-tool" for x in d.j("get_logbook")["entries"]),
+                "its CALL wrote in the logbook as wib")
+        R.check(d.ipc("tool_save", name="hello", text=prog, **as_res("wob")).startswith("err refused: HELLO.BAS is wib's"),
+                "only a tool's author changes it")
+        R.check(d.ipc("tool_save", name="x", text=prog, actor="v1", source="visitor").startswith("err refused"),
+                "a visitor cannot save a tool")
+        R.check(d.ipc("tool_save", name="bad", text='ON START\n PRINT "x\nEND', **as_res("wob")).startswith("err the tool does not parse"),
+                "a program that does not parse is refused")
+        n0 = len(glance(d))
+        for nm, body, want in (("term", 'ON START\n CALL "open_terminal", ""\nEND', "is not one a tool may call"),
+                               ("shell", 'ON START\n SHELL "ls"\nEND', "unknown statement SHELL"),
+                               ("loop", 'ON START\nagain:\n GOTO again\nEND', "more than 5000 statements")):
+            d.j("tool_save", name=nm, text=body, **as_res("wob"))
+            rr = d.j("tool_run", name=nm, x=2, y=30, w=40, h=4, **as_res("wob"))
+            R.check(want in rr["error"], f"{nm}: stopped with '{want}' ({rr['error']!r})")
+        R.check(not [w for w in glance(d) if w["type"] == "terminal"] and len(glance(d)) == n0 + 3 and d.alive(),
+                "no terminal opened and the desk is still running")
+        console_menu(d, "p")
+        lw = wait(lambda: of_type(d, "tool_list"))
+        R.check(bool(lw) and any("CLOCK.BAS" in l and "by wob" in l for l in d.j("look_read", id=lw[0]["id"])["lines"]),
+                "Tools > Residents > Their programs lists the tools with their authors")
+        before = len(of_type(d, "tool"))
+        d.person_text("1")
+        R.check(wait(lambda: len(of_type(d, "tool")) == before + 1), "and a number opens one")
+    finally:
+        d.stop()
+
+
+# ---------------------------------------------------------------- the self-test on the boot screen
+
+def group_selftest():
+    print("selftest: the last self-test's result is kept and shown on the boot screen")
+    fresh_home()
+    d = desk().start()
+    try:
+        boot_done(d)
+        R.check("SELFTEST ..... never run" in screen_text(d), "a first boot says the self-test has never run")
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        r = d.ipc("resident_selftest", start=1, **as_res("wob"))
+        R.check(r.startswith("{"), f"wob starts its self-test: {r[:60]}")
+        st = wait(lambda: (lambda j: j if not j["running"] and j["passed"] + j["failed"] > 0 else None)(d.j("resident_selftest")), timeout=40)
+        R.check(bool(st), "it finishes")
+        total = st["passed"] + st["failed"] if st else 0
+        time.sleep(1.0)
+        line = [l for l in (read("SELFTEST.TXT") or "").splitlines() if l and not l.startswith(";")]
+        R.check(len(line) == 1 and line[0].split("\t")[1] == "wob" and f"{st['passed']} of {total} passed" in line[0],
+                f"SELFTEST.TXT records who ran it and the result: {line}")
+        R.check(d.quit(), "Exit")
+        d.start()
+        boot_done(d)
+        sc = screen_text(d)
+        R.check(f"SELFTEST ..... last run" in sc and f"by wob: {st['passed']} of {total} passed" in sc,
+                "the next boot shows the last result")
+    finally:
+        d.stop()
+
+
+GROUPS = {"selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():

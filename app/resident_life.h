@@ -96,6 +96,10 @@ const unsigned short cmLifeGuestbook = 9941;
 const unsigned short cmLifeSign = 9942;
 const unsigned short cmLifeWill = 9943;
 const unsigned short cmLifeOwn = 9944;
+const unsigned short cmLifeTools = 9945;
+
+// Inserts a window the residents' life made (tools, film) on the desktop and gives it an id.
+void insertLifeWindow(TWindow* w);
 bool handleCommand(unsigned short cmd);
 
 }  // namespace life

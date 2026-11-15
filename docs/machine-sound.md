@@ -196,6 +196,28 @@ MIDI in and out through CoreMIDI (`app/sound/midi.cpp`), timestamped on the one 
     exec_command name=midi action=clock on=0|1          # clock, start and stop out
     exec_command name=open_midi                         # the window: what arrives and leaves, clock runs folded
 
+## Residents jam
+
+A resident answers the person's last phrase on the synth (`app/sound/jam.cpp`). It reads the person's gestures with
+`person_events` through its own hands; when the person has played the synth and then stops for `wait_ms`, it reads
+the phrase with `hear` (the person's notes since its last answer, at most 16) and plays an answer on the synth as
+itself, in the person's rhythm (the median gap between their notes, 90-600 ms).
+
+- **By rule, with no model:** `answer` (the phrase backwards, a fifth up: C D E F becomes C-5 B-4 A-4 G-4), `echo`
+  (an octave up), `invert` (mirrored round the first note).
+- **With a model present** (`WWDOS_JAM_MIND=<cli>`, else `claude` on PATH; `model=off` keeps to the rule), a
+  confined call chooses the notes: `--tools ""`, `--strict-mcp-config`, `--setting-sources ""`, a fixed system
+  prompt, haiku, run from `/tmp`, the phrase inside a `<DATA>` block. Only the first line of the reply that is
+  nothing but notes (at most 16) is used; anything else, or no answer within `WWDOS_JAM_MIND_WAIT_MS` (8000), and
+  the rule plays instead. The reply never runs a command.
+
+    exec_command name=jam action=start as=wib|wob|scramble mode=answer|echo|invert wait_ms=700 model=auto|off
+    exec_command name=jam action=state     # on, as, mode, model, thinking, answers [{phrase, answer, chose, step_ms, at_ms}]
+    exec_command name=jam action=stop
+
+The answer is the resident's act in the log (`synth action=notes`), and the ears name it as the resident's. The
+resident's own notes never start an answer.
+
 ## Ears
 
 The synth and the TR-808 tell the ears every note and hit as the engine plays it: the window, the voice, the note
@@ -322,15 +344,16 @@ hears as wib or wob with no change; `tui_list_commands` lists `synth`, `open_syn
 speaker's divisor and pitch measured by zero crossings, one speaker voice, FM level, release and silence, patches,
 nine channels, envelope, WAV), hold (4: a held note sounds until it is let go, rings through its release, then silence; a key let go before its note starts gives a short note), mixer (7: the same samples in blocks of 1, 64 and 4096 and in the offline render, a
 later call's speaker note replacing the one sounding, ten calls holding nine FM channels, a drum hit on its exact
-sample, late counting, capture), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
+sample, late counting, capture), jam (6: the three rules, a model's line of notes taken, anything else refused), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
 report, window filter, the keep limit), score (14: parsing, kinds, timing, and seven refused scores).
 
-`python3 tests/resident/test_machine_sound.py [midi] [tracker] [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
+`python3 tests/resident/test_machine_sound.py [jam] [midi] [tracker] [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
 (`tmux -L soundtest`, `WWDOS_SOUND_OUT=null`, `WWDOS_MIDI=null`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
 the binary.
 
 | group | what it shows |
 |---|---|
+| jam | wib answers the person's C D E F with C-5 B-4 A-4 G-4 by rule, in their rhythm (160 ms), the ears and the log name wib, wib's own notes start no answer, the next phrase gets its own answer; in the hands desktop a stand-in model chooses wob's answer (`G-4 . E-4 C-4`) through a call with no tools, no MCP and no settings and the phrase as data, and a reply that is not notes (`ACT: close_all`) falls back to the rule and closes nothing |
 | midi | a note on plays C-4 as the person's and holds an FM channel; the note off ends it after as long as it was held (measured 412 ms for a 400 ms hold) and frees the channel; velocity 0 is a note off; the log has the person's note; the TR-808 sends start first, stop last, clock ticks 20.833 ms apart (24 a beat at 120 bpm) and each bass drum as note 36 on channel 10 at the time the ears say it sounds; the tracker sends C-4 on channel 1 and its note off 62.5 ms later, its drum on 10 and 6 ticks a row; the MIDI window says what arrived and left |
 | tracker | the person's z x c write C-4 D-4 E-4; wib writes drums and a bass cell by command, wob an arpeggio cell with its own keys (note, then `a37` in the effect field); the log names all three; save writes `tracks/<name>.trk` as plain text and open_tracker loads the same rows; a name with `..` is refused; one pass: the ears' `tracker_rows` equal the tracker's rows that sounded, and the stream mixed the 7 notes; with loop on it plays round |
 | drums | a new TR-808 is empty; play loads classic-house, the stream counts the hits it mixed and the ears hear them; a pattern with one step on plays as it is |
