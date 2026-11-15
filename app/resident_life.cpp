@@ -1024,10 +1024,10 @@ void logWake() {
     logAppend("wib", s);
 }
 
-void logClose(const std::vector<ActRec>& acts) {
+void logClose(const std::vector<ActRec>& acts, const std::string& how) {
     std::map<std::string, int> by;
     for (auto& a : acts) if (a.actor != "app" && a.what.rfind("woke: ", 0) != 0) by[a.actor]++;
-    std::string s = "Closing waking " + std::to_string(g_self.boots) + ".";
+    std::string s = "Closing waking " + std::to_string(g_self.boots) + (how == "exit" ? "" : " (" + how + ")") + ".";
     if (by.empty()) s += " Nobody acted.";
     else {
         s += " Acts:";
@@ -1275,8 +1275,41 @@ void wakeUp(const Who& by, const std::string& how) {
     redrawChrome();
 }
 
+// A guest or visitor that changes something on the desk through the socket is somebody there: it
+// keeps the residents awake, or wakes them. Reads are not acts and do not count; residents' acts
+// and the app's do not count.
+uint64_t g_actSeen = 0;
+long long g_actCheck = 0;
+void noticeVisitors() {
+    long long t = nowMs();
+    if (t < g_actCheck) return;
+    g_actCheck = t + 250;
+    JVal root;
+    std::string js = resident::cmdActs(KV{{"since", std::to_string(g_actSeen)}, {"limit", "200"}});
+    JParse p(js);
+    if (!p.value(root)) return;
+    if (const JVal* next = root.get("next")) {
+        uint64_t n = (uint64_t)next->num;
+        if (g_actSeen == 0) { g_actSeen = n - 1; return; }   // the first look starts the record
+        g_actSeen = n - 1;
+    }
+    const JVal* acts = root.get("acts");
+    if (!acts) return;
+    for (auto& a : acts->arr) {
+        std::string src = a.str("source"), what = a.str("what");
+        if (src != "visitor" && src != "guest") continue;
+        if (what.rfind("residents_", 0) == 0 || what.rfind("woke the residents", 0) == 0 ||
+            what.rfind("claimed to be", 0) == 0 || what.rfind("rule: ", 0) == 0)
+            continue;
+        g_lastPerson = t;
+        if (g_asleep) wakeUp(Who{a.str("actor"), src == "guest" ? Source::Guest : Source::Visitor}, "an act on the socket");
+        return;
+    }
+}
+
 void tickSleep() {
     if (g_sleepMs <= 0) return;
+    noticeVisitors();
     long long t = nowMs();
     if (!g_asleep) {
         if (t - g_lastPerson >= g_sleepMs) fallAsleep("nobody here");
@@ -1377,7 +1410,7 @@ void wake() {
 void close(const std::string& how) {
     if (!g_woken || g_closed) return;
     g_closed = true;
-    logClose(allActs());
+    logClose(allActs(), how);
     writeNotes();
     for (auto r : kResidents)
         if (g_noteOwn.count(r) && !g_noteOwn[r].empty()) logAppend(r, "Left a note for the next waking.");

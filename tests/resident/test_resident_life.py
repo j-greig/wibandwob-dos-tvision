@@ -16,6 +16,8 @@ Groups: boot (K), note (25), book (13), sleep (12).
 import json
 import os
 import shutil
+import signal
+import subprocess
 import sys
 import time
 
@@ -81,6 +83,14 @@ def screen_text(d):
     return "\n".join(d.screen())
 
 
+def app_pid(d):
+    """The desktop's process: the child of the tmux pane's shell (or the pane itself)."""
+    pane = subprocess.run(["tmux", "-L", d.name, "list-panes", "-F", "#{pane_pid}"],
+                          capture_output=True, text=True).stdout.split()
+    kids = subprocess.run(["pgrep", "-P", pane[0]], capture_output=True, text=True).stdout.split()
+    return int(kids[0]) if kids else int(pane[0])
+
+
 def as_res(actor):
     return {"actor": actor, "source": "resident"}
 
@@ -139,13 +149,25 @@ def group_boot():
         R.check(any(l.startswith("WIB") for l in lines) and any(l.startswith("SCRAMBLE") for l in lines),
                 "look_read gives the boot lines, one per resident by name")
 
-        d.stop()   # killed: no close
+        os.kill(app_pid(d), signal.SIGKILL)   # killed: no close
+        wait(lambda: not d.alive())
+        d.stop()
         d.start()
         s = d.j("get_self")
         R.check(s["waking"] == 3 and s["last_closed_cleanly"] is False, "a killed waking is known at the next one")
         boot_done(d)
         R.check("WARNING: the last waking" in screen_text(d), "and the boot warns that the last waking did not close")
         R.check(d.alive(), "the desktop is still running")
+        os.kill(app_pid(d), signal.SIGTERM)
+        R.check(wait(lambda: not d.alive()), "SIGTERM ends the app")
+        ini = read("SELF.INI") or ""
+        R.check("boots=3" in ini and "closed=clean" in ini, "and the self is written first: SELF.INI says waking 3 closed cleanly")
+        R.check("Closing waking 3 (SIGTERM)." in (read("LOG.TXT") or ""), "the logbook says how it closed")
+        d.start()
+        d.stop()   # tmux kill-server hangs up the terminal: SIGHUP
+        ini = read("SELF.INI") or ""
+        R.check("boots=4" in ini and "closed=clean" in ini and "(SIGHUP)" in (read("LOG.TXT") or ""),
+                "a closed terminal (SIGHUP) also writes the self before the app ends")
     finally:
         d.stop()
 
@@ -364,6 +386,16 @@ def group_sleep():
         R.check(r["state"] == "awake", "residents_wake wakes them")
         R.check(any(x["what"].startswith("woke the residents (asked)") and x["actor"] == "v1"
                     for x in d.j("acts")["acts"]), "and the waking is v1's act")
+        d.j("residents_sleep", actor="v1")
+        d.state()
+        d.j("get_logbook")
+        time.sleep(0.6)
+        R.check(d.j("get_life")["state"] == "asleep", "a visitor that only reads does not wake them")
+        d.j("create_window", type="text_editor", x=60, y=3, w=30, h=8, title="Show", actor="op", source="visitor")
+        R.check(wait(lambda: d.j("get_life")["state"] == "awake", timeout=3),
+                "a visitor that changes the desk through the socket (a show, an operator) wakes them")
+        R.check(any(x["what"].startswith("woke the residents (an act on the socket)") and x["actor"] == "op"
+                    for x in d.j("acts")["acts"]), "and the waking is that visitor's act")
         R.check(d.alive(), "the desktop is still running")
     finally:
         d.stop()

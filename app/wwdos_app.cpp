@@ -138,6 +138,7 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 #include <fstream>
 #include <vector>
 #include <cstring>
+#include <csignal>
 #include <map>
 #include <deque>
 #include <dirent.h>
@@ -145,6 +146,11 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 // Local API IPC bridge (Unix domain socket)
 #include "api_ipc.h"
 #include "command_registry.h"
+
+// SIGTERM or SIGHUP (a shutdown, a closed terminal): the residents write their self to disk
+// from idle(), then the app quits. tvision's own SIGTERM handler chains to this one.
+static volatile sig_atomic_t g_quitSignal = 0;
+static void onQuitSignal(int signo) { g_quitSignal = signo; }
 #include "window_type_registry.h"
 
 // Find first existing primer directory across module paths.
@@ -3063,6 +3069,14 @@ void TWwdosApp::idle()
     TApplication::idle();
     stepSweep();
     life::tick();
+    if (g_quitSignal) {
+        life::close(g_quitSignal == SIGTERM ? "SIGTERM" : "SIGHUP");
+        g_quitSignal = 0;
+        TEvent quit = {};
+        quit.what = evCommand;
+        quit.message.command = cmQuit;
+        putEvent(quit);
+    }
 
     // Poll IPC server for incoming API commands
     if (ipcServer) ipcServer->poll();
@@ -3083,6 +3097,8 @@ void TWwdosApp::idle()
 
 int main()
 {
+    std::signal(SIGTERM, onQuitSignal);
+    std::signal(SIGHUP, onQuitSignal);
     // Detect auth mode once before any LLM consumer initialises.
     AuthConfig::instance().detect();
     // WWDOS_THEME=ega starts in the Borland EGA colours (default: monochrome).
