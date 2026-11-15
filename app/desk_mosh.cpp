@@ -498,7 +498,7 @@ void wayBleed(const Grid& t, std::vector<Spec>& out) {
                 int f = fgIdx(c), b = bgIdx(c);
                 if (rot) { f = (f + rot) % 16; b = (b + rot) % 16; setColours(c, f, b); }
                 if (h3(X >> 2, Y >> 1, B.blockSeed + B.stutSeed) < decay) {
-                    setGlyph(c, SHADE[std::min(4, lumOf(b) * 5 / 256)]);
+                    setGlyph(c, SHADE[std::max(1, std::min(4, lumOf(b) * 5 / 256))]);
                     setColours(c, b, b + 1);
                 }
                 // a colour change that never arrives: the last colour runs on
@@ -620,7 +620,7 @@ Grid screenCompose(const Grid& S) {
             if (rot) setColours(c, fgIdx(c) + rot, bgIdx(c) + rot);
             if (decay && h3(x >> 2, y >> 1, B.blockSeed + B.stutSeed) < decay) {
                 int b = bgIdx(c);
-                setGlyph(c, SHADE[std::min(4, lumOf(b) * 5 / 256)]);
+                setGlyph(c, SHADE[std::max(1, std::min(4, lumOf(b) * 5 / 256))]);
                 setColours(c, b, b + 1);
             }
             if (have && drop && h3(x, y, (int)(g_step >> 1)) < drop) c.attribute = last;
