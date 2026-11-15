@@ -1240,15 +1240,60 @@ void bookBootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
     }
 }
 
+// Editors the life opened whose close does something (save LOG.TXT, sign the guestbook); at the
+// app's close, those still open are done then.
+std::map<TWindow*, std::function<void(const std::vector<std::string>&)>> g_pending;
+
+TWindow* openTracked(const std::string& title, const std::vector<std::string>& lines,
+                     std::function<void(const std::vector<std::string>&)> done) {
+    if (!g_hooks.openEditor) return nullptr;
+    auto holder = std::make_shared<TWindow*>(nullptr);
+    TWindow* w = g_hooks.openEditor(title, lines, [done, holder](const std::vector<std::string>& l) {
+        g_pending.erase(*holder);
+        done(l);
+    });
+    *holder = w;
+    if (w) g_pending[w] = done;
+    return w;
+}
+
+void finishPending() {
+    auto pending = g_pending;
+    g_pending.clear();
+    auto alive = deskWindows();
+    for (auto& p : pending) {
+        if (std::find(alive.begin(), alive.end(), p.first) == alive.end()) continue;
+        std::vector<std::string> lines;
+        if (g_hooks.takeEditor && g_hooks.takeEditor(p.first, lines)) p.second(lines);
+    }
+}
+
+// LOG.TXT opened in the editor saves back when the editor closes. Entries the residents wrote
+// while it was open are kept after the edited text.
+void saveLogFrom(const std::vector<std::string>& opened, const std::vector<std::string>& edited) {
+    if (edited == opened) return;
+    auto now = readLines(path("LOG.TXT"));
+    std::vector<std::string> out = edited;
+    if (now.size() >= opened.size() && std::equal(opened.begin(), opened.end(), now.begin()))
+        out.insert(out.end(), now.begin() + opened.size(), now.end());
+    std::string text;
+    for (auto& l : out) text += l + "\n";
+    writeFile(path("LOG.TXT"), text);
+    g_logDay.clear();
+    for (auto it = out.rbegin(); it != out.rend(); ++it)
+        if (isDayHeader(*it)) { g_logDay = *it; break; }
+    resident::addAct(resident::currentWho(), "edited LOG.TXT in the editor (" + std::to_string(out.size()) + " lines saved)", "", "");
+}
+
 void openBook(const std::string& title, const std::string& file) {
-    if (!g_hooks.openEditor) return;
-    g_hooks.openEditor(title, readLines(path(file)), nullptr);
+    auto lines = readLines(path(file));
+    if (file == "LOG.TXT") openTracked(title, lines, [lines](const std::vector<std::string>& l) { saveLogFrom(lines, l); });
+    else if (g_hooks.openEditor) g_hooks.openEditor(title, lines, nullptr);
 }
 
 void openSignPage(const Who& w) {
-    if (!g_hooks.openEditor) return;
     std::vector<std::string> blank;
-    g_hooks.openEditor("SIGN THE GUESTBOOK", blank, [w](const std::vector<std::string>& lines) {
+    openTracked("SIGN THE GUESTBOOK", blank, [w](const std::vector<std::string>& lines) {
         std::string text;
         for (auto& l : lines) text += l + "\n";
         resident::WhoScope ws(w);
@@ -1869,6 +1914,7 @@ void wake() {
 void close(const std::string& how) {
     if (!g_woken || g_closed) return;
     g_closed = true;
+    finishPending();   // a sign page or LOG.TXT still open is signed or saved now
     logClose(allActs(), how);
     writeNotes();
     for (auto r : kResidents)
@@ -1908,8 +1954,10 @@ bool consoleInput(TEvent& ev) {
             g_bootDoneMs = nowMs();
             v->drawView();
         } else {
+            resident::WhoScope ws(resident::personWho());
             closeBoot();
             resident::settle();
+            resident::addAct(resident::personWho(), "closed the boot screen (a key)", "", "");
         }
         ev.what = evNothing;
         return true;
