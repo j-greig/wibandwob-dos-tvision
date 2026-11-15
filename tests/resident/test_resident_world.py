@@ -8,7 +8,8 @@ Binary: WWDOS_BIN or build-resident/app/wwdos.
 Usage:
     python3 tests/resident/test_resident_world.py              # all groups
     python3 tests/resident/test_resident_world.py describe     # chosen groups
-Groups: describe (the describe contract, the audit, every window type).
+Groups: describe (the describe contract, the audit, every window type), wheel (the mouse wheel while a
+resident's hand or reading mark is on screen).
 """
 
 import json
@@ -163,12 +164,54 @@ def test_describe(desk):
     time.sleep(0.3)
 
 
+def wheel(desk, x, y, up=True):
+    """The person turns the mouse wheel at screen cell x, y (xterm SGR buttons 64 and 65)."""
+    subprocess.run(["tmux", "-L", desk.name, "send-keys", "-t", desk.name, "-l",
+                    f"\x1b[<{64 if up else 65};{x + 1};{y + 1}M"], stderr=subprocess.DEVNULL)
+
+
+def test_wheel(desk):
+    print("wheel")
+    # A resident's hand and reading mark are one-cell views in front of the desktop. A wheel event
+    # reaches every view in the application group; the cell used to pass it back to the application,
+    # which handed it to every view again, the cell included, until the stack ran out (SIGSEGV).
+    ed = desk.editor(4, 2, 40, 10, title="wheel")
+    other = desk.editor(50, 2, 40, 10, title="hand")
+    desk.ipc("look_read", id=ed, reader="wob")                      # a reading mark on ed
+    r = desk.j("resident_key", id=other, text="x", actor="wib")     # wib's hand on other
+    desk.wait_seqs(r["first"], r["last"])
+    hands = [h for h in desk.j("resident_hand")["hands"] if h["visible"]]
+    marks = desk.j("look_mark")["marks"]
+    R.check(hands and marks, f"a hand ({len(hands)}) and a reading mark ({len(marks)}) are on screen")
+    hx, hy = hands[0]["x"], hands[0]["y"]
+    for k in range(6):
+        wheel(desk, 20, 6, up=k % 2 == 0)          # over a window
+        wheel(desk, hx, hy)                        # over the hand itself
+        time.sleep(0.02)
+    time.sleep(0.5)
+    R.check(desk.alive() and desk.ipc("get_canvas_size").startswith("{"),
+            "the desktop survives the person turning the wheel while a hand and a mark are up")
+    # A click on the hand still reaches the window underneath (after share_ms: the wheel was the person's act).
+    time.sleep(1.7)
+    r = desk.j("resident_key", id=other, text="y", actor="wib")
+    desk.wait_seqs(r["first"], r["last"])
+    h = [h for h in desk.j("resident_hand")["hands"] if h["visible"]]
+    if h and desk.alive():
+        desk.person_mouse("down", h[0]["x"], h[0]["y"])
+        desk.person_mouse("up", h[0]["x"], h[0]["y"])
+        time.sleep(0.3)
+    R.check(desk.alive() and desk.focused() == other,
+            "a click on the hand goes to the window underneath it")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+
+
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["describe"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["describe", "wheel"]
     desk = Desk(os.environ.get("WORLD_TEST_NAME", "worldtest"), env=NO_LLM).start()
     try:
         for g in groups:
-            {"describe": test_describe}[g](desk)
+            {"describe": test_describe, "wheel": test_wheel}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
