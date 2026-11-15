@@ -47,6 +47,9 @@ public:
     // Pitch bend in semitones for every synth voice sounding (FM and speaker), from MIDI.
     void setBend(double semitones) { bend_.store(semitones); }
     double bend() const { return bend_.load(); }
+    // The operator's mute (resident_life.cpp's panel): renders silence and keeps the clock running.
+    void setMuted(bool m) { muted_.store(m); }
+    bool muted() const { return muted_.load(); }
     // The last n samples rendered (fewer when the ring holds fewer), and the clock at their end.
     std::vector<int16_t> capture(size_t n, int64_t& endSample) const;
 
@@ -67,6 +70,7 @@ private:
     uint64_t insert(Pending p);
     void activate(const Pending& p, int64_t s);
 
+    std::atomic<bool> muted_{false};
     mutable std::mutex mu_;
     std::deque<Pending> pending_;
     uint64_t seq_ = 1;   // ids start at 1: 0 means "no note"

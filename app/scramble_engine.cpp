@@ -334,7 +334,7 @@ std::string ScrambleHaikuClient::askViaOpenRouter(const std::string& question) c
 
 std::string ScrambleHaikuClient::ask(const std::string& question) const
 {
-    if (!isAvailable()) return "";
+    if (!isAvailable() || AuthConfig::instance().safe()) return "";   // safe mode: no model calls
 
     if (useCliMode) {
         return askViaCli(question);
@@ -703,8 +703,8 @@ bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
         return false;  // Not async
     }
 
-    // No LLM available — synchronous fallback.
-    if (!haikuClient.isAvailable()) {
+    // No LLM available (or the operator's safe mode) — synchronous fallback.
+    if (!haikuClient.isAvailable() || AuthConfig::instance().safe()) {
         syncResult = "(no LLM configured — set API key via Help menu)";
         return false;
     }

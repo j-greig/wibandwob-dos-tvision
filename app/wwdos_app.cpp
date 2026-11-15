@@ -43,6 +43,7 @@
 #include "resident_input.h"
 #include "resident_senses.h"
 #include "resident_life.h"
+#include "sound/stream.h"
 #include "describe.h"
 #include "resident_hands.h"
 #include "resident_teach.h"
@@ -1261,6 +1262,9 @@ TWwdosApp::TWwdosApp() :
         }
         return win;
     };
+    lifeHooks.mute = [](bool on) { sound::mixer().setMuted(on); };
+    lifeHooks.setSafe = [](bool on) { AuthConfig::instance().setSafe(on); };
+    lifeHooks.registry = [this](const std::string& name, const life::KV& kv) { return exec_registry_command(*this, name, kv); };
     lifeHooks.takeEditor = [](TWindow* w, std::vector<std::string>& lines) {
         auto* lw = dynamic_cast<TLifeEditorWindow*>(w);
         if (!lw || !lw->getEditorView()) return false;
@@ -2986,6 +2990,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("Their ~p~rograms (TOOLS)", life::cmLifeTools, kbNoKey) +
                     *new TMenuItem("~F~ilm of the last waking", life::cmLifeFilm, kbNoKey) +
                     *new TMenuItem("Who is ~i~n (the door)", life::cmLifeDoor, kbNoKey) +
+                    *new TMenuItem("Operator's pa~n~el", life::cmLifePanel, kbNoKey) +
                     newLine() +
                     *new TMenuItem("~A~bout the residents", resident::cmResidentAbout, kbNoKey)
             ) +
@@ -3022,7 +3027,8 @@ TStatusLine* TWwdosApp::initStatusLine(TRect r)
             *new TStatusItem("~Alt-F3~ Close", kbAltF3, cmClose) +
             *new TStatusItem("~F8~ Scramble", kbF8, cmScrambleCat) +
             *new TStatusItem(0, kbAltM, deskmosh::cmMoshToggle) +
-            *new TStatusItem(0, kbAltP, termtransport::cmTermToggle)
+            *new TStatusItem(0, kbAltP, termtransport::cmTermToggle) +
+            *new TStatusItem(0, kbAltQ, life::cmLifeStopAll)
     );
 }
 
