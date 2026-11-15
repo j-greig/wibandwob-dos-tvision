@@ -38,6 +38,8 @@ public:
     // Plays notes now (each note's atMs counts from now) as `who`.
     void playNotes(const std::vector<sound::Note>& notes, const std::string& who);
 
+    // A MIDI key: on starts a held note at the key's velocity, off lets it go (a real release).
+    void midiNote(int midi, int vel, bool on, const std::string& who);
     sound::Voice voice() const { return voice_; }
     const sound::Patch& patch() const;
 
@@ -59,6 +61,8 @@ private:
     int octave_ = 4;
     int gateMs_ = 250;
     std::deque<Played> recent_;
+    struct Held { uint64_t id; double startMs; };
+    std::map<int, Held> held_;   // MIDI keys down
     long played_ = 0, sent_ = 0, silenced_ = 0;
     TTimerId timer_ = nullptr;
 };

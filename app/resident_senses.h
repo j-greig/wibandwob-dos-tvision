@@ -111,6 +111,14 @@ std::string cmdOwner(const KV& kv);   // window_owner
 void noteTextBefore(const std::string& actor, TView* window);   // before a resident's keys reach an editor
 std::string cmdUndo(const KV& kv);   // resident_undo (list=1 shows the stack)
 
+// The Laws of Jam as modes: FLOW (acts freely), FOLLOW (acts only after someone else has acted since its
+// own last act), OPPOSE (acts freely; shown), WITNESS (may look and talk, not act). Each shows as a face.
+std::string cmdMode(const KV& kv);   // resident_mode who= mode=
+// "" when the caller may run name now, else the refusal (logged). Called by the socket's dispatcher.
+std::string modeGate(const std::string& name, const KV& kv);
+std::string modeOf(const std::string& actor);
+std::string modesLine();             // "wib つ◎‿◎༽つ WITNESS  wob ..." for the Feed's title
+
 // ---------------------------------------------------------------- who is speaking
 
 // Menu commands of the Residents menu (handled by handleCommand).
