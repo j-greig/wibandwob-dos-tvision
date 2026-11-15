@@ -366,13 +366,14 @@ std::string TSynthView::apiAction(const std::string& action, const std::map<std:
         const int step = std::max(10, std::min(4000, toInt(kvGet(kv, "step"), 125)));
         const int dur = std::max(10, std::min(8000, toInt(kvGet(kv, "dur"), action == "note" ? gateMs_ : (int)(step * 0.9))));
         const int vel = std::max(1, std::min(127, toInt(kvGet(kv, "vel"), 100)));
+        const double delay = std::max(0, std::min(10000, toInt(kvGet(kv, "delay_ms"), 0)));   // before the first note
         if (t.size() > 256) { err = "err at most 256 notes"; return; }
         for (size_t i = 0; i < t.size(); ++i) {
             if (t[i] == "." || t[i] == "-" || t[i] == "r" || t[i] == "...") continue;
             const int m = parseNote(t[i]);
             if (m < 0) { err = "err not a note: " + t[i]; return; }
             Note n;
-            n.atMs = (double)i * step;
+            n.atMs = delay + (double)i * step;
             n.voice = v;
             n.midi = m;
             n.vel = vel;

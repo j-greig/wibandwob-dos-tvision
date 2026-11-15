@@ -16,7 +16,7 @@ std::vector<std::string> jamRule(const std::vector<std::string>& phrase, const s
     if (m.empty()) return out;
     if (mode == "echo") {
         for (int v : m) out.push_back(noteName(std::min(127, v + 12)));
-    } else if (mode == "invert") {
+    } else if (mode == "invert" || mode == "oppose") {   // oppose: contrary motion (and, in the jam, off the beat)
         for (int v : m) out.push_back(noteName(std::max(0, std::min(127, 2 * m[0] - v))));
     } else {   // answer: backwards, a fifth up
         for (auto it = m.rbegin(); it != m.rend(); ++it) out.push_back(noteName(std::min(127, *it + 7)));
