@@ -283,8 +283,8 @@ const ushort cmCtxToggleFrame = 252;
 const ushort cmCtxGalleryToggle = 253;
 
 // Desktop right-click preset commands
-const ushort cmDeskPresetBase = 260;  // 260..268 for up to 9 presets
-const ushort cmDeskGallery = 270;
+const ushort cmDeskPresetBase = 260;  // 260..270 for up to 11 presets (ega_solid is 270)
+const ushort cmDeskGallery = 271;
 static const int kMaxRecentWorkspaces = 5;
 
 struct RecentWorkspaceInfo {
