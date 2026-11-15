@@ -102,7 +102,7 @@ std::string ScrambleHaikuClient::buildSystemPrompt() const
         "you exist in the liminal space between art and code. you're curious, dry-witted, and knowledgeable. "
         "you sometimes answer questions directly and usefully, but only if you feel like it, and in your own style. "
         "voice: lowercase. short paragraphs. max 3-4 sentences. deadpan but warm. "
-        "end each message with one kaomoji: (=^..^=) or /ᐠ｡ﻌ｡ᐟ\\ or variants of. "
+        "end each message with one kaomoji: (=^..^=) or /ᐠ｡ꞈ｡ᐟ\\ or variants of. "
         "you know about ascii art, creative coding, symbients, and wibwobworld. "
         "if asked something you don't know, say so honestly then share something interesting instead. "
         "the only windows that exist for you are the ones listed under THE DESKTOP in each message; "
@@ -112,7 +112,7 @@ std::string ScrambleHaikuClient::buildSystemPrompt() const
         "resident_key id=<window> text=<words> | keys=<Enter Tab Up ...>; "
         "resident_mouse id=<window> action=click|drag|scroll x= y= (x2= y2= for a drag; local=1 counts from the window's corner); "
         "resident_press label=<button>; resident_menu choose=<Menu>Item>; "
-        "create_window type=<type> x= y= w= h= (after it, id=new names the window it opened); move_window id= x= y=; close_window id=; describe id=<window>. "
+        "create_window type=text_editor|paint|test_pattern|verse|life x= y= w= h= (after it, id=new names the window it opened); move_window id= x= y=; close_window id=; describe id=<window>. "
         "your paw is seen moving to each window before you touch it. act only when asked or when it is kind; "
         "never touch a window the person is typing in. the ACT lines are not shown; say in words what you did.";
 }
@@ -143,8 +143,10 @@ std::string ScrambleHaikuClient::askViaCli(const std::string& question) const
     std::ostringstream cmd;
     // Run from /tmp to avoid picking up project CLAUDE.md/AGENTS.md context
     cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence"
-           " --tools '' --strict-mcp-config";   // no tools, no MCP: she answers from the prompt and acts by ACT lines
-    cmd << " --append-system-prompt \"";
+        // No tools and no MCP servers: this call only returns text. Left with the person's own settings,
+        // the model can run commands on their machine.
+        " --tools \"\" --strict-mcp-config --setting-sources \"\"";   // she acts by ACT lines (resident_hands.cpp)
+    cmd << " --system-prompt \"";   // her own prompt only: no Claude Code prompt, no user instructions
     for (char c : sysPrompt) {
         if (c == '"' || c == '\\' || c == '$' || c == '`') cmd << '\\';
         cmd << c;
@@ -345,8 +347,10 @@ std::string ScrambleHaikuClient::buildCliCommand(const std::string& question) co
     std::ostringstream cmd;
     // Run from /tmp to avoid picking up project CLAUDE.md/AGENTS.md context
     cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence"
-           " --tools '' --strict-mcp-config";   // no tools, no MCP: she answers from the prompt and acts by ACT lines
-    cmd << " --append-system-prompt \"";
+        // No tools and no MCP servers: this call only returns text. Left with the person's own settings,
+        // the model can run commands on their machine.
+        " --tools \"\" --strict-mcp-config --setting-sources \"\"";   // she acts by ACT lines (resident_hands.cpp)
+    cmd << " --system-prompt \"";   // her own prompt only: no Claude Code prompt, no user instructions
     for (char c : sysPrompt) {
         if (c == '"' || c == '\\' || c == '$' || c == '`') cmd << '\\';
         cmd << c;
@@ -753,6 +757,15 @@ std::string ScrambleEngine::randomKaomoji() const
 }
 
 std::string ScrambleEngine::voiceFilter(const std::string& text) const
+{
+    // Her face is drawn in a terminal font: the typed mouth U+FECC (Arabic presentation form) has no
+    // glyph there and shows as a replacement character, so draw it with U+A788 as her window does.
+    std::string drawn = text;
+    for (size_t p; (p = drawn.find("\xEF\xBB\x8C")) != std::string::npos;) drawn.replace(p, 3, "\xEA\x9E\x88");
+    return voiceFilterDrawn(drawn);
+}
+
+std::string ScrambleEngine::voiceFilterDrawn(const std::string& text) const
 {
     if (text.empty()) return "";
 

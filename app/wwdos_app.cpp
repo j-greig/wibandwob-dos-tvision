@@ -136,6 +136,7 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 #include <cmath>
 #include <sys/stat.h>
 #include <cstdio>
+#include <csignal>
 #include <cctype>
 #include <fstream>
 #include <vector>
@@ -3052,6 +3053,9 @@ void TWwdosApp::idle()
 
 int main()
 {
+    // A write to a pipe or socket whose reader has gone (the chat's Node bridge after it exits, a
+    // client that hung up) must fail with EPIPE, not end the app without a word: SIGPIPE's default.
+    signal(SIGPIPE, SIG_IGN);
     // Detect auth mode once before any LLM consumer initialises.
     AuthConfig::instance().detect();
     // WWDOS_THEME=ega starts in the Borland EGA colours (default: monochrome).

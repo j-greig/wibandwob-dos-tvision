@@ -18,8 +18,9 @@ class ClaudeSDKBridge {
         this.sessionId = null;           // Our internal session ID
         this.sdkSessionId = null;        // SDK session ID for resume
         this.systemPrompt = null;        // Agent SDK uses 'systemPrompt' not 'customSystemPrompt'
-        // this.allowedTools = ['Read', 'Write', 'Grep', 'Bash', 'LS', 'WebSearch', 'WebFetch'];
-        this.allowedTools = [];   // only the desktop's MCP tools (confine.js)
+        // The chat's agent acts only through the desktop's own tools (mcp_tools.js). No file, shell or web tools:
+        // those reach the person's machine.
+        this.allowedTools = [];
         this.maxTurns = 50;
         this.sdkSource = 'unknown';
         this.queryFn = null;
@@ -146,7 +147,7 @@ class ClaudeSDKBridge {
             this.sessionConfig = {
                 systemPrompt: this.systemPrompt,
                 maxTurns: data.maxTurns || this.maxTurns,
-                allowedTools: data.allowedTools || this.allowedTools,
+                allowedTools: this.allowedTools,                // the app's list is ignored: desktop tools only
                 model: data.model || 'claude-sonnet-4-6'  // Default to sonnet 4.6 if not specified
             };
 
@@ -278,7 +279,9 @@ class ClaudeSDKBridge {
                 }).filter(n => n !== 'mcp__tui-control__');
                 console.error(`[BRIDGE] Auto-derived ${mcpTools.length} MCP tool names from server`);
             }
-            const toolList = [...new Set([...baseTools, ...mcpTools])];
+            // The desktop's own tools are always allowed (confine.js also allows them by server name).
+            const deskTools = ['mcp__tui-control__tui_list_commands', 'mcp__tui-control__tui_menu_command'];
+            const toolList = [...new Set([...baseTools, ...mcpTools, ...deskTools])];
             // WWDOS_CHAT_MODEL overrides the configured model (the residents' self-test uses haiku).
             const modelId = this.normalizeModelId(process.env.WWDOS_CHAT_MODEL || this.sessionConfig.model);
 
@@ -502,9 +505,7 @@ class ClaudeSDKBridge {
     }
     
     configure(data) {
-        if (data.allowedTools) {
-            this.allowedTools = data.allowedTools;
-        }
+        // data.allowedTools is ignored: the chat's agent keeps to the desktop's own tools.
         if (data.maxTurns) {
             this.maxTurns = data.maxTurns;
         }

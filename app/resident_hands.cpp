@@ -302,7 +302,13 @@ std::string takeActs(const std::string& reply, const std::string& actor, std::ve
             KV kv;
             if (!parseCommandLine(line.substr(a + 4), name, kv)) { results.push_back("unreadable: " + line); continue; }
             if (!pawCommandAllowed(name)) { results.push_back(name + ": not one of the paws' commands"); continue; }
-            for (auto& p : kv) if (p.second == "new" && (p.first == "id" || p.first == "window_id")) p.second = opened;
+            bool unknownNew = false;
+            for (auto& p : kv)
+                if (p.second == "new" && (p.first == "id" || p.first == "window_id")) {
+                    if (opened.empty()) unknownNew = true;
+                    p.second = opened;
+                }
+            if (unknownNew) { results.push_back(name + ": id=new, but no window was opened before it"); continue; }
             std::string resp = actAs(actor, name, kv);
             std::string id = jsonStr(resp, "id");
             if (name == "create_window" && !id.empty()) opened = id;
