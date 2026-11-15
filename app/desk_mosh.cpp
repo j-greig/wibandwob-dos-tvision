@@ -239,6 +239,8 @@ public:
         ++g_closed;
     }
     bool framed() const { return framed_; }
+    // Shards may be one cell; TWindow's own limits (16x6) would stretch them on every move.
+    void sizeLimits(TPoint& min, TPoint& max) override { min.x = min.y = 1; max.x = max.y = 32000; }
     void setCells(Cells&& c) { view_->cells = std::move(c); view_->drawView(); }
     void handleEvent(TEvent& ev) override;
 private:
@@ -365,7 +367,7 @@ double env(int since, double k) { return std::exp(-since * k); }
 int segWidth(int bands, int width) {
     int budget = std::max(1, (int)(g_set.count * (0.35 + 0.65 * amt())));
     int perBand = std::max(1, budget / std::max(1, bands));
-    return std::max(4, (width + perBand - 1) / perBand);
+    return std::max(2, (width + perBand - 1) / perBand);
 }
 
 // wrap: rows read at the wrong width, so the desktop slips and tiles; each kick a new width.
@@ -415,43 +417,55 @@ void wayTear(const Grid& t, std::vector<Spec>& out) {
     }
 }
 
-struct BlockState { int px = 0, py = 0; Cells glyphs; bool init = false; };
+struct BlockState { int dx = 0, dy = 0; };
 std::map<int, BlockState> g_blocks;
+Grid g_shown;   // what the mosh way showed last step (region cells)
 
-// mosh: blocks that are not redrawn keep their old glyphs, wear the new colours under
-// them, and drift along their own direction; kicks refresh some blocks home.
+// mosh: the film's datamosh. Most blocks are not redrawn: they carry last step's shown
+// cells along their own direction, so shapes smear into trails. Refreshed blocks take
+// the true desktop, half of them keeping the old glyphs in the new colours. A few blocks
+// also drift as windows; in a smear (metal) blocks read at half pitch.
 void wayMosh(const Grid& t, std::vector<Spec>& out) {
     int W = t.w, H = t.h;
+    if (g_shown.w != W || g_shown.h != H) g_shown = t;
     int budget = std::max(8, (int)(g_set.count * (0.35 + 0.65 * amt())));
     int area = W * H;
     int bh = std::max(2, (int)std::lround(std::sqrt(area / (double)budget / 2.0)));
     int bw = bh * 2;
     double kick = env(B.sinceKick, 0.9), met = env(B.sinceMetal, 0.5);
-    double refresh = 0.04 + 0.5 * kick;
+    double refresh = (0.04 + 0.5 * kick) * (1.2 - amt() * 0.6);
+    Grid next = g_shown;
     int slot = 0;
     for (int by = 0; by * bh < H; ++by)
         for (int bx = 0; bx * bw < W; ++bx, ++slot) {
             int hx = bx * bw, hy = by * bh, w = std::min(bw, W - hx), h = std::min(bh, H - hy);
+            bool again = h3(bx, by, (int)(g_step >> 1)) < refresh;
+            int vx = (int)(h3(bx, by, B.vecSeed) * 5) - 2, vy = (int)(h3(by, bx, B.vecSeed + 3) * 3) - 1;
+            bool eh = met > 0.1 && h3(bx, by, B.blockSeed + 9) < met * 0.5;
+            bool ev = met > 0.1 && !eh && h3(by, bx, B.blockSeed + 8) < met * 0.4;
+            bool oldGlyphs = h3(bx, by, B.nk + 77) < 0.5;
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x) {
+                    int X = hx + x, Y = hy + y;
+                    TScreenCell c;
+                    if (again) {
+                        c = t.at(X, Y);
+                        if (oldGlyphs) c.character = g_shown.at(X, Y).character;
+                    } else {
+                        int sx = eh ? hx + (x >> 1) + 2 : X, sy = ev ? hy + (y >> 1) + 1 : Y;
+                        c = g_shown.at(sx - vx, sy - vy);
+                    }
+                    next.c[(size_t)Y * W + X] = c;
+                }
             BlockState& s = g_blocks[slot];
-            bool again = !s.init || h3(bx, by, (int)(g_step >> 1)) < refresh;
-            if (again) {
-                s.px = hx; s.py = hy; s.init = true;
-                s.glyphs.resize((size_t)w * h);
-                for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) s.glyphs[(size_t)y * w + x] = t.at(hx + x, hy + y);
-            } else {
-                int vx = (int)(h3(bx, by, B.vecSeed) * 5) - 2, vy = (int)(h3(by, bx, B.vecSeed + 3) * 3) - 1;
-                s.px = imod(s.px + vx, W); s.py = imod(s.py + vy, H);
-            }
-            // in a smear some blocks read their glyphs at half pitch: shapes twice as wide or tall
-            bool eh = met > 0.2 && h3(bx, by, B.blockSeed + 9) < met * 0.5;
-            bool ev = met > 0.2 && !eh && h3(by, bx, B.blockSeed + 8) < met * 0.4;
-            out.push_back(cut(slot, TRect(s.px, s.py, s.px + w, s.py + h), [&](int x, int y) {
-                int gx = eh ? std::min(w - 1, (x >> 1) + w / 4) : x, gy = ev ? std::min(h - 1, (y >> 1) + h / 4) : y;
-                TScreenCell c = s.glyphs[(size_t)gy * w + gx];
-                c.attribute = t.at(s.px + x, s.py + y).attribute;   // old glyph, new colours
-                return c;
+            if (again) s.dx = s.dy = 0;
+            else if (h3(bx, by, 4242) < 0.12 * amt()) { s.dx += vx; s.dy += vy; }   // this block drifts as a window
+            int px = hx + s.dx, py = hy + s.dy;
+            out.push_back(cut(slot, TRect(px, py, px + w, py + h), [&](int x, int y) {
+                return next.at(hx + x, hy + y);
             }));
         }
+    g_shown = std::move(next);
 }
 
 // bleed: colour changes dropped so colours run on, palette rotates in bands on snares,
@@ -552,7 +566,7 @@ void advance(const Hit& hit) {
     int p = B.active;
     if (hit.kick) {
         B.sinceKick = 0; B.nk++; B.tearSeed = B.nk;
-        if (p == Wrap) B.stride = WRAPS[B.nk % NWRAPS];
+        if (p == Wrap) B.stride = WRAPS[(B.nk + g_set.seed) % NWRAPS];
         if (p == Raw) {
             const int zs[] = {1, 2, 1, 3, 2};
             B.zoom = zs[B.nk % 5];
@@ -593,6 +607,7 @@ void clearShards(bool held) {
     g_pool.clear();
     if (held) g_held.clear();
     g_blocks.clear();
+    g_shown = Grid{};
     if (d) d->unlock();
 }
 
@@ -611,7 +626,11 @@ void apply(std::vector<Spec>& specs) {
         if (r.contains(g_caret)) r.move(0, 10000);
         auto it = g_pool.find(s.slot);
         TMoshShard* w = it == g_pool.end() ? nullptr : it->second;
-        if (w && w->framed() != s.framed) { if (g_busy) continue; TObject::destroy(w); w = nullptr; }
+        if (w && w->framed() != s.framed) {
+            if (g_busy) continue;
+            TObject::destroy(w);
+            w = nullptr;
+        }
         if (!w) {
             if (g_busy) continue;
             w = new TMoshShard(r, s.framed, s.title, s.slot);
@@ -682,7 +701,7 @@ void runStep(const Hit& hit) {
             for (TWindow* rw : realWindows()) {
                 if (!(rw->flags & wfGrow) || dynamic_cast<TDialog*>(rw)) { ++i; continue; }
                 TRect base = g_real.count(rw) && g_real[rw].moved ? g_real[rw].orig : rw->getBounds();
-                int dw = WRAPS[(B.nk + i * 3) % NWRAPS];
+                int dw = WRAPS[(B.nk + i * 3 + g_set.seed) % NWRAPS];
                 dw = std::max(-(base.b.x - base.a.x) / 2, std::min(dw, 24));
                 TRect r = base;
                 r.b.x = std::max(r.a.x + 12, r.b.x + dw);
