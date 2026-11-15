@@ -146,7 +146,7 @@ def test_ears(desk):
 
     n0 = last_act(desk)
     h = x(desk, "hear", seconds=2, actor="wib", source="resident")
-    R.check(h["standing"] == "data" and h["counts"] == {"synth": 0, "tr808": 0} and "silence" in h["summary"],
+    R.check(h["standing"] == "data" and h["counts"] == {"synth": 0, "tr808": 0, "voice": 0} and "silence" in h["summary"],
             f"before anything plays the ears hear silence ({h['summary']!r})")
 
     # wib plays a phrase; the ears hear it at once, the first note sounding.

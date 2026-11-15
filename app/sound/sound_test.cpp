@@ -250,10 +250,10 @@ static void testEars() {
           sum.find("tr808 2 hits (bd 1, ch 1) at 120 bpm, started by person") != std::string::npos,
           "summary: " + sum);
     const std::string rep = e.report(1500, 1, "", 125);
-    check(rep.find("\"standing\":\"data\"") != std::string::npos && rep.find("\"counts\":{\"synth\":3,\"tr808\":2}") != std::string::npos,
+    check(rep.find("\"standing\":\"data\"") != std::string::npos && rep.find("\"counts\":{\"synth\":3,\"tr808\":2,\"voice\":0}") != std::string::npos,
           "report is marked data and counts 3 notes and 2 hits");
     const std::string rw = e.report(1500, 1, "", 125, "w2");
-    check(rw.find("\"counts\":{\"synth\":0,\"tr808\":2}") != std::string::npos, "report for window w2 holds only its hits");
+    check(rw.find("\"counts\":{\"synth\":0,\"tr808\":2,\"voice\":0}") != std::string::npos, "report for window w2 holds only its hits");
     Ears small(3);
     for (int i = 0; i < 5; ++i) small.hear(drumHeard("bd", i, i * 125.0, "app"));
     check(small.size() == 3 && small.since(1000, 1000).front().step == 2, "the ears keep the newest N and drop the oldest");
