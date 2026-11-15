@@ -784,6 +784,11 @@ void TWibWobWindow::processUserInput(const std::string& input) {
     }
     // Check auth state — give clear guidance if no auth available.
     // Allow through if engine has a provider (e.g. API key injected at runtime).
+    if (AuthConfig::instance().safe()) {   // the operator's safe mode (resident_life.cpp)
+        messageView->addMessage("System", "Safe mode: the operator has stopped model calls. The residents go by their rules.");
+        inputView->setStatus("SAFE MODE");
+        return;
+    }
     if (!AuthConfig::instance().hasAuth() && !engine->isClaudeAvailable()) {
         messageView->addMessage("System",
             "No LLM auth. Run 'claude /login' or set ANTHROPIC_API_KEY. "

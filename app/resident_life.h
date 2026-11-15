@@ -44,6 +44,11 @@ struct Hooks {
     // What an editor openEditor made holds now; its onClose is dropped, so a later close does not
     // run it again (the app quitting with a sign page open). False for other windows.
     std::function<bool(TWindow*, std::vector<std::string>&)> takeEditor;
+    // The operator's panel: mute the sound stream, switch the app's model calls off (safe mode), and
+    // run a registry command directly (desk mosh).
+    std::function<void(bool)> mute;
+    std::function<void(bool)> setSafe;
+    std::function<std::string(const std::string&, const KV&)> registry;
 };
 void setHooks(const Hooks& h);
 
@@ -72,6 +77,7 @@ bool isDreamWindow(TWindow* w);
 bool isOwnWindow(TWindow* w);   // a resident's time of its own
 bool isFilmWindow(TWindow* w);  // a waking played back from the acts log
 bool isDoorWindow(TWindow* w);  // who came in by the door
+bool isPanelWindow(TWindow* w); // the operator's panel
 
 // Acts of earlier wakings read back from ACTS.TXT and its rotations, newest first (the Feed window
 // scrolls into them). Returns how many earlier acts there are on disk.
@@ -101,6 +107,8 @@ const unsigned short cmLifeOwn = 9944;
 const unsigned short cmLifeTools = 9945;
 const unsigned short cmLifeFilm = 9946;
 const unsigned short cmLifeDoor = 9947;
+const unsigned short cmLifePanel = 9948;
+const unsigned short cmLifeStopAll = 9949;   // Alt+Q: pause the residents, mute, stop a mosh (again: go on)
 
 // Inserts a window the residents' life made (tools, film) on the desktop and gives it an id.
 void insertLifeWindow(TWindow* w);

@@ -27,9 +27,12 @@ public:
     void detect();
 
     // Accessors
-    AuthMode mode() const { return currentMode; }
-    const std::string& apiKey() const { return cachedApiKey; }
-    const std::string& claudePath() const { return cachedClaudePath; }
+    // Safe mode (the operator's panel, resident_life.cpp): every reader sees no auth while it is on.
+    AuthMode mode() const { return safeMode ? AuthMode::NoAuth : currentMode; }
+    const std::string& apiKey() const { return safeMode ? noValue : cachedApiKey; }
+    const std::string& claudePath() const { return safeMode ? noValue : cachedClaudePath; }
+    void setSafe(bool on) { safeMode = on; }
+    bool safe() const { return safeMode; }
 
     // Claude auth detail (populated when mode == ClaudeCode)
     const std::string& claudeEmail() const { return cachedClaudeEmail; }
@@ -42,9 +45,9 @@ public:
     std::string statusSummary() const;
 
     // Convenience checks
-    bool hasAuth() const { return currentMode != AuthMode::NoAuth; }
-    bool isClaudeCode() const { return currentMode == AuthMode::ClaudeCode; }
-    bool isApiKey() const { return currentMode == AuthMode::ApiKey; }
+    bool hasAuth() const { return mode() != AuthMode::NoAuth; }
+    bool isClaudeCode() const { return mode() == AuthMode::ClaudeCode; }
+    bool isApiKey() const { return mode() == AuthMode::ApiKey; }
 
 private:
     AuthConfig() = default;
@@ -53,6 +56,8 @@ private:
     AuthConfig& operator=(const AuthConfig&) = delete;
 
     AuthMode currentMode = AuthMode::NoAuth;
+    bool safeMode = false;
+    std::string noValue;
     std::string cachedApiKey;
     std::string cachedClaudePath;
     std::string cachedClaudeEmail;
