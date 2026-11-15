@@ -188,7 +188,11 @@ class TToolView;
 
 struct Machine {
     Program prog;
-    std::map<std::string, Val> vars;
+    std::map<std::string, Val> vars;      // arrays as NAME(i)
+    std::map<std::string, long long> dims; // DIM'd arrays and their size
+    std::vector<int> stack;                // GOSUB return points
+    int pc = 0;
+    bool restored = false;                 // its state came back from NAME.STATE
     std::string key;
     long long startMs = 0;
     TToolView* view = nullptr;
@@ -262,6 +266,16 @@ struct Run {
     }
 
     Val call(const std::string& f) {
+        if (m.dims.count(f) && isOp("(")) {   // an array element
+            ++i;
+            long long ix = expr().num();
+            if (!err.empty() || !expect(")")) return Val();
+            if (ix < 0 || ix >= m.dims[f]) { err = f + "(" + std::to_string(ix) + ") is outside DIM " + std::to_string(m.dims[f]); return Val(); }
+            auto it = m.vars.find(f + "(" + std::to_string(ix) + ")");
+            if (it != m.vars.end()) return it->second;
+            return f.back() == '$' ? strv("") : num(0);
+        }
+        if (f == "RESTORED") return num(m.restored ? 1 : 0);
         std::vector<Val> a;
         if (isOp("(")) {
             ++i;
@@ -367,6 +381,52 @@ struct Run {
         if (k.k != Tok::Id) { err = "a statement starts with a word"; return; }
         std::string w = k.s;
         ++i;
+        bool letArray = w == "LET" && peek().k == Tok::Id && i + 1 < t->size() && (*t)[i + 1].k == Tok::Op && (*t)[i + 1].s == "(";
+        if (letArray || (m.dims.count(w) && isOp("("))) {   // A(i) = value
+            std::string name = w;
+            if (letArray) { name = peek().s; ++i; }
+            if (!m.dims.count(name)) { err = name + " is not an array (DIM it first)"; return; }
+            if (!expect("(")) return;
+            long long ix = expr().num();
+            if (!err.empty() || !expect(")") || !expect("=")) return;
+            if (ix < 0 || ix >= m.dims[name]) { err = name + "(" + std::to_string(ix) + ") is outside DIM " + std::to_string(m.dims[name]); return; }
+            Val v = expr();
+            if (!err.empty()) return;
+            if (name.back() == '$') v = strv(v.text());
+            m.vars[name + "(" + std::to_string(ix) + ")"] = v;
+            return;
+        }
+        if (w == "DIM") {
+            while (true) {
+                if (peek().k != Tok::Id) { err = "DIM needs a name"; return; }
+                std::string name = peek().s;
+                ++i;
+                if (!expect("(")) return;
+                long long n = expr().num();
+                if (!err.empty() || !expect(")")) return;
+                if (n < 1 || n > 1000) { err = "DIM sizes are 1 to 1000"; return; }
+                if (!m.dims.count(name)) m.dims[name] = n;   // kept state keeps its elements
+                if (!isOp(",")) break;
+                ++i;
+            }
+            return;
+        }
+        if (w == "GOSUB") {
+            if (peek().k != Tok::Id) { err = "GOSUB needs a label"; return; }
+            auto it = m.prog.labels.find(peek().s);
+            if (it == m.prog.labels.end()) { err = "no label " + peek().s; return; }
+            ++i;
+            if (m.stack.size() >= 64) { err = "GOSUB deeper than 64"; return; }
+            m.stack.push_back(m.pc + 1);
+            next = it->second;
+            return;
+        }
+        if (w == "RETURN") {
+            if (m.stack.empty()) { err = "RETURN without GOSUB"; return; }
+            next = m.stack.back();
+            m.stack.pop_back();
+            return;
+        }
         if (w == "LET" || isOp("=")) {
             std::string name = w;
             if (w == "LET") {
@@ -443,8 +503,10 @@ struct Run {
 bool runSection(Machine& m, int s) {
     if (s < 0 || !m.error.empty()) return m.error.empty();
     int pc = s;
+    m.stack.clear();
     for (int steps = 0; steps < 5000; ++steps) {
         if (pc < 0 || pc >= (int)m.prog.lines.size()) return true;
+        m.pc = pc;
         Run r{m};
         r.t = &m.prog.lines[pc];
         int next = -1;
@@ -530,6 +592,46 @@ bool writeTool(const std::string& name, const Who& by, const std::string& extra,
     return (bool)f;
 }
 
+// ---------------------------------------------------------------- state between openings
+
+// NAME.STATE beside the tool: one variable a line (NAME=12, NAME$="text", A(3)=5, DIM A=10),
+// written when its window closes, every 5 s while it changes, and at the app's close.
+std::string stateFile(const std::string& name) { return dir() + "/" + name + ".STATE"; }
+
+std::string encodeState(const Machine& m) {
+    std::ostringstream os;
+    for (auto& d : m.dims) os << "DIM " << d.first << "=" << d.second << "\n";
+    for (auto& v : m.vars) {
+        if (v.first == "RESULT$") continue;
+        os << v.first << "=";
+        if (v.second.isStr) {
+            os << '"';
+            for (char c : v.second.s) { if (c == '"' || c == '\\') os << '\\'; os << (c == '\n' ? ' ' : c); }
+            os << '"';
+        } else os << v.second.n;
+        os << "\n";
+    }
+    return os.str();
+}
+
+void loadState(Machine& m, const std::string& name) {
+    std::ifstream f(stateFile(name));
+    if (!f) return;
+    std::string l;
+    while (std::getline(f, l)) {
+        size_t e = l.find('=');
+        if (e == std::string::npos) continue;
+        std::string k = l.substr(0, e), v = l.substr(e + 1);
+        if (k.rfind("DIM ", 0) == 0) { m.dims[k.substr(4)] = std::max(1LL, std::min(1000LL, std::atoll(v.c_str()))); continue; }
+        if (!v.empty() && v[0] == '"') {
+            std::string s;
+            for (size_t i = 1; i + 1 < v.size(); ++i) { if (v[i] == '\\' && i + 2 < v.size()) ++i; s += v[i]; }
+            m.vars[k] = strv(s);
+        } else m.vars[k] = num(std::atoll(v.c_str()));
+    }
+    m.restored = true;
+}
+
 // ---------------------------------------------------------------- tool windows
 
 class TToolWindow : public TWindow, public ww::Describable {
@@ -547,7 +649,22 @@ public:
         view->m = &m;
         m.startMs = nowMs();
         if (!parseProgram(tf.lines, m.prog)) m.error = m.prog.error;
+        loadState(m, name);
     }
+    void saveState() {
+        std::string s = encodeState(m);
+        size_t h = std::hash<std::string>()(s);
+        if (h == savedHash) return;
+        savedHash = h;
+        std::ofstream f(stateFile(name), std::ios::trunc);
+        f << s;
+    }
+    void close() override {
+        saveState();
+        TWindow::close();
+    }
+    size_t savedHash = 0;
+    long long nextSave = 0;
     void start() {
         runSection(m, m.prog.start);
         nextTick = nowMs() + m.prog.tickMs;
@@ -562,6 +679,7 @@ public:
         view->drawView();
     }
     void tick() {
+        if (nowMs() >= nextSave) { nextSave = nowMs() + 5000; saveState(); }
         if (m.prog.tick < 0 || !m.error.empty() || nowMs() < nextTick) return;
         nextTick = nowMs() + m.prog.tickMs;
         ++ticks;
@@ -575,7 +693,7 @@ public:
         show();
     }
     std::string describeState() const override {
-        return "tool " + name + ".BAS by " + m.author.actor + ", " +
+        return "tool " + name + ".BAS by " + m.author.actor + (m.restored ? ", its state kept from before" : "") + ", " +
                (m.error.empty() ? "running" : "stopped at an error: " + m.error) + "; " + std::to_string(ticks) +
                " ticks, " + std::to_string(keys) + " keys";
     }
@@ -735,6 +853,37 @@ const char* kEtch =
     "  CELL X, Y, \"@\"\n"
     "END\n";
 
+const char* kPurr =
+    "REM A cat who remembers: any key pets her, and she keeps the count from one opening to the next.\n"
+    "ON START\n"
+    "  DIM EYES$(3)\n"
+    "  EYES$(0) = \"o.o\"\n"
+    "  EYES$(1) = \"^.^\"\n"
+    "  EYES$(2) = \"=.=\"\n"
+    "  GOSUB draw\n"
+    "  STOP\n"
+    "draw:\n"
+    "  CLS\n"
+    "  LET X = (W - 9) / 2\n"
+    "  LET Y = H / 2 - 2\n"
+    "  AT X, Y PRINT \" /\\_/\\ \"\n"
+    "  LET E$ = EYES$(PETS MOD 3)\n"
+    "  IF BLINK = 1 THEN LET E$ = \"-.-\"\n"
+    "  AT X, Y + 1 PRINT \"( \" + E$ + \" )\"\n"
+    "  AT X, Y + 2 PRINT \" > ^ < \"\n"
+    "  AT 1, H - 1 PRINT \"pets: \" + STR$(PETS)\n"
+    "  IF RESTORED = 1 THEN AT 1, 0 PRINT \"she remembers you\"\n"
+    "  RETURN\n"
+    "END\n"
+    "ON KEY\n"
+    "  LET PETS = PETS + 1\n"
+    "  GOSUB draw\n"
+    "END\n"
+    "ON TICK 1500\n"
+    "  LET BLINK = 1 - BLINK\n"
+    "  GOSUB draw\n"
+    "END\n";
+
 std::vector<std::string> splitLines(const std::string& s) {
     std::vector<std::string> out;
     std::istringstream is(s);
@@ -751,7 +900,7 @@ std::vector<std::string> splitLines(const std::string& s) {
 // ---------------------------------------------------------------- public
 
 void seed() {
-    struct { const char* name; const char* author; const char* body; } seeds[] = {{"CLOCK", "wob", kClock}, {"ETCH", "wib", kEtch}};
+    struct { const char* name; const char* author; const char* body; } seeds[] = {{"CLOCK", "wob", kClock}, {"ETCH", "wib", kEtch}, {"PURR", "scramble", kPurr}};
     for (auto& s : seeds)
         if (!readTool(s.name).found)
             writeTool(s.name, Who{s.author, Source::Resident}, ", seeded with the app", splitLines(s.body));
@@ -770,6 +919,20 @@ void openList() {
 
 void tick() {
     for (auto* t : openTools()) t->tick();
+}
+
+void saveAll() {
+    for (auto* t : openTools()) t->saveState();
+}
+
+std::string nameOf(TWindow* w) {
+    auto* t = dynamic_cast<TToolWindow*>(w);
+    return t ? t->name : "";
+}
+
+TWindow* reopen(const std::string& name, int x, int y, int w, int h, std::string& err) {
+    TRect r(x, y, x + w, y + h);
+    return runTool(name, &r, err);
 }
 
 bool owns(const std::string& cmd) {

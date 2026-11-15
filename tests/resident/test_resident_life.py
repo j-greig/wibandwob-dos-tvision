@@ -1009,7 +1009,58 @@ def group_held():
         d.stop()
 
 
-GROUPS = {"held": group_held, "cast": group_cast, "film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- tools keep state, come back; arrays and GOSUB
+
+def group_tools2():
+    print("tools2: tools keep their state and come back at waking; arrays and GOSUB; PURR.BAS by Scramble")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0", WWDOS_RESTORE="1").start()
+    try:
+        tl = {t["name"]: t for t in d.j("tool_list")["tools"]}
+        R.check(tl.get("PURR", {}).get("author") == "scramble", "a third worked tool, PURR.BAS by Scramble")
+        p = d.j("tool_run", name="purr", x=4, y=3, w=30, h=9, **as_res("scramble"))
+        q = d.j("resident_key", id=p["id"], text="xyz", **as_res("scramble"))
+        d.wait_seqs(q["first"], q["last"])
+        time.sleep(0.3)
+        R.check(any("pets: 3" in l for l in d.j("look_read", id=p["id"])["lines"]), "three keys pet her three times")
+        d.j("close_window", id=p["id"], **as_res("scramble"))
+        R.check("PETS=3" in (read("TOOLS/PURR.STATE") or ""), "closing the window keeps her state in PURR.STATE")
+        p = d.j("tool_run", name="purr", x=4, y=3, w=30, h=9, **as_res("scramble"))
+        time.sleep(0.3)
+        lines = d.j("look_read", id=p["id"])["lines"]
+        st = [w for w in glance(d) if w["id"] == p["id"]][0]["state"]
+        R.check(any("pets: 3" in l for l in lines) and any("she remembers you" in l for l in lines) and "its state kept" in st,
+                "opened again she remembers: pets 3")
+        prog = ("ON START\n  DIM SQ(5)\n  LET I = 0\nfill:\n  SQ(I) = I * I\n  LET I = I + 1\n  IF I < 5 THEN GOTO fill\n"
+                "  GOSUB show\n  STOP\nshow:\n  AT 0, 0 PRINT STR$(SQ(4)) + \" \" + STR$(SQ(2))\n  RETURN\nEND\n")
+        d.j("tool_save", name="squares", text=prog, **as_res("wob"))
+        s = d.j("tool_run", name="squares", x=40, y=3, w=20, h=4, **as_res("wob"))
+        time.sleep(0.3)
+        R.check(d.j("look_read", id=s["id"])["lines"][0].startswith("16 4"), "arrays and GOSUB: SQ(4) and SQ(2) are 16 4")
+        for nm, body, want in (("oob", "ON START\n DIM A(3)\n A(9) = 1\nEND", "outside DIM 3"),
+                               ("ret", "ON START\n RETURN\nEND", "RETURN without GOSUB")):
+            d.j("tool_save", name=nm, text=body, **as_res("wob"))
+            rr = d.j("tool_run", name=nm, x=2, y=30, w=40, h=4, **as_res("wob"))
+            R.check(want in rr["error"], f"{nm}: {rr['error']!r}")
+        q = d.j("resident_key", id=p["id"], text="a", **as_res("scramble"))
+        d.wait_seqs(q["first"], q["last"])
+        time.sleep(0.2)
+        R.check(d.quit(), "Exit with PURR open")
+        rows = [l.split("\t") for l in (read("DESK.TXT") or "").splitlines() if l and not l.startswith(";")]
+        R.check(any(r[1] == "tool" and r[5] == "TOOL:PURR" for r in rows), "DESK.TXT says the window ran PURR")
+        d.start()
+        res = [r for r in d.j("get_self")["restored"] if r["type"] == "tool"]
+        purr = [r for r in res if r["to"] and r["owner"] == "scramble"]
+        R.check(len(purr) >= 1, f"at waking the tool windows come back: {[(r['title'], r['to'], r['reason']) for r in res]}")
+        w = [x for x in glance(d) if purr and x["id"] == purr[0]["to"]]
+        R.check(w and w[0]["title"] == "PURR.BAS" and w[0]["owner"] == "scramble" and
+                any("pets: 4" in l for l in d.j("look_read", id=w[0]["id"])["lines"]),
+                "PURR comes back where it was, Scramble's, with her four pets")
+    finally:
+        d.stop()
+
+
+GROUPS = {"tools2": group_tools2, "held": group_held, "cast": group_cast, "film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():
