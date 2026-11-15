@@ -35,6 +35,7 @@ std::deque<Clock::time_point> g_calls;   // model calls in the last hour
 uint64_t g_seen = 0;                     // the last gesture looked at
 Clock::time_point g_lastNoticed{};
 int g_heard = 0, g_answered = 0, g_ignored = 0, g_noticed = 0;
+bool g_jamStarted = false;               // the listener started the synth jam (app/sound/jam.cpp)
 
 std::string q(const std::string& s) {
     std::string o = "\"";
@@ -499,7 +500,11 @@ void listenStart() {
 bool listening() { return g_on; }
 
 void tickListen() {
-    if (!g_on) { g_seen = gestureLast(); return; }
+    if (!g_on) {
+        if (g_jamStarted) { actAs("wib", "jam", {{"action", "stop"}}); g_jamStarted = false; }
+        g_seen = gestureLast();
+        return;
+    }
     auto now = Clock::now();
     uint64_t last = gestureLast();
     while (g_seen < last) {
@@ -541,6 +546,16 @@ void tickListen() {
             } else if (kind == "key" && what == "key Enter") {
                 if (!ln.text().empty()) { ln.enter = true; ln.last = now; }
             }
+            continue;
+        }
+        if (type == "synth" && (kind == "typed" || kind == "key") && !g_jamStarted && g_rate != "quiet") {
+            // The person plays the synth: Wib answers each phrase in time, through the jam (app/sound).
+            std::string actor = modeOf("wib") == "witness" ? "wob" : "wib";
+            std::string r = actAs(actor, "jam", {{"action", "start"}, {"as", actor}, {"mode", "answer"}});
+            g_jamStarted = r.rfind("err", 0) != 0;
+            ++g_noticed;
+            note(std::string(g_jamStarted ? "" : "could not start: ") + actor + " answers the person's synth phrases (noticed: playing)",
+                 win, g_jamStarted ? "" : r.substr(0, 60));
             continue;
         }
         if ((kind == "click" || kind == "drag") && type == "paint") {

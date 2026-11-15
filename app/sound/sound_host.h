@@ -23,6 +23,7 @@ struct Host {
     std::function<TWindow*(const std::string&)> find;      // window by API id
     std::function<std::string(TWindow*)> idOf;             // API id of a window ("" when none)
     std::function<std::string(const KV&)> tr808;           // exec_command name=tr808 (scores' do lines)
+    std::function<std::string(const std::string&, const KV&)> exec;   // any registry command
 };
 void setHost(const Host& h);
 const Host& host();
@@ -32,6 +33,18 @@ bool handles(const std::string& name);
 std::string command(const std::string& name, const KV& kv);
 // Plays MIDI input that has arrived (from the app's idle loop; the MIDI thread wakes it).
 void poll();
+
+// What MIDI controllers have set for the synth's next notes: mod wheel (CC1) scales the FM
+// index, CC74 sets feedback, CC72 the release, CC7 the volume (-1: the patch's own).
+struct Controls {
+    double mod = 0;          // 0-1: index x (1 + 2 mod)
+    double feedback = -1;    // 0-1
+    double releaseMs = -1;
+    double volume = 1;       // 0-1
+};
+Controls& controls();
+// The app's command table (exec_command), for MIDI controllers mapped to other commands.
+std::string runCommand(const std::string& name, const KV& kv);
 
 // Milliseconds on a steady clock since the first call (the app's start, in practice).
 double clockMs();

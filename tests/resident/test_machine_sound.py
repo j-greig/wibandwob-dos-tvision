@@ -866,7 +866,71 @@ def test_voice(desk):
         alt.stop()
 
 
-GROUPS = {"voice": test_voice, "patterns": test_patterns, "jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
+# ---------------------------------------------------------------------------- midi in: clock, controllers, bend
+
+def test_midiin(desk):
+    print("\n[midiin] MIDI clock sets the tempo, start and stop drive the players, controllers and pitch bend reach the synth")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    drm = x(desk, "open_tr808", x=2, y=20, w=118, h=26)["id"]
+    x(desk, "tr808", id=drm, action="load_preset", preset="electro")
+    tid = x(desk, "open_tracker", channels="fm:bass drums", rows=4, x=70, y=1, w=50, h=10)["id"]
+    x(desk, "tracker", id=tid, action="set", row=0, ch=1, cell="BD-")
+    syn = x(desk, "open_synth", x=2, y=1, w=68, h=18)["id"]
+    x(desk, "midi", action="in", data="F8", count=48, every_ms=20)          # 24 a beat, 20 ms apart: 125 bpm
+    st = x(desk, "midi", action="state")
+    R.check(st["clock_bpm"] == 125 and st["follow"], f"48 clock ticks 20 ms apart read as 125 bpm ({st['clock_bpm']})")
+    R.check(x(desk, "tr808", id=drm, action="state")["tempo"] == 125 and x(desk, "tracker", id=tid, action="state")["tempo"] == 125,
+            "the drum machine and the tracker take the clock's tempo")
+    x(desk, "midi", action="in", data="FA")
+    R.check(x(desk, "tr808", id=drm, action="state")["transport"] == "playing" and x(desk, "tracker", id=tid, action="state")["playing"],
+            "MIDI start starts the drum machine and the tracker")
+    time.sleep(0.4)
+    x(desk, "midi", action="in", data="FC")
+    R.check(x(desk, "tr808", id=drm, action="state")["transport"] == "stopped" and not x(desk, "tracker", id=tid, action="state")["playing"],
+            "MIDI stop stops them")
+    x(desk, "midi", action="follow", on=0)
+    x(desk, "midi", action="in", data="F8", count=48, every_ms=25)
+    R.check(x(desk, "tr808", id=drm, action="state")["tempo"] == 125, "with follow off the clock changes nothing")
+    x(desk, "midi", action="follow", on=1)
+
+    # Controllers.
+    x(desk, "midi", action="in", data="B0 01 7F")
+    x(desk, "midi", action="in", data="B0 4A 40")
+    x(desk, "midi", action="in", data="B0 07 40")
+    c = x(desk, "midi", action="state")["controls"]
+    R.check(c["mod"] == 1 and abs(c["feedback"] - 64 / 127) < 1e-3 and abs(c["volume"] - 64 / 127) < 1e-3,
+            f"mod wheel, CC74 and CC7 set the synth's index, feedback and volume ({c})")
+    x(desk, "midi", action="in", data="90 3C 7F")
+    time.sleep(0.1)
+    x(desk, "midi", action="in", data="80 3C 00")
+    e = [h for h in x(desk, "hear", seconds=1, of="synth")["heard"] if h["note"] == "C-4"]
+    R.check(e and abs(e[-1]["level"] - 0.5) < 0.03, f"a MIDI note at velocity 127 plays at half volume after CC7=64 ({e[-1]['level'] if e else None})")
+    x(desk, "midi", action="in", data="B0 07 7F")
+    x(desk, "midi", action="in", data="B0 01 00")
+    x(desk, "midi", action="in", data="B0 0B 7F")
+    m = x(desk, "mosh")
+    R.check(m.get("amount") == 100, f"CC11 sets the desk mosh amount through the command table ({m.get('amount')})")
+    acts = desk.j("acts", by="person")["acts"]
+    R.check(any("midi cc 11=127" in a["what"] and "desk mosh amount (ok)" in a["what"] for a in acts), "the log has the person's controller")
+
+    # Pitch bend: a held speaker A-4 rises two semitones.
+    x(desk, "synth", id=syn, action="audio", on=1)
+    x(desk, "synth", id=syn, action="voice", value="pcspk")
+    x(desk, "midi", action="in", data="90 45 64")
+    time.sleep(0.4)
+    hz0 = x(desk, "sound", action="capture", ms=300)["hz_last_200ms"]
+    x(desk, "midi", action="in", data="E0 7F 7F")
+    time.sleep(0.4)
+    hz1 = x(desk, "sound", action="capture", ms=300)["hz_last_200ms"]
+    x(desk, "midi", action="in", data="80 45 00")
+    x(desk, "midi", action="in", data="E0 00 40")
+    R.check(abs(hz0 - 440) <= 10 and abs(hz1 - 493.9) <= 12, f"pitch bend up takes the held A-4 from {hz0} Hz to {hz1} Hz (494 wanted)")
+    R.check(x(desk, "midi", action="state")["controls"]["bend"] == 0, "the bend wheel back at the centre is no bend")
+    x(desk, "synth", id=syn, action="audio", on=0)
+
+
+GROUPS = {"midiin": test_midiin, "voice": test_voice, "patterns": test_patterns, "jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():

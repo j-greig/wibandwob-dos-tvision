@@ -24,6 +24,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <dirent.h>
 #include <sstream>
 #include <sys/stat.h>
@@ -196,14 +197,107 @@ static std::string openSynth(const KV& kv) {
     return "{\"ok\":true,\"id\":\"" + id + "\"}";
 }
 
+Controls& controls() {
+    static Controls c;
+    return c;
+}
+
+std::string runCommand(const std::string& name, const KV& kv) {
+    return g_host.exec ? g_host.exec(name, kv) : "err no command table";
+}
+
+template <class W>
+static std::vector<W*> allOf() {
+    std::vector<W*> out;
+    TDeskTop* d = TProgram::deskTop;
+    if (!d || !d->first()) return out;
+    TView* v = d->first();
+    do {
+        if (auto* w = dynamic_cast<W*>(v)) out.push_back(w);
+        v = v->next;
+    } while (v != d->first());
+    return out;
+}
+
+// MIDI clock in: the app's tempo follows it (on by default; midi action=follow on=0 stops it).
+namespace {
+struct Follow {
+    bool on = true;
+    std::deque<double> ticks;   // arrival times of the last clock ticks
+    int bpm = 0;                // the tempo the ticks give (0 before 24 have come)
+    int applied = 0;
+} g_follow;
+}
+
+static void followTempo(int bpm) {
+    resident::WhoScope as(resident::personWho());   // the clock comes from the person's instruments
+    for (auto* t : allOf<TTR808Window>()) t->view()->apiAction("tempo", {{"bpm", std::to_string(std::max(35, std::min(300, bpm)))}});
+    for (auto* t : allOf<TTrackerWindow>()) t->view()->apiAction("tempo", {{"value", std::to_string(std::max(30, std::min(300, bpm)))}});
+}
+
+static void followTransport(uint8_t st, double atMs) {
+    resident::WhoScope as(resident::personWho());
+    for (auto* t : allOf<TTR808Window>()) {
+        if (st == 0xFC) t->view()->stop();
+        else t->view()->play(atMs);
+    }
+    for (auto* t : allOf<TTrackerWindow>()) {
+        if (st == 0xFC) t->view()->stop();
+        else if (!t->view()->playing()) t->view()->play(0, 0, false);
+    }
+    resident::addAct(resident::personWho(), std::string("midi ") + (st == 0xFA ? "start" : st == 0xFB ? "continue" : "stop") +
+                                                " from the clock source", "", "");
+}
+
+static void controller(int cc, int v, const std::string& from) {
+    Controls& c = controls();
+    std::string what;
+    switch (cc) {
+        case 1: c.mod = v / 127.0; what = "mod wheel: FM index"; break;
+        case 74: c.feedback = v / 127.0; what = "FM feedback"; break;
+        case 72: c.releaseMs = 10 + v / 127.0 * 990; what = "release"; break;
+        case 7: c.volume = v / 127.0; what = "synth volume"; break;
+        case 11: {
+            resident::WhoScope as(resident::personWho());
+            const std::string r = runCommand("mosh_amount", {{"value", std::to_string((int)std::lround(v * 100.0 / 127))}});
+            what = "desk mosh amount (" + (r.rfind("err", 0) == 0 ? r : std::string("ok")) + ")";
+            break;
+        }
+        default: return;
+    }
+    resident::addAct(resident::personWho(), "midi cc " + std::to_string(cc) + "=" + std::to_string(v) + " from " + from + ": " + what, "", "");
+}
+
 void poll() {
     jamTick();
     auto msgs = midi::takeIn();
     if (msgs.empty()) return;
     for (const auto& m : msgs) {
-        if (m.bytes.size() < 3) continue;
-        const int kind = m.bytes[0] & 0xF0;
-        if (kind != 0x90 && kind != 0x80) continue;
+        if (m.bytes.empty()) continue;
+        const uint8_t st = m.bytes[0];
+        if (st == 0xF8) {
+            if (!g_follow.on) continue;
+            g_follow.ticks.push_back(m.ms);
+            while (g_follow.ticks.size() > 25) g_follow.ticks.pop_front();
+            if (g_follow.ticks.size() == 25) {
+                const double per = (g_follow.ticks.back() - g_follow.ticks.front()) / 24.0;
+                if (per > 0) g_follow.bpm = (int)std::lround(60000.0 / (24.0 * per));
+                if (g_follow.bpm && std::abs(g_follow.bpm - g_follow.applied) >= 1) {
+                    g_follow.applied = g_follow.bpm;
+                    followTempo(g_follow.bpm);
+                }
+            }
+            continue;
+        }
+        if (st == 0xFA || st == 0xFB || st == 0xFC) { if (g_follow.on) followTransport(st, m.ms); continue; }
+        const int kind = st & 0xF0;
+        if (kind == 0xB0 && m.bytes.size() >= 3) { controller(m.bytes[1], m.bytes[2], m.from); continue; }
+        if (kind == 0xE0 && m.bytes.size() >= 3) {
+            const int v = ((m.bytes[2] << 7) | m.bytes[1]) - 8192;
+            mixer().setBend(v / 8192.0 * 2.0);   // +-2 semitones
+            continue;
+        }
+        if (m.bytes.size() < 3 || (kind != 0x90 && kind != 0x80)) continue;
         const bool on = kind == 0x90 && m.bytes[2] > 0;
         auto* w = frontMost<TSynthWindow>();
         if (!w) {
@@ -403,16 +497,31 @@ std::string command(const std::string& name, const KV& kv) {
         if (action == "in" || action == "out") {
             std::vector<uint8_t> b;
             if (!midi::parseHex(kvGet(kv, "data"), b)) return "err data is hex bytes, as 90 3C 64";
-            if (action == "in") { midi::inject(b, "test"); poll(); }
+            if (action == "in") {
+                // count= and every_ms= stand in for a clock source: copies arriving every_ms apart from now
+                const int count = std::max(1, std::min(960, toInt(kvGet(kv, "count"), 1)));
+                const double every = std::max(0.0, std::atof(kvGet(kv, "every_ms", "0").c_str()));
+                const double t0 = clockMs();
+                for (int k = 0; k < count; ++k) midi::injectAt(b, "test", t0 + k * every);
+                poll();
+            }
             else midi::send(b, clockMs(), currentActor());
         } else if (action == "clock") {
             midi::setClockOut(truthy(kvGet(kv, "on", "1")));
+        } else if (action == "follow") {
+            g_follow.on = truthy(kvGet(kv, "on", "1"));
+            g_follow.ticks.clear();
         } else if (action != "state" && action != "log") {
-            return "err action is state|log|in|out|clock";
+            return "err action is state|log|in|out|clock|follow";
         }
         std::ostringstream o;
         o << "{\"ok\":true,\"standing\":\"data\",\"device\":\"" << midi::device() << "\",\"sources\":" << midi::sourcesConnected()
-          << ",\"in\":" << midi::inCount() << ",\"out\":" << midi::outCount() << ",\"clock_out\":" << (midi::clockOut() ? "true" : "false");
+          << ",\"in\":" << midi::inCount() << ",\"out\":" << midi::outCount() << ",\"clock_out\":" << (midi::clockOut() ? "true" : "false")
+          << ",\"follow\":" << (g_follow.on ? "true" : "false") << ",\"clock_bpm\":" << g_follow.bpm
+          << ",\"controls\":{\"mod\":" << controls().mod << ",\"feedback\":" << controls().feedback << ",\"release_ms\":"
+          << controls().releaseMs << ",\"volume\":" << controls().volume << ",\"bend\":" << mixer().bend() << "}"
+          << ",\"map\":{\"cc1\":\"FM index (mod wheel)\",\"cc74\":\"FM feedback\",\"cc72\":\"release\",\"cc7\":\"synth volume\","
+             "\"cc11\":\"desk mosh amount (mosh_amount)\",\"pitch bend\":\"+-2 semitones\"}";
         if (action == "log") {
             o << ",\"log\":[";
             auto r = midi::recent((size_t)std::max(1, std::min(1024, toInt(kvGet(kv, "n"), 100))));
