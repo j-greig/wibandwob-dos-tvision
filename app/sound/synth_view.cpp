@@ -44,6 +44,12 @@ Note TSynthView::makeNote(int midi, double atMs, double durMs, int vel) const {
     n.vel = vel;
     n.durMs = durMs;
     n.patch = fmPatches()[patch_];
+    // What MIDI controllers have set (sound_host.h Controls).
+    const Controls& c = controls();
+    n.patch.index *= 1.0 + 2.0 * c.mod;
+    if (c.feedback >= 0) n.patch.feedback = c.feedback;
+    if (c.releaseMs >= 0) n.patch.releaseMs = c.releaseMs;
+    n.vel = std::max(1, (int)std::lround(vel * c.volume));
     return n;
 }
 

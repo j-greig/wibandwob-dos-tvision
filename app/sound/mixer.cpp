@@ -70,6 +70,7 @@ void Mixer::activate(const Pending& p, int64_t s) {
         spk_.a = s;
         spk_.b = s + msToSample(n.durMs);
         spk_.hz = speakerHz(n.midi);
+        spk_.ph = 0;
         spk_.id = p.seq;
         return;
     }
@@ -87,12 +88,14 @@ void Mixer::activate(const Pending& p, int64_t s) {
     ch.prev = 0;
     ch.f = noteHz(n.midi);
     ch.vel = std::max(1, std::min(127, n.vel)) / 127.0;
+    ch.phC = ch.phM = 0;
     ch.id = p.seq;
 }
 
 void Mixer::render(int16_t* out, size_t n) {
     std::lock_guard<std::mutex> lk(mu_);
     const int64_t base = clock_.load();
+    const double bendMul = std::pow(2.0, bend_.load() / 12.0);
     for (size_t i = 0; i < n; ++i) {
         const int64_t s = base + (int64_t)i;
         while (!pending_.empty() && pending_.front().at <= s) {
@@ -103,9 +106,9 @@ void Mixer::render(int16_t* out, size_t n) {
         if (spk_.on) {
             if (s >= spk_.b) spk_.on = false;
             else {
-                const double ph = std::fmod((double)(s - spk_.a) * spk_.hz / kRate, 1.0);
                 const double amp = speakerPatch().level * 0.5;
-                mix += ph < 0.5 ? amp : -amp;
+                mix += spk_.ph < 0.5 ? amp : -amp;
+                spk_.ph = std::fmod(spk_.ph + spk_.hz * bendMul / kRate, 1.0);
             }
         }
         for (auto& ch : ch_) {
@@ -114,9 +117,11 @@ void Mixer::render(int16_t* out, size_t n) {
             const Patch& p = ch.n.patch;
             const double t = (double)(s - ch.a) / kRate;
             const double env = envelope(p, t * 1000.0, ch.n.durMs);
-            const double mod = std::sin(2 * kPi * ch.f * p.modRatio * t + p.feedback * ch.prev) * p.index * (0.4 + 0.6 * env);
+            const double mod = std::sin(2 * kPi * ch.phM + p.feedback * ch.prev) * p.index * (0.4 + 0.6 * env);
             ch.prev = mod;
-            mix += std::sin(2 * kPi * ch.f * p.carRatio * t + mod) * env * ch.vel * p.level * 0.35;
+            mix += std::sin(2 * kPi * ch.phC + mod) * env * ch.vel * p.level * 0.35;
+            ch.phM = std::fmod(ch.phM + ch.f * bendMul * p.modRatio / kRate, 1.0);
+            ch.phC = std::fmod(ch.phC + ch.f * bendMul * p.carRatio / kRate, 1.0);
         }
         for (size_t k = 0; k < smp_.size();) {
             const int64_t idx = s - smp_[k].a;
