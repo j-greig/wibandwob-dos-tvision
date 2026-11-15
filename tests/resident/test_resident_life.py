@@ -401,7 +401,66 @@ def group_sleep():
         d.stop()
 
 
-GROUPS = {"boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- windows come back
+
+def group_restore():
+    print("restore: the windows open at the close come back in their places, order and owners")
+    fresh_home()
+    d = desk(WWDOS_RESTORE="1").start()
+    try:
+        boot_done(d)
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        d.person_keys("C-n")
+        time.sleep(0.4)
+        pat = [w for w in glance(d) if w["type"] == "test_pattern"][0]["id"]
+        paint = d.j("create_window", type="paint", x=60, y=2, w=50, h=18, title="Sketch", **as_res("wob"))["id"]
+        d.ipc("paint_text", id=paint, x=2, y=2, text="WOB", fg=15, bg=0, **as_res("wob"))
+        drum = d.j("create_window", type="tr808", x=10, y=24, w=70, h=20, **as_res("scramble"))["id"]
+        shard = d.j("create_window", type="text_editor", x=120, y=30, w=20, h=6, title="shard", actor="mosh", source="visitor")["id"]
+        ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Plans", **as_res("wib"))["id"]
+        d.ipc("send_text", id=ed, content="line one\nline two\nline three", **as_res("wib"))
+        before = {w["id"]: w for w in glance(d)}
+        R.check(before[shard]["owner"] == "mosh", "a shard window is the mosh's")
+        R.check(d.quit(), "Exit ends the app")
+        rows = [l.split("\t") for l in (read("DESK.TXT") or "").splitlines() if l and not l.startswith(";")]
+        R.check(not any(r[2] == "mosh" for r in rows), "DESK.TXT never keeps the mosh's shards")
+        er = [r for r in rows if r[0] == ed][0]
+        R.check(er[5] == ed.upper() + ".TXT" and read("DESK/" + er[5]) == "line one\nline two\nline three\n",
+                "the editor's text is saved beside the desk")
+        pr = [r for r in rows if r[0] == paint][0]
+        R.check(pr[5].endswith(".WWP") and "WOB" in (read("DESK/" + pr[5][:-4] + ".TXT") or ""),
+                "the drawing is saved as a canvas file and as text")
+
+        d.start()
+        s = d.j("get_self")
+        res = {r["from"]: r for r in s["restored"]}
+        R.check(len(res) == 4 and all(res[x]["to"] for x in (ed, paint, pat)),
+                f"three windows come back: {[(r['type'], r['to'], r['reason']) for r in s['restored']]}")
+        R.check(res[drum]["to"] == "" and "keeps nothing on disk" in res[drum]["reason"],
+                "the drum machine does not, and get_self says why")
+        now = {w["id"]: w for w in glance(d)}
+        ne, np_, nt = res[ed]["to"], res[paint]["to"], res[pat]["to"]
+        R.check(all((now[n]["x"], now[n]["y"], now[n]["w"], now[n]["h"]) == (before[o]["x"], before[o]["y"], before[o]["w"], before[o]["h"])
+                    for o, n in ((ed, ne), (paint, np_), (pat, nt))), "each in its old place and size")
+        R.check((now[ne]["owner"], now[np_]["owner"], now[nt]["owner"]) == ("wib", "wob", "person"),
+                "each with its old owner")
+        R.check(now[ne]["title"] == "Plans" and d.text(ne) == ["line one", "line two", "line three"],
+                "the editor has its title and its text")
+        R.check(any("WOB" in l for l in d.j("look_read", id=np_)["lines"]), "the paint canvas has its drawing")
+        order = [w["id"] for w in sorted(glance(d), key=lambda w: w["z"]) if w["id"] in (ne, np_, nt)]
+        R.check(order == [ne, np_, nt] or order[0] == ne, f"the old front window is in front again ({order})")
+        R.check(not [w for w in glance(d) if w["title"] == "shard"], "no shard comes back")
+        boot_done(d)
+        sc = screen_text(d)
+        R.check("Restored 3 of 4 windows from the last close:" in sc and "NOT   tr808" in sc,
+                "the boot screen says what came back and what did not")
+        R.check(any(a["what"].startswith("restored 3 of 4 windows") for a in d.j("acts")["acts"]), "the restore is an act")
+    finally:
+        d.stop()
+
+
+GROUPS = {"restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():

@@ -31,6 +31,13 @@ struct Hooks {
                            std::function<void(const std::vector<std::string>&)> onClose)> openEditor;
     // True when a model is reachable through the app's confined calls (shown at boot only).
     std::function<bool()> modelPresent;
+    // Writes what a window holds (editor text, paint canvas) under dir as base.<ext>; returns the
+    // file name written ("" when the window keeps nothing).
+    std::function<std::string(TWindow*, const std::string& dir, const std::string& base)> saveState;
+    // Opens a window of a type at a rectangle (desktop cells) with a title, filled from a file
+    // saveState wrote ("" for none). nullptr and err when it cannot.
+    std::function<TWindow*(const std::string& type, int x, int y, int w, int h, const std::string& title,
+                           const std::string& stateFile, std::string& err)> restoreWindow;
 };
 void setHooks(const Hooks& h);
 

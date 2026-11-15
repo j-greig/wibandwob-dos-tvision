@@ -26,6 +26,7 @@
 #include <map>
 #include <sstream>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <cctype>
 #include <cstring>
 
@@ -151,7 +152,7 @@ std::string displayName(const std::string& a) {
 // ---------------------------------------------------------------- the self on disk
 
 struct DeskLine {
-    std::string id, type, owner, title;
+    std::string id, type, owner, title, state;   // state: file under DESK/ holding what it held
     int x = 0, y = 0, w = 0, h = 0;
 };
 
@@ -223,6 +224,7 @@ std::vector<DeskLine> readDesk(bool* exists) {
         d.owner = f[2];
         std::sscanf(f[3].c_str(), "%d,%d,%d,%d", &d.x, &d.y, &d.w, &d.h);
         d.title = f[4];
+        if (f.size() > 5) d.state = f[5];
         out.push_back(d);
     }
     return out;
@@ -246,19 +248,111 @@ std::string titleOf(TWindow* w) {
     return t ? t : "";
 }
 
+std::vector<std::string> readDirNames(const std::string& dir) {
+    std::vector<std::string> out;
+    if (DIR* d = opendir(dir.c_str())) {
+        while (dirent* e = readdir(d)) {
+            std::string n = e->d_name;
+            if (n != "." && n != "..") out.push_back(n);
+        }
+        closedir(d);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+// Windows the self keeps: not the life's own (boot, dream) and not the mosh's shards, which live
+// for one performance only.
+bool keepsOnDesk(TWindow* w) {
+    if (isBootWindow(w) || isDreamWindow(w)) return false;
+    return resident::ownerName(w) != "mosh";
+}
+
 void writeDesk() {
     std::ostringstream os;
     os << "; WIBWOB-DOS desk at the last close: " << nowStamp() << "\n"
-       << "; id<TAB>type<TAB>owner<TAB>x,y,w,h<TAB>title (front window first)\n";
+       << "; id<TAB>type<TAB>owner<TAB>x,y,w,h<TAB>title<TAB>state file in DESK/ (front window first)\n";
+    std::string dir = path("DESK");
+    mkdirs(dir);
+    for (auto& old : readDirNames(dir)) std::remove((dir + "/" + old).c_str());   // the last close's files go
     for (TWindow* w : deskWindows()) {
-        if (isBootWindow(w) || isDreamWindow(w)) continue;
+        if (!keepsOnDesk(w)) continue;
         TRect r = w->getBounds();
         std::string owner = resident::ownerName(w);
-        os << resident::hooks().idOf(w) << "\t" << resident::hooks().typeOf(w) << "\t"
+        std::string id = resident::hooks().idOf(w);
+        std::string state = g_hooks.saveState ? g_hooks.saveState(w, dir, upper(id)) : "";
+        os << id << "\t" << resident::hooks().typeOf(w) << "\t"
            << (owner.empty() ? "app" : owner) << "\t" << r.a.x << "," << r.a.y << "," << (r.b.x - r.a.x) << ","
-           << (r.b.y - r.a.y) << "\t" << oneLine(titleOf(w), 60) << "\n";
+           << (r.b.y - r.a.y) << "\t" << oneLine(titleOf(w), 60) << "\t" << state << "\n";
     }
     writeFile(path("DESK.TXT"), os.str());
+}
+
+// ---------------------------------------------------------------- windows come back
+
+struct Restored {
+    DeskLine from;
+    std::string to;       // the new window's id ("" when not restored)
+    std::string reason;   // why not
+};
+std::vector<Restored> g_restored;
+bool g_restoreOn = true;
+
+// Types whose window comes back as it was: the editor with its text, the paint canvas with its
+// drawing, and the generative and pattern windows, which hold nothing but their place.
+const char* kRestorable[] = {"text_editor", "paint", "feed", "test_pattern", "gradient", "animated_gradient", "verse",
+                             "mycelium", "orbit", "torus", "cube", "life", "blocks", "score", "ascii", "contour_map"};
+bool restorable(const std::string& t) {
+    for (auto r : kRestorable) if (t == r) return true;
+    return false;
+}
+
+Who ownerWho(const std::string& owner) {
+    if (owner == "person") return resident::personWho();
+    if (isResident(owner)) return Who{owner, Source::Resident};
+    if (owner == "app" || owner.empty()) return Who{"app", Source::App};
+    return Who{owner, Source::Visitor};
+}
+
+// Back to front, so the front window at the close is in front again.
+void restoreDesk() {
+    g_restored.clear();
+    if (!g_restoreOn || !g_hooks.restoreWindow) return;
+    for (auto it = g_self.lastDesk.rbegin(); it != g_self.lastDesk.rend(); ++it) {
+        Restored r;
+        r.from = *it;
+        if (it->owner == "mosh") continue;   // shards are never kept (an old DESK.TXT may hold them)
+        if (!restorable(it->type)) {
+            r.reason = "a " + it->type + " window keeps nothing on disk";
+        } else {
+            std::string err;
+            std::string file = it->state.empty() ? "" : path("DESK/" + it->state);
+            resident::WhoScope ws(ownerWho(it->owner));
+            TWindow* w = g_hooks.restoreWindow(it->type, it->x, it->y, it->w, it->h, it->title, file, err);
+            resident::settle();   // the window is its old owner's again
+            if (w) r.to = resident::hooks().idOf(w);
+            else r.reason = err.empty() ? "it would not open" : err;
+        }
+        g_restored.insert(g_restored.begin(), r);
+    }
+    int n = 0;
+    for (auto& r : g_restored) if (!r.to.empty()) ++n;
+    if (!g_restored.empty())
+        resident::addAct(Who{"app", Source::App}, "restored " + std::to_string(n) + " of " +
+                         std::to_string(g_restored.size()) + " windows from the last close", "", "");
+}
+
+std::string restoredJson() {
+    std::ostringstream os;
+    os << "[";
+    for (size_t i = 0; i < g_restored.size(); ++i) {
+        auto& r = g_restored[i];
+        os << (i ? "," : "") << "{\"from\":" << q(r.from.id) << ",\"type\":" << q(r.from.type) << ",\"owner\":"
+           << q(r.from.owner) << ",\"title\":" << q(r.from.title) << ",\"to\":" << q(r.to)
+           << ",\"reason\":" << q(r.reason) << "}";
+    }
+    os << "]";
+    return os.str();
 }
 
 // ---------------------------------------------------------------- the boot screen
@@ -342,7 +436,27 @@ void bootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
                                     : "no model; the residents speak by rule"));
     for (auto r : kResidents) residentBootLines(r, lines, loud);
     bookBootLines(lines, loud);
-    if (g_self.deskFound) {
+    if (g_self.deskFound && g_restoreOn) {
+        int ok = 0;
+        for (auto& r : g_restored) if (!r.to.empty()) ++ok;
+        addBoot(lines, loud, "Restored " + std::to_string(ok) + " of " + std::to_string(g_restored.size()) +
+                                 " windows from the last close:");
+        size_t n = 0;
+        for (auto& r : g_restored) {
+            if (++n > 10) {
+                addBoot(lines, loud, "  ... and " + std::to_string(g_restored.size() - 10) + " more (get_self)");
+                break;
+            }
+            char buf[220];
+            if (!r.to.empty())
+                std::snprintf(buf, sizeof(buf), "  OK    %-5s %-13s %-8s \"%s\"", r.to.c_str(), r.from.type.c_str(),
+                              r.from.owner.c_str(), oneLine(r.from.title, 26).c_str());
+            else
+                std::snprintf(buf, sizeof(buf), "  NOT   %-13s \"%s\": %s", r.from.type.c_str(),
+                              oneLine(r.from.title, 18).c_str(), oneLine(r.reason, 40).c_str());
+            addBoot(lines, loud, buf, r.to.empty());
+        }
+    } else if (g_self.deskFound) {
         addBoot(lines, loud, "Windows at the last close: " + std::to_string(g_self.lastDesk.size()));
         size_t n = 0;
         for (auto& d : g_self.lastDesk) {
@@ -439,7 +553,7 @@ std::string cmdSelf(const KV&) {
        << ",\"found\":" << (g_self.found ? "true" : "false") << ",\"last_wake\":" << q(g_self.lastWake)
        << ",\"last_close\":" << q(g_self.lastClose)
        << ",\"last_closed_cleanly\":" << (g_self.found ? (g_self.lastClean ? "true" : "false") : "null")
-       << ",\"desk_at_last_close\":" << deskJson(g_self.lastDesk) << ",\"notes\":" << notesJson() << ",\"boot\":" << bootJson() << "}";
+       << ",\"desk_at_last_close\":" << deskJson(g_self.lastDesk) << ",\"restored\":" << restoredJson() << ",\"notes\":" << notesJson() << ",\"boot\":" << bootJson() << "}";
     return os.str();
 }
 
@@ -1391,6 +1505,9 @@ void wake() {
     g_self.lastDesk = readDesk(&g_self.deskFound);
     for (auto r : kResidents) g_noteRead[r] = readNote(r);
     writeSelfIni(true);
+    const char* rs = std::getenv("WWDOS_RESTORE");
+    g_restoreOn = !(rs && std::string(rs) == "0");
+    restoreDesk();
     logInit();
     guestInit();
 

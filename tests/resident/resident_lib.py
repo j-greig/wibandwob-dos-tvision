@@ -21,10 +21,11 @@ DEFAULT_BIN = os.path.join(REPO, "build-resident", "app", "wwdos")
 class Desk:
     def __init__(self, name, binary=None, cols=160, rows=50, env=None):
         self.name = name
-        # A private self on disk, no boot screen and no sleep unless a test asks for them, so a
+        # A private self on disk, no boot screen, no sleep and no restored windows unless a test asks, so a
         # desktop starts with no windows of its own and never writes to ~/.wwdos.
         self.home = f"/tmp/wibwob_{name}.home"
-        self.env = {"WWDOS_HOME": self.home, "WWDOS_BOOT": "0", "WWDOS_SLEEP_MS": "0", **(env or {})}
+        self.env = {"WWDOS_HOME": self.home, "WWDOS_BOOT": "0", "WWDOS_SLEEP_MS": "0",
+                    "WWDOS_RESTORE": "0", **(env or {})}
         self.binary = binary or os.environ.get("WWDOS_BIN", DEFAULT_BIN)
         self.cols, self.rows = cols, rows
         self.sock = f"/tmp/wibwob_{name}.sock"
