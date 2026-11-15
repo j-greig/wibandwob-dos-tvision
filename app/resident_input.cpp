@@ -1117,6 +1117,8 @@ std::string menuItemsJson(TMenu* menu, int depth) {
     for (TMenuItem* it = menu ? menu->items : nullptr; it; it = it->next) {
         if (!it->name) continue;   // separator
         os << (first ? "" : ",") << "{\"name\":" << q(plainLabel(it->name));
+        if (const char* t = std::strchr(it->name, '~'))   // the hotkey letter: the character after the first ~
+            if (t[1] && t[1] != '~') os << ",\"hotkey\":" << q(std::string(1, (char)std::tolower((unsigned char)t[1])));
         if (it->command == 0) {
             os << ",\"items\":" << (depth < 6 && it->subMenu ? menuItemsJson(it->subMenu, depth + 1) : "[]");
         } else {

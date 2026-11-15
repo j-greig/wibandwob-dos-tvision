@@ -126,7 +126,28 @@ def main():
         check("feed", any("model call finished after" in l for l in lines), "model calls appear with their seconds")
     finally:
         desk.stop()
-    for who in ("scramble", "wibwob", "feed"):
+    # Listening: the person types a request into an ordinary editor; a resident answers under it.
+    ldesk = Desk("selftest_listen", env={"WWDOS_LISTEN": "1"}).start()
+    try:
+        ed = ldesk.j("create_window", type="text_editor", x=2, y=1, w=70, h=14, title="mine", actor="selftest")["id"]
+        ldesk.ipc("focus_window", id=ed)
+        time.sleep(0.5)
+        ldesk.person_type("could you draw a small house for me?")
+        ldesk.person_keys("Enter")
+
+        def answered():
+            r = ldesk.ipc("window_text", id=ed)
+            lines = json.loads(r)["lines"] if r.startswith("{") else []
+            return [l for l in lines if l.startswith(("wib:", "wob:", "scramble:"))] or None
+        got = wait(answered, 90)
+        notes = [a["what"] for a in ldesk.j("acts", by="app")["acts"]]
+        check("listen", bool(got), f"a resident answered under the person's line: {(got or [''])[0][:80]!r}")
+        check("listen", any("model call finished after" in n for n in notes) or any("answered as" in n for n in notes),
+              "the Feed shows the call and why it answered")
+    finally:
+        ldesk.stop()
+
+    for who in ("scramble", "wibwob", "feed", "listen"):
         mine = [ok for w, ok in results if w == who]
         print(f"{who}: {'PASS' if mine and all(mine) else 'FAIL'} ({sum(mine)}/{len(mine)})")
     return 0 if all(ok for _, ok in results) else 1

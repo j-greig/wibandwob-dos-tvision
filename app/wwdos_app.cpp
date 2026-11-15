@@ -47,6 +47,7 @@
 #include "resident_hands.h"
 #include "resident_teach.h"
 #include "resident_listen.h"
+#include "resident_room.h"
 #include "feed_view.h"
 #include "core/json_utils.h"
 #include "gradient.h"
@@ -420,7 +421,7 @@ static TMenuItem* buildRecentWorkspacesSubmenuItem()
                                   kbNoKey, hcNoContext, nullptr, items);
         }
     }
-    return new TMenuItem("~R~ecent >", kbNoKey, new TMenu(*items), hcNoContext, nullptr);
+    return new TMenuItem("Re~c~ent >", kbNoKey, new TMenu(*items), hcNoContext, nullptr);
 }
 
 // Forward declarations
@@ -2889,11 +2890,11 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("New ~A~nimation", cmNewDonut, kbCtrlD) +
             newLine() +
             *new TMenuItem("~O~pen Text/Animation...", cmOpenAnimation, kbCtrlO) +
-            *new TMenuItem("Open I~m~age...", cmOpenImageFile, kbNoKey) +
+            *new TMenuItem("Open ~I~mage...", cmOpenImageFile, kbNoKey) +
             *new TMenuItem("Open Mo~n~odraw...", cmOpenMonodraw, kbNoKey) +
             newLine() +
             *new TMenuItem("~S~ave Workspace", cmSaveWorkspace, kbCtrlS) +
-            *new TMenuItem("Save Workspace ~A~s...", cmSaveWorkspaceAs, kbNoKey) +
+            *new TMenuItem("Save Wor~k~space As...", cmSaveWorkspaceAs, kbNoKey) +
             *new TMenuItem("Open ~W~orkspace...", cmOpenWorkspace, kbNoKey) +
             *new TMenuItem("~M~anage Workspaces...", cmManageWorkspaces, kbNoKey) +
             *recentSubmenu +
@@ -2915,11 +2916,11 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("FIGlet Edit ~T~ext...", cmFigletEditText, kbNoKey) +
             (TMenuItem&) buildFigletFontSubMenu() +
         *new TSubMenu("~V~iew", kbAltV) +
-            *new TMenuItem("ASCII ~G~rid Demo", cmAsciiGridDemo, kbNoKey) +
+            *new TMenuItem("ASCII Grid ~D~emo", cmAsciiGridDemo, kbNoKey) +
             *new TMenuItem("~A~nimated Blocks", cmAnimatedBlocks, kbNoKey) +
             *new TMenuItem("Animated Gradie~n~t", cmAnimatedGradient, kbNoKey) +
             *new TMenuItem("Animated S~c~ore", cmAnimatedScore, kbNoKey) +
-            *new TMenuItem("Score ~B~G Color...", cmScoreBgColor, kbNoKey) +
+            *new TMenuItem("Score BG Co~l~or...", cmScoreBgColor, kbNoKey) +
             *new TMenuItem("~V~erse Field (Generative)", cmVerseField, kbNoKey) +
             *new TMenuItem("~O~rbit Field (Generative)", cmOrbitField, kbNoKey) +
             *new TMenuItem("M~y~celium Field (Generative)", cmMyceliumField, kbNoKey) +
@@ -2930,14 +2931,14 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("Monster Cam (Emo~j~i)", cmMonsterCam, kbNoKey) +
             *new TMenuItem("~B~ackrooms TV", cmBackroomsTv, kbNoKey) +
             *new TMenuItem("TR-~8~08 Drum Machine", cmTr808, kbNoKey) +
-            *new TMenuItem("Desk ~M~osh on/off", deskmosh::cmMoshToggle, kbAltM, hcNoContext, "Alt-M") +
+            *new TMenuItem("Desk Mos~h~ on/off", deskmosh::cmMoshToggle, kbAltM, hcNoContext, "Alt-M") +
             *new TMenuItem("Synth (PC Speaker, FM)", cmSynth, kbNoKey) +
             newLine() +
-            *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
+            *new TMenuItem("Application~s~", cmAppLauncher, kbNoKey) +
             *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
             newLine() +
             (TMenuItem&)(
-                *new TSubMenu("~G~ames", kbNoKey) +
+                *new TSubMenu("Gam~e~s", kbNoKey) +
                     *new TMenuItem("~M~icropolis City Builder", cmMicropolisAscii, kbNoKey) +
                     *new TMenuItem("~Q~uadra (Falling Blocks)", cmQuadra, kbNoKey) +
                     *new TMenuItem("~S~nake", cmSnake, kbNoKey) +
@@ -3260,6 +3261,7 @@ void TWwdosApp::idle()
     resident::tickReflexes();
     resident::tickSelftest();
     resident::tickListen();
+    resident::tickRoom();
     TFeedView::tickAll();   // feeds follow the act log
 
     // DISABLED: Update animated kaomoji in menu bar (causing crashes + freezes)

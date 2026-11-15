@@ -3,6 +3,7 @@
 
 #include "resident_senses.h"
 #include "resident_teach.h"
+#include "resident_room.h"
 #include "api_ipc.h"
 #include "command_registry.h"
 #include "core/json_utils.h"
@@ -444,7 +445,7 @@ bool ApiIpcServer::pollOne() {
     std::string cmd;
     std::string resp = dispatch(line, cmd);
 
-    if (cmd == "person_wait" && resp.find("\"count\":0,") != std::string::npos) {
+    if ((cmd == "person_wait" || cmd == "room_wait") && resp.find("\"count\":0,") != std::string::npos) {
         // Nothing yet: hold the connection; poll() answers when a gesture arrives or the time is up.
         Waiter wt;
         wt.fd = fd;
@@ -459,7 +460,9 @@ bool ApiIpcServer::pollOne() {
             else if (k == "kinds") wt.kinds = v;
             else if (k == "limit") wt.limit = std::max(1, std::atoi(v.c_str()));
             else if (k == "ms") ms = std::max(0, std::min(std::atoi(v.c_str()), 60000));
+            else if (k == "actor" && cmd == "room_wait") wt.room = v;
         }
+        if (cmd == "room_wait" && wt.room.empty()) wt.room = "visitor";
         wt.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
         waiters_.push_back(wt);
         return true;
@@ -996,11 +999,14 @@ void ApiIpcServer::serveGestures() {
     auto now = std::chrono::steady_clock::now();
     for (auto it = waiters_.begin(); it != waiters_.end();) {
         int count = 0;
-        std::string list = resident::gesturesSince(it->since, it->limit, it->kinds, count);
+        bool room = !it->room.empty();
+        std::string list = room ? resident::roomSince(it->since, it->room, count)
+                                : resident::gesturesSince(it->since, it->limit, it->kinds, count);
         bool late = now >= it->deadline;
         if (!count && !late) { ++it; continue; }
-        std::string resp = "{\"last\":" + std::to_string(last) + ",\"count\":" + std::to_string(count) +
-                           ",\"timeout\":" + (count ? "false" : "true") + ",\"gestures\":" + list + "}\n";
+        std::string resp = "{\"last\":" + std::to_string(room ? resident::roomLast() : last) + ",\"count\":" +
+                           std::to_string(count) + ",\"timeout\":" + (count ? "false" : "true") +
+                           (room ? ",\"messages\":" : ",\"gestures\":") + list + "}\n";
         (void)safe_write(it->fd, resp.c_str(), resp.size());
         ::shutdown(it->fd, SHUT_WR);
         ::close(it->fd);
