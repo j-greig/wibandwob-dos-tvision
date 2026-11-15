@@ -18,7 +18,8 @@ The desktop app (`wwdos`) does not link the driver and cannot play a stage. The 
 | `app/film/boot/` | the five primers embedded as `/boot` (the boot scene) | `vendor/boot/` (compared, not copied: see below) |
 | `app/film/CMakeLists.txt` | the `film` browser target and the native `wwdos-stage` target | `CMakeLists.txt` (`wwdos-min`, `WWDOS_NATIVE`) |
 | `app/frame_file_player_view.*`, `windows/frame_animation_window.*`, `gradient.*`, `ega_theme.*`, `wibwob_background.*`, `notitle_frame.h` | the app views the film compiles | `vendor/wwdos-app/` |
-| `kernel/pages/shell-film.html`, `atlas-film.js` | the film page (WebGL cells plus the stage clock, sound, gate, scrubber, live API) and its default atlas | `web/shell-webgl.html`, `web/atlas.js` (not synced) |
+| `kernel/pages/shell-film.html`, `atlas-film.js`, `film-host.js`, `sfx-default.json` | the film page (WebGL cells plus the stage clock, sound, gate, scrubber, live API), its default atlas, the split-delivery host, the house window sounds | `web/shell-webgl.html`, `web/atlas.js`, `web/film-host.js`, `web/sfx-default.json` (copies, not synced) |
+| `tfilm/base/film.html` | the built film page, byte-identical to the on-chain `dist/wwdos-min-webgl.html`; `tfilm/scripts/check-base.sh` compares it with a fresh build | `dist/wwdos-min-webgl.html` |
 
 `StageHost` (in `stage.h`) is the boundary: the driver calls the host to open windows, draw marks, play sounds and
 read the desktop; the host owns the application. The driver includes three app files (the frame player, the
@@ -114,8 +115,9 @@ Nothing is generated from it yet: the dispatch in `Stage::run` and `COMMANDS` ar
 - The desktop app cannot play a stage (by decision).
 - The on-chain desktop page (`wwdos`) and the rest of its `vendor/wwdos-app/` stay on the 3517dfcc copy; only the
   film's files are synced.
-- The film page shell and atlas are copied here, not synced: `kernel/pages/shell-film.html` is the on-chain
-  `web/shell-webgl.html` of 07b563a3 with its first comment line changed (bundle.py drops that line). A change to the
-  on-chain shell must be copied here by hand until the shell moves too.
+- The film page files are copied here, not synced: `kernel/pages/shell-film.html`, `film-host.js` and
+  `sfx-default.json` are byte copies of the on-chain `web/shell-webgl.html`, `web/film-host.js` and
+  `web/sfx-default.json` at c7e5d29. A change to the on-chain copies must be brought here by hand until the film tools
+  move.
 - The core's native desktop build (`wwdos`) was not built here (it needs the macOS-era dependencies); the app edits
   were built in the browser desktop (`dist-web/wwdos*.html`, smoke test passes) and in the film targets.

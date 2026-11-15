@@ -12,7 +12,8 @@ What belongs here:
 - the tools that make pages (`tools/`): `bundle.py` (one self-contained HTML file per
   page) and `make_atlas.py` (the glyph atlas)
 - the browser build (`CMakeLists.txt`, `build-web.sh`)
-- the film page (`pages/shell-film.html`, `pages/atlas-film.js`): the page the stage driver's `film` target is bundled into
+- the film page (`pages/shell-film.html`, `pages/atlas-film.js`): the page the stage driver's `film` target is bundled into;
+  its build is committed as `tfilm/base/film.html` (`tfilm/README.md`)
 
 Not here: the stage driver and its command table (`app/stage/`) and the film's desktop (`app/film/`). The driver
 includes app views (the frame player, the animation window, the EGA theme), so it lives in `app/`; see
@@ -38,9 +39,11 @@ kernel/
 │   ├── shell-webgl.html    WebGL2 cell renderer page (no xterm.js)
 │   ├── shell-film.html     the film page: WebGL2 cells + stage clock, sound, gate, scrubber, live API
 │   ├── atlas.js            default glyph atlas (GNU Unifont subset)
-│   ├── atlas-film.js       the film page's default atlas
+│   ├── atlas-film.js       the film page's default atlas (make_atlas.py --film)
+│   ├── film-host.js        many films on one page sharing one engine download (the film tools' split delivery)
+│   ├── sfx-default.json    the house set of synthesised window sounds the film tools put into a page
 │   └── vendor/             xterm.js 5.5.0 + fit and webgl addons, with their licence
 └── tools/
     ├── bundle.py           page template + Emscripten SINGLE_FILE js -> one html file (--shell, --atlas)
-    └── make_atlas.py       Unifont .otf -> pages/atlas.js
+    └── make_atlas.py       Unifont .otf -> pages/atlas.js; --film -> pages/atlas-film.js
 ```

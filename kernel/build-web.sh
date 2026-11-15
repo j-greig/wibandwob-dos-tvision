@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build the browser pages: kernel/build-web.sh [--clean]
 # Output: build-web/ (wasm, js) and dist-web/*.html (one self-contained file per page).
+# JOBS=N limits the parallel compile jobs (default: one per core).
 # Needs emsdk (https://emscripten.org/docs/getting_started/downloads.html); $EMSDK or ~/emsdk is sourced if emcc is not on PATH.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -11,7 +12,7 @@ fi
 command -v emcc >/dev/null || { echo "emcc not found: install emsdk (see docs/web-port.md)"; exit 3; }
 [ "${1:-}" = "--clean" ] && rm -rf build-web
 emcmake cmake -B build-web -S kernel -DCMAKE_BUILD_TYPE=Release >/dev/null
-cmake --build build-web -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
+cmake --build build-web -j"${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc)}"
 mkdir -p dist-web
 for t in hello wwdos; do
     [ -f "build-web/$t.js" ] || continue

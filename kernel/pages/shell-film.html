@@ -141,6 +141,17 @@
 
   // The mouse pointer is a text-mode block: the cell under it drawn reversed (the system pointer is hidden).
   var mouseCell = -1, mouseCols = 0, lastCx = -1, lastCy = -1;
+  // The caret and the pointer are the cell drawn reversed, as in DOS: the ink becomes the block, the paper the ink.
+  // When the block is about as light as the paper round it (black ink on a black cell), the reversed cell would not
+  // show, so the block is white with black ink on dark paper and black with white ink on light paper. fg keeps its
+  // high byte (bit 24: the underline flag read below). The native build draws its pointer by the same rule.
+  function lum(c) { return ((c >> 16) & 255) * 0.3 + ((c >> 8) & 255) * 0.59 + (c & 255) * 0.11; }
+  var rev = [0, 0];
+  function reverse(fg, bg) {
+    var block = fg & 0xFFFFFF, ink = bg & 0xFFFFFF;
+    if (Math.abs(lum(block) - lum(ink)) < 40) { if (lum(ink) < 128) { block = 0xFFFFFF; ink = 0; } else { block = 0; ink = 0xFFFFFF; } }
+    rev[0] = (fg & 0xFF000000) | ink; rev[1] = block;
+  }
   // ---- flush: the wasm hands over cols*rows*3 uint32 [cp|flags, fg, bg] ----
   function draw(cells, c, r, cx, cy) {
     var t0 = performance.now();
@@ -151,8 +162,8 @@
       var w = cells[i * 3], fg = cells[i * 3 + 1], bg = cells[i * 3 + 2], g;
       if (w & 0x40000000) g = prevWide ? prevGlyph + 1 : BLANK;            // trail of a wide char
       else { var cp = w & 0x1FFFFF; g = glyphOf.get(cp); if (g === undefined) g = UNKNOWN; prevGlyph = g; prevWide = wideOf.get(cp) || 0; }
-      if (cx === i % c && cy === Math.floor(i / c)) { var t = fg; fg = bg; bg = t; }  // caret: reverse the cell
-      if (i === mouseCell && c === mouseCols) { var t2 = fg; fg = bg; bg = t2; }       // the mouse: a reversed cell, as in DOS
+      if (cx === i % c && cy === Math.floor(i / c)) { reverse(fg, bg); fg = rev[0]; bg = rev[1]; }   // the caret
+      if (i === mouseCell && c === mouseCols) { reverse(fg, bg); fg = rev[0]; bg = rev[1]; }         // the mouse pointer
       glyphs[i] = g;
       fgs[i * 4] = (fg >> 16) & 255; fgs[i * 4 + 1] = (fg >> 8) & 255; fgs[i * 4 + 2] = fg & 255; fgs[i * 4 + 3] = (fg >> 24) & 1 ? 255 : 0;
       bgs[i * 4] = (bg >> 16) & 255; bgs[i * 4 + 1] = (bg >> 8) & 255; bgs[i * 4 + 2] = bg & 255; bgs[i * 4 + 3] = 255;
@@ -189,9 +200,38 @@
   };
   // ---- sound: clips baked into the page (scene manifest "sounds") and synthesised effects ("sfx") ----
   // The stage sends a clip name (stage command "sound NAME") or ~open ~close ~say ~shake ~tile ~flash.
-  // Browsers allow audio only after a click or a key, so nothing plays before the first one.
+  // Browsers allow audio only after a click or a key, so nothing plays before the first one. The audio context is
+  // made when the page loads (it starts suspended) and every clip is decoded then, so a cue right after the first
+  // click finds its clip ready and starts from its first sample. The click resumes the context (unlocked); clips wait
+  // in the list below until its clock runs, and the first one to start ties script time to it.
   var SC = window.wwdosScene || {}, SND = SC.sounds || {}, SFX = SC.sfx || {};
-  var actx = null, master = null, bufs = {}, lastSfx = {}, hint = false;
+  var actx = null, master = null, bufs = {}, lastSfx = {}, hint = false, unlocked = false;
+  function ready() { return !!actx && unlocked && actx.state === 'running'; }
+  function makeAudio() {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    try { actx = new AC(); } catch (e) { actx = null; return false; }
+    if (actx.state === 'running' && !unlocked) actx.suspend();   // a browser that allows autoplay still waits for the click
+    master = actx.createGain(); master.gain.value = muted ? 0 : (SC.volume === undefined ? 0.9 : SC.volume);
+    master.connect(actx.destination);
+    actx.onstatechange = function () { if (ready()) startWaiting(); };
+    Object.keys(SND).forEach(function (name) {
+      var done = function (buf) { bufs[name] = buf; startWaiting(); }, fail = function () { bufs[name] = null; startWaiting(); };
+      var decode = function (ab) {
+        var p = actx.decodeAudioData(ab, done, fail);
+        if (p && p.catch) p.catch(function () {});
+      };
+      // fetch turns the data URL into bytes off the main thread; atob is the fallback (a page whose host blocks fetch)
+      var slow = function () {
+        var b = atob(SND[name].slice(SND[name].indexOf(',') + 1)), a = new Uint8Array(b.length);
+        for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+        decode(a.buffer);
+      };
+      if (window.fetch) fetch(SND[name]).then(function (r) { return r.arrayBuffer(); }).then(decode, slow);
+      else slow();
+    });
+    return true;
+  }
   // Until the first click or key the menu bar carries a note, written into the grid's top row in its own colours.
   function withHint(cells, c) {
     if (!hint || window.wwdosStage.waiting()) return cells;   // at a gate the title screen says it
@@ -245,22 +285,44 @@
     u.set('t', t.toFixed(2)); u.set('autostart', '1');
     location.search = '?' + u.toString();
   });
-  var userPaused = false, muted = false;            // muted: File > Mute or the status line's sound icon                           // the app paused the stage: keys must not resume the audio
+  var userPaused = false, muted = false;            // muted: File > Mute or the status line's sound icon; userPaused: the app paused the stage, so keys must not resume the audio
+  function go() { if (M._wwdos_stage_go) M._wwdos_stage_go(); }   // a click or key also opens a stage gate
+  // A key opens a gate at once. A press opens it when it is released in place: a press that moves a cell or more
+  // before its release is a drag (a framed window moved by its title bar) and leaves the title screen waiting.
+  // Sound is unlocked on the press either way, since browsers count the press as the gesture.
+  var pressAt = null, clockWait = false, gateDue = false;
+  function wantGate() { if (clockWait) gateDue = true; else go(); }
   function unlockSound(e) {
     if (e && e.key === 'Tab' && window.wwdosStage.waiting()) return;   // Tab on a title screen is fullscreen only
-    if (M._wwdos_stage_go) M._wwdos_stage_go();   // the first click or key also opens a stage gate
-    if (actx) { if (actx.state === 'suspended' && !userPaused) actx.resume(); return; }
-    var AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    actx = new AC(); master = actx.createGain(); master.gain.value = muted ? 0 : (SC.volume === undefined ? 0.9 : SC.volume);
-    master.connect(actx.destination);
-    Object.keys(SND).forEach(function (name) {
-      var b = atob(SND[name].slice(SND[name].indexOf(',') + 1)), a = new Uint8Array(b.length);
-      for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
-      actx.decodeAudioData(a.buffer, function (buf) { bufs[name] = buf; }, function () {});
-    });
+    var press = !!e && e.type === 'pointerdown';
+    if (press) pressAt = [e.clientX || 0, e.clientY || 0];
+    if (unlocked) { if (!press) go(); if (actx && actx.state === 'suspended' && !userPaused) actx.resume(); return; }
     if (hint) { hint = false; if (last) draw(last, lastCols, lastRows, -1, -1); }
+    if (!actx && !makeAudio()) { if (!press) go(); return; }   // no context at load (an old browser): make it now
+    unlocked = true;
+    // The audio clock starts some time after resume() (about 0.1 s, more on a busy machine). The first click opens
+    // a gate only once it runs, so the clips cued at the gate start from their first sample, in step with the
+    // picture; after 1 s the gate opens anyway (a browser that does not count this event as a gesture).
+    clockWait = true;
+    if (!press) gateDue = true;
+    var opened = false, open = function () {
+      if (opened) return;
+      opened = true; clockWait = false;
+      if (gateDue) { gateDue = false; go(); }
+      startWaiting();
+    };
+    var p = actx.resume();
+    if (actx.state === 'running') open();
+    else { if (p && p.then) p.then(open, open); setTimeout(open, 1000); }
   }
+  function releasePress(e) {
+    if (!pressAt) return;
+    var moved = Math.abs((e.clientX || 0) - pressAt[0]) >= cellCssW || Math.abs((e.clientY || 0) - pressAt[1]) >= cellCssH;
+    pressAt = null;
+    if (!moved) wantGate();
+  }
+  // iOS counts a tap's touchend (not its pointerdown) as the gesture that may start audio: resume there too.
+  function resumeSound() { if (unlocked && actx && actx.state === 'suspended' && !userPaused) actx.resume(); }
   function synth(q) {
     var t = actx.currentTime, d = (q.ms || 60) / 1000, g = actx.createGain(), f = q.f || [440, 440], src;
     g.gain.setValueAtTime(q.gain || 0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
@@ -281,6 +343,34 @@
   // Page commands from the app arrive on the same channel with a "!" in front.
   // pend: a quantised jump the stage announced ("!jump LAND TARGET"): the audio clock time it lands at and its target.
   var live = [], clipBase = null, sched = {}, pend = null, atT = 0, atFloor = 0;
+  // waiting: clips whose cue came before they could sound (no audio context yet, or the clip still decoding; a long
+  // clip takes a few hundred ms and its cue can come right after the click that starts decoding). Each holds the
+  // script time its top plays at; once its buffer is ready it starts on the audio clock part-way through, so it
+  // stays in step with the clips cued after it. A seek or a stop empties the list (the seek cues its clips again).
+  var waiting = [];
+  function wait(name, s, floor) {
+    if (bufs[name] === null || !SND[name]) return;   // failed to decode, or not a clip of this page
+    for (var i = 0; i < waiting.length; i++) if (waiting[i].name === name && Math.abs(waiting[i].s - s) < 0.02) return;
+    waiting.push({ name: name, s: s, floor: floor || 0 });
+  }
+  function startWaiting() {
+    if (!ready()) return;
+    waiting = waiting.filter(function (w) {
+      var b = bufs[w.name];
+      if (b === undefined) return true;              // still decoding
+      if (b === null) return false;
+      var now = actx.currentTime;
+      if (clipBase === null) clipBase = now - window.wwdosStage.time();
+      var when = clipBase + w.s, floor = Math.max(now, w.floor), from = 0;
+      sched[w.name] = when;                          // a replayed cue for this clip finds it placed
+      if (when < floor) { from = floor - when; when = floor; }
+      if (from >= b.duration) return false;
+      var s = actx.createBufferSource(); s.buffer = b; s.connect(master); s.start(when, from);
+      live.push(s); s.onended = function () { var i = live.indexOf(s); if (i >= 0) live.splice(i, 1); };
+      (window.wwdosSched = window.wwdosSched || []).push({ name: w.name, at: w.s, when: when, now: now, late: from });
+      return false;
+    });
+  }
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen().catch(function () {});
     else document.documentElement.requestFullscreen().catch(function () {});
@@ -309,9 +399,12 @@
     if (c === 'exit') { exitPage(); return; }
     if (c === 'mute' || c === 'unmute') { muted = c === 'mute'; if (master) master.gain.value = muted ? 0 : (SC.volume === undefined ? 0.9 : SC.volume); return; }
     if (c === 'fullscreen') toggleFullscreen();
-    if (!actx) return;
+    if (c === 'stop') waiting = [];
+    else if (c.slice(0, 3) === 'at ' && !ready()) atT = parseFloat(c.slice(3));
+    if (!actx || !unlocked) return;
     if (c === 'pause') { userPaused = true; actx.suspend(); }
     else if (c === 'resume') { userPaused = false; actx.resume(); }
+    else if (!ready()) return;                       // the clock is not running yet: clips wait in the list
     else if (c.slice(0, 5) === 'jump ') {
       // A quantised jump lands at script time LAND on the old timeline; on the audio clock that is clipBase + LAND.
       var p = c.slice(5).split(' '), L = parseFloat(p[0]), T = parseFloat(p[1]), now0 = actx.currentTime;
@@ -343,17 +436,26 @@
   }
   function playSound(name) {
     if (name.charAt(0) === '!') { pageCommand(name.slice(1)); return; }
-    if (!actx) return;
+    if (!ready()) {
+      // No sound until the first click or key, and none until the audio clock runs: keep the clip's cue (its
+      // script time) for then.
+      if (name.charAt(0) === '~') return;
+      var c0 = name.indexOf('@'), h0 = name.indexOf('#');
+      if (c0 > 0) wait(name.slice(0, c0), atT - (parseFloat(name.slice(c0 + 1)) || 0));
+      else if (h0 > 0) wait(name.slice(0, h0), parseFloat(name.slice(h0 + 1)) || 0);
+      else wait(name, window.wwdosStage.time());
+      return;
+    }
     if (name.charAt(0) === '~') {
       var q = SFX[name.slice(1)], t = actx.currentTime;
       if (!q || (lastSfx[name] !== undefined && t - lastSfx[name] < 0.05)) return;
       lastSfx[name] = t; synth(q); return;
     }
-    var from = 0, cut = name.indexOf('@'), atWhen = -1;   // "NAME@SECONDS": the clip began SECONDS before the seek's time
+    var from = 0, cut = name.indexOf('@'), atWhen = -1, top = -1;   // "NAME@SECONDS": the clip began SECONDS before the seek's time
     if (cut > 0) {
       // Placed on the audio clock from the seek's base: its start is script time atT - SECONDS. Nothing starts
       // before the seek's floor (now, or a jump's landing frame); a clip that began earlier starts part-way.
-      var x = parseFloat(name.slice(cut + 1)) || 0; name = name.slice(0, cut);
+      var x = parseFloat(name.slice(cut + 1)) || 0; name = name.slice(0, cut); top = atT - x;
       var nowA = actx.currentTime, floor = Math.max(nowA, atFloor);
       atWhen = clipBase !== null ? clipBase + atT - x : nowA - x;
       if (atWhen < floor) { from = floor - atWhen; atWhen = floor; }
@@ -364,7 +466,7 @@
     // clip, by a seek ("!at"), and again after a loop (when the times no longer fit it).
     var when = 0, hash = name.indexOf('#'), now = actx.currentTime;
     if (hash > 0) {
-      var st = parseFloat(name.slice(hash + 1)) || 0; name = name.slice(0, hash);
+      var st = parseFloat(name.slice(hash + 1)) || 0; name = name.slice(0, hash); top = st;
       // The base ties script time to the audio clock: the stage is at T now. Re-tie when they have drifted apart
       // (a loop, a pause the audio did not share, a slow machine).
       var T = window.wwdosStage.time();
@@ -377,6 +479,7 @@
     }
     // A clip handed over early and then met by a seek has a negative age: it starts that far ahead, from its top.
     if (atWhen >= 0) when = atWhen;
+    if (bufs[name] === undefined) { wait(name, top >= 0 ? top : window.wwdosStage.time(), cut > 0 ? atFloor : 0); return; }
     if (!bufs[name] || from >= bufs[name].duration) return;
     var s = actx.createBufferSource(); s.buffer = bufs[name]; s.connect(master); s.start(when, from);
     live.push(s); s.onended = function () { var i = live.indexOf(s); if (i >= 0) live.splice(i, 1); };
@@ -384,7 +487,11 @@
   if (Object.keys(SND).length || Object.keys(SFX).length) {
     hint = true;
     window.addEventListener('pointerdown', unlockSound, true);
+    window.addEventListener('pointerup', releasePress, true);
     window.addEventListener('keydown', unlockSound, true);
+    window.addEventListener('touchend', resumeSound, true);
+    window.addEventListener('click', resumeSound, true);
+    if (Object.keys(SND).length) makeAudio();
   }
   M.wwdosSound = playSound;
   M.wwdosAudioTime = function () { return actx && clipBase !== null && actx.state === 'running' ? actx.currentTime - clipBase : -1; };

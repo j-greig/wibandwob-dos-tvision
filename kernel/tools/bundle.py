@@ -19,6 +19,12 @@ def script(text: str) -> str:
 
 
 def main() -> int:
+    if "-h" in sys.argv[1:] or "--help" in sys.argv[1:]:
+        print(__doc__)
+        return 0
+    if len(sys.argv) < 3:
+        print(__doc__, file=sys.stderr)
+        return 2
     app_js, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
     shell_path = pathlib.Path(sys.argv[sys.argv.index("--shell") + 1]) if "--shell" in sys.argv else WEB / "shell.html"
     shell = shell_path.read_text()

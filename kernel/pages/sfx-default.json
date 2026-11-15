@@ -1,0 +1,56 @@
+{
+ "open": {
+  "wave": "square",
+  "f": [
+   330,
+   660
+  ],
+  "ms": 70,
+  "gain": 0.05
+ },
+ "close": {
+  "wave": "square",
+  "f": [
+   660,
+   330
+  ],
+  "ms": 70,
+  "gain": 0.05
+ },
+ "say": {
+  "wave": "triangle",
+  "f": [
+   880,
+   990
+  ],
+  "ms": 40,
+  "gain": 0.05
+ },
+ "tile": {
+  "wave": "square",
+  "f": [
+   440,
+   440
+  ],
+  "ms": 30,
+  "gain": 0.04
+ },
+ "shake": {
+  "noise": true,
+  "f": [
+   400,
+   120
+  ],
+  "ms": 500,
+  "gain": 0.12
+ },
+ "flash": {
+  "noise": true,
+  "f": [
+   6000,
+   800
+  ],
+  "ms": 350,
+  "gain": 0.15
+ }
+}
