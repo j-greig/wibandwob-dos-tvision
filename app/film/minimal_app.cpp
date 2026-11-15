@@ -18,6 +18,7 @@
 #define Uses_TRect
 #define Uses_TEvent
 #define Uses_TDrawBuffer
+#define Uses_TScreen
 #define Uses_TFileDialog
 #define Uses_TDialog
 #define Uses_MsgBox
@@ -249,7 +250,8 @@ static const ushort cmKeys = 216;
 static const ushort cmMute = 217;
 static bool g_scrub = false;             // stage command "scrubber on": a timeline in the status line
 static bool g_scrubWide = false;         // "scrubber wide": the two-row timeline on the desktop's bottom rows
-static int g_stepReq = 0;                // wwdos_stage_step(N): ticks to run at the next stage timer event while paused
+static int g_stepReq = 0;                // wwdos_stage_step(N): ticks to run while paused (served at once from idle)
+static int g_served = 0;                 // seek and step requests served from idle, screen flushed: tools wait on it
 static double g_jumpReq = -1;            // wwdosStage.jump(BAR): a bar to queue at the next stage timer event
 static bool g_muted = false;             // M, File > Mute, or the sound icon at the bottom right of the status line
 
@@ -395,6 +397,9 @@ EMSCRIPTEN_KEEPALIVE double wwdos_stage_length() { return g_stage ? g_stage->len
 EMSCRIPTEN_KEEPALIVE void wwdos_stage_seek(double secs) { g_seekTo = std::max(0.0, secs); }
 // Tools (tests/stage/test_seek_play.py): run N ticks at the next stage timer event while paused, as playing would.
 EMSCRIPTEN_KEEPALIVE void wwdos_stage_step(int n) { g_stepReq += std::max(0, n); }
+// How many seek or step requests have been served on a paused page with the screen flushed after each. A tool asks,
+// wakes the app, and reads the grid as soon as this number moves, without waiting for a stage timer event.
+EMSCRIPTEN_KEEPALIVE int wwdos_stage_served() { return g_served; }
 // A jump from the scrubber, PgDn/PgUp or the page: queued under the launch quantise; at once while paused or at a gate.
 static void jumpTo(double t)
 {
@@ -694,10 +699,27 @@ public:
     void idle() override
     {
         TApplication::idle();
+        serveTools();
         if (g_liveRedrawStatus) { g_liveRedrawStatus = false; if (statusLine) statusLine->drawView(); }
         if (g_liveQueue.empty()) return;
         std::vector<std::string> lines; lines.swap(g_liveQueue);
         for (auto& l : lines) g_liveErr = stage.runLive(l);
+    }
+
+    // A seek or a step asked for on a paused page is served here, in the same idle call that follows the page's
+    // wake, and the screen is flushed, so a tool reads the result a few milliseconds later instead of waiting for
+    // the next stage timer event (up to a tick). A playing page is left alone: its requests go with its timer.
+    void serveTools()
+    {
+        if (!g_stage || !ww_anim_paused || (g_seekTo < 0 && g_stepReq <= 0)) return;
+        stage.paused(true);
+        stage.resized();
+        if (g_seekTo >= 0) { stage.seek(g_seekTo); g_seekTo = -1; if (statusLine) statusLine->drawView(); }
+        if (g_stepReq > 0) { int n = g_stepReq; g_stepReq = 0; while (n-- > 0) stage.tick(); stage.settle(); }
+        stage.rebase();
+        refreshWide();
+        TScreen::flushScreen();
+        ++g_served;
     }
 
     // The theme's palette with the eight window-colour families (indices 136..199), so "colour" frames draw right.
@@ -1049,6 +1071,7 @@ void TMinApp::handleEvent(TEvent& event)
 #endif
     if (event.what == evBroadcast && event.message.command == cmTimerExpired && stageTimer && event.message.infoPtr == stageTimer) {
         StageTickTimer tt;
+        serveTools();                            // a paused page's seek or step, if the timer got here before idle did
         stage.paused(ww_anim_paused);            // drawings hold at the shown tick while paused
         if (ww_anim_paused) stage.resized();     // a paused stage follows a resize too (tick() does it while playing)
         if (g_seekTo >= 0) { stage.seek(g_seekTo); g_seekTo = -1; if (statusLine) statusLine->drawView(); }
@@ -1164,6 +1187,10 @@ void TMinApp::handleEvent(TEvent& event)
 #ifdef __EMSCRIPTEN__
 int main()
 {
+    // A page opened paused is a tool's page (frame, export, regress, timecheck): Turbo Vision holds screen flushes to
+    // 60 a second and defers one that comes sooner, so a tool could read the grid before the picture it asked for
+    // was flushed. TVISION_MAX_FPS=0 is no limit: every flush happens when it is called. Other pages keep the limit.
+    if (wwdos_js_opt("paused") == 1) setenv("TVISION_MAX_FPS", "0", 1);
     ww::initThemeFromEnv();
     TMinApp app;
     app.run();

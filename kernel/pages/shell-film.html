@@ -1,4 +1,4 @@
-<!-- Film page template (the stage driver's page; the on-chain repository's web/shell-webgl.html): WebGL, no xterm.js. kernel/tools/bundle.py --shell kernel/pages/shell-film.html --atlas kernel/pages/atlas-film.js fills the INLINE markers. -->
+<!-- WebGL page template: no xterm.js. tools/bundle.py --shell web/shell-webgl.html fills the INLINE markers. -->
 <title>WIBWOB-DOS</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -94,6 +94,7 @@
   var q = new URLSearchParams(location.search), opts = window.wwdosOpts || {};
   if (q.has('bars')) opts.bars = q.get('bars') | 0;
   if (q.has('paused')) opts.paused = q.get('paused') | 0;
+  var noDraw = q.get('draw') === '0';     // tools that read cells, not pixels (tools/stagepage.py)
   // &t=S (stage pages) seeks to S seconds once the app is up; with &paused=1 that frame is drawn and held.
   if (q.has('t')) opts.t = parseFloat(q.get('t'));
   var dpr = window.devicePixelRatio || 1;
@@ -175,6 +176,7 @@
     wwdosGrid: function (cells, c, r, cx, cy) {
       last = new Uint32Array(cells); lastCols = c; lastRows = r; lastCx = cx; lastCy = cy;   // copy: wasm memory may move
       flushes++;
+      if (noDraw) { window.wwdosFrames = (window.wwdosFrames | 0) + 1; return; }   // ?draw=0: a tool reads the cells; nothing is painted (headless WebGL is slow)
       draw(menuNote(last, c), c, r, cx, cy);
     },
     print: function (s) { console.log(s); },
@@ -503,7 +505,11 @@
   // Stage clock for tools: seek(S) applies at the next stage tick (within one clock period).
   window.wwdosStage = {
     time: function () { return M._wwdos_stage_time ? M._wwdos_stage_time() : 0; },
-    seek: function (s) { if (M._wwdos_stage_seek) M._wwdos_stage_seek(+s); },
+    seek: function (s) { if (M._wwdos_stage_seek) { M._wwdos_stage_seek(+s); wake(); } },
+    // Tools: step(N) runs N ticks on a paused page, as playing would. served() counts the seeks and steps a paused
+    // page has finished with its screen flushed: ask, then read the grid when the number moves.
+    step: function (n) { if (M._wwdos_stage_step) { M._wwdos_stage_step(n | 0); wake(); } },
+    served: function () { return M._wwdos_stage_served ? M._wwdos_stage_served() : -1; },
     length: function () { return M._wwdos_stage_length ? M._wwdos_stage_length() : 0; },
     // The tick on screen, in seconds. While playing, time() is one tick ahead of it; after a seek they are equal.
     shown: function () { return M._wwdos_stage_shown ? M._wwdos_stage_shown() : this.time(); },
