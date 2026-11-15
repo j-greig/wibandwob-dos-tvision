@@ -262,6 +262,7 @@ StepEvent Engine::start(double nowMs) {
     playing_ = true;
     step_ = -1;
     StepEvent ev = advance();
+    ev.atMs = nowMs;
     nextAt_ = nowMs + ev.gapMs;
     return ev;
 }
@@ -278,6 +279,7 @@ std::vector<StepEvent> Engine::poll(double nowMs) {
     if (nowMs - nextAt_ > std::max(40.0, baseStepMs())) {
         // Stalled (window hidden, debugger, sleep): skip ahead, play one step.
         StepEvent ev = advance();
+        ev.atMs = nowMs;
         nextAt_ = nowMs + ev.gapMs;
         out.push_back(ev);
         return out;
@@ -285,6 +287,7 @@ std::vector<StepEvent> Engine::poll(double nowMs) {
     // 0.5 ms tolerance: timers fire on the ms grid.
     while (nowMs + 0.5 >= nextAt_) {
         StepEvent ev = advance();
+        ev.atMs = nextAt_;
         nextAt_ += ev.gapMs;
         out.push_back(ev);
     }

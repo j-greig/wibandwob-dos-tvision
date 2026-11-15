@@ -58,6 +58,7 @@ struct StepEvent {
     std::vector<int> voices;  // voices that sound (mute/solo applied)
     bool accent = false;
     double gapMs = 0;         // time until the following step
+    double atMs = 0;          // when the step is due on the caller's clock (its nominal time)
 };
 
 const std::vector<std::string>& presetNames();

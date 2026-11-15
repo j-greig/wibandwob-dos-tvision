@@ -9,6 +9,7 @@
 #include "tr808_audio.h"
 #include "sound/ears.h"
 #include "sound/sound_host.h"
+#include "sound/stream.h"
 
 #include <algorithm>
 #include <chrono>
@@ -26,10 +27,8 @@ using namespace tr808;
 static Tr808EventSink gSink = nullptr;
 void tr808SetEventSink(Tr808EventSink sink) { gSink = sink; }
 
-static double nowMs() {
-    using namespace std::chrono;
-    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
-}
+// The machine's one clock (the sound stream's samples when it runs), shared with the synth and scores.
+static double nowMs() { return sound::clockMs(); }
 
 static long long epochMs() {
     using namespace std::chrono;
@@ -151,11 +150,16 @@ void TTR808View::fire(const StepEvent& ev) {
         levels << "\"" << voiceDef(v).id << "\":" << lvl;
         double vol = 0.9 * (ev.accent ? 1.0 + eng_.accentLevel() / 240.0 : 1.0)
                    * (lvl / 80.0) * (eng_.master() / 100.0);
-        if (vol > 0.0) playVoice(voiceDef(v).id, vol);
+        if (vol > 0.0 && audioEnabled()) {
+            // On the stream: the hit lands on the sample its step is due (plus the lead), never late
+            // by a timer's wake-up. Without a stream: afplay, as before.
+            if (sound::streamRunning()) sound::mixer().scheduleSample(sound::drumSample(voiceDef(v).id), vol * 0.6, sound::sampleForClock(ev.atMs));
+            else playVoice(voiceDef(v).id, vol);
+        }
         if (vol > 0.0) {
             // The ears hear the hit as the engine played it, sound on or off.
             sound::Heard h;
-            h.startMs = sound::clockMs();
+            h.startMs = ev.atMs + sound::leadMs();
             h.endMs = h.startMs + sound::drumRingMs(voiceDef(v).id);
             h.source = "tr808";
             TWindow* win = dynamic_cast<TWindow*>(owner);
@@ -198,10 +202,12 @@ void TTR808View::onTimer() {
     drawView();
 }
 
-void TTR808View::play() {
+void TTR808View::play(double atMs) {
     if (eng_.playing()) return;
     startedBy_ = sound::currentActor();
-    StepEvent ev = eng_.start(nowMs());
+    // atMs: start on that time of the clock (a score's bar line), if it has not gone by more than a step.
+    const double now = nowMs();
+    StepEvent ev = eng_.start(atMs >= 0 && atMs <= now && now - atMs < eng_.baseStepMs() ? atMs : now);
     publish("tr808_transport", transportBody("play"));
     fire(ev);
     schedule();
@@ -560,7 +566,7 @@ std::string TTR808View::apiAction(const std::string& action,
     if (action.empty() || action == "state" || action == "get_state" || action == "open") {
         // open: the caller already has (or just made) the window
     } else if (action == "play" || action == "start") {
-        play();
+        play(has(kv, "at_ms") ? std::atof(get(kv, "at_ms").c_str()) : -1.0);
     } else if (action == "stop") {
         stop();
     } else if (action == "toggle") {

@@ -180,6 +180,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_synth", "Open the synth: a PC speaker square voice and an FM voice (optional voice=pcspk|fm, patch, octave, gate, audio=0|1, x, y, w, h)", false},
         {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
         {"hear", "The ears: what the synth and the TR-808 sound now and sounded in the last seconds= (default 4): voices, notes, steps, levels, who, a meter and tracker rows; of=all|synth|tr808, row_ms=, window=. Changes nothing", false},
+        {"sound", "The sound stream: action=state (output coreaudio|null|off, rate, lead_ms, the clock, notes, hits, late, FM channels busy) or action=capture ms= (the last ms of the mix: level and onset times on the clock). Changes nothing", false},
         {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
         {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},

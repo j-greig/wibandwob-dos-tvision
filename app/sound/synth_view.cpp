@@ -7,6 +7,7 @@
 
 #include "ears.h"
 #include "sound_host.h"
+#include "stream.h"
 
 #include <algorithm>
 #include <cctype>
@@ -56,7 +57,8 @@ int TSynthView::keyToSemitone(char ch) const {
 
 void TSynthView::playNotes(const std::vector<Note>& notes, const std::string& who) {
     if (notes.empty()) return;
-    const double now = clockMs();
+    const double asked = clockMs();
+    const double now = asked + leadMs();   // where the stream places a sound asked for now
     TWindow* win = dynamic_cast<TWindow*>(owner);
     const std::string wid = (win && host().idOf) ? host().idOf(win) : "";
     for (const auto& n : notes) {
@@ -80,7 +82,7 @@ void TSynthView::playNotes(const std::vector<Note>& notes, const std::string& wh
         ears().hear(h);
     }
     played_ += (long)notes.size();
-    if (sendToSpeakers(notes)) sent_ += (long)notes.size();
+    if (sendToSpeakers(notes, asked)) sent_ += (long)notes.size();
     else silenced_ += (long)notes.size();
     if (!timer_) timer_ = setTimer(50, 50);
     drawView();

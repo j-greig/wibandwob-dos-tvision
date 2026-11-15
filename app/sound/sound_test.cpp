@@ -1,6 +1,8 @@
 // Tests for the machine's sound: notes rendered to buffers and compared.
 // Run: build/app/sound_test (ctest name: sound).
 #include "ears.h"
+#include "mixer.h"
+#include <memory>
 #include "score.h"
 #include "synth.h"
 
@@ -89,6 +91,68 @@ static void testSynth() {
     struct stat st;
     check(::stat(path, &st) == 0 && st.st_size == 44 + 2 * 22050, "WAV is 44 header bytes plus 2 per sample");
     std::remove(path);
+}
+
+static void testMixer() {
+    std::printf("[mixer]\n");
+    std::vector<Note> notes = {note(Voice::PcSpeaker, "C-5", 10, 300), note(Voice::Fm, "C-3", 0, 400, 100, "bass"),
+                               note(Voice::Fm, "G-3", 120, 200, 90, "pluck"), note(Voice::PcSpeaker, "E-5", 200, 100)};
+    auto pcm = std::make_shared<std::vector<int16_t>>(2000, 8000);
+    auto run = [&](size_t block) {
+        Mixer m;
+        for (const auto& n : notes) m.schedule(n, msToSample(n.atMs));
+        m.scheduleSample(pcm, 0.5, 3000);
+        std::vector<int16_t> out(msToSample(800)), buf(block);
+        for (size_t i = 0; i < out.size(); i += block) {
+            const size_t k = std::min(block, out.size() - i);
+            m.render(buf.data(), k);
+            std::copy(buf.begin(), buf.begin() + (long)k, out.begin() + (long)i);
+        }
+        return out;
+    };
+    const auto one = run(1), small = run(64), big = run(4096);
+    check(fnv1a(one) == fnv1a(small) && fnv1a(small) == fnv1a(big), "the stream renders the same samples in blocks of 1, 64 and 4096");
+    {
+        Mixer m;
+        for (const auto& n : notes) m.schedule(n, msToSample(n.atMs));
+        std::vector<int16_t> a(msToSample(800));
+        m.render(a.data(), a.size());
+        check(fnv1a(a) == fnv1a(render(notes, 800)), "the offline render is the stream rendered in one block");
+    }
+    // Phrases sent in separate calls share the one speaker voice.
+    {
+        Mixer m;
+        m.schedule(note(Voice::PcSpeaker, "C-4", 0, 1000), 0);
+        std::vector<int16_t> out(msToSample(1000));
+        m.render(out.data(), msToSample(500));
+        m.schedule(note(Voice::PcSpeaker, "C-6", 0, 500), msToSample(500));   // a second call, mid-note
+        m.render(out.data() + msToSample(500), out.size() - msToSample(500));
+        const int c2 = upCrossings(out, msToSample(600), msToSample(900));
+        check(c2 >= 312 && c2 <= 316, "a speaker note from a later call replaces the one sounding (" + std::to_string(c2) + " crossings)");
+    }
+    // And the nine FM channels.
+    {
+        Mixer m;
+        std::vector<int16_t> buf(64);
+        for (int i = 0; i < 10; ++i) {
+            m.schedule(note(Voice::Fm, "C-3", 0, 1000, 100, "organ"), m.clock() + 1);
+            m.render(buf.data(), buf.size());
+        }
+        check(m.stats().fmBusy == 9 && m.stats().notes == 10, "ten notes from ten calls hold nine FM channels (busy " + std::to_string(m.stats().fmBusy) + ")");
+    }
+    // A drum sample lands on its sample; a time already rendered is late and starts at once.
+    {
+        Mixer m(1000);
+        std::vector<int16_t> out(400);
+        m.scheduleSample(pcm, 1.0, 100);
+        m.render(out.data(), out.size());
+        check(out[99] == 0 && std::abs(out[100] - 8000) <= 1, "a drum hit starts exactly on its sample (sample 100)");
+        m.scheduleSample(pcm, 1.0, 50);
+        check(m.stats().late == 1, "a hit scheduled in the past counts as late");
+        int64_t end = 0;
+        auto cap = m.capture(300, end);
+        check(cap.size() == 300 && end == 400 && cap[0] == out[100], "capture gives the last samples and the clock at their end");
+    }
 }
 
 static Heard synthHeard(const char* n, double at, double dur, const std::string& who) {
@@ -221,6 +285,7 @@ static void testScore() {
 int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     if (only.empty() || only == "synth") testSynth();
+    if (only.empty() || only == "mixer") testMixer();
     if (only.empty() || only == "ears") testEars();
     if (only.empty() || only == "score") testScore();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);

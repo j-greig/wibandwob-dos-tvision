@@ -178,7 +178,8 @@ std::string Ears::report(double now, double seconds, const std::string& source, 
     const size_t skip = hs.size() > cap ? hs.size() - cap : 0;
     for (size_t i = skip; i < hs.size(); ++i) {
         const auto& h = hs[i];
-        o << (i > skip ? "," : "") << "{\"ago_ms\":" << (long)(now - h.startMs) << ",\"source\":\"" << h.source
+        o << (i > skip ? "," : "") << "{\"ago_ms\":" << (long)(now - h.startMs) << ",\"at_ms\":" << num(h.startMs, 3)
+          << ",\"source\":\"" << h.source
           << "\",\"window\":\"" << esc(h.window) << "\",\"voice\":\"" << esc(h.voice) << "\"";
         if (h.source == "synth")
             o << ",\"note\":\"" << noteName(h.midi) << "\",\"midi\":" << h.midi << ",\"patch\":\"" << esc(h.patch)

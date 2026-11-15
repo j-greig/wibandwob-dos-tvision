@@ -27,7 +27,7 @@ struct Host {
 void setHost(const Host& h);
 const Host& host();
 
-// True for the names command() answers: open_synth, synth, hear, open_event_score, event_score.
+// True for the names command() answers: open_synth, synth, hear, open_event_score, event_score, sound.
 bool handles(const std::string& name);
 std::string command(const std::string& name, const KV& kv);
 
@@ -42,9 +42,10 @@ std::string currentActor();
 bool synthAudioEnabled();
 void setSynthAudioEnabled(bool on);
 bool synthAudioAvailable();
-// Renders the notes (atMs from now) to one WAV and sends it to the speakers. Returns
-// true when sent, false when silenced or no player.
-bool sendToSpeakers(const std::vector<Note>& notes);
+// Sends the notes (atMs from nowMs, the clock when they were asked for) to the speakers:
+// into the stream at nowMs plus the lead, or, with no stream, as one WAV through afplay.
+// Returns true when sent, false when silenced or no output.
+bool sendToSpeakers(const std::vector<Note>& notes, double nowMs);
 
 // Small helpers shared by the sound files.
 std::string jsonEscape(const std::string& s);
