@@ -384,10 +384,13 @@ std::string command(const std::string& name, const KV& kv) {
         if (action == "log") {
             o << ",\"log\":[";
             auto r = midi::recent((size_t)std::max(1, std::min(1024, toInt(kvGet(kv, "n"), 100))));
-            for (size_t i = 0; i < r.size(); ++i)
-                o << (i ? "," : "") << "{\"ms\":" << r[i].ms << ",\"dir\":\"" << (r[i].out ? "out" : "in") << "\",\"from\":\""
+            for (size_t i = 0; i < r.size(); ++i) {
+                char ms[32];
+                std::snprintf(ms, sizeof(ms), "%.3f", r[i].ms);   // fixed: the default precision drops the decimals after 10 s
+                o << (i ? "," : "") << "{\"ms\":" << ms << ",\"dir\":\"" << (r[i].out ? "out" : "in") << "\",\"from\":\""
                   << jsonEscape(r[i].from) << "\",\"hex\":\"" << midi::hex(r[i].bytes) << "\",\"text\":\""
                   << jsonEscape(midi::describe(r[i].bytes)) << "\"}";
+            }
             o << "]";
         }
         o << "}";

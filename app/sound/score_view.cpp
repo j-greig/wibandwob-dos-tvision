@@ -212,7 +212,7 @@ std::string TScoreView::stateJson() const {
       << jsonEscape(origin_) << "\",\"tempo\":" << score_.tempo << ",\"beats\":" << score_.beatsPerBar
       << ",\"bar_ms\":" << (long)barMs(score_) << ",\"running\":" << (running_ ? "true" : "false")
       << ",\"done\":" << (done_ ? "true" : "false") << ",\"started_by\":\"" << jsonEscape(startedBy_) << "\""
-      << ",\"started_ms\":" << (long long)std::llround(startMs_ * 1000) / 1000.0 << ",\"lead_ms\":" << leadMs();
+      << ",\"started_ms\":" << std::to_string(startMs_) << ",\"lead_ms\":" << std::to_string(leadMs());
     o << ",\"parts\":[";
     for (size_t i = 0; i < score_.parts.size(); ++i)
         o << (i ? "," : "") << "{\"name\":\"" << jsonEscape(score_.parts[i].first) << "\",\"is\":\""

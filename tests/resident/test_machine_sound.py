@@ -655,7 +655,7 @@ def test_midi(desk):
     gaps = [b - a for a, b in zip(clocks, clocks[1:])]
     R.check(out and out[0]["hex"] == "FA" and out[-1]["hex"] == "FC", "the drum machine sends start first and stop last")
     R.check(len(clocks) >= 40 and all(abs(g - 20.833) < 0.01 for g in gaps),
-            f"clock ticks are 24 a beat at 120 bpm, 20.833 ms apart on the clock ({len(clocks)} ticks)")
+            f"clock ticks are 24 a beat at 120 bpm, 20.833 ms apart on the clock ({len(clocks)} ticks; off: {[round(g, 3) for g in gaps if abs(g - 20.833) >= 0.01][:5]})")
     drums = [m for m in out if m["hex"].startswith("99 ")]
     bd = [m for m in drums if m["hex"].startswith("99 24 ")]
     heard_bd = [e for e in x(desk, "hear", seconds=3, of="tr808", window=drm)["heard"] if e["voice"] == "bd"]
