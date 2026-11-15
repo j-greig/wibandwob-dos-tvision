@@ -289,6 +289,8 @@ bool mergeLast(const Who& w, const std::string& prefix, const std::string& windo
     return true;
 }
 
+std::map<TView*, std::string> g_lastChanger;   // window -> who changed it last (resident_undo)
+
 // The person's mouse down, for turning a click into a drag on release.
 uint64_t g_downAct = 0;
 TPoint g_downAt{0, 0};
@@ -302,6 +304,7 @@ void logPerson(const TEvent& ev) {
                          ev.keyDown.keyCode != kbEnter && ev.keyDown.keyCode != kbTab && ev.keyDown.keyCode != kbBack;
         if (printable) {
             std::string ch(ev.keyDown.text, ev.keyDown.textLength);
+            if (TWindow* tw = hooks().findWindow ? hooks().findWindow(win) : nullptr) g_lastChanger[tw] = "person";
             Act* a = nullptr;
             if (mergeLast(p, "typed ", win, 2000, a)) { a->what += ch; a->ms = nowMs(); emitGesture(*a, true); return; }
             addAct(p, "typed " + ch, win, "");
@@ -356,6 +359,30 @@ struct Known {
 std::map<TView*, Known> g_known;
 std::map<TView*, Who> g_owner;
 
+// ---------------------------------------------------------------- undo
+
+// A resident's own changes, newest last, with what restores each. The person's changes are not
+// kept (only who changed a window last, so a resident's undo never undoes someone else's work).
+struct Undo {
+    enum Kind { Opened, Rect, Title, Text } kind;
+    TView* win;
+    std::string id, what;
+    TRect rect;
+    std::string title;
+    std::vector<std::string> lines;
+};
+std::map<std::string, std::vector<Undo>> g_undo;      // actor -> its changes
+bool g_undoing = false;                               // undo's own changes are not new changes
+const size_t kUndoMax = 50;
+
+bool undoable(const Who& w) { return w.source != Source::Console && w.source != Source::App && !g_undoing; }
+
+void pushUndo(const Who& w, Undo u) {
+    auto& v = g_undo[w.actor];
+    v.push_back(std::move(u));
+    if (v.size() > kUndoMax) v.erase(v.begin());
+}
+
 std::string titleOfW(TWindow* w) {
     const char* t = w->getTitle(0);
     return t ? t : "";
@@ -383,13 +410,25 @@ bool g_handOn = true;
 int g_handMs = 150;
 int g_handLingerMs = 1000;
 
+// Each resident's hand has its own letter and colour: Wib and Wob share an initial, so Wob's hand is
+// its last letter. Black on yellow (wib), cyan (wob), magenta (scramble), light grey (anyone else).
+char handLetter(const std::string& actor) {
+    if (actor == "wib") return 'W';
+    if (actor == "wob") return 'B';
+    if (actor == "scramble") return 'S';
+    return actor.empty() ? 'R' : (char)std::toupper((unsigned char)actor[0]);
+}
+int handColour(const std::string& actor) {
+    return actor == "wib" ? 14 : actor == "wob" ? 11 : actor == "scramble" ? 13 : 7;
+}
+
 void drawHand(Hand& h, const std::string& actor, int x, int y) {
     x = std::max(0, std::min(x, (int)TScreen::screenWidth - 1));
     y = std::max(0, std::min(y, (int)TScreen::screenHeight - 1));
     if (!h.view) {
         h.view = new TOverlayCell(TRect(x, y, x + 1, y + 1));
-        h.view->text = std::string(1, actor.empty() ? 'R' : (char)std::toupper((unsigned char)actor[0]));
-        h.view->attr = TColorAttr(TColorBIOS(0), TColorBIOS(14));
+        h.view->text = std::string(1, handLetter(actor));
+        h.view->attr = TColorAttr(TColorBIOS(0), TColorBIOS(handColour(actor)));
         TProgram::application->insert(h.view);
     } else {
         if (h.view->origin.x != x || h.view->origin.y != y) h.view->moveTo(x, y);
@@ -496,6 +535,8 @@ void settle() {
             g_known[win] = k;
             if (!g_owner.count(win)) g_owner[win] = w;
             addAct(w, "opened " + k.type + " \"" + k.title + "\" at " + rectWords(r), k.id, "");
+            g_lastChanger[win] = w.actor;
+            if (undoable(w)) pushUndo(w, Undo{Undo::Opened, win, k.id, "opened " + k.type + " " + k.id, r, "", {}});
             continue;
         }
         Known& k = it->second;
@@ -504,12 +545,18 @@ void settle() {
             std::string what = std::string(sized ? "resized " : "moved ") + "to " + rectWords(r);
             Act* a = nullptr;
             if (mergeLast(w, sized ? "resized " : "moved ", k.id, 3000, a)) { a->what = what; a->ms = nowMs(); emitGesture(*a, true); }
-            else addAct(w, what, k.id, "");
+            else {
+                addAct(w, what, k.id, "");
+                if (undoable(w)) pushUndo(w, Undo{Undo::Rect, win, k.id, std::string(sized ? "resized " : "moved ") + k.id, k.r, "", {}});
+            }
+            g_lastChanger[win] = w.actor;
             k.r = r;
         }
         std::string t = titleOfW(win);
         if (t != k.title) {
             addAct(w, "retitled \"" + t + "\"", k.id, "");
+            if (undoable(w)) pushUndo(w, Undo{Undo::Title, win, k.id, "retitled " + k.id, r, k.title, {}});
+            g_lastChanger[win] = w.actor;
             k.title = t;
         }
     }
@@ -517,11 +564,69 @@ void settle() {
         if (std::find(wins.begin(), wins.end(), (TWindow*)it->first) == wins.end()) {
             addAct(w, "closed " + it->second.type + " \"" + it->second.title + "\"", it->second.id, "", 0, it->second.type);
             g_owner.erase(it->first);
+            g_lastChanger.erase(it->first);
             it = g_known.erase(it);
         } else {
             ++it;
         }
     }
+}
+
+// ---------------------------------------------------------------- undo: public
+
+void noteTextBefore(const std::string& actor, TView* v) {
+    auto* w = dynamic_cast<TWindow*>(v);
+    if (!w || g_undoing || !hooks().typeOf || hooks().typeOf(w) != "text_editor" || !hooks().textOf) return;
+    auto& stack = g_undo[actor];
+    // One entry per run of keys: the text before the run's first key.
+    bool sameRun = !stack.empty() && stack.back().kind == Undo::Text && stack.back().win == v &&
+                   g_lastChanger[v] == actor;
+    g_lastChanger[v] = actor;
+    if (sameRun) return;
+    Undo u{Undo::Text, v, idOfV(v), "typed into " + idOfV(v), {}, "", {}};
+    hooks().textOf(w, u.lines);
+    pushUndo(Who{actor, Source::Resident}, std::move(u));
+}
+
+std::string cmdUndo(const KV& kv) {
+    Who w = currentWho();
+    if (w.source == Source::Console) return "err the person's changes are not kept for undo; undo is for a resident's own changes";
+    auto& stack = g_undo[w.actor];
+    if (has(kv, "list")) {
+        std::ostringstream os;
+        os << "{\"actor\":" << q(w.actor) << ",\"changes\":[";
+        for (size_t i = 0; i < stack.size(); ++i) os << (i ? "," : "") << q(stack[i].what);
+        os << "]}";
+        return os.str();
+    }
+    if (stack.empty()) return "err nothing of yours to undo (" + w.actor + " has no recorded change)";
+    Undo u = stack.back();
+    bool alive = false;
+    for (TWindow* x : deskWindows()) if (x == u.win) alive = true;
+    if (!alive) { stack.pop_back(); return "err cannot undo \"" + u.what + "\": its window is gone"; }
+    auto lc = g_lastChanger.find(u.win);
+    if (lc != g_lastChanger.end() && lc->second != w.actor)
+        return "err cannot undo \"" + u.what + "\": " + lc->second + " changed " + u.id + " after you, and undo would undo their change";
+    stack.pop_back();
+    g_undoing = true;
+    std::string res;
+    auto* win = static_cast<TWindow*>(u.win);
+    switch (u.kind) {
+        case Undo::Opened: res = hooks().exec ? hooks().exec("close_window", {{"id", u.id}}) : ""; break;
+        case Undo::Rect: win->locate(u.rect); res = "ok"; break;
+        case Undo::Title: res = hooks().exec ? hooks().exec("window_title", {{"id", u.id}, {"title", u.title}}) : ""; break;
+        case Undo::Text: {
+            std::string joined;
+            for (size_t i = 0; i < u.lines.size(); ++i) joined += (i ? "\n" : "") + u.lines[i];
+            res = hooks().exec ? hooks().exec("send_text", {{"id", u.id}, {"content", joined}, {"mode", "replace"}}) : "";
+            break;
+        }
+    }
+    settle();
+    g_undoing = false;
+    g_lastChanger[u.win] = w.actor;
+    addAct(w, "undid: " + u.what, u.id, res.rfind("err", 0) == 0 ? res : "");
+    return "{\"undid\":" + q(u.what) + ",\"window\":" + q(u.id) + ",\"left\":" + std::to_string(stack.size()) + "}";
 }
 
 // ---------------------------------------------------------------- IPC
@@ -531,7 +636,7 @@ namespace {
 bool readOnly(const std::string& name, const KV& kv) {
     static const char* names[] = {"get_state", "get_canvas_size", "get_capabilities", "get_window_types", "window_text",
                                   "acts", "residents_about", "standing", "desktop_get", "terminal_read",
-                                  "get_chat_history", "subscribe_events", "ping", "describe", "person_events", "person_wait", "resident_reflexes", "figlet_list_fonts",
+                                  "get_chat_history", "subscribe_events", "ping", "describe", "person_events", "person_wait", "resident_reflexes", "help", "resident_selftest", "figlet_list_fonts",
                                   "list_figlet_fonts", "preview_figlet", "gallery_list", "paint_export", "batch",
                                   "exec_command", "resident_status", "resident_front", "resident_key",
                                   "resident_mouse", "resident_press", "resident_menu"};
@@ -789,7 +894,8 @@ std::string cmdHand(const KV& kv) {
     bool first = true;
     for (auto& p : g_hands) {
         const Hand& h = p.second;
-        os << (first ? "" : ",") << "{\"actor\":" << q(p.first) << ",\"x\":" << h.x << ",\"y\":" << h.y
+        os << (first ? "" : ",") << "{\"actor\":" << q(p.first) << ",\"letter\":" << q(std::string(1, handLetter(p.first)))
+           << ",\"x\":" << h.x << ",\"y\":" << h.y
            << ",\"visible\":" << ((h.view && (h.view->state & sfVisible)) ? "true" : "false")
            << ",\"moving\":" << (h.moving ? "true" : "false") << ",\"from\":[" << h.fromX << "," << h.fromY
            << "],\"to\":[" << h.tx << "," << h.ty << "],\"started_ms\":" << h.startedMs

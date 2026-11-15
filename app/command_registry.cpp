@@ -9,6 +9,7 @@
 #include "desk_mosh.h"
 #include "resident_life.h"
 #include "resident_hands.h"
+#include "resident_teach.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 // The machine's sound (app/sound/sound_host.cpp). Weak, so tests that link the
@@ -182,6 +183,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
         {"hear", "The ears: what the synth and the TR-808 sound now and sounded in the last seconds= (default 4): voices, notes, steps, levels, who, a meter and tracker rows; of=all|synth|tr808, row_ms=, window=. Changes nothing", false},
         {"sound", "The sound stream: action=state (output coreaudio|null|off, rate, lead_ms, the clock, notes, hits, late, FM channels busy) or action=capture ms= (the last ms of the mix: level and onset times on the clock). Changes nothing", false},
+        {"open_tracker", "Open the tracker (rows down, channels across): track=<n> reads tracks/<n>.trk, text= a song, or a new one with channels='fm:bass fm:lead speaker drums', rows=, tempo=; play=1; optional x, y, w, h", false},
+        {"tracker", "Write and play the tracker (action=set row ch cell='C-4 01 A37'|write ch row notes='C-2 . E-2 ===' step instr fx|clear row ch|all=1|play row|stop|loop on|tempo value|rows value|cursor row ch field octave|text|load track=|text=|save track=|state; optional id). Effects: Axy arpeggio, Vxx velocity, Gxx gate in sixteenths of a row", false},
         {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
         {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
@@ -229,6 +232,10 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"person_events", "The person's gestures since=G (typed, key, click, double-click, drag, scroll, command, menu, menu closed, opened, moved, resized, retitled, closed), in order; kinds= a comma list; never a resident's own acts. Read-only", false},
         {"person_wait", "Like person_events, but the socket holds the reply until a gesture after since=G arrives or ms= (default 10000, at most 60000) pass; then timeout is true", false},
         {"resident_reflexes", "Residents inside the app: the reflex script that answers the person's gestures, what it bound and its last results; load=<file> and clear=1 are rules (the console with the key turned; WWDOS_RESIDENTS=<file> at start)", false},
+        {"help", "What a command does and whether you may run it: name=<command> gives its description, whether it is a rule and, when you may not, why; no name lists every command and the rules", false},
+        {"resident_selftest", "The calling resident tries what a person can do through its own hands (open an editor, type and read back, choose a menu item and answer the dialog, drag, a refused rule, a mistyped command, person_events, close): start=1 begins; no args reports each step", false},
+        {"resident_undo", "Undo your own last change as a resident (an open, a move or resize, a retitle, a run of typing in an editor); refused when someone else changed that window since; list=1 shows your changes", false},
+        {"resident_rehearse", "A rehearsal desk: a nested desktop in a window you own, at its own socket, to try things before acting in public; close=1 ends it; optional x y w h", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -314,6 +321,7 @@ std::string exec_registry_command(
     const std::map<std::string, std::string>& kv) {
     (void)api_take_last_registered_window_id(app);   // forget a window registered before this command
     std::string r = exec_registry_command_inner(app, name, kv);
+    if (r == "err unknown command") return resident::unknownCommand(name);
     if (r == "ok") {
         std::string id = api_take_last_registered_window_id(app);
         if (!id.empty()) return "{\"ok\":true,\"id\":\"" + id + "\"}";
@@ -830,6 +838,10 @@ static std::string exec_registry_command_inner(
     }
     if (deskmosh::isCommand(name)) return deskmosh::command(name, kv);
     if (name == "describe") return resident::cmdDescribe(kv);
+    if (name == "help") return resident::cmdHelp(kv);
+    if (name == "resident_undo") return resident::cmdUndo(kv);
+    if (name == "resident_rehearse") return resident::cmdRehearse(kv);
+    if (name == "resident_selftest") return resident::cmdSelftest(kv);
     if (name == "resident_reflexes") return resident::cmdReflexes(kv);
     if (name == "person_events" || name == "person_wait") return resident::cmdPersonEvents(kv);
     if (name == "acts") return resident::cmdActs(kv);

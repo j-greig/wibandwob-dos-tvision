@@ -8,6 +8,7 @@
 #include "ears.h"
 #include "stream.h"
 #include "score_view.h"
+#include "tracker_view.h"
 #include "synth_view.h"
 #include "tr808_view.h"
 #include "tr808_audio.h"
@@ -19,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <dirent.h>
+#include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -187,7 +189,7 @@ static std::string openSynth(const KV& kv) {
 
 bool handles(const std::string& name) {
     return name == "open_synth" || name == "synth" || name == "hear" || name == "open_event_score" ||
-           name == "event_score" || name == "sound";
+           name == "event_score" || name == "sound" || name == "open_tracker" || name == "tracker";
 }
 
 // scores/<name>.score: $WWDOS_REPO/scores, ./scores, then the source tree.
@@ -211,6 +213,87 @@ static bool readScoreFile(const std::string& name, std::string& text, std::strin
         return true;
     }
     return false;
+}
+
+// tracks/<name>.trk: the same places as scores. Writes go to the first that exists (else ./tracks).
+static std::vector<std::string> trackDirs() {
+    std::vector<std::string> dirs;
+    if (const char* r = std::getenv("WWDOS_REPO")) if (*r) dirs.push_back(std::string(r) + "/tracks");
+    dirs.push_back("tracks");
+#ifdef WWDOS_SOURCE_DIR
+    dirs.push_back(std::string(WWDOS_SOURCE_DIR) + "/tracks");
+#endif
+    return dirs;
+}
+
+static bool validName(const std::string& n) {
+    if (n.empty() || n.size() > 40) return false;
+    for (char c : n) if (!(std::isalnum((unsigned char)c) || c == '-' || c == '_')) return false;
+    return true;
+}
+
+static bool readTrack(const std::string& name, std::string& text, std::string& origin) {
+    for (const auto& d : trackDirs()) {
+        FILE* f = std::fopen((d + "/" + name + ".trk").c_str(), "rb");
+        if (!f) continue;
+        char buf[4096];
+        size_t n;
+        text.clear();
+        while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0 && text.size() < 65536) text.append(buf, n);
+        std::fclose(f);
+        origin = "tracks/" + name + ".trk";
+        return true;
+    }
+    return false;
+}
+
+static bool writeTrack(const std::string& name, const std::string& text, std::string& where) {
+    std::string dir;
+    struct stat st;
+    for (const auto& d : trackDirs()) if (::stat(d.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) { dir = d; break; }
+    if (dir.empty()) { dir = "tracks"; ::mkdir(dir.c_str(), 0755); }
+    where = dir + "/" + name + ".trk";
+    FILE* f = std::fopen(where.c_str(), "wb");
+    if (!f) return false;
+    const bool ok = std::fwrite(text.data(), 1, text.size(), f) == text.size();
+    std::fclose(f);
+    return ok;
+}
+
+static std::string openTracker(const KV& kv) {
+    Song song;
+    std::string origin = "new";
+    if (kvHas(kv, "track") || kvHas(kv, "text")) {
+        std::string text;
+        if (kvHas(kv, "track")) {
+            if (!validName(kvGet(kv, "track"))) return "err track is letters, digits, - and _";
+            if (!readTrack(kvGet(kv, "track"), text, origin)) return "err no track tracks/" + kvGet(kv, "track") + ".trk";
+        } else {
+            text = kvGet(kv, "text");
+            origin = "text";
+        }
+        std::string err;
+        if (!parseSong(text, song, err)) return "err song " + err;
+    } else {
+        std::vector<TrackChannel> chans;
+        std::string spec = kvGet(kv, "channels", "fm:bass fm:lead speaker drums");
+        for (char& c : spec) if (c == ',') c = ' ';
+        std::istringstream is(spec);
+        for (std::string w; is >> w;) {
+            TrackChannel ch;
+            if (!parseChan(w, ch)) return "err a channel is fm:<patch>, speaker or drums: " + w;
+            chans.push_back(ch);
+        }
+        if (chans.empty() || chans.size() > 12) return "err 1 to 12 channels";
+        song = newSong(toInt(kvGet(kv, "rows"), 16), chans);
+        if (kvHas(kv, "tempo")) song.tempo = std::max(30, std::min(300, toInt(kvGet(kv, "tempo"), 120)));
+    }
+    const int w = std::min(160, 6 + 13 * (int)song.chans.size());
+    TWindow* win = new TTrackerWindow(boundsFrom(kv, std::max(60, w), std::min(36, song.rows() + 5)), song, origin);
+    const std::string id = g_host.insert ? g_host.insert(win) : "";
+    if (truthy(kvGet(kv, "play"))) static_cast<TTrackerWindow*>(win)->view()->play(0);
+    return "{\"ok\":true,\"id\":\"" + id + "\",\"title\":\"" + jsonEscape(song.title) + "\",\"rows\":" +
+           std::to_string(song.rows()) + ",\"channels\":" + std::to_string(song.chans.size()) + "}";
 }
 
 static std::string openScore(const KV& kv) {
@@ -242,6 +325,39 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "sound")
         return streamCommand(kvGet(kv, "action", "state"), kvHas(kv, "ms") ? std::atof(kvGet(kv, "ms").c_str()) : 1000.0);
     if (name == "open_event_score") return openScore(kv);
+    if (name == "open_tracker") return openTracker(kv);
+    if (name == "tracker") {
+        const std::string action = kvGet(kv, "action");
+        auto* w = findOrFront<TTrackerWindow>(kv);
+        if (!w) {
+            if (kvHas(kv, "id")) return "err tracker window not found";
+            if (action != "open") return "err no tracker window (open_tracker opens one)";
+            openTracker({});
+            w = frontMost<TTrackerWindow>();
+            if (!w) return "err tracker spawn failed";
+        }
+        if (action == "save") {
+            const std::string n = kvGet(kv, "track");
+            if (!validName(n)) return "err track is letters, digits, - and _";
+            std::string where;
+            if (!writeTrack(n, songText(w->view()->song()), where)) return "err could not write " + where;
+            return withId(w, "{\"ok\":true,\"saved\":\"tracks/" + n + ".trk\"}");
+        }
+        if (action == "load") {
+            KV k2 = kv;
+            if (kvHas(kv, "track")) {
+                const std::string n = kvGet(kv, "track");
+                if (!validName(n)) return "err track is letters, digits, - and _";
+                std::string text, origin;
+                if (!readTrack(n, text, origin)) return "err no track tracks/" + n + ".trk";
+                k2["text"] = text;
+                k2["from"] = origin;
+            }
+            return withId(w, w->view()->apiAction("load_text", k2));
+        }
+        if (action == "load_text") return "err use action=load text=";
+        return withId(w, w->view()->apiAction(action, kv));
+    }
     if (name == "event_score") {
         auto* w = findOrFront<TScoreWindow>(kv);
         if (!w) return kvHas(kv, "id") ? "err score window not found" : "err no score window (open_event_score opens one)";
@@ -252,8 +368,21 @@ std::string command(const std::string& name, const KV& kv) {
         const std::string src = kvGet(kv, "of", "all");
         if (src != "all" && src != "synth" && src != "tr808") return "err of is all|synth|tr808";
         const double secs = kvHas(kv, "seconds") ? std::atof(kvGet(kv, "seconds").c_str()) : 4.0;
-        return ears().report(clockMs(), secs, src == "all" ? "" : src, toInt(kvGet(kv, "row_ms"), 125),
-                             kvGet(kv, "window"));
+        std::string rep = ears().report(clockMs(), secs, src == "all" ? "" : src, toInt(kvGet(kv, "row_ms"), 125),
+                                        kvGet(kv, "window"));
+        // A tracker's window: the rows as the tracker prints them, on its own row grid.
+        if (kvHas(kv, "window") && g_host.find)
+            if (auto* tw = dynamic_cast<TTrackerWindow*>(g_host.find(kvGet(kv, "window")))) {
+                const TTrackerView* v = tw->view();
+                const double origin = v->startedMs() + leadMs();
+                auto cr = ears().cellRows(clockMs(), std::max(0.05, std::min(120.0, secs)) * 1000.0, rowMs(v->song()), origin,
+                                          kvGet(kv, "window"), v->song().rows());
+                std::string arr = "[";
+                for (size_t i = 0; i < cr.size(); ++i) arr += (i ? ",\"" : "\"") + jsonEscape(cr[i]) + "\"";
+                arr += "]";
+                rep = rep.substr(0, rep.size() - 1) + ",\"tracker_rows\":" + arr + "}";
+            }
+        return rep;
     }
     if (name == "synth") {
         const std::string action = kvGet(kv, "action");

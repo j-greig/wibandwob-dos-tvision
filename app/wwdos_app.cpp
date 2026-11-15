@@ -45,6 +45,7 @@
 #include "resident_life.h"
 #include "describe.h"
 #include "resident_hands.h"
+#include "resident_teach.h"
 #include "feed_view.h"
 #include "core/json_utils.h"
 #include "gradient.h"
@@ -268,7 +269,7 @@ const ushort cmASCIICam     = 157;
 // Tools menu commands (future)
 const ushort cmAnsiEditor = 125;
 const ushort cmPaintTools = 126;
-const ushort cmFeed = 9960;              // Tools > Feed: the act log, live (feed_view.cpp)
+const ushort cmFeed = 9965;              // Tools > Feed: the act log, live (feed_view.cpp)
 const ushort cmAnimationStudio = 127;
 const ushort cmQuantumPrinter = 128;
 const ushort cmWibWobChat = 131;
@@ -3217,6 +3218,7 @@ void TWwdosApp::idle()
     scrambleEngine.poll();
     // Residents inside the app answer the person's gestures (resident_hands.cpp).
     resident::tickReflexes();
+    resident::tickSelftest();
     TFeedView::tickAll();   // feeds follow the act log
 
     // DISABLED: Update animated kaomoji in menu bar (causing crashes + freezes)
