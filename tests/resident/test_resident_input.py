@@ -126,6 +126,13 @@ def test_s1(desk):
     t_after = thumb()
     R.check(t_before is not None and t_after is not None and t_after < t_before,
             f"40 wheel steps up moved A's scroll thumb up (row {t_before} -> {t_after})")
+    # Horizontal wheel: delivered, and the vertical scroll bar ignores it (Turbo Vision reports mwLeft/mwRight).
+    j, log = q(desk, "resident_mouse", id=a, action="scroll", dir="left", count=10, x=col, y=w[a]["y"] + 5)
+    j2, log2 = q(desk, "resident_mouse", id=a, action="scroll", dir="right", count=10, x=col, y=w[a]["y"] + 5)
+    time.sleep(0.2)
+    results = {e["result"] for e in list(log.values()) + list(log2.values())}
+    R.check(results == {"delivered"}, f"20 horizontal wheel steps were delivered ({results})")
+    R.check(thumb() == t_after, f"horizontal wheel steps leave the vertical thumb where it was (row {thumb()})")
     R.check(desk.focused() == b, "B kept the focus during the scroll")
 
 

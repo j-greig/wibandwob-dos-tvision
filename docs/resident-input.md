@@ -50,7 +50,9 @@ and `count`; `button=left|right|middle`, `mods=ctrl,shift,alt`.
     cmd:resident_mouse id=w2 action=drag x=12 y=1 x2=40 y2=10     # drag w2 by its title bar
     cmd:resident_mouse id=w2 action=scroll dir=up count=5 x=48 y=6
 
-With `id` the point must be inside that window (`err point outside window w2`). A drag is queued as one down, the
+`dir=left|right` sends horizontal wheel events (`mwLeft`, `mwRight`), as a real terminal does; views that scroll on the
+vertical wheel only (scroll bars one cell wide, the Generative Lab stamp list) ignore them. With `id` the point must be
+inside that window (`err point outside window w2`). A drag is queued as one down, the
 moves and one up, and is delivered in one go; a `down` with no `up` behind it gets an up added when a view tracks the
 mouse, so a view never waits on the resident's button.
 
@@ -220,7 +222,7 @@ printable keys arriving together as a paste (`kbPaste`), and the text editor vie
 
 | group | what it shows |
 |---|---|
-| s1 | 200 keys in one call and 200 keys in 200 calls arrive in order, none lost; named keys and modifiers act; an addressed drag moves a window by (20,20) without raising it or moving focus; 40 wheel steps move a scroll thumb |
+| s1 | 200 keys in one call and 200 keys in 200 calls arrive in order, none lost; named keys and modifiers act; an addressed drag moves a window by (20,20) without raising it or moving focus; 40 wheel steps move a scroll thumb; horizontal wheel steps are delivered and the vertical scroll bar ignores them |
 | s2 | resident keys wait while the person's button is down and arrive after release; a Sharing violation for keys and clicks to the window the person typed in, accepted for another window at the same moment and for the same window after share_ms |
 | duet | the person types 264 characters into their window through tmux while the resident types into another with Backspace, Home, Ctrl+Right and End; both texts arrive intact and the focus never moves. On the unmodified app it fails: the resident's commands are unknown and nothing reaches its window |
 | s3 | five menu commands in one batch all run (five `inject_command` run once); a resident-opened About dialog is reported with its text, button and accept, the person keeps typing into their window while it is open and their keys follow their click to another window, OK by label closes it and the clicked window is current; the person's open menu and dialog are reported as theirs; resident keys reach another window while the person's dialog is modal; Save Workspace As: the field is set by its label and Cancel by label closes it |
