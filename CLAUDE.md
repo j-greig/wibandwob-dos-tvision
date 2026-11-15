@@ -22,4 +22,11 @@ When a session touches both, SAY SO explicitly at each switch: name the repo and
 - IPC latency: the app serves its socket from `idle()`. A helper thread in `api_ipc.cpp` calls `TEventQueue::wakeUp()` when a client connects; without it each round trip waits for the 20 ms event timeout. The server reads one newline-terminated command of any length per connection (the old single 2048-byte read cut long commands), and `cmd:batch` runs many commands in one message.
 - TR-808 drum machine (`app/tr808_*`, window type `tr808`): `POST /tr808 {action}` drives it; step hits stream on `GET /events?types=tr808_step` through the relay in `tools/api_server/tr808.py` (one IPC `subscribe_events` connection). Launch with `WWDOS_TR808_AUDIO=0` when a web page plays the sound. Docs: `tools/api_server/README.md` § TR-808 drum machine.
 - A fresh git worktree has empty `vendor/` submodules (tvterm has nested ones): `git submodule update --init --reference <main checkout>/vendor/<name> vendor/<name>`, and the same inside `vendor/tvterm` for `deps/tvision` and `deps/vterm/libvterm`, before `cmake -B`.
+- Terminal films: the stage driver is `app/stage/` (grammar comment in `stage.h`, command table `commands.def`), the
+  film desktop `app/film/`; target `film` in `kernel/build-web.sh`, native `cmake -B build-stage -S app/film`. The desktop
+  app (`wwdos`) does not link it and cannot play a stage. Detail: `docs/stage-driver.md`.
+- The on-chain repo (`wibandwob-dos-onchain`) builds films from a pinned copy (`tools/vendor_sync.py` there; `--check`,
+  `--to-core`). Keep `app/film/CMakeLists.txt` flags and source order equal to its `wwdos-min` target: the two wasm
+  files are compared byte for byte. Its token build is frozen; `app/film/boot/` is compared there, never copied.
+- After changing `app/stage/stage.cpp`'s lists or adding a command: `python3 tests/stage/test_commands_def.py`.
 - Director surface: `tools/api_server/show_ops.py` (batch, names, place, scene, timeline, dive). Window names live in the API process, not the app: restarting the API forgets them, and windows then show their title or id in `/show/scene`.

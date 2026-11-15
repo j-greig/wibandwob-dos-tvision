@@ -43,6 +43,10 @@ Targets:
 |---|---|---|
 | `hello` | Turbo Vision's own hello demo, the smallest check of the platform layer | always |
 | `wwdos` | the WibWob-DOS desktop (`app/web/CMakeLists.txt`) | `WWDOS_WEB_APP`, on by default |
+| `film` | the terminal-film player: the stage driver (`app/stage/`) on a small desktop (`app/film/`), bundled with `kernel/pages/shell-film.html` into `dist-web/film.html` only (no xterm.js page). The same wasm as the on-chain repository's `wwdos-min`; see `docs/stage-driver.md` | `WWDOS_WEB_FILM`, on by default |
+
+The desktop (`wwdos`) cannot play a stage; only `film` links the driver. The film's native terminal build is
+`cmake -B build-stage -S app/film && cmake --build build-stage -j8` (`build-stage/wwdos-stage`, ncursesw).
 
 The native build (top-level `CMakeLists.txt`) does not read `kernel/` and is unchanged.
 
@@ -56,6 +60,7 @@ not modified. The patches:
 |---|---|---|
 | 0001 | `CSIData::readFrom` wrote one past `_separators` on a CSI sequence with too many parameters | no: a fix for every platform |
 | 0002 | browser console: `wasmcon.cpp`/`wasmcon.h` (new), `conctl.cpp`, `events.cpp`, `platform.cpp`, `strings.cpp`, `util.h` | `__EMSCRIPTEN__` |
+| 0003 | `TVISION_MOUSE_CURSOR=1` draws the mouse as a reversed cell and asks for plain motion reports (the film's native build); off when unset | no: the variable is never set in a browser |
 
 ### Glyph atlas
 
@@ -74,13 +79,15 @@ uv run kernel/tools/make_atlas.py --font /path/to/unifont-16.0.04.otf [--extra "
 ```
 uv run tests/web/smoke.py                   # every dist-web/*.html
 uv run tests/web/smoke.py dist-web/wwdos-webgl.html
+python3 tests/stage/test_commands_def.py    # the stage driver's command lists against app/stage/commands.def
 ```
 
 Headless Chrome through Playwright (the installed Google Chrome; `SMOKE_CHANNEL=` uses
 Playwright's own Chromium). For each page: load from `file://` with every other request blocked
 and counted, wait for the menu bar, open the first menu by its hot key, then open a window
 (the demo's Greeting dialog; in the desktop, check the four start-screen windows and open a
-Test Pattern window with Ctrl+N). Fails on any network request or page error.
+Test Pattern window with Ctrl+N; in `film.html`, check the boot scene and tile it from the Window
+menu). Fails on any network request or page error.
 
 ## What works
 
@@ -124,6 +131,7 @@ Measured with emcc 6.0.13 (emsdk), `-Os`, `SINGLE_FILE`, on this branch:
 | `dist-web/wwdos-webgl.html` | 2,997,271 | 818,008 | 586,399 |
 | `dist-web/hello.html` (xterm.js) | 923,857 | 257,240 | 202,755 |
 | `dist-web/hello-webgl.html` | 550,906 | 172,220 | 138,068 |
+| `dist-web/film.html` (film page, measured 2026-11-15 in a Linux container) | 1,057,192 | 302,516 | |
 
 The WebGL page is about 85 KB gzip smaller than the xterm.js page: xterm.js with its addons and
 CSS is replaced by the atlas and the renderer. The primer library is about 450 KB of the
