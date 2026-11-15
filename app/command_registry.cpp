@@ -255,6 +255,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"get_life", "Whether the residents are awake or asleep, how long the person has been away, the dream and what was tidied, the kaomoji and status line shown", false},
         {"residents_sleep", "Put the residents to sleep now (they also sleep after WWDOS_SLEEP_MS without the person's input)", true},
         {"residents_wake", "Wake the residents (the person's first key or click at the console also wakes them)", true},
+        {"residents_will", "Write the residents' will: one dated plain-text file (WILLS/WILL-YYYY-MM-DD-HHMM.TXT in the self's directory) holding the self, the notes, the desk with each window's text, the drawings, the logbook, the guestbook and the last 500 acts", true},
         {"acts_history", "Acts of earlier wakings read back from ACTS.TXT and its rotations, newest first: skip=, limit= (at most 2000)", false},
         {"get_self", "The residents' self on disk: home directory, this waking's number, the last waking and whether it closed cleanly, the windows at the last close with owners, the boot screen", false},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
