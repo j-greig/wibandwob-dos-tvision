@@ -2977,7 +2977,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("Visible ~h~and", resident::cmResidentHand, kbNoKey, hcNoContext, "on") +
                     *new TMenuItem("~L~istening", resident::cmResidentListen, kbNoKey, hcNoContext, "off") +
                     newLine() +
-                    *new TMenuItem("~L~ogbook (LOG.TXT)", life::cmLifeLogbook, kbNoKey) +
+                    *new TMenuItem("L~o~gbook (LOG.TXT)", life::cmLifeLogbook, kbNoKey) +
                     *new TMenuItem("Guest~b~ook (GUESTS.TXT)", life::cmLifeGuestbook, kbNoKey) +
                     *new TMenuItem("Sign the ~g~uestbook", life::cmLifeSign, kbNoKey) +
                     *new TMenuItem("Write the ~w~ill", life::cmLifeWill, kbNoKey) +

@@ -286,7 +286,8 @@ void writeDesk() {
         TRect r = w->getBounds();
         std::string owner = resident::ownerName(w);
         std::string id = resident::hooks().idOf(w);
-        std::string state = g_hooks.saveState ? g_hooks.saveState(w, dir, upper(id)) : "";
+        std::string tool = tools::nameOf(w);
+        std::string state = !tool.empty() ? "TOOL:" + tool : g_hooks.saveState ? g_hooks.saveState(w, dir, upper(id)) : "";
         os << id << "\t" << resident::hooks().typeOf(w) << "\t"
            << (owner.empty() ? "app" : owner) << "\t" << r.a.x << "," << r.a.y << "," << (r.b.x - r.a.x) << ","
            << (r.b.y - r.a.y) << "\t" << oneLine(titleOf(w), 60) << "\t" << state << "\n";
@@ -306,7 +307,7 @@ bool g_restoreOn = true;
 
 // Types whose window comes back as it was: the editor with its text, the paint canvas with its
 // drawing, and the generative and pattern windows, which hold nothing but their place.
-const char* kRestorable[] = {"text_editor", "paint", "feed", "test_pattern", "gradient", "animated_gradient", "verse",
+const char* kRestorable[] = {"text_editor", "paint", "feed", "tool", "test_pattern", "gradient", "animated_gradient", "verse",
                              "mycelium", "orbit", "torus", "cube", "life", "blocks", "score", "ascii", "contour_map"};
 bool restorable(const std::string& t) {
     for (auto r : kRestorable) if (t == r) return true;
@@ -334,7 +335,9 @@ void restoreDesk() {
             std::string err;
             std::string file = it->state.empty() ? "" : path("DESK/" + it->state);
             resident::WhoScope ws(ownerWho(it->owner));
-            TWindow* w = g_hooks.restoreWindow(it->type, it->x, it->y, it->w, it->h, it->title, file, err);
+            TWindow* w = it->type == "tool" ? (it->state.rfind("TOOL:", 0) == 0 ? tools::reopen(it->state.substr(5), it->x, it->y, it->w, it->h, err) : nullptr)
+                                            : g_hooks.restoreWindow(it->type, it->x, it->y, it->w, it->h, it->title, file, err);
+            if (!w && it->type == "tool" && err.empty()) err = "the desk does not say which tool it ran";
             resident::settle();   // the window is its old owner's again
             if (w) r.to = resident::hooks().idOf(w);
             else r.reason = err.empty() ? "it would not open" : err;
@@ -2848,6 +2851,7 @@ void wake() {
 void close(const std::string& how) {
     if (!g_woken || g_closed) return;
     tickScenes(true);   // what the windows held at the close
+    tools::saveAll();
     g_closed = true;
     finishPending();   // a sign page or LOG.TXT still open is signed or saved now
     logClose(allActs(), how);
