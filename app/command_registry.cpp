@@ -16,6 +16,9 @@ extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 // registry without the sound files still link; there it is null.
 std::string sound_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
                                    bool* handled) __attribute__((weak));
+// Terminal transport (app/terminal_transport.cpp): weak for the same reason.
+std::string terminal_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
+                                      bool* handled) __attribute__((weak));
 
 #include <cstdint>
 #include <sys/stat.h>
@@ -199,6 +202,10 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_terminal", "Open a terminal emulator window (optional x, y, w, h, title; exec=<command> runs it instead of a shell, no prompt or echo; hold=1 keeps the last screen after it exits)", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
+        {"terminal_pause", "Pause what runs in a terminal window: its program and everything it started stop (id=, default the focused terminal, else the only one)", false},
+        {"terminal_resume", "Resume a paused terminal window's program from where it stopped (id=, default as terminal_pause)", false},
+        {"terminal_toggle", "Pause a running terminal window's program, or resume a paused one (id=, default as terminal_pause)", false},
+        {"terminal_state", "A terminal window's program: state running|paused|exited, its name, seconds paused, and whether the window holds the keyboard (id=)", false},
         {"chat_receive", "Display a remote chat message in Scramble (sender + text params)", true},
         {"wibwob_ask", "Send a user message to the Wib&Wob chat window, triggering an AI response (text param)", true},
         {"get_chat_history", "Return Wib&Wob chat history as JSON array of {role, content} messages", false},
@@ -344,6 +351,11 @@ static std::string exec_registry_command_inner(
     if (sound_registry_command) {
         bool handled = false;
         std::string r = sound_registry_command(name, kv, &handled);
+        if (handled) return r;
+    }
+    if (terminal_registry_command && name.rfind("terminal_", 0) == 0) {
+        bool handled = false;
+        std::string r = terminal_registry_command(name, kv, &handled);
         if (handled) return r;
     }
     if (name == "cascade") {
