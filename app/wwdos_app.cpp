@@ -40,6 +40,8 @@
 #include <tvision/tv.h>
 
 #include "test_pattern.h"
+#include "resident_input.h"
+#include "resident_senses.h"
 #include "core/json_utils.h"
 #include "gradient.h"
 #include "ui/ui_helpers.h"
@@ -762,6 +764,9 @@ class TWwdosApp : public TApplication
 public:
     TWwdosApp();
     virtual void handleEvent(TEvent& event);
+    // Resident input (resident_input.cpp) joins the person's event stream here.
+    virtual void getEvent(TEvent& event) override;
+    virtual void putEvent(TEvent& event) override;
     virtual void idle();
     virtual void run();
     virtual TPalette& getPalette() const;
@@ -953,6 +958,7 @@ private:
     friend bool api_open_workspace_path(TWwdosApp&, const std::string&);
     friend void api_screenshot(TWwdosApp&);
     friend std::string api_get_state(TWwdosApp&);
+    friend std::string api_window_text(TWwdosApp&, const std::string&);
     friend std::string api_move_window(TWwdosApp&, const std::string&, int, int);
     friend std::string api_resize_window(TWwdosApp&, const std::string&, int, int);
     friend std::string api_focus_window(TWwdosApp&, const std::string&);
@@ -1045,6 +1051,11 @@ private:
 // Static member definition
 std::string TWwdosApp::runtimeApiKey;
 
+// Readers for the resident's senses (resident_senses.cpp), defined below.
+static const char* windowTypeName(TWindow* w);
+static bool residentTextOf(TWindow* w, std::vector<std::string>& out);
+static std::string residentStateOf(TWindow* w);
+
 // Accessor for runtime API key (used by wibwob_view.cpp)
 std::string getAppRuntimeApiKey() {
     return TWwdosApp::runtimeApiKey;
@@ -1078,6 +1089,18 @@ TWwdosApp::TWwdosApp() :
         openAnimationFilePath(bw.file, TRect(bw.x, bw.y, bw.x + bw.w, bw.y + bw.h), false, false, bw.title);
     return;
 #endif
+
+    resident::Hooks residentHooks;
+    residentHooks.findWindow = [this](const std::string& id) { return findWindowById(id); };
+    residentHooks.idOf = [this](TWindow* w) {
+        findWindowById("");  // gives unregistered windows (dialogs) a stable id without an event
+        auto it = winToId.find(w);
+        return it == winToId.end() ? std::string() : it->second;
+    };
+    residentHooks.typeOf = [](TWindow* w) { return std::string(windowTypeName(w)); };
+    residentHooks.textOf = [](TWindow* w, std::vector<std::string>& out) { return residentTextOf(w, out); };
+    residentHooks.stateOf = [](TWindow* w) { return residentStateOf(w); };
+    resident::setHooks(residentHooks);
 
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
@@ -1129,6 +1152,11 @@ TWwdosApp::TWwdosApp() :
 
 void TWwdosApp::handleEvent(TEvent& event)
 {
+    // The Residents menu: the console key and the residents' rules (resident_acts.cpp).
+    if (event.what == evCommand && resident::handleCommand(event.message.command)) {
+        clearEvent(event);
+        return;
+    }
     TApplication::handleEvent(event);
     
     if (event.what == evCommand)
@@ -2735,6 +2763,15 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("~Q~uantum Printer", cmQuantumPrinter, kbF11) +
             newLine() +
             *new TMenuItem("API ~K~ey...", cmApiKey, kbNoKey) +
+            newLine() +
+            (TMenuItem&)(
+                *new TSubMenu("Re~s~idents", kbNoKey) +
+                    *new TMenuItem("Console ~k~ey", resident::cmResidentKey, kbNoKey, hcNoContext, "off") +
+                    *new TMenuItem("Reading ~m~arks", resident::cmResidentMarks, kbNoKey, hcNoContext, "on") +
+                    *new TMenuItem("Visible ~h~and", resident::cmResidentHand, kbNoKey, hcNoContext, "on") +
+                    newLine() +
+                    *new TMenuItem("~A~bout the residents", resident::cmResidentAbout, kbNoKey)
+            ) +
         *new TSubMenu("~H~elp", kbAltH) +
             *new TMenuItem("~A~bout WIBWOBWORLD", cmAbout, kbNoKey) +
             *new TMenuItem("~K~eyboard Shortcuts", cmKeyboardShortcuts, kbNoKey) +
@@ -2933,6 +2970,23 @@ void TWwdosApp::stepSweep()
         sweepDone_ = target;
     }
     if (sweepDone_ >= rows) sweepOn_ = false;
+}
+
+void TWwdosApp::getEvent(TEvent& event)
+{
+    resident::settle();   // window changes since the last event belong to its author
+    if (resident::takeEvent(event)) return;
+    bool fromPut = pending.what != evNothing;
+    TApplication::getEvent(event);
+    resident::noteOrigin(event, fromPut);
+    resident::afterBase(event);
+}
+
+void TWwdosApp::putEvent(TEvent& event)
+{
+    if (resident::interceptPut(event)) return;
+    resident::notePut(event);
+    TApplication::putEvent(event);
 }
 
 void TWwdosApp::idle()
@@ -3209,6 +3263,105 @@ static const char* windowTypeName(TWindow* w) {
     }
     // Fallback to first registry entry (canonical default type slug).
     return specs.empty() ? "test_pattern" : specs.front().type;
+}
+
+static std::vector<std::string> splitLines(const std::string& s) {
+    std::vector<std::string> out;
+    size_t p = 0;
+    while (p <= s.size()) {
+        size_t nl = s.find('\n', p);
+        if (nl == std::string::npos) nl = s.size();
+        std::string l = s.substr(p, nl - p);
+        while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
+        out.push_back(l);
+        p = nl + 1;
+    }
+    while (!out.empty() && out.back().empty()) out.pop_back();
+    return out;
+}
+
+// The text a window's model holds, for look_read: editor lines, terminal output,
+// chat messages, paint canvas. Other types are read from their cells.
+static bool residentTextOf(TWindow* w, std::vector<std::string>& out) {
+    out.clear();
+    if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
+        if (!tw->getEditorView()) return false;
+        out = tw->getEditorView()->getLines();
+        return true;
+    }
+    if (auto* term = dynamic_cast<TWibWobTerminalWindow*>(w)) {
+        out = splitLines(term->getOutputText());
+        return true;
+    }
+    if (auto* chat = dynamic_cast<TWibWobWindow*>(w)) {
+        auto* mv = chat->getMessageView();
+        if (!mv) return false;
+        for (const auto& m : mv->getMessages()) {
+            auto lines = splitLines(m.content);
+            std::string who = m.sender.empty() ? "Wib&Wob" : m.sender;
+            if (lines.empty()) lines.push_back("");
+            out.push_back(who + ": " + lines[0]);
+            for (size_t i = 1; i < lines.size(); ++i) out.push_back("  " + lines[i]);
+        }
+        return true;
+    }
+    if (auto* pw = dynamic_cast<TPaintWindow*>(w)) {
+        if (!pw->getCanvas()) return false;
+        out = splitLines(pw->getCanvas()->exportText());
+        return true;
+    }
+    return false;
+}
+
+static std::string residentStateOf(TWindow* w) {
+    std::vector<std::string> lines;
+    if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
+        if (!tw->getEditorView()) return "";
+        const auto& l = tw->getEditorView()->getLines();
+        size_t chars = 0;
+        for (auto& s : l) chars += s.size();
+        std::string top;
+        for (auto& s : l) if (!s.empty()) { top = s.size() > 40 ? s.substr(0, 37) + "..." : s; break; }
+        return "text editor holding " + std::to_string(l.size()) + " lines, " + std::to_string(chars) +
+               " characters" + (top.empty() ? "" : "; first line: \"" + top + "\"");
+    }
+    if (auto* term = dynamic_cast<TWibWobTerminalWindow*>(w)) {
+        const char* t = term->getTitle(0);
+        lines = splitLines(term->getOutputText());
+        return std::string("terminal") + (t && *t ? std::string(" \"") + t + "\"" : "") + " showing " +
+               std::to_string(lines.size()) + " lines of output";
+    }
+    if (auto* chat = dynamic_cast<TWibWobWindow*>(w)) {
+        auto* mv = chat->getMessageView();
+        if (!mv) return "";
+        const auto& m = mv->getMessages();
+        if (m.empty()) return "chat with no messages yet";
+        std::string last = m.back().sender.empty() ? "Wib&Wob" : m.back().sender;
+        return "chat with " + std::to_string(m.size()) + " messages; the last from " + last;
+    }
+    if (auto* pw = dynamic_cast<TPaintWindow*>(w)) {
+        auto* c = pw->getCanvas();
+        if (!c) return "";
+        lines = splitLines(c->exportText());
+        int ink = 0;
+        for (auto& s : lines) for (char ch : s) if (ch != ' ') ++ink;
+        return "paint canvas " + std::to_string(c->getCols()) + "x" + std::to_string(c->getRows()) + " with " +
+               std::to_string(ink) + " cells inked";
+    }
+    return "";
+}
+
+// Text of a window that holds text (the text editor), for checking what input produced.
+std::string api_window_text(TWwdosApp& app, const std::string& id) {
+    TWindow* w = app.findWindowById(id);
+    if (!w) return "err window not found";
+    auto* tw = dynamic_cast<TTextEditorWindow*>(w);
+    if (!tw || !tw->getEditorView()) return "err no text reader for this window type";
+    std::string out = "{\"id\":\"" + id + "\",\"type\":\"text_editor\",\"lines\":[";
+    const auto& lines = tw->getEditorView()->getLines();
+    for (size_t i = 0; i < lines.size(); ++i) out += (i ? ",\"" : "\"") + json_escape(lines[i]) + "\"";
+    out += "]}";
+    return out;
 }
 
 std::string api_get_state(TWwdosApp& app) {
