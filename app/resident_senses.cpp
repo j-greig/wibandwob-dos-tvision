@@ -14,6 +14,7 @@
 
 #include "resident_senses.h"
 #include "resident_overlay.h"
+#include "desk_mosh.h"
 
 #include <algorithm>
 #include <chrono>
@@ -337,6 +338,7 @@ struct ReaderView {
     std::map<std::string, Snap> wins;   // by window id
     std::string focus;
     Clock::time_point at{};
+    uint64_t moshStep = 0, moshOpened = 0, moshClosed = 0;
 };
 
 std::map<std::string, ReaderView> g_readers;
@@ -346,6 +348,7 @@ ReaderView snapshotNow() {
     ReaderView v;
     int z = 0;
     for (TWindow* w : deskWindows()) {
+        if (deskmosh::isShard(w)) continue;   // shards are summed up in "mosh"
         std::string id = idOfW(w);
         if (id.empty()) { ++z; continue; }
         Snap s;
@@ -362,6 +365,9 @@ ReaderView snapshotNow() {
     TDeskTop* d = TProgram::deskTop;
     if (d && d->current) if (auto* w = dynamic_cast<TWindow*>(d->current)) v.focus = idOfW(w);
     v.at = Clock::now();
+    v.moshStep = deskmosh::stepCount();
+    v.moshOpened = deskmosh::openedTotal();
+    v.moshClosed = deskmosh::closedTotal();
     return v;
 }
 
@@ -426,7 +432,11 @@ std::string changesJson(const std::string& reader) {
        << "],\"retitled\":[" << retitled.str() << "],\"restacked\":[" << restacked.str() << "],\"content\":["
        << content.str() << "]";
     if (now.focus != was.focus) os << ",\"focus\":{\"from\":" << q(was.focus) << ",\"to\":" << q(now.focus) << "}";
-    os << ",\"unchanged\":" << unchanged << "}";
+    os << ",\"unchanged\":" << unchanged;
+    if (deskmosh::on() || now.moshStep != was.moshStep)
+        os << ",\"mosh\":{\"on\":" << (deskmosh::on() ? "true" : "false") << ",\"steps\":" << (now.moshStep - was.moshStep)
+           << ",\"opened\":" << (now.moshOpened - was.moshOpened) << ",\"closed\":" << (now.moshClosed - was.moshClosed) << "}";
+    os << "}";
     was = now;
     return os.str();
 }
@@ -456,10 +466,15 @@ std::string cmdGlance(const KV& kv) {
         first = false;
     };
     for (TWindow* w : appWindows()) one(w, -1);
-    for (TWindow* w : deskWindows()) one(w, z++);
+    bool shards = str(kv, "shards") == "1";
+    for (TWindow* w : deskWindows()) {
+        if (deskmosh::isShard(w) && !shards) { ++z; continue; }
+        one(w, z++);
+    }
     os << "],\"focus\":" << q(d && d->current ? idOfW(dynamic_cast<TWindow*>(d->current)) : "")
        << ",\"modal\":" << (TheTopView ? "true" : "false")
        << ",\"menu_open\":" << (dynamic_cast<TMenuView*>(TheTopView) ? "true" : "false");
+    if (deskmosh::on()) os << ",\"mosh\":" << deskmosh::summaryJson();
     if (has(kv, "reader") || has(kv, "since")) os << ",\"changes\":" << changesJson(readerOf(kv));
     os << "}";
     return os.str();
@@ -529,6 +544,7 @@ std::string cmdStudy(const KV& kv) {
     }
     std::ostringstream os;
     os << "{\"standing\":\"data\",\"from\":" << q(from);
+    if (deskmosh::on()) os << ",\"mosh\":" << deskmosh::summaryJson();
     if (w) os << ",\"id\":" << q(id);
     os << ",\"x\":" << x << ",\"y\":" << y << ",\"w\":" << wdt << ",\"h\":" << hgt
        << ",\"ruler\":[" << q(tens) << "," << q(units) << "],\"runs_are\":\"[x, n, fg, bg] in BIOS colours 0-15\",\"rows\":[";

@@ -6,6 +6,7 @@
 #include "figlet_utils.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "desk_mosh.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 
@@ -196,6 +197,18 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"look_glance", "Every window, one line each: id, type, title, rect, z, owner, whether the person can see it (seen all|part|none), one sentence of state; reader= adds what changed since that reader last looked. Changes nothing", false},
         {"look_read", "One window's text (id=): the model's text for editor, terminal, chat and paint windows, else its cells as drawn; from=, limit= page the lines. Marks the window's frame for the person (reader=). Changes nothing else", false},
         {"look_study", "A rectangle of cells (x, y, w, h in desktop cells; screen=1 for screen rows; id= for a window's own picture) with text, colour runs [x,n,fg,bg] and a ruler of column numbers. Changes nothing", false},
+        {"mosh", "Desk mosh in words (args=): on [way], off, panic, way wrap|tear|mosh|bleed|raw|all, amount 0-100, tempo BPM (0 = manual), seed N, count N, scope desktop|window ID, step HITS; no args = status", false},
+        {"mosh_on", "Desk mosh on: real windows break into shards in time with the TR-808 or the internal tempo (optional way=)", false},
+        {"mosh_off", "Desk mosh off: every shard closes and the desktop is as it was", false},
+        {"mosh_panic", "Desk mosh off at once", false},
+        {"mosh_way", "Desk mosh way: wrap, tear, mosh, bleed, raw or all (way=)", false},
+        {"mosh_amount", "Desk mosh amount 0-100 (value=)", false},
+        {"mosh_tempo", "Desk mosh internal tempo in BPM, 0 = steps only from the TR-808 or mosh_step (bpm=)", false},
+        {"mosh_seed", "Desk mosh seed (n=): same seed and steps give the same frames", false},
+        {"mosh_count", "Desk mosh: most shard windows at once (value=, default 240)", false},
+        {"mosh_scope", "Desk mosh scope: desktop, or window with id= (one window moshes, the rest stay clean)", false},
+        {"mosh_step", "Desk mosh: run steps now (hits=kick,snare,tick,rat,metal,accent; n=)", false},
+        {"mosh_status", "Desk mosh settings, shard count and step timings", false},
         {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
@@ -745,6 +758,7 @@ std::string exec_registry_command(
         if (name == "look_changes") return resident::cmdChanges(kv);
         if (name == "look_mark") return resident::cmdMark(kv);
     }
+    if (deskmosh::isCommand(name)) return deskmosh::command(name, kv);
     if (name == "acts") return resident::cmdActs(kv);
     if (name == "standing") return resident::cmdStanding(kv);
     if (name == "residents_about") return resident::cmdAbout(kv);
