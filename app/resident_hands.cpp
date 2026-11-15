@@ -5,6 +5,7 @@
 #include <tvision/tv.h>
 
 #include "resident_hands.h"
+#include "desk_mosh.h"
 #include "resident_senses.h"
 #include "describe.h"
 
@@ -302,8 +303,11 @@ bool pawCommandAllowed(const std::string& name) {
     static const char* ok[] = {"resident_key", "resident_mouse", "resident_press", "resident_menu", "describe",
                                "look_glance", "look_read", "create_window", "move_window", "resize_window",
                                "close_window", "window_title",
-                               "open_synth", "synth", "hear",   // the machine's sound (app/sound)
-                               "terminal_pause", "terminal_resume", "terminal_toggle", "terminal_state"};
+                               "open_synth", "synth", "hear",    // the machine's sound (app/sound)
+                               "terminal_pause", "terminal_resume", "terminal_toggle", "terminal_state", "terminal_release",
+                               "cast_control", "cast_state",     // the terminal transport (terminal_transport.cpp)
+                               "mosh", "mosh_on", "mosh_off", "mosh_panic", "mosh_way", "mosh_amount",
+                               "mosh_score", "mosh_status"};     // the desk mosh (desk_mosh.cpp)
     for (const char* n : ok) if (name == n) return true;
     return false;
 }
@@ -345,6 +349,10 @@ std::string deskForPrompt() {
     TView* v = f;
     int n = 0;
     do {
+        if (deskmosh::isShard(v)) {
+            v = v->next;   // shards are summed up in one line below
+            continue;
+        }
         if (auto* w = dynamic_cast<TWindow*>(v)) {
             std::string state, cls;
             std::vector<std::string> text;
@@ -359,6 +367,7 @@ std::string deskForPrompt() {
         }
         v = v->next;
     } while (v != f && n < 40);
+    if (deskmosh::on()) os << "- the desk is moshing: " << deskmosh::summaryJson() << "\n";
     return n ? os.str() : "(no windows are open)";
 }
 

@@ -44,6 +44,10 @@ public:
     std::string programName() { return std::string(); }
     std::string keyboard() const { return "none"; }
     bool releaseKeyboard() { return false; }
+    bool startRecording(const std::string &, std::string &err) { err = "no program in this build"; return false; }
+    long stopRecording(std::string &err) { err = "not recording"; return -1; }
+    std::string recordingPath() const { return std::string(); }
+    double recordingSeconds() const { return 0; }
 private:
     std::string fixedTitle_;
 };
@@ -66,6 +70,8 @@ TWindow* createTerminalWindowExec(const TRect &bounds, const std::string &exec, 
 #include <vector>
 #include <chrono>
 #include <sys/types.h>
+
+namespace ww { class CastRecorder; }
 
 class TWibWobTerminalWindow : public tvterm::BasicTerminalWindow, public ww::Describable
 {
@@ -121,6 +127,13 @@ public:
     // Ends a grab; false when the window did not hold the keyboard.
     bool releaseKeyboard();
 
+    // ---- casts (asciinema v2): the program's output as it arrives, from tvterm's reader
+    void setRecorder(std::shared_ptr<ww::CastRecorder> r) { recorder_ = std::move(r); }
+    bool startRecording(const std::string &path, std::string &err);
+    long stopRecording(std::string &err);   // output events written, -1 with err
+    std::string recordingPath() const;
+    double recordingSeconds() const;
+
 private:
     using Super = tvterm::BasicTerminalWindow;
     std::string fixedTitle_;
@@ -129,6 +142,7 @@ private:
     pid_t leader_ {0};
     bool paused_ {false};
     std::vector<pid_t> stopped_;
+    std::shared_ptr<ww::CastRecorder> recorder_;
     std::chrono::steady_clock::time_point pausedAt_;
     void transportChanged();
 };

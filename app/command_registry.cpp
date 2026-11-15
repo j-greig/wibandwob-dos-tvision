@@ -206,7 +206,12 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"terminal_pause", "Pause what runs in a terminal window: its program and everything it started stop (id=, default the focused terminal, else the only one)", false},
         {"terminal_resume", "Resume a paused terminal window's program from where it stopped (id=, default as terminal_pause)", false},
         {"terminal_toggle", "Pause a running terminal window's program, or resume a paused one (id=, default as terminal_pause)", false},
-        {"terminal_state", "A terminal window's program: state running|paused|exited, its name, seconds paused, and whether the window holds the keyboard (id=)", false},
+        {"terminal_state", "A terminal window's program: state running|paused|exited, its name, seconds paused, and keyboard grab|focus|none (grab: the window holds the keyboard) (id=)", false},
+        {"terminal_record", "Record a terminal window's output as an asciinema v2 cast: action=start file=<path.cast>, action=stop, action=state (id=)", false},
+        {"open_cast", "Open a cast player window for an asciinema v2 file (file=, optional x, y, speed=, loop=1, paused=1); no child process runs", false},
+        {"cast_control", "Drive a cast player window: action=play|pause|toggle, seek=<seconds>, speed=<0.25-8>, loop=0|1 (id=, default the focused player)", false},
+        {"cast_state", "A cast player window's file, size, duration, position, playing, speed and loop (id=)", false},
+        {"terminal_release", "Give the keyboard back from a terminal window that holds it (Window > Grab Keyboard); the person's chord is Alt-End (id=)", false},
         {"chat_receive", "Display a remote chat message in Scramble (sender + text params)", true},
         {"wibwob_ask", "Send a user message to the Wib&Wob chat window, triggering an AI response (text param)", true},
         {"get_chat_history", "Return Wib&Wob chat history as JSON array of {role, content} messages", false},
@@ -224,17 +229,18 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"look_glance", "Every window, one line each: id, type, title, rect, z, owner, whether the person can see it (seen all|part|none), one sentence of state; reader= adds what changed since that reader last looked. Changes nothing", false},
         {"look_read", "One window's text (id=): the model's text for editor, terminal, chat and paint windows, else its cells as drawn; from=, limit= page the lines. Marks the window's frame for the person (reader=). Changes nothing else", false},
         {"look_study", "A rectangle of cells (x, y, w, h in desktop cells; screen=1 for screen rows; id= for a window's own picture) with text, colour runs [x,n,fg,bg] and a ruler of column numbers. Changes nothing", false},
-        {"mosh", "Desk mosh in words (args=): on [way], off, panic, way wrap|tear|mosh|bleed|raw|all, amount 0-100, tempo BPM (0 = manual), seed N, count N, scope desktop|window ID, step HITS; no args = status", false},
+        {"mosh", "Desk mosh in words (args=): on [way], off, panic, way wrap|tear|mosh|bleed|raw|all, amount 0-100, tempo BPM (0 = manual), seed N, count N, scope desktop|window ID, step HITS, score PATH, screen on|off; no args = status", false},
         {"mosh_on", "Desk mosh on: real windows break into shards in time with the TR-808 or the internal tempo (optional way=)", false},
         {"mosh_off", "Desk mosh off: every shard closes and the desktop is as it was", false},
         {"mosh_panic", "Desk mosh off at once", false},
-        {"mosh_way", "Desk mosh way: wrap, tear, mosh, bleed, raw or all (way=)", false},
+        {"mosh_way", "Desk mosh way: wrap, tear, mosh, bleed, raw, all (two bars each) or sound (bass notes wrap, other notes tear, drums mosh, quiet bleeds) (way=)", false},
         {"mosh_amount", "Desk mosh amount 0-100 (value=)", false},
         {"mosh_tempo", "Desk mosh internal tempo in BPM, 0 = steps only from the TR-808 or mosh_step (bpm=)", false},
         {"mosh_seed", "Desk mosh seed (n=): same seed and steps give the same frames", false},
         {"mosh_count", "Desk mosh: most shard windows at once (value=, default 240)", false},
         {"mosh_scope", "Desk mosh scope: desktop, or window with id= (one window moshes, the rest stay clean)", false},
         {"mosh_step", "Desk mosh: run steps now (hits=kick,snare,tick,rat,metal,accent; n=)", false},
+        {"mosh_score", "Desk mosh score: path= a file of parts (bars N WAY [amount A] [tempo BPM], end|loop), text= the same inline, or path=off; scores/catmosh.mosh is the film's five parts", false},
         {"mosh_screen", "Desk mosh screen layer on|off (value=): a filter over the desktop rows for colour runs and decay across window edges; the windows layer is mosh_on", false},
         {"mosh_status", "Desk mosh settings, shard count and step timings", false},
         {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
@@ -354,7 +360,7 @@ static std::string exec_registry_command_inner(
         std::string r = sound_registry_command(name, kv, &handled);
         if (handled) return r;
     }
-    if (terminal_registry_command && name.rfind("terminal_", 0) == 0) {
+    if (terminal_registry_command && (name.rfind("terminal_", 0) == 0 || name.rfind("cast_", 0) == 0 || name == "open_cast")) {
         bool handled = false;
         std::string r = terminal_registry_command(name, kv, &handled);
         if (handled) return r;
