@@ -6,6 +6,7 @@
 
 #include "resident_senses.h"
 #include "ears.h"
+#include "stream.h"
 #include "score_view.h"
 #include "synth_view.h"
 #include "tr808_view.h"
@@ -24,10 +25,15 @@
 namespace sound {
 
 static Host g_host;
-void setHost(const Host& h) { g_host = h; }
+void setHost(const Host& h) {
+    g_host = h;
+    startStream();
+}
 const Host& host() { return g_host; }
 
 double clockMs() {
+    // One clock for every sound: the stream's samples while it runs (stream.cpp), else steady time.
+    if (streamRunning()) return streamClockMs();
     using namespace std::chrono;
     static const steady_clock::time_point t0 = steady_clock::now();
     return duration<double, std::milli>(steady_clock::now() - t0).count();
@@ -79,7 +85,7 @@ static std::atomic<bool> g_audio{[] {
 
 bool synthAudioEnabled() { return g_audio.load(); }
 void setSynthAudioEnabled(bool on) { g_audio.store(on); }
-bool synthAudioAvailable() { return tr808::playerAvailable(); }
+bool synthAudioAvailable() { return std::string(streamOut()) == "coreaudio" || (!streamRunning() && tr808::playerAvailable()); }
 
 static void removeCache();
 
@@ -107,8 +113,15 @@ static void removeCache() {
     ::rmdir(d.c_str());
 }
 
-bool sendToSpeakers(const std::vector<Note>& notes) {
-    if (!synthAudioEnabled() || !synthAudioAvailable() || notes.empty()) return false;
+bool sendToSpeakers(const std::vector<Note>& notes, double nowMs) {
+    if (!synthAudioEnabled() || notes.empty()) return false;
+    if (streamRunning()) {
+        // Into the one stream, each note at its own sample: in time, sharing the speaker and the FM channels.
+        const int64_t base = sampleForClock(nowMs);
+        for (const auto& n : notes) mixer().schedule(n, base + msToSample(n.atMs));
+        return true;
+    }
+    if (!tr808::playerAvailable()) return false;   // no stream (WWDOS_SOUND_OUT=off): one afplay per phrase
     // One file per phrase: the phrase keeps its own timing inside the file.
     std::vector<Note> shifted = notes;
     double first = shifted[0].atMs;
@@ -173,7 +186,8 @@ static std::string openSynth(const KV& kv) {
 }
 
 bool handles(const std::string& name) {
-    return name == "open_synth" || name == "synth" || name == "hear" || name == "open_event_score" || name == "event_score";
+    return name == "open_synth" || name == "synth" || name == "hear" || name == "open_event_score" ||
+           name == "event_score" || name == "sound";
 }
 
 // scores/<name>.score: $WWDOS_REPO/scores, ./scores, then the source tree.
@@ -225,6 +239,8 @@ static std::string openScore(const KV& kv) {
 
 std::string command(const std::string& name, const KV& kv) {
     if (name == "open_synth") return openSynth(kv);
+    if (name == "sound")
+        return streamCommand(kvGet(kv, "action", "state"), kvHas(kv, "ms") ? std::atof(kvGet(kv, "ms").c_str()) : 1000.0);
     if (name == "open_event_score") return openScore(kv);
     if (name == "event_score") {
         auto* w = findOrFront<TScoreWindow>(kv);

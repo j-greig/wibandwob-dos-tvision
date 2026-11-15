@@ -8,7 +8,7 @@ it after. Binary: WWDOS_BIN or build-resident/app/wwdos.
 Usage:
     python3 tests/resident/test_machine_sound.py            # all groups
     python3 tests/resident/test_machine_sound.py synth      # chosen groups
-Groups: synth, ears, score, hands (its own desktop with a stand-in claude CLI).
+Groups: synth, ears, score, hands (its own desktop with a stand-in claude CLI), stream.
 """
 
 import json
@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from resident_lib import REPO, Desk, Results  # noqa: E402
 
 R = Results()
-QUIET = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "ANTHROPIC_API_KEY": "", "WWDOS_SYNTH_AUDIO": "0"}
+QUIET = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "ANTHROPIC_API_KEY": "", "WWDOS_SYNTH_AUDIO": "0",
+         "WWDOS_SOUND_OUT": "null"}   # the stream runs on the clock and plays nowhere
 
 
 def q(desk, cmd, **kv):
@@ -149,6 +150,7 @@ def test_ears(desk):
 
     # wib plays a phrase; the ears hear it at once, the first note sounding.
     x(desk, "synth", id=syn, action="notes", notes="C-4 E-4 G-4", step=200, dur=150, actor="wib", source="resident")
+    time.sleep(0.08)   # a sound asked for now starts the stream's lead (46 ms) later
     h = x(desk, "hear", seconds=2, of="synth", actor="wob")
     R.check(any(s["note"] == "C-4" and s["who"] == "wib" for s in h["sounding"]),
             f"right after the phrase starts, C-4 by wib is sounding ({h['sounding']})")
@@ -249,6 +251,7 @@ def test_score(desk):
             f"the score gives wib the phrase to answer: {ans}")
     # wib answers: the phrase backwards, a fifth up.
     x(desk, "synth", id=syn, action="notes", notes="C-5 B-4 A-4 G-4", step=100, actor="wib", source="resident")
+    time.sleep(0.08)
     h = x(desk, "hear", seconds=0.6, of="synth")
     R.check([e["note"] for e in h["heard"]][:1] == ["C-5"], "wib hears its own answer begin")
 
@@ -382,7 +385,94 @@ def test_hands(_desk):
         desk.stop()
 
 
-GROUPS = {"synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands}
+# ---------------------------------------------------------------------------- stream
+
+def near(t, times, tol):
+    return any(abs(t - u) <= tol for u in times)
+
+
+def test_stream(desk):
+    print("\n[stream] one stream and one clock: notes and drum steps sound when the ears say, scores and drums share bars")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    st = x(desk, "sound", action="state")
+    R.check(st["out"] == "null" and st["running"] and abs(st["lead_ms"] - 46.44) < 0.1,
+            f"the stream runs (null output in tests), lead 46 ms ({st['out']}, {st['lead_ms']})")
+    t0, c0 = time.time(), st["clock_ms"]
+    time.sleep(0.5)
+    c1 = x(desk, "sound", action="state")["clock_ms"]
+    R.check(abs((c1 - c0) - (time.time() - t0) * 1000) < 40, f"the clock follows the stream in real time ({c1 - c0} ms in 500 ms)")
+
+    syn = x(desk, "open_synth", x=2, y=1, w=68, h=18)["id"]
+    x(desk, "synth", id=syn, action="audio", on=1)          # into the null stream: mixed, heard by nobody
+    time.sleep(2.2)
+    x(desk, "synth", id=syn, action="notes", notes="C-4 C-5 C-4 C-5", step=150, dur=60, patch="pluck", actor="wib")
+    time.sleep(1.0)
+    heard = [e["at_ms"] for e in x(desk, "hear", seconds=2, of="synth")["heard"]]
+    cap = x(desk, "sound", action="capture", ms=1800)
+    on = cap["onsets_ms"]
+    R.check(len(heard) == 4 and all(near(t, on, 3) for t in heard),
+            f"each of wib's four notes is in the mix within 3 ms of when the ears say it sounds "
+            f"({[round(min(abs(t - u) for u in on), 1) if on else None for t in heard]})")
+    R.check(abs((heard[1] - heard[0]) - 150) < 0.1 and abs((heard[3] - heard[0]) - 450) < 0.1,
+            "the notes sit exactly 150 ms apart on the clock")
+
+    # The person's keys: each note is in the mix when the ears say (a fixed lead, no per-note wait).
+    x(desk, "synth", id=syn, action="patch", value="pluck")
+    x(desk, "synth", id=syn, action="gate", value=60)
+    time.sleep(0.3)
+    desk.person_type("zcbq", gap=0.11)
+    time.sleep(0.6)
+    mine = [e["at_ms"] for e in x(desk, "hear", seconds=1.5, of="synth")["heard"] if e["who"] == "person"]
+    on = x(desk, "sound", action="capture", ms=1500)["onsets_ms"]
+    R.check(len(mine) == 4 and all(near(t, on, 3) for t in mine), f"the person's four keys sound when the ears say ({[round(min(abs(t - u) for u in on), 1) if on else None for t in mine]})")
+
+    # Phrases from separate calls share the nine FM channels.
+    for i in range(10):
+        x(desk, "synth", id=syn, action="note", note="C-3", dur=3000, patch="organ")
+    time.sleep(0.2)
+    st = x(desk, "sound", action="state")
+    R.check(st["fm_busy"] == 9, f"ten notes from ten commands hold nine FM channels ({st['fm_busy']})")
+    R.check(st["late"] == 0, f"nothing reached the stream late ({st['late']})")
+    x(desk, "synth", id=syn, action="audio", on=0)
+    time.sleep(3.2)
+
+    # The TR-808 on the same stream: every drum onset in the mix is a step the ears heard.
+    drm = x(desk, "open_tr808", x=2, y=20, w=118, h=26)["id"]
+    x(desk, "tr808", id=drm, action="audio", on=1)
+    x(desk, "tr808", id=drm, action="load_preset", preset="electro")
+    x(desk, "tr808", id=drm, action="play", actor="wob")
+    time.sleep(1.6)
+    hits = sorted({round(e["at_ms"], 3) for e in x(desk, "hear", seconds=1.5, of="tr808")["heard"]})
+    cap = x(desk, "sound", action="capture", ms=1200)
+    on = [t for t in cap["onsets_ms"] if t > cap["from_ms"] + 60]
+    inwin = [t for t in hits if cap["from_ms"] + 60 < t < cap["to_ms"]]
+    R.check(on and all(near(t, hits, 3) for t in on), f"every drum onset in the mix is within 3 ms of a step ({len(on)} onsets)")
+    R.check(len(on) >= len(inwin) // 2, f"the mix has an onset for most steps with hits ({len(on)} of {len(inwin)})")
+    gaps = {round(b - a, 1) for a, b in zip(hits, hits[1:])}
+    R.check(all(abs(g / 125.0 - round(g / 125.0)) < 0.002 for g in gaps), f"the steps are whole 16ths at 120 bpm apart ({sorted(gaps)[:4]})")
+    x(desk, "tr808", id=drm, action="stop")
+    x(desk, "tr808", id=drm, action="audio", on=0)
+    R.check(x(desk, "sound", action="state")["late"] == 0, "no drum hit reached the stream late")
+
+    # A score and the drum machine on one clock: every bar line of the score is a step 1 of the drums.
+    score = ("title Bars\ntempo 240\npart wib a resident\n1 all count\ndo tr808 preset electro\ndo tr808 tempo 240\n"
+             "do tr808 play\n4 wib play\n1 all rest\ndo tr808 stop\n")
+    sid = x(desk, "open_event_score", text=score)["id"]
+    x(desk, "event_score", id=sid, action="start")
+    time.sleep(6.6)
+    s = x(desk, "event_score", id=sid, action="state")
+    R.check(s["done"], "the score finished")
+    one = [e["at_ms"] for e in x(desk, "hear", seconds=8, of="tr808", window=drm)["heard"] if e["step"] == 0]
+    one = sorted(set(one))
+    offs = [round((t - s["lead_ms"] - s["started_ms"]) % 1000.0, 3) for t in one]
+    offs = [min(o, 1000 - o) for o in offs]
+    R.check(len(one) >= 4 and max(offs) < 0.5,
+            f"each step 1 of the drums falls on a bar line of the score, to within 0.5 ms ({len(one)} bars, worst {max(offs) if offs else None} ms)")
+    R.check(x(desk, "tr808", id=drm, action="state")["transport"] == "stopped", "the drums stopped with the score")
+
+
+GROUPS = {"synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():

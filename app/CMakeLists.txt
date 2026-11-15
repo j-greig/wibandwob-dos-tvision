@@ -52,6 +52,8 @@ add_executable(wwdos
     tr808_audio.cpp
     tr808_view.cpp
     sound/synth.cpp
+    sound/mixer.cpp
+    sound/stream.cpp
     sound/sound_host.cpp
     sound/synth_view.cpp
     sound/ears.cpp
@@ -102,6 +104,10 @@ set_source_files_properties(tr808_audio.cpp PROPERTIES COMPILE_DEFINITIONS "WWDO
 # Scores are found in scores/ of the source tree when run from elsewhere.
 set_source_files_properties(sound/sound_host.cpp PROPERTIES COMPILE_DEFINITIONS "WWDOS_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
 target_link_libraries(wwdos PRIVATE tvision tvterm-core)
+# The machine's sound stream (app/sound/stream.cpp) plays through an AudioQueue.
+if(APPLE)
+    target_link_libraries(wwdos PRIVATE "-framework AudioToolbox" "-framework CoreFoundation")
+endif()
 
 # On Linux, api_ipc.cpp uses OpenSSL for HMAC (macOS uses CommonCrypto)
 if(NOT APPLE)
@@ -187,7 +193,7 @@ add_executable(tr808_engine_test tr808_engine_test.cpp tr808_engine.cpp)
 add_test(NAME tr808_engine COMMAND tr808_engine_test)
 
 # sound_test (the machine's synth, ears and scores rendered to buffers; no tvision)
-add_executable(sound_test sound/sound_test.cpp sound/synth.cpp sound/ears.cpp sound/score.cpp)
+add_executable(sound_test sound/sound_test.cpp sound/synth.cpp sound/mixer.cpp sound/ears.cpp sound/score.cpp)
 add_test(NAME sound COMMAND sound_test)
 
 # command_registry_test (native ctest coverage for registry capability payload)

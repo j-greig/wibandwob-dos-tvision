@@ -537,7 +537,7 @@ bool readOnly(const std::string& name, const KV& kv) {
     // Rule commands (look_mark, resident_hand, window_owner, resident_manners) log
     // themselves through ruleGate; only resident_manners clear=1 is an ordinary act.
     if (name.rfind("look_", 0) == 0 || name == "resident_hand" || name == "window_owner") return true;
-    if (name == "hear") return true;   // the ears (app/sound/ears.cpp) change nothing
+    if (name == "hear" || name == "sound") return true;   // the ears and the stream's state change nothing
     if (name == "resident_manners") return !has(kv, "clear");
     return false;
 }

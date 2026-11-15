@@ -72,14 +72,42 @@ notes every time:
     {"ok":true,"rate":22050,"samples":22050,"ms":1000,"fnv":"1587c6fa70f41e7c","peak":9010,"rms":0.275,
      "up_crossings":439,"notes":1}
 
-### Sound out
+### Sound out: one stream, one clock
 
-A phrase is rendered to one 16-bit mono WAV at 22050 Hz in `$TMPDIR/wwdos-synth-<pid>/` and played with
-`afplay` on the TR-808's player thread (`tr808::playFile` in `app/tr808_audio.cpp`), so the synth and the drum
-machine share one audio path. The files are removed when the app exits normally.
+Every sound joins one mixer (`app/sound/mixer.cpp`) at a sample time, and one stream (`app/sound/stream.cpp`)
+plays the mixer without a break: an AudioQueue of 3 buffers of 256 samples at 22050 Hz mono. The mixer keeps the
+voices across calls: one PC speaker voice (a speaker note from any phrase replaces the one sounding) and nine FM
+channels (given out when a note starts; a tenth takes the oldest). The TR-808's recordings are mixed in on the same
+stream. The offline `render` is the same mixer rendered in one block, and the mixer gives the same samples in any
+block size.
 
-`WWDOS_SYNTH_AUDIO=0` starts the synth silent; `action=audio on=0|1` and the `0` key switch it. Silent, notes
-are still played, logged and heard by the ears; `sent` and `silenced` count where they went. Tests run silent.
+The stream's samples are the machine's clock (`sound::clockMs()`): the TR-808's sequencer, the event scores and
+the ears all take their time from it. A sound asked for at clock time T is placed at T plus a fixed lead of 1024
+samples (46.4 ms), so it is never late and never waits for a timer: a key pressed in the synth window sounds 46 ms
+later, every time. A TR-808 step lands on the sample it is due, not when the window's timer wakes. A score's
+`do tr808 play` starts the drums on the section's bar line, so the score's bars and the drum steps share one origin
+on one clock and cannot drift apart.
+
+| `WWDOS_SOUND_OUT` | what |
+|---|---|
+| `coreaudio` (default on macOS) | the stream plays on the Mac's audio out; if the AudioQueue cannot open, it runs `null` and `sound action=state` says why |
+| `null` | the stream runs at real time and plays nowhere (tests): the clock, mixing and capture all work |
+| `off` | no stream: the clock is steady time, the synth plays one WAV per phrase through `afplay` and the TR-808 its samples through `afplay`, as before |
+
+`WWDOS_SYNTH_AUDIO=0` and the TR-808's `WWDOS_TR808_AUDIO=0` still keep each instrument out of the mix; the ears hear
+it either way, at the same times.
+
+    exec_command name=sound action=state
+    -> {"ok":true,"out":"coreaudio","running":true,"rate":22050,"block":256,"buffers":3,"lead_ms":46.44,
+        "clock_ms":2483,"samples":55296,"notes":3,"hits":0,"late":0,"fm_busy":0,"speaker":false,"ringing":0,"note":""}
+
+    exec_command name=sound action=capture ms=1200
+    -> {"ok":true,"standing":"data","out":"coreaudio","rate":22050,"samples":26460,"from_ms":1330.98,"to_ms":2530.98,
+        "peak":2134,"rms":0.0154,"onsets_ms":[1709.66,1830.2,1949.21]}
+
+`capture` reads the last ms of the mix (the stream keeps 10 s) and finds onsets (a 64-sample frame whose level
+jumps above four times the frames before), as times on the clock: the same times the ears give in `at_ms`.
+Neither changes anything or is logged.
 
 ## Ears
 
@@ -107,7 +135,8 @@ nothing and is not logged as an act.
 
 - `sounding`: what sounds at this moment, with its level now (the synth by its envelope, a drum decaying over its
   ring: bd 400 ms, sd 200 ms, cy 900 ms, ch 60 ms ...) and how long it has left.
-- `heard`: what started in the window of time, oldest first (at most 400; `dropped` counts the rest).
+- `heard`: what started in the window of time, oldest first, each with `at_ms`, the clock time it sounds (the
+  time it was asked for plus the stream's lead) (at most 400; `dropped` counts the rest).
   `level` for the synth is velocity times the patch level (0-1); for the TR-808 it is the hit's playback volume
   (`afplay -v`, 1.0 = sample level; accents go above 1).
 - `rows`: one tracker row per `row_ms`, seconds ago on the left, synth notes, then drum voices.
@@ -204,11 +233,13 @@ hears as wib or wob with no change; `tui_list_commands` lists `synth`, `open_syn
 
 `app/sound/sound_test` (ctest `sound`) renders to buffers and needs no desktop: synth (17: note names, the PC
 speaker's divisor and pitch measured by zero crossings, one speaker voice, FM level, release and silence, patches,
-nine channels, envelope, WAV), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
+nine channels, envelope, WAV), mixer (7: the same samples in blocks of 1, 64 and 4096 and in the offline render, a
+later call's speaker note replacing the one sounding, ten calls holding nine FM channels, a drum hit on its exact
+sample, late counting, capture), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
 report, window filter, the keep limit), score (14: parsing, kinds, timing, and seven refused scores).
 
-`python3 tests/resident/test_machine_sound.py [synth] [ears] [score] [hands]` starts its own silent desktop
-(`tmux -L soundtest`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
+`python3 tests/resident/test_machine_sound.py [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
+(`tmux -L soundtest`, `WWDOS_SOUND_OUT=null`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
 the binary.
 
 | group | what it shows |
@@ -216,27 +247,25 @@ the binary.
 | synth | wib opens the synth (owner wib, a glance sentence); wib's phrase by command, the person's C D E from z x c, Tab to the PC speaker and `]` to octave 5, and wob's key through `resident_key` each play and name their player; nothing reaches the speakers when silent (sent 0); the acts log has all three; `render` of the PC speaker's A-4 is 22050 samples with 439 upward zero crossings, the same twice, and plays nothing |
 | ears | silence first; right after wib's phrase starts, C-4 by wib is sounding; wob then hears C-4 E-4 G-4, 200 ms apart, as played, with a summary and 16 rows; with the TR-808 started by wob, every hit heard is a step the engine's pattern has on, names wob and 120 bpm; `window=` filters; hear is not logged; the synth window shows the meter |
 | hands | on a desktop of its own with a stand-in claude CLI: the capabilities list synth, open_synth and hear; Scramble's ACT line plays a tune on the synth as scramble, her prompt names the commands and her call still has no tools, the log and the ears name her; the chat's socket client (`app_socket.js`) plays and hears as wob |
+| stream | the null stream runs and its clock follows real time; with the synth mixed in, each of wib's four notes is in the captured mix within 3 ms of the ears' `at_ms` (measured 0.0-0.1 ms), 150 ms apart on the clock to 0.1 ms; the person's four keys likewise; ten notes from ten commands hold nine FM channels; nothing late; every TR-808 onset in the mix is within 3 ms of a step and the steps are whole 16ths apart; a score at 240 bpm with the drums: every step 1 falls on a bar line of the score (worst 0.04 ms over 6 bars) and the drums stop with the score |
 | score | wib starts a score at 480 bpm; the person plays C D E F in their section; in wib's answer section the score hands wib those four notes; wib answers; the rest is kept; the score finishes on the clock; each section's notes are attributed (person 4, wib 4), the drum machine played under the person and stopped when the score said; the log has the sections, the `do` lines and the finish by `score`; a `do shell` line, a command line and a path outside `scores/` are refused and no window opens; the worked example opens with 8 sections |
 
 On origin/main (before these commits) every group fails at its first sound command (`err unknown command`, or the animated Score window's plain `ok` for `open_score`, which is why the event score commands are named `open_event_score` and `event_score`).
 
 ## What is weak
 
-- **Latency.** Each phrase is a WAV file handed to `afplay`, which takes tens of milliseconds to start. Fine for
-  a phrase from a command; a person playing fast from the keyboard hears each note late and unevenly. A real
-  audio stream (CoreAudio, or SDL) would fix it.
-- **Overlapping phrases are separate processes.** The PC speaker is one voice inside a phrase, but two phrases
-  sent close together play over each other, and FM's nine channels are counted per phrase, not across them.
+- **The lead is fixed at 46 ms.** Every sound asked for now plays 46 ms later. It keeps keyboard playing even and
+  never late, but a player hears the delay; a smaller AudioQueue buffer would cut it at the risk of drop-outs, which
+  are not counted.
 - **No key releases.** A terminal sends key presses only, so every keyboard note lasts the gate length.
-- **Mac only.** Sound goes out through `afplay`. The engine is plain C++ with no dependencies and could feed a
-  Web Audio buffer in the browser build, but that is not wired; the browser desktop is silent.
-- **The ears hear what was played, not what came out.** They take the engines' own notes and hits; they do not
-  measure the audio (no onsets from the signal, no mixing of the drum samples). A TR-808 level is its playback
-  volume, not a loudness.
-- **Ears are in memory.** 4096 sounds, lost on restart. No event stream: a resident polls `hear`.
-- **Scores do not check instructions.** "Answer the last phrase" is reported (the phrase, who played what), not
-  judged. Only rests are checked, and only for synth notes. One score runs per window; nothing stops two windows
-  running scores that both drive the TR-808.
+- **Mac only for sound.** The stream plays through an AudioQueue; elsewhere it runs `null`. The browser build is not
+  wired and stays silent.
+- **The ears hear the schedule, the capture hears the mix.** `hear` reports notes and hits as scheduled; only
+  `sound action=capture` looks at the samples, and its onset finder misses quiet hits right after loud ones (the
+  test asks for most steps, not all). A TR-808 level is its playback volume, not a loudness.
+- **The clock is the stream's samples as rendered,** extrapolated between blocks; it does not read the device's own
+  play position, so the true output can sit a buffer (35 ms) behind what the clock says.
+- **The ears keep their history in memory only** (4096 sounds). There is no event stream: a resident polls `hear`.
+- **Scores report but do not judge.** "Answer the last phrase" gets the phrase and who played what; only rests are
+  checked, and only for synth notes. Two score windows can both drive the TR-808.
 - **No tracker editing.** The ears print tracker rows; nobody can write music in them yet.
-- **Score timing is the window's timer** (20 ms), not sample-accurate, and it does not share a clock with the
-  TR-808: a score's bars and the drum machine's steps can drift apart over a long score.

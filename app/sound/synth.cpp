@@ -1,4 +1,5 @@
 #include "synth.h"
+#include "mixer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -7,8 +8,6 @@
 #include <cstring>
 
 namespace sound {
-
-static const double kPi = 3.14159265358979323846;
 
 const char* voiceId(Voice v) { return v == Voice::PcSpeaker ? "pcspk" : "fm"; }
 
@@ -116,75 +115,14 @@ double renderLengthMs(const std::vector<Note>& notes) {
     return end;
 }
 
-static size_t toSample(double ms) { return (size_t)std::floor(ms * kRate / 1000.0 + 0.5); }
+static int64_t toSample(double ms) { return msToSample(ms); }
 
-std::vector<int16_t> render(const std::vector<Note>& notesIn, double totalMs) {
-    const size_t total = toSample(std::max(0.0, totalMs));
-    std::vector<double> mix(total, 0.0);
-
-    // Stable order by start time; ties keep the caller's order.
-    std::vector<Note> notes = notesIn;
-    std::stable_sort(notes.begin(), notes.end(), [](const Note& a, const Note& b) { return a.atMs < b.atMs; });
-
-    // PC speaker: one voice, a note ends when the next one starts.
-    std::vector<const Note*> spk;
-    for (const auto& n : notes) if (n.voice == Voice::PcSpeaker) spk.push_back(&n);
-    for (size_t k = 0; k < spk.size(); ++k) {
-        const Note& n = *spk[k];
-        size_t a = toSample(n.atMs), b = toSample(n.atMs + n.durMs);
-        if (k + 1 < spk.size()) b = std::min(b, toSample(spk[k + 1]->atMs));
-        b = std::min(b, total);
-        const double hz = speakerHz(n.midi);
-        const double amp = speakerPatch().level * 0.5;
-        for (size_t i = a; i < b; ++i) {
-            const double ph = std::fmod((double)(i - a) * hz / kRate, 1.0);
-            mix[i] += ph < 0.5 ? amp : -amp;
-        }
-    }
-
-    // FM: nine channels; a tenth note at once takes the channel that started first.
-    std::vector<const Note*> fm;
-    for (const auto& n : notes) if (n.voice == Voice::Fm) fm.push_back(&n);
-    std::vector<double> chanEnd(kFmChannels, -1.0), chanStart(kFmChannels, -1.0);
-    std::vector<double> cut(fm.size(), 1e300);
-    std::vector<int> chanNote(kFmChannels, -1);
-    for (size_t k = 0; k < fm.size(); ++k) {
-        const Note& n = *fm[k];
-        int c = -1;
-        for (int i = 0; i < kFmChannels; ++i) if (chanEnd[i] <= n.atMs) { c = i; break; }
-        if (c < 0) {
-            c = 0;
-            for (int i = 1; i < kFmChannels; ++i) if (chanStart[i] < chanStart[c]) c = i;
-            if (chanNote[c] >= 0) cut[chanNote[c]] = n.atMs;
-        }
-        chanStart[c] = n.atMs;
-        chanEnd[c] = n.atMs + soundingMs(n);
-        chanNote[c] = (int)k;
-    }
-    for (size_t k = 0; k < fm.size(); ++k) {
-        const Note& n = *fm[k];
-        const Patch& p = n.patch;
-        const double end = std::min(n.atMs + soundingMs(n), cut[k]);
-        size_t a = toSample(n.atMs), b = std::min(toSample(end), total);
-        const double f = noteHz(n.midi);
-        const double vel = std::max(1, std::min(127, n.vel)) / 127.0;
-        double prev = 0;
-        for (size_t i = a; i < b; ++i) {
-            const double t = (double)(i - a) / kRate;
-            const double env = envelope(p, t * 1000.0, n.durMs);
-            const double mod = std::sin(2 * kPi * f * p.modRatio * t + p.feedback * prev) * p.index * (0.4 + 0.6 * env);
-            prev = mod;
-            mix[i] += std::sin(2 * kPi * f * p.carRatio * t + mod) * env * vel * p.level * 0.35;
-        }
-    }
-
-    std::vector<int16_t> out(total);
-    for (size_t i = 0; i < total; ++i) {
-        double v = mix[i];
-        if (v > 1.0) v = 1.0;
-        if (v < -1.0) v = -1.0;
-        out[i] = (int16_t)std::lrint(v * 32767.0);
-    }
+std::vector<int16_t> render(const std::vector<Note>& notes, double totalMs) {
+    // The same mixer the live stream uses (mixer.cpp), rendered in one block.
+    Mixer m;
+    for (const auto& n : notes) m.schedule(n, toSample(n.atMs));
+    std::vector<int16_t> out(toSample(std::max(0.0, totalMs)));
+    m.render(out.data(), out.size());
     return out;
 }
 
