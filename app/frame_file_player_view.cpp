@@ -468,7 +468,7 @@ void TTextFileView::draw()
     
     TDrawBuffer buf;
     int viewHeight = size.y;
-    int viewWidth = size.x - 1; // Leave space for scrollbar
+    int viewWidth = wholeWidth_ ? size.x : size.x - 1; // Leave space for scrollbar (not in a stage window)
     
     for (int y = 0; y < viewHeight; y++) {
         int lineIndex = topLine + y;
@@ -590,6 +590,13 @@ void TTextFileView::handleEvent(TEvent &ev)
             drawView();
         }
     }
+}
+
+void TTextFileView::useWholeWidth()
+{
+    wholeWidth_ = true;
+    if (vScrollBar) vScrollBar->hide();   // nothing drawn or clicked in the last column but the text
+    drawView();
 }
 
 void TTextFileView::changeBounds(const TRect& bounds)

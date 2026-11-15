@@ -123,8 +123,12 @@ public:
     const std::string &getFilePath() const { return filePath_; }
     size_t getContentLines() const { return lines.size(); }
     size_t getContentWidth() const;
+    // Draw text across the whole width: no scroll-bar column on the right (the bar is hidden). Stage windows use it,
+    // so a one-frame drawing shows its last column (app/stage/stage.cpp, StageWindow).
+    void useWholeWidth();
 
 private:
+    bool wholeWidth_ {false};
     std::string filePath_;  // stored for workspace serialisation
     std::vector<std::string> lines;
     int topLine {0};

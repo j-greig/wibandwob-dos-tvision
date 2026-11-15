@@ -7,6 +7,8 @@
 #define Uses_TGroup
 #define Uses_TText
 #define Uses_TStringView
+#define Uses_TFrame
+#define Uses_TDrawBuffer
 #include <tvision/tv.h>
 
 #include "stage.h"
@@ -49,14 +51,47 @@ struct PictureView : TView
 
 // A stage window. Turbo Vision holds every window to at least 16x6 (minWinSize) whenever it is moved or resized; a
 // framed stage window may be 3 rows (frame, one line, frame), so a two-row fold glides to the height it was given.
-// Ghost windows keep Turbo Vision's limits.
+// Ghost windows keep Turbo Vision's limits, unless the script says "floors off" (see sizeLimits below).
 namespace {
+// "floors off" (Stage::run): stage windows keep their sizes. One stage per program, so a file-wide flag; every replay
+// (seek, resize, loop) starts it false again and the script's own floors command sets it, so seek equals play.
+bool stageLowFloors = false;
+
+// A stage window's frame. TFrame::draw cuts a title to the window's width minus 10, room for the close
+// and zoom icons, which a frame shows only while its window is active (the front one). On an inactive frame a title
+// that did not fit is drawn again over the cut one with the room the frame really has: width minus the two corners
+// and one space each side (width - 4), centred as TFrame centres. A title that fits (width - 10 or less) and every
+// active or dragged frame are drawn by TFrame exactly as before.
+struct StageFrame : TFrame
+{
+    StageFrame(const TRect& r) : TFrame(r) {}
+    void draw() override
+    {
+        TFrame::draw();
+        TWindow* w = (TWindow*) owner;
+        if (!w || !w->title || (state & (sfActive | sfDragging)) != 0) return;
+        int width = size.x, tw = strwidth(w->title);
+        if (tw <= width - 10 || width < 5) return;
+        int l = std::min(tw, width - 4), i = (width - l) >> 1;
+        TAttrPair cFrame = getColor(0x0101), cTitle = getColor(0x0002);   // TFrame's inactive colours
+        TDrawBuffer b;
+        b.moveChar(0, ' ', cFrame, l + 2);
+        b.moveStr(1, w->title, cTitle, l);
+        writeLine(i - 1, 0, l + 2, 1, b);
+    }
+};
+
 struct StageWindow : TFrameAnimationWindow
 {
+    static TFrame* initStageFrame(TRect r) { return new StageFrame(r); }
     StageWindow(const TRect& r, const char* title, const std::string& path, bool frameless, bool shadowless) :
-        TWindowInit(frameless ? &TFrameAnimationWindow::initFrameless : &TFrameAnimationWindow::initFrame),
+        TWindowInit(frameless ? &TFrameAnimationWindow::initFrameless : &StageWindow::initStageFrame),
         TFrameAnimationWindow(r, title, path, frameless, shadowless)
     {
+        // A one-frame drawing is shown by a text view that kept its last column for a scroll bar, so a framed window
+        // fitted with 0 0 cut the drawing's last column ("hello from dem"). A stage window does not scroll: the text
+        // gets the whole width. The window's size is unchanged.
+        forEach([](TView* v, void*) { if (auto* t = dynamic_cast<TTextFileView*>(v)) t->useWholeWidth(); }, nullptr);
         // A colour picture replaces the text view the base class made for the file.
         if (auto p = pic::get(path)) {
             TView* old = nullptr;
@@ -75,10 +110,15 @@ struct StageWindow : TFrameAnimationWindow
         forEach([](TView* v, void* out) { if (dynamic_cast<PictureView*>(v)) *(TView**) out = v; }, &found);
         return static_cast<PictureView*>(found);
     }
+    // Size floors, which locate() clamps to whenever a window is moved, glided, reopened, resized, shaken or tiled.
+    // Default (floors on): Turbo Vision's 16 x 6, with a framed window's row floor lowered to 3. After "floors off" a
+    // window keeps the size it was given: a ghost down to 1 x 1, a framed window down to its frame's corners, 2 x 2.
+    // Opt-in, because films were laid out with the growth in view (regress, 2026-11-15: 17 films change).
     void sizeLimits(TPoint& min, TPoint& max) override
     {
         TFrameAnimationWindow::sizeLimits(min, max);
-        if (!isFrameless()) min.y = 3;
+        if (stageLowFloors) min = isFrameless() ? TPoint {1, 1} : TPoint {2, 2};
+        else if (!isFrameless()) min.y = 3;
     }
 };
 }
@@ -205,6 +245,7 @@ void Stage::replay(int target, size_t upto)
     for (auto& kv : marks) host.stageMark(kv.first, StageMark());
     winPics.clear();
     quiet = true;
+    stageLowFloors = false;               // the script's floors command runs again in the replay
     now = 0; host.stageNow(0);
     soundSent.assign(cmds.size(), 0);
     for (auto& n : names) closeWin(n);
@@ -395,7 +436,7 @@ void Stage::advance()
         auto lerp = [&](int a, int b) { return int(std::lround(a + (b - a) * p)); };
         TRect r(lerp(tw.from.a.x, tw.to.a.x), lerp(tw.from.a.y, tw.to.a.y),
                 lerp(tw.from.b.x, tw.to.b.x), lerp(tw.from.b.y, tw.to.b.y));
-        w->locate(r);
+        put(tw.name, w, r);
     }
     tweens.erase(std::remove_if(tweens.begin(), tweens.end(),
         [&](const Tween& tw) { return now - tw.start >= tw.dur || !win(tw.name); }), tweens.end());
@@ -571,7 +612,7 @@ void Stage::openWin(const std::string& name, TRect r, bool ghost, const std::str
     if (TFrameAnimationWindow* w = win(name)) {
         if (w->getFilePath() != path) swapWin(name, path);
         w = win(name);
-        w->locate(r);
+        put(name, w, r);
         setTitle(w, title);
         w->select();
         return;
@@ -592,6 +633,7 @@ void Stage::closeWin(const std::string& name)
     }
     wins.erase(name);
     winPics.erase(name);
+    shakeHome.erase(name);   // a window opened again under this name during a shake stays still (see put)
 }
 
 // New contents in the same place, title and depth: a new window slips in behind the old one.
@@ -642,6 +684,23 @@ void Stage::bubble(const std::string& name, const std::string& text, double secs
     openWin(bname, TRect(x, y, x + bw, y + bh), true, path, "");
     bubbles.push_back({bname, now + int(secs * clockHz)});
     sfx("~say");
+}
+
+// The stage places a window. During a shake the place is also the window's home: the jitter is drawn about it and
+// the shake ends there. Until 2026-11-15 the home was only taken when the shake began, so a window moved, glided or
+// reopened during a shake went back to where it stood before the shake (and a reopened one shook about the old place).
+// Windows opened during a shake are not in shakeHome, so they stay still until the shake ends.
+void Stage::put(const std::string& name, TFrameAnimationWindow* w, TRect r)
+{
+    w->locate(r);
+    auto it = shakeHome.find(name);
+    if (it != shakeHome.end()) it->second = w->getBounds();
+}
+
+// tile and cascade during a shake: the windows' new places are their homes
+void Stage::rehome()
+{
+    for (auto& kv : shakeHome) if (TFrameAnimationWindow* w = win(kv.first)) kv.second = w->getBounds();
 }
 
 void Stage::restoreShake()
@@ -710,7 +769,8 @@ void Stage::run(const std::string& line)
             to = place(x, y, from.b.x - from.a.x, from.b.y - from.a.y);
         anchor(to, xs, ys);
         tweens.erase(std::remove_if(tweens.begin(), tweens.end(), [&](const Tween& t) { return t.name == name; }), tweens.end());
-        if (secs <= 0) { wn->locate(to); return; }
+        if (secs <= 0) { put(name, wn, to); return; }
+        { auto sh = shakeHome.find(name); if (sh != shakeHome.end()) from = sh->second; }   // glide from its place, not a jitter
         tweens.push_back({name, from, to, now, std::max(1, int(secs * clockHz)), ease});
     } else if (cmd == "close") {
         std::string name; h >> name; closeWin(name);
@@ -815,16 +875,18 @@ void Stage::run(const std::string& line)
         if (g.dur > 0) widgets[name] = g; else widgets.erase(name);
     } else if (cmd == "shake") {
         double secs = 1; h >> secs;
-        if (shakeHome.empty())
-            for (auto& kv : wins) if (auto* w = win(kv.first)) shakeHome[kv.first] = w->getBounds();
+        // Every window open now shakes about its place; one already shaking keeps its home (its bounds are a jitter).
+        for (auto& kv : wins) if (auto* w = win(kv.first)) if (!shakeHome.count(kv.first)) shakeHome[kv.first] = w->getBounds();
         shakeUntil = now + std::max(1, int(secs * clockHz));
         sfx("~shake");
+    } else if (cmd == "floors") {
+        std::string v; h >> v; stageLowFloors = v == "off" || v == "0";
     } else if (cmd == "seed") {
         unsigned n = 0; h >> n; seed = n;
     } else if (cmd == "tile") {
-        host.stageTile(); sfx("~tile");
+        host.stageTile(); sfx("~tile"); rehome();
     } else if (cmd == "cascade") {
-        host.stageCascade(); sfx("~tile");
+        host.stageCascade(); sfx("~tile"); rehome();
     } else if (cmd == "bars") {
         std::string v; h >> v; host.stageBars(v != "off" && v != "0");
     } else if (cmd == "loop") {
@@ -922,7 +984,7 @@ std::string Stage::checkLive(const std::string& raw, const std::set<std::string>
     static const char* const notLive[] = {"loop", "end", "gate", "tempo", "section", "clock", "size"};
     for (const char* k : notLive) if (cmd == k) return cmd + " does not run live";
     static const char* const known[] = {"open", "move", "rect", "close", "raise", "lower", "title", "swap", "say", "hint", "bg",
-        "weather", "sound", "scrubber", "theme", "colour", "mark", "drift", "text", "bar", "counter", "shake", "seed", "tile", "cascade", "bars"};
+        "weather", "sound", "scrubber", "theme", "colour", "mark", "drift", "text", "bar", "counter", "shake", "seed", "floors", "tile", "cascade", "bars"};
     bool ok = false;
     for (const char* k : known) if (cmd == k) ok = true;
     if (!ok) return "unknown command: " + cmd;

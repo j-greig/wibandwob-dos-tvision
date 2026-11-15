@@ -29,7 +29,13 @@
 //                                     cga_green noise white_paper gallery_wall ega ega_solid
 //   shake S                           every stage window jitters for S seconds, then settles; the jitter is a
 //                                     hash of the seed, the window's name and the tick, so it repeats exactly
+//                                     (a window moved, glided or opened again on its open NAME during a shake shakes
+//                                     about its new place and stops there; one opened during it, or closed and
+//                                     opened again, stays still)
 //   seed N                            the seed of everything random (shake); default 0
+//   floors off|on                     off: from here on a stage window keeps the size it was given when it is moved,
+//                                     glided, reopened, resized, shaken or tiled (a ghost down to 1 x 1, a framed one
+//                                     down to 2 x 2). on (the default): Turbo Vision's floor, 16 x 6, framed rows 3
 //   weather rain|flash|off            rain falls across the whole desktop under the windows; flash
 //                                     lights it for a moment (lightning); off clears the sky
 //   tile | cascade | bars on|off
@@ -86,6 +92,9 @@
 // Live: runLive(LINE) runs one command now, without a time field (the page's wwdosStage.run). Windows it opens are
 // stage windows: the next seek or replay closes them. loop, end, gate, tempo, section, clock and size are refused.
 // Commands aimed at a window that is not open do nothing; the page trace (window.wwdosTrace) marks them warn.
+// Windows: a drawing fills the whole interior, its last column included (a one-frame drawing's text view once kept a
+// scroll-bar column). A framed window's title is cut to width - 10 cells while it is the active (front) window, which
+// shows the close and zoom icons, and to width - 4 (the corners and a space each side) while it is not.
 //
 // Time: the picture is a function of the script, the stage time and the seed. A drawing's frame is counted from
 // the tick its window was opened or swapped (FPS frames a second of stage time; between ticks it runs on, and it
@@ -303,6 +312,8 @@ private:
     void swapWin(const std::string& name, const std::string& path);
     void bubble(const std::string& name, const std::string& text, double secs);
     void restoreShake();
+    void put(const std::string& name, TFrameAnimationWindow* w, TRect r);   // locate; during a shake also its home
+    void rehome();                        // after tile/cascade during a shake
     void layout(int W, int H);            // offset and scale for a desktop of W x H
     void relayout();                      // desktop resized: run the script again under the new layout
     void replay(int target, size_t upto); // close the stage's windows, run cmds[0..upto) quietly, clock at target
