@@ -10,6 +10,7 @@
 #define Uses_TEvent
 #define Uses_TDialog
 #define Uses_TKeys
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -50,8 +51,10 @@ private:
 
 // ── View ─────────────────────────────────────────────────
 
-class TContourMapView : public TScroller {
+class TContourMapView : public TScroller, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TContourMapView(const TRect& bounds, TScrollBar* vsb);
     virtual ~TContourMapView();
 

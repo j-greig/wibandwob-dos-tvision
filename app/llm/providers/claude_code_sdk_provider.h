@@ -25,6 +25,9 @@ struct uv_async_s;
 
 // StreamChunk and StreamingCallback now in illm_provider.h
 
+// Why the chat's Node bridge cannot run ("" when it can or has not been checked).
+const std::string& claudeBridgeProblem();
+
 class ClaudeCodeSDKProvider : public ILLMProvider {
 public:
     ClaudeCodeSDKProvider();

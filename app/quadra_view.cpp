@@ -595,3 +595,8 @@ TWindow* createQuadraWindow(const TRect &bounds) {
     w->setup();
     return w;
 }
+
+std::string TQuadraView::describeState() const {
+    return std::string("Quadra falling-block game, ") + (gameOver ? "game over" : paused ? "paused" : "playing") + ": score " +
+           std::to_string(score) + ", " + std::to_string(lines) + " lines, level " + std::to_string(level);
+}

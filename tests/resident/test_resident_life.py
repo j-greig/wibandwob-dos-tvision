@@ -2,8 +2,8 @@
 """Resident life tests: the self on disk, waking as a boot, notes to the next waking, the logbook
 and guestbook, sleep and waking.
 
-Starts its own desktop (tmux -L lifetest, socket /tmp/wibwob_lifetest.sock) with a private
-self directory (WWDOS_HOME under /tmp), stops and restarts it to check what crosses a restart.
+Starts its own desktop (tmux -L lifetest, socket /tmp/wibwob_lifetest.sock; LIFE_TEST_NAME changes the
+name) with a private self directory (WWDOS_HOME under /tmp), stops and restarts it to check what crosses a restart.
 The desktop runs without the claude CLI on PATH and without ANTHROPIC_API_KEY, so nothing
 calls a model. Binary: WWDOS_BIN or build-resident/app/wwdos.
 
@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from resident_lib import Desk, Results  # noqa: E402
 
 R = Results()
-NAME = "lifetest"
+NAME = os.environ.get("LIFE_TEST_NAME", "lifetest")
 HOME = f"/tmp/wibwob_{NAME}.self"
 
 

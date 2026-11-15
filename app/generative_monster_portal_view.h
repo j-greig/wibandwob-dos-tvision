@@ -16,10 +16,12 @@
 #define Uses_TDrawBuffer
 #define Uses_TEvent
 #define Uses_TColorAttr
+#include "describe.h"
 #include <tvision/tv.h>
 
-class TGenerativeMonsterPortalView : public TView {
+class TGenerativeMonsterPortalView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TGenerativeMonsterPortalView(const TRect &bounds, unsigned periodMs = 90);
     virtual ~TGenerativeMonsterPortalView();
 

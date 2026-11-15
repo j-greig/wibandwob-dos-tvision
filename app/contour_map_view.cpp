@@ -697,3 +697,16 @@ TWindow* createContourMapWindow(const TRect& bounds,
     w->setup(seed, terrainIdx, levels, grow, triptych);
     return w;
 }
+
+std::string TContourMapView::describeState() const {
+    static const char* modes[] = {"chaos", "order: pop", "order: spread", "hybrid"};
+    std::string s = std::string("contour map in ") + modes[(mode_ >= 0 && mode_ < 4) ? mode_ : 0] + " mode, terrain " +
+                    std::to_string(terrainIdx_) + ", seed " + std::to_string(seed_) + ", " + std::to_string(levels_) +
+                    " levels, grow " + ww::onOff(grow_) + ", " + std::to_string(lines_.size()) + " lines drawn";
+    if (!statusLine_.empty()) s += "; status: " + ww::clipText(statusLine_, 60);
+    return s;
+}
+bool TContourMapView::describeText(std::vector<std::string>& out) const {
+    out = lines_;
+    return true;
+}

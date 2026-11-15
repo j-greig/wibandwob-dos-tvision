@@ -1450,3 +1450,15 @@ TWindow* createGenerativeLabWindow(const TRect& bounds) {
     w->setup();
     return w;
 }
+
+std::string TGenerativeLabView::describeState() const {
+    std::string s = "generative lab, preset " + (presetIdx_ >= 10 ? std::string("random") : std::to_string(presetIdx_)) +
+                    ", seed " + std::to_string(seed_) + ", " + std::to_string(stamps_.size()) + " primers stamped, canvas mode " +
+                    ww::onOff(canvasMode_) + ", " + std::to_string(lines_.size()) + " lines drawn";
+    if (!statusLine_.empty()) s += "; status: " + ww::clipText(statusLine_, 60);
+    return s;
+}
+bool TGenerativeLabView::describeText(std::vector<std::string>& out) const {
+    out = lines_;
+    return true;
+}

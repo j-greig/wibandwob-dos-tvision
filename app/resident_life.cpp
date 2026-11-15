@@ -3,6 +3,7 @@
 
 #include "core/json_utils.h"
 #include "resident_senses.h"
+#include "describe.h"
 
 #define Uses_TWindow
 #define Uses_TView
@@ -283,8 +284,10 @@ public:
     }
 };
 
-class TBootWindow : public TWindow {
+class TBootWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override { return stateOf(const_cast<TBootWindow*>(this)); }
+    bool describeText(std::vector<std::string>& out) const override { return textOf(const_cast<TBootWindow*>(this), out); }
     TBootWindow(const TRect& r, const std::string& title)
         : TWindowInit(&TBootWindow::initFrame), TWindow(r, title.c_str(), wnNoNumber) {
         options |= ofTileable;
@@ -1064,8 +1067,10 @@ public:
     }
 };
 
-class TDreamWindow : public TWindow {
+class TDreamWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override { return stateOf(const_cast<TDreamWindow*>(this)); }
+    bool describeText(std::vector<std::string>& out) const override { return textOf(const_cast<TDreamWindow*>(this), out); }
     TDreamWindow(const TRect& r) : TWindowInit(&TDreamWindow::initFrame), TWindow(r, "DREAM", wnNoNumber) {
         TRect in = getExtent();
         in.grow(-1, -1);

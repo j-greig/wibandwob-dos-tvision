@@ -19,13 +19,16 @@
 #define Uses_TWindow
 #define Uses_TFrame
 #define Uses_TKeys
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <vector>
 #include <string>
 
-class TTextEditorView : public TView {
+class TTextEditorView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     explicit TTextEditorView(const TRect &bounds);
     virtual ~TTextEditorView();
 

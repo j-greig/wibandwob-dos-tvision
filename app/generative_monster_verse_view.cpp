@@ -260,3 +260,9 @@ public:
 private: static TFrame* initFrame(TRect r){ return new TNoTitleFrame(r);} };
 
 TWindow* createGenerativeMonsterVerseWindow(const TRect &bounds){ auto *w=new TGenerativeMonsterVerseWindow(bounds); w->setup(60); return w; }
+
+std::string TGenerativeMonsterVerseView::describeState() const {
+    static const char* modes[] = {"flow", "swirl", "weave"};
+    return std::string("monster verse field in ") + modes[mode] + " mode, palette " + std::to_string(paletteIndex) +
+           ", emoji flood " + ww::onOff(emojiFlood) + ", frame " + std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

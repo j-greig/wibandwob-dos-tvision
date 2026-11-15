@@ -489,3 +489,18 @@ TWindow* createPaintWindow(const TRect &bounds)
 {
     return new TPaintWindow(bounds);
 }
+
+std::string TPaintWindow::describeState() const {
+    if (!canvas) return "paint window without a canvas";
+    auto lines = ww::splitText(canvas->exportText());
+    int ink = 0;
+    for (auto& s : lines) for (char ch : s) if (ch != ' ') ++ink;
+    return "paint canvas " + std::to_string(canvas->getCols()) + "x" + std::to_string(canvas->getRows()) + " with " +
+           std::to_string(ink) + " cells inked" + (filePath_.empty() ? std::string(", not saved") : ", file " + filePath_) +
+           (dirty_ ? ", changed since saved" : "");
+}
+bool TPaintWindow::describeText(std::vector<std::string>& out) const {
+    if (!canvas) return false;
+    out = ww::splitText(canvas->exportText());
+    return true;
+}

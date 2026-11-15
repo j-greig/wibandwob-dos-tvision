@@ -10,6 +10,7 @@
 #define Uses_TView
 #define Uses_TDrawBuffer
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 #include <vector>
 #include <string>
@@ -98,8 +99,10 @@ struct LogMessage {
 extern const ushort cmRogueHackTerminal;
 
 // ── Main view ─────────────────────────────────────────────
-class TRogueView : public TView {
+class TRogueView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     static constexpr int MAP_W = 60;
     static constexpr int MAP_H = 30;
     static constexpr int LOG_LINES = 5;

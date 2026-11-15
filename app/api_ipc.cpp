@@ -2,7 +2,6 @@
 #include <tvision/tv.h>
 
 #include "resident_senses.h"
-#include "resident_life.h"
 #include "api_ipc.h"
 #include "command_registry.h"
 #include "core/json_utils.h"
@@ -388,6 +387,7 @@ void ApiIpcServer::poll() {
     // Serve every connection that is waiting (a client often sends several in a row).
     for (int k = 0; k < 32; ++k)
         if (!pollOne()) break;
+    serveGestures();
 #endif
 }
 
@@ -442,6 +442,27 @@ bool ApiIpcServer::pollOne() {
 
     std::string cmd;
     std::string resp = dispatch(line, cmd);
+
+    if (cmd == "person_wait" && resp.find("\"count\":0,") != std::string::npos) {
+        // Nothing yet: hold the connection; poll() answers when a gesture arrives or the time is up.
+        Waiter wt;
+        wt.fd = fd;
+        std::istringstream iss(line);
+        std::string tok;
+        int ms = 10000;
+        while (iss >> tok) {
+            auto eq = tok.find('=');
+            if (eq == std::string::npos) continue;
+            std::string k = tok.substr(0, eq), v = percent_decode(tok.substr(eq + 1));
+            if (k == "since") wt.since = std::strtoull(v.c_str(), nullptr, 10);
+            else if (k == "kinds") wt.kinds = v;
+            else if (k == "limit") wt.limit = std::max(1, std::atoi(v.c_str()));
+            else if (k == "ms") ms = std::max(0, std::min(std::atoi(v.c_str()), 60000));
+        }
+        wt.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+        waiters_.push_back(wt);
+        return true;
+    }
 
     if (cmd == "subscribe_events") {
         // Keep this fd open — the client will receive pushed events.
@@ -933,12 +954,12 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
                 resp = view->handleApiAction(action_it->second, kv) + "\n";
             }
         }
-    } else if (cmd.rfind("resident_", 0) == 0 || cmd.rfind("look_", 0) == 0 || cmd == "window_text" ||
-               cmd == "acts" || cmd == "window_owner" || cmd == "standing" || cmd == "residents_about" ||
-               life::owns(cmd)) {
-        resp = exec_registry_command(*app_, cmd, kv) + "\n";
     } else {
-        resp = "err unknown cmd\n";
+        // One command table: any registry command is reachable by its own name, as through
+        // exec_command, the API server and MCP (command_registry.cpp).
+        bool known = false;
+        for (const auto& c : get_command_capabilities()) if (cmd == c.name) { known = true; break; }
+        resp = known ? exec_registry_command(*app_, cmd, kv) + "\n" : "err unknown cmd\n";
     }
 
     resident::ipcEnd(cmd, kv, resp);
@@ -953,6 +974,34 @@ ApiIpcServer::ConnectionStatus ApiIpcServer::getConnectionStatus() const {
     s.api_active = (total_commands_ > 0 && elapsed < 10);
     s.client_count = static_cast<int>(event_subscribers_.size());
     return s;
+}
+
+// The person's gestures: push new ones to subscribers ("gesture" events) and answer the
+// person_wait connections that have one, or whose time is up.
+void ApiIpcServer::serveGestures() {
+#ifndef _WIN32
+    uint64_t last = resident::gestureLast();
+    if (gesturePublished_ > last) gesturePublished_ = last;
+    while (gesturePublished_ < last) {
+        ++gesturePublished_;
+        std::string g = resident::gestureJson(gesturePublished_);
+        if (!g.empty()) publish_event("gesture", g);
+    }
+    if (waiters_.empty()) return;
+    auto now = std::chrono::steady_clock::now();
+    for (auto it = waiters_.begin(); it != waiters_.end();) {
+        int count = 0;
+        std::string list = resident::gesturesSince(it->since, it->limit, it->kinds, count);
+        bool late = now >= it->deadline;
+        if (!count && !late) { ++it; continue; }
+        std::string resp = "{\"last\":" + std::to_string(last) + ",\"count\":" + std::to_string(count) +
+                           ",\"timeout\":" + (count ? "false" : "true") + ",\"gestures\":" + list + "}\n";
+        (void)safe_write(it->fd, resp.c_str(), resp.size());
+        ::shutdown(it->fd, SHUT_WR);
+        ::close(it->fd);
+        it = waiters_.erase(it);
+    }
+#endif
 }
 
 void ApiIpcServer::publish_event(const char* event_type, const std::string& payload_json) {
@@ -1010,6 +1059,8 @@ void ApiIpcServer::stop() {
 #ifndef _WIN32
     stopWake_ = true;
     if (wakeThread_.joinable()) wakeThread_.join();
+    for (auto& w : waiters_) ::close(w.fd);
+    waiters_.clear();
     // Close all event subscriber fds.
     for (int sub_fd : event_subscribers_) ::close(sub_fd);
     event_subscribers_.clear();

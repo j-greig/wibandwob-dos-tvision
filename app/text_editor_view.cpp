@@ -550,3 +550,17 @@ TWindow* createTextEditorWindow(const TRect &bounds, const char *title)
     w->setup();
     return w;
 }
+
+std::string TTextEditorView::describeState() const {
+    size_t chars = 0;
+    for (auto& s : lines) chars += s.size();
+    std::string top;
+    for (auto& s : lines) if (!s.empty()) { top = ww::clipText(s, 40); break; }
+    return "text editor holding " + std::to_string(lines.size()) + " lines, " + std::to_string(chars) + " characters" +
+           (top.empty() ? "" : "; first line: \"" + top + "\"") + "; cursor at line " + std::to_string(cursorLine + 1) +
+           ", column " + std::to_string(cursorCol + 1) + (readOnly ? "; read-only" : "");
+}
+bool TTextEditorView::describeText(std::vector<std::string>& out) const {
+    out = lines;
+    return true;
+}

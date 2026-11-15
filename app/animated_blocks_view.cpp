@@ -160,3 +160,7 @@ TWindow* createAnimatedBlocksWindow(const TRect &bounds, unsigned periodMs)
     w->setup(periodMs);
     return w;
 }
+
+std::string TAnimatedBlocksView::describeState() const {
+    return "zigzag blocks animation at phase " + std::to_string(phase) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

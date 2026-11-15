@@ -18,6 +18,7 @@
 #define Uses_TScrollBar
 #define Uses_TScroller
 #define Uses_TGroup
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <atomic>
@@ -148,8 +149,10 @@ private:
 /*  TWibWobWindow - Coordinates message + input views      */
 /*  Owns the engine and logging                            */
 /*---------------------------------------------------------*/
-class TWibWobWindow : public TWindow {
+class TWibWobWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TWibWobWindow(const TRect& bounds, const std::string& title);
     virtual ~TWibWobWindow();
 

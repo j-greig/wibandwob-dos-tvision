@@ -15,13 +15,15 @@
 #define Uses_TDrawBuffer
 #define Uses_TEvent
 #define Uses_TColorAttr
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <vector>
 #include <string>
 
-class TGenerativeMonsterCamView : public TView {
+class TGenerativeMonsterCamView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TGenerativeMonsterCamView(const TRect &bounds, unsigned periodMs = 80);
     virtual ~TGenerativeMonsterCamView();
 
