@@ -843,8 +843,7 @@ def group_selftest():
         st = wait(lambda: (lambda j: j if not j["running"] and j["passed"] + j["failed"] > 0 else None)(d.j("resident_selftest")), timeout=40)
         R.check(bool(st), "it finishes")
         total = st["passed"] + st["failed"] if st else 0
-        time.sleep(1.0)
-        line = [l for l in (read("SELFTEST.TXT") or "").splitlines() if l and not l.startswith(";")]
+        line = wait(lambda: [l for l in (read("SELFTEST.TXT") or "").splitlines() if l and not l.startswith(";")], timeout=10) or []
         R.check(len(line) == 1 and line[0].split("\t")[1] == "wob" and f"{st['passed']} of {total} passed" in line[0],
                 f"SELFTEST.TXT records who ran it and the result: {line}")
         R.check(d.quit(), "Exit")
