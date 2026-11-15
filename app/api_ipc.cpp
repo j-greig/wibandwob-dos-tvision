@@ -2,6 +2,7 @@
 #include <tvision/tv.h>
 
 #include "resident_senses.h"
+#include "resident_life.h"
 #include "api_ipc.h"
 #include "command_registry.h"
 #include "core/json_utils.h"
@@ -933,7 +934,8 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
             }
         }
     } else if (cmd.rfind("resident_", 0) == 0 || cmd.rfind("look_", 0) == 0 || cmd == "window_text" ||
-               cmd == "acts" || cmd == "window_owner" || cmd == "standing" || cmd == "residents_about") {
+               cmd == "acts" || cmd == "window_owner" || cmd == "standing" || cmd == "residents_about" ||
+               life::owns(cmd)) {
         resp = exec_registry_command(*app_, cmd, kv) + "\n";
     } else {
         resp = "err unknown cmd\n";

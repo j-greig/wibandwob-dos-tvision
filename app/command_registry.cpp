@@ -6,6 +6,7 @@
 #include "figlet_utils.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "resident_life.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 
@@ -203,6 +204,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"window_owner", "Who opened a window (id=); owner= sets it (a rule: the console with the key turned only)", false},
         {"standing", "Who you are to the residents (source and standing), the console key, the standing table and the rule commands", false},
         {"residents_about", "What the residents are, what is logged and what is kept", false},
+        {"get_self", "The residents' self on disk: home directory, this waking's number, the last waking and whether it closed cleanly, the windows at the last close with owners, the boot screen", false},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
@@ -746,6 +748,7 @@ std::string exec_registry_command(
         if (name == "look_mark") return resident::cmdMark(kv);
     }
     if (name == "acts") return resident::cmdActs(kv);
+    if (life::owns(name)) return life::command(name, kv);
     if (name == "standing") return resident::cmdStanding(kv);
     if (name == "residents_about") return resident::cmdAbout(kv);
     if (name == "window_owner") return resident::cmdOwner(kv);

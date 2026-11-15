@@ -42,6 +42,7 @@
 #include "test_pattern.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "resident_life.h"
 #include "core/json_utils.h"
 #include "gradient.h"
 #include "ui/ui_helpers.h"
@@ -1102,6 +1103,14 @@ TWwdosApp::TWwdosApp() :
     residentHooks.stateOf = [](TWindow* w) { return residentStateOf(w); };
     resident::setHooks(residentHooks);
 
+    life::Hooks lifeHooks;
+    lifeHooks.insertWindow = [this](TWindow* w) {
+        deskTop->insert(w);
+        registerWindow(w);
+    };
+    lifeHooks.modelPresent = []() { return AuthConfig::instance().mode() != AuthMode::NoAuth; };
+    life::setHooks(lifeHooks);
+
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
 
@@ -1148,6 +1157,9 @@ TWwdosApp::TWwdosApp() :
             cycleScramble();
         }
     }
+
+    // The residents wake last, so the boot screen is in front (resident_life.cpp).
+    life::wake();
 }
 
 void TWwdosApp::handleEvent(TEvent& event)
@@ -2849,6 +2861,7 @@ void TWwdosApp::run()
 {
     // Call parent run to initialize everything first
     TApplication::run();
+    life::close("exit");   // the self goes back to disk while the desktop still exists
 }
 
 TRect TWwdosApp::calculateWindowBounds(const std::string& filePath)
@@ -2979,6 +2992,7 @@ void TWwdosApp::getEvent(TEvent& event)
     bool fromPut = pending.what != evNothing;
     TApplication::getEvent(event);
     resident::noteOrigin(event, fromPut);
+    if (!fromPut && (event.what & (evKeyDown | evMouse))) life::consoleInput(event);   // may use the event up
     resident::afterBase(event);
 }
 
@@ -2993,6 +3007,7 @@ void TWwdosApp::idle()
 {
     TApplication::idle();
     stepSweep();
+    life::tick();
 
     // Poll IPC server for incoming API commands
     if (ipcServer) ipcServer->poll();
@@ -3284,6 +3299,7 @@ static std::vector<std::string> splitLines(const std::string& s) {
 // chat messages, paint canvas. Other types are read from their cells.
 static bool residentTextOf(TWindow* w, std::vector<std::string>& out) {
     out.clear();
+    if (life::textOf(w, out)) return true;
     if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
         if (!tw->getEditorView()) return false;
         out = tw->getEditorView()->getLines();
@@ -3315,6 +3331,8 @@ static bool residentTextOf(TWindow* w, std::vector<std::string>& out) {
 
 static std::string residentStateOf(TWindow* w) {
     std::vector<std::string> lines;
+    std::string lifeState = life::stateOf(w);
+    if (!lifeState.empty()) return lifeState;
     if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
         if (!tw->getEditorView()) return "";
         const auto& l = tw->getEditorView()->getLines();
