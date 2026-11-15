@@ -49,6 +49,9 @@ add_executable(wwdos
     tr808_engine.cpp
     tr808_audio.cpp
     tr808_view.cpp
+    sound/synth.cpp
+    sound/sound_host.cpp
+    sound/synth_view.cpp
     rogue_view.cpp
     deep_signal_view.cpp
     app_launcher_view.cpp
@@ -174,6 +177,10 @@ target_include_directories(ascii_dump PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 # tr808_engine_test (sequencer timing, swing, pattern edits; no tvision)
 add_executable(tr808_engine_test tr808_engine_test.cpp tr808_engine.cpp)
 add_test(NAME tr808_engine COMMAND tr808_engine_test)
+
+# sound_test (the machine's synth, ears and scores rendered to buffers; no tvision)
+add_executable(sound_test sound/sound_test.cpp sound/synth.cpp)
+add_test(NAME sound COMMAND sound_test)
 
 # command_registry_test (native ctest coverage for registry capability payload)
 add_executable(command_registry_test EXCLUDE_FROM_ALL

@@ -108,6 +108,7 @@
 #include "snake_view.h"
 // TR-808 drum machine
 #include "tr808_view.h"
+#include "sound/sound_host.h"
 // WibWob Rogue dungeon crawler
 #include "rogue_view.h"
 // Deep Signal space scanner game
@@ -266,6 +267,7 @@ const ushort cmScrambleReply = 233;  // Async Scramble LLM response ready
 const ushort cmAsciiGallery = 234;   // ASCII Art Gallery browser
 const ushort cmBackroomsTv = 284;    // Backrooms TV live art window
 const ushort cmTr808 = 290;          // TR-808 drum machine
+const ushort cmSynth = 296;          // the machine's synth (app/sound)
 
 // Glitch menu commands
 const ushort cmToggleGlitchMode = 140;
@@ -1121,6 +1123,13 @@ TWwdosApp::TWwdosApp() :
     }
     tr808_app = this;
     tr808SetEventSink(&tr808_event_sink);
+    {
+        sound::Host sh;
+        sh.insert = [this](TWindow* w) { deskTop->insert(w); return registerWindow(w); };
+        sh.find = [this](const std::string& id) { return findWindowById(id); };
+        sh.idOf = [this](TWindow* w) { auto it = winToId.find(w); return it == winToId.end() ? std::string() : it->second; };
+        sound::setHost(sh);
+    }
 
     // Auto-restore layout from env var (room deployment).
     const char* layoutPath = std::getenv("WIBWOB_LAYOUT_PATH");
@@ -1414,6 +1423,11 @@ void TWwdosApp::handleEvent(TEvent& event)
             }
             case cmTr808: {
                 api_spawn_tr808(*this, nullptr, {});
+                clearEvent(event);
+                break;
+            }
+            case cmSynth: {
+                sound::command("open_synth", {});
                 clearEvent(event);
                 break;
             }
@@ -2720,6 +2734,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("Monster Cam (Emo~j~i)", cmMonsterCam, kbNoKey) +
             *new TMenuItem("~B~ackrooms TV", cmBackroomsTv, kbNoKey) +
             *new TMenuItem("TR-~8~08 Drum Machine", cmTr808, kbNoKey) +
+            *new TMenuItem("Synth (PC Speaker, FM)", cmSynth, kbNoKey) +
             newLine() +
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
             *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
@@ -3315,6 +3330,7 @@ static bool residentTextOf(TWindow* w, std::vector<std::string>& out) {
 
 static std::string residentStateOf(TWindow* w) {
     std::vector<std::string> lines;
+    { std::string s = sound::stateOf(w); if (!s.empty()) return s; }
     if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
         if (!tw->getEditorView()) return "";
         const auto& l = tw->getEditorView()->getLines();

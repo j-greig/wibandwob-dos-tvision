@@ -8,6 +8,10 @@
 #include "resident_senses.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
+// The machine's sound (app/sound/sound_host.cpp). Weak, so tests that link the
+// registry without the sound files still link; there it is null.
+std::string sound_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
+                                   bool* handled) __attribute__((weak));
 
 #include <cstdint>
 #include <sys/stat.h>
@@ -169,6 +173,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         // ── Music ────────────────────────────────────────────────────────
         {"open_tr808", "Open the TR-808 drum machine (optional preset, play=1, audio=0|1, tempo, x, y, w, h)", false},
         {"tr808", "Drive the TR-808 (action=play|stop|toggle|tempo bpm|select instrument|toggle_step step instrument?|set_step instrument step active|set_param instrument param value|load_preset preset|clear all?|instrument?|set_pattern bank number variation|swing value|scale value|accent value|master value|last_step value|mute instrument|solo instrument|audio on|random density|copy|paste|cursor step|text text|state; optional id). Steps are 0-15. Publishes tr808_step events on steps with hits", false},
+        {"open_synth", "Open the synth: a PC speaker square voice and an FM voice (optional voice=pcspk|fm, patch, octave, gate, audio=0|1, x, y, w, h)", false},
+        {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},
@@ -259,6 +265,11 @@ std::string exec_registry_command(
     TWwdosApp& app,
     const std::string& name,
     const std::map<std::string, std::string>& kv) {
+    if (sound_registry_command) {
+        bool handled = false;
+        std::string r = sound_registry_command(name, kv, &handled);
+        if (handled) return r;
+    }
     if (name == "cascade") {
         api_cascade(app);
         return "ok";

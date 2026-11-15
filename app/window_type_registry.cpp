@@ -38,6 +38,8 @@
 #include "backrooms_tv_view.h"
 #include "figlet_text_view.h"
 #include "tr808_view.h"
+#include "sound/sound_host.h"
+#include "sound/synth_view.h"
 
 // tvision for TRect
 #define Uses_TRect
@@ -323,6 +325,9 @@ static bool match_app_launcher(TWindow* w){ return dynamic_cast<TAppLauncherWind
 static bool match_gallery(TWindow* w)     { return dynamic_cast<TGalleryWindow*>(w) != nullptr; }
 static bool match_figlet_text(TWindow* w) { return dynamic_cast<TFigletTextWindow*>(w) != nullptr; }
 static bool match_tr808(TWindow* w)       { return dynamic_cast<TTR808Window*>(w) != nullptr; }
+static const char* spawn_synth(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    sound::command("open_synth", kv); return nullptr; }
+static bool match_synth(TWindow* w)       { return dynamic_cast<TSynthWindow*>(w) != nullptr; }
 
 // ── Registry table ────────────────────────────────────────────────────────────
 // Add new window types here — nowhere else.
@@ -367,6 +372,7 @@ static const WindowTypeSpec k_specs[] = {
     { "gallery",           spawn_gallery,          match_gallery            },
     { "figlet_text",       spawn_figlet_text,      match_figlet_text        },
     { "tr808",             spawn_tr808,            match_tr808              },
+    { "synth",             spawn_synth,            match_synth              },
 };
 
 // ── Lookup implementations ────────────────────────────────────────────────────
