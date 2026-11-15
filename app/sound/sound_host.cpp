@@ -13,6 +13,7 @@
 #include "midi.h"
 #include "midi_view.h"
 #include "jam.h"
+#include "voice.h"
 #include "synth_view.h"
 #include "tr808_view.h"
 #include "tr808_audio.h"
@@ -223,7 +224,7 @@ void poll() {
 bool handles(const std::string& name) {
     return name == "open_synth" || name == "synth" || name == "hear" || name == "open_event_score" ||
            name == "event_score" || name == "sound" || name == "open_tracker" || name == "tracker" ||
-           name == "open_midi" || name == "midi" || name == "jam";
+           name == "open_midi" || name == "midi" || name == "jam" || name == "voice";
 }
 
 // scores/<name>.score: $WWDOS_REPO/scores, ./scores, then the source tree.
@@ -361,6 +362,37 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "open_event_score") return openScore(kv);
     if (name == "open_tracker") return openTracker(kv);
     if (name == "jam") return jamCommand(kv);
+    if (name == "voice") {
+        const std::string action = kvGet(kv, "action", "state");
+        std::ostringstream o;
+        if (action == "render") {
+            const std::string who = kvGet(kv, "who", "wib");
+            const int midi = parseNote(kvGet(kv, "note", "A-3"));
+            if (midi < 0) return "err not a note";
+            std::string err;
+            Pcm src = voice::spoken(who, kvGet(kv, "word"), &err);
+            if (!src) return "err " + err;
+            Pcm p = voice::sung(who, kvGet(kv, "word"), midi, std::max(50, std::min(8000, toInt(kvGet(kv, "dur"), 2000))), &err);
+            if (!p) return "err " + err;
+            char h[24];
+            std::snprintf(h, sizeof(h), "%016llx", (unsigned long long)fnv1a(*p));
+            o << "{\"ok\":true,\"who\":\"" << who << "\",\"voice\":\"" << jsonEscape(voice::singer(who).voice)
+              << "\",\"spoken_samples\":" << src->size() << ",\"spoken_hz\":" << voice::pitchOf(*src)
+              << ",\"samples\":" << p->size() << ",\"hz\":" << voice::pitchOf(*p) << ",\"note_hz\":" << noteHz(midi)
+              << ",\"fnv\":\"" << h << "\",\"renders\":" << voice::renders() << "}";
+            return o.str();
+        }
+        if (action != "state") return "err action is state|render";
+        o << "{\"ok\":true,\"say\":\"" << jsonEscape(voice::sayPath()) << "\",\"renders\":" << voice::renders() << ",\"singers\":[";
+        const char* who[2] = {"wib", "wob"};
+        for (int i = 0; i < 2; ++i) {
+            const voice::Singer sg = voice::singer(who[i]);
+            o << (i ? "," : "") << "{\"who\":\"" << who[i] << "\",\"voice\":\"" << jsonEscape(sg.voice) << "\",\"fallback\":"
+              << (sg.fallback ? "true" : "false") << ",\"gain\":" << sg.gain << "}";
+        }
+        o << "]}";
+        return o.str();
+    }
     if (name == "open_midi") {
         TWindow* w = new TMidiWindow(boundsFrom(kv, 64, 16));
         const std::string id = g_host.insert ? g_host.insert(w) : "";
@@ -436,7 +468,7 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "hear") {
         // of= (not source=, which names the caller's standing)
         const std::string src = kvGet(kv, "of", "all");
-        if (src != "all" && src != "synth" && src != "tr808") return "err of is all|synth|tr808";
+        if (src != "all" && src != "synth" && src != "tr808" && src != "voice") return "err of is all|synth|tr808|voice";
         const double secs = kvHas(kv, "seconds") ? std::atof(kvGet(kv, "seconds").c_str()) : 4.0;
         std::string rep = ears().report(clockMs(), secs, src == "all" ? "" : src, toInt(kvGet(kv, "row_ms"), 125),
                                         kvGet(kv, "window"));
