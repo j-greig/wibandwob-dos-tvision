@@ -98,6 +98,7 @@ add_executable(wwdos
     micropolis_ascii_view.cpp
     micropolis_tool_palette.cpp
     tvterm_view.cpp
+    terminal_transport.cpp
     figlet_utils.cpp
     figlet_text_view.cpp
     backrooms_tv_view.cpp
