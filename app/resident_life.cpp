@@ -43,6 +43,9 @@ using resident::Source;
 using resident::Who;
 
 Hooks g_hooks;
+bool g_safe = false;   // safe mode (the operator's panel): no model calls, no visitors
+bool g_paused = false; // the operator's pause (the panel)
+std::vector<std::string> houseRules();
 
 // ---------------------------------------------------------------- small helpers
 
@@ -211,9 +214,9 @@ void writeSelfIni(bool running) {
 }
 
 // DESK.TXT: one window per line, tab-separated: id, type, owner, x,y,w,h, title.
-std::vector<DeskLine> readDesk(bool* exists) {
+std::vector<DeskLine> readDesk(bool* exists, const std::string& name = "DESK") {
     std::vector<DeskLine> out;
-    for (auto& l : readLines(path("DESK.TXT"), exists)) {
+    for (auto& l : readLines(path(name + ".TXT"), exists)) {
         if (l.empty() || l[0] == ';') continue;
         std::vector<std::string> f;
         size_t p = 0;
@@ -267,6 +270,8 @@ std::vector<std::string> readDirNames(const std::string& dir) {
     return out;
 }
 
+bool isPanelWindowP(TWindow* w);
+
 // Windows the self keeps: not the life's own (boot, dream) and not the mosh's shards, which live
 // for one performance only.
 bool keepsOnDesk(TWindow* w) {
@@ -274,15 +279,18 @@ bool keepsOnDesk(TWindow* w) {
     return resident::ownerName(w) != "mosh";
 }
 
-void writeDesk() {
+// name: "DESK" (the close) or "HOUSEDESK" (the operator's saved desk): NAME.TXT and NAME/.
+void writeDeskAs(const std::string& name, const std::string& what);
+void writeDesk() { writeDeskAs("DESK", "the last close"); }
+void writeDeskAs(const std::string& name, const std::string& what) {
     std::ostringstream os;
-    os << "; WIBWOB-DOS desk at the last close: " << nowStamp() << "\n"
-       << "; id<TAB>type<TAB>owner<TAB>x,y,w,h<TAB>title<TAB>state file in DESK/ (front window first)\n";
-    std::string dir = path("DESK");
+    os << "; WIBWOB-DOS desk at " << what << ": " << nowStamp() << "\n"
+       << "; id<TAB>type<TAB>owner<TAB>x,y,w,h<TAB>title<TAB>state file in " << name << "/ (front window first)\n";
+    std::string dir = path(name);
     mkdirs(dir);
     for (auto& old : readDirNames(dir)) std::remove((dir + "/" + old).c_str());   // the last close's files go
     for (TWindow* w : deskWindows()) {
-        if (!keepsOnDesk(w)) continue;
+        if (!keepsOnDesk(w) || isPanelWindowP(w)) continue;
         TRect r = w->getBounds();
         std::string owner = resident::ownerName(w);
         std::string id = resident::hooks().idOf(w);
@@ -292,7 +300,7 @@ void writeDesk() {
            << (owner.empty() ? "app" : owner) << "\t" << r.a.x << "," << r.a.y << "," << (r.b.x - r.a.x) << ","
            << (r.b.y - r.a.y) << "\t" << oneLine(titleOf(w), 60) << "\t" << state << "\n";
     }
-    writeFile(path("DESK.TXT"), os.str());
+    writeFile(path(name + ".TXT"), os.str());
 }
 
 // ---------------------------------------------------------------- windows come back
@@ -322,10 +330,15 @@ Who ownerWho(const std::string& owner) {
 }
 
 // Back to front, so the front window at the close is in front again.
+void restoreDeskFrom(const std::vector<DeskLine>& desk, const std::string& dirName, const std::string& what);
 void restoreDesk() {
     g_restored.clear();
     if (!g_restoreOn || !g_hooks.restoreWindow) return;
-    for (auto it = g_self.lastDesk.rbegin(); it != g_self.lastDesk.rend(); ++it) {
+    restoreDeskFrom(g_self.lastDesk, "DESK", "the last close");
+}
+void restoreDeskFrom(const std::vector<DeskLine>& desk, const std::string& dirName, const std::string& what) {
+    g_restored.clear();
+    for (auto it = desk.rbegin(); it != desk.rend(); ++it) {
         Restored r;
         r.from = *it;
         if (it->owner == "mosh") continue;   // shards are never kept (an old DESK.TXT may hold them)
@@ -333,7 +346,7 @@ void restoreDesk() {
             r.reason = "a " + it->type + " window keeps nothing on disk";
         } else {
             std::string err;
-            std::string file = it->state.empty() ? "" : path("DESK/" + it->state);
+            std::string file = it->state.empty() ? "" : path(dirName + "/" + it->state);
             resident::WhoScope ws(ownerWho(it->owner));
             TWindow* w = it->type == "tool" ? (it->state.rfind("TOOL:", 0) == 0 ? tools::reopen(it->state.substr(5), it->x, it->y, it->w, it->h, err) : nullptr)
                                             : g_hooks.restoreWindow(it->type, it->x, it->y, it->w, it->h, it->title, file, err);
@@ -348,7 +361,7 @@ void restoreDesk() {
     for (auto& r : g_restored) if (!r.to.empty()) ++n;
     if (!g_restored.empty())
         resident::addAct(Who{"app", Source::App}, "restored " + std::to_string(n) + " of " +
-                         std::to_string(g_restored.size()) + " windows from the last close", "", "");
+                         std::to_string(g_restored.size()) + " windows from " + what, "", "");
 }
 
 std::string restoredJson() {
@@ -423,6 +436,7 @@ void addBoot(std::vector<std::string>& lines, std::vector<bool>& loud, const std
 void residentBootLines(const std::string& r, std::vector<std::string>& lines, std::vector<bool>& loud);
 void bookBootLines(std::vector<std::string>& lines, std::vector<bool>& loud);
 void selftestBootLines(std::vector<std::string>& lines, std::vector<bool>& loud);
+void houseBootLines(std::vector<std::string>& lines, std::vector<bool>& loud);
 std::string notesJson();
 
 void bootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
@@ -447,6 +461,7 @@ void bootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
     for (auto r : kResidents) residentBootLines(r, lines, loud);
     bookBootLines(lines, loud);
     selftestBootLines(lines, loud);
+    houseBootLines(lines, loud);
     if (g_self.deskFound && g_restoreOn) {
         int ok = 0;
         for (auto& r : g_restored) if (!r.to.empty()) ++ok;
@@ -1250,6 +1265,12 @@ bool lastSelftest(SelftestLine& out) {
     return false;
 }
 
+void houseBootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
+    auto rules = houseRules();
+    addBoot(lines, loud, padDots("HOUSE.TXT", 14) + std::to_string(rules.size()) + " lines of house rules, shown to visitors at the door");
+    if (g_safe) addBoot(lines, loud, "SAFE MODE ON: no model calls, no visitors; the residents go by their rules.", true);
+}
+
 void selftestBootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
     SelftestLine s;
     if (!lastSelftest(s)) {
@@ -1754,6 +1775,7 @@ void tickSleep() {
         if (t - g_lastPerson >= g_sleepMs) fallAsleep("nobody here");
         return;
     }
+    if (g_paused) return;
     if (!g_tidied && t - g_sleepAt >= g_tidyMs) {
         g_tidied = true;
         tidy();
@@ -2800,7 +2822,6 @@ void houseInit() {
 }
 std::vector<std::string> houseRules() { return readLines(path("HOUSE.TXT")); }
 
-bool g_safe = false;   // safe mode (the operator's panel): no model calls, no visitors
 
 // A visiting agent that came in by the door: BBS fashion, it signs in with a name, is told the house
 // rules and its budget, gets a desk window of its own, and acts there through door_act.
@@ -3030,6 +3051,172 @@ public:
     TOwnView* view;
 };
 
+// ---------------------------------------------------------------- the operator's panel
+
+// For an invigilator: pause every resident (each set to WITNESS, and the life's own activities held),
+// mute the sound, stop a desk mosh, save the desk as the house desk and reset to it, and safe mode
+// (no model calls, no visitors, rule-made text only). PANEL.INI keeps safe mode across wakings.
+bool g_muted = false;
+std::string g_houseSaved;
+
+bool moshOn() {
+    if (!g_hooks.registry) return false;
+    std::string s = g_hooks.registry("mosh", KV{});
+    return s.find("\"on\":true") != std::string::npos;
+}
+
+void panelAct(const std::string& what) { resident::addAct(resident::personWho(), "panel: " + what, "", ""); }
+
+void pauseResidents(bool on) {
+    {
+        resident::WhoScope ws(resident::personWho());
+        for (auto r : kResidents) resident::cmdMode(KV{{"who", r}, {"mode", on ? "witness" : "flow"}});
+    }
+    g_paused = on;
+    panelAct(on ? "paused the residents" : "let the residents go on");
+    logAppend("wob", on ? "The operator paused us." : "The operator let us go on.");
+}
+
+void setMuted(bool on) {
+    if (g_hooks.mute) g_hooks.mute(on);
+    g_muted = on;
+    panelAct(on ? "muted the sound" : "turned the sound back on");
+}
+
+void stopMosh() {
+    if (g_hooks.registry) g_hooks.registry("mosh", KV{{"args", "panic"}});
+    panelAct("stopped the desk mosh");
+}
+
+void writePanelIni() {
+    writeFile(path("PANEL.INI"), std::string("; WIBWOB-DOS operator's panel\n[panel]\nsafe=") + (g_safe ? "1" : "0") + "\n");
+}
+
+void setSafe(bool on) {
+    g_safe = on;
+    if (g_hooks.setSafe) g_hooks.setSafe(on);
+    if (on) while (!g_visitors.empty()) visitorLeaves(g_visitors.front().name, "the house went into safe mode", "");
+    writePanelIni();
+    panelAct(on ? "safe mode on: no model calls, no visitors, rules only" : "safe mode off");
+    logAppend("wob", on ? "Safe mode: no models, no visitors; we go by our rules." : "Safe mode is off.");
+    redrawChrome();
+}
+
+std::string saveHouseDesk() {
+    writeDeskAs("HOUSEDESK", "the operator's save");
+    g_houseSaved = nowStamp();
+    panelAct("saved this desk as the house desk");
+    return "";
+}
+
+std::string resetDesk(TWindow* keep) {
+    bool exists = false;
+    auto desk = readDesk(&exists, "HOUSEDESK");
+    if (!exists) return "no house desk saved (V saves this one)";
+    if (moshOn()) stopMosh();
+    {
+        resident::WhoScope ws(resident::personWho());
+        auto wins = deskWindows();
+        for (TWindow* w : wins)
+            if (w != keep && windowAlive(w) && !isPanelWindowP(w)) w->close();
+        resident::settle();
+    }
+    restoreDeskFrom(desk, "HOUSEDESK", "the house desk");
+    panelAct("reset the desk to the house desk");
+    logAppend("wob", "The operator reset the desk to the house desk.");
+    return "";
+}
+
+// The one key (Alt+Q): everything stops at once; pressed again, the residents and the sound go on.
+void stopAll() {
+    if (g_paused && g_muted) {
+        pauseResidents(false);
+        setMuted(false);
+        flash("The operator let everything go on.");
+        return;
+    }
+    if (!g_paused) pauseResidents(true);
+    if (!g_muted) setMuted(true);
+    if (moshOn()) stopMosh();
+    flash("Stopped: residents paused, sound muted, no mosh. Alt+Q again goes on.", 15000);
+}
+
+std::string panelJson() {
+    std::ostringstream os;
+    os << "{\"paused\":" << (g_paused ? "true" : "false") << ",\"muted\":" << (g_muted ? "true" : "false")
+       << ",\"mosh\":" << (moshOn() ? "true" : "false") << ",\"safe\":" << (g_safe ? "true" : "false")
+       << ",\"house_desk\":" << q(fileSize(path("HOUSEDESK.TXT")) >= 0 ? (g_houseSaved.empty() ? "saved" : g_houseSaved) : "")
+       << ",\"house_rules\":" << q(path("HOUSE.TXT")) << ",\"visitors\":" << g_visitors.size() << ",\"modes\":"
+       << q(resident::modesLine()) << "}";
+    return os.str();
+}
+
+class TPanelWindow : public TWindow, public ww::Describable {
+public:
+    TPanelWindow(const TRect& r) : TWindowInit(&TPanelWindow::initFrame), TWindow(r, "OPERATOR'S PANEL", wnNoNumber) {
+        TRect in = getExtent();
+        in.grow(-1, -1);
+        view = new TOwnView(in);
+        insert(view);
+        refresh();
+    }
+    void refresh() {
+        auto& l = view->lines;
+        l.clear();
+        l.push_back("For the invigilator. Alt+Q anywhere stops everything; again, goes on.");
+        l.push_back("");
+        l.push_back(std::string("P  residents ........ ") + (g_paused ? "PAUSED (each WITNESS)" : "running"));
+        l.push_back(std::string("M  sound ............ ") + (g_muted ? "MUTED" : "on"));
+        l.push_back(std::string("S  desk mosh ........ ") + (moshOn() ? "ON (S stops it)" : "off"));
+        l.push_back(std::string("V  save this desk as the house desk ") +
+                    (fileSize(path("HOUSEDESK.TXT")) >= 0 ? "(saved " + (g_houseSaved.empty() ? std::string("before") : g_houseSaved) + ")" : "(none yet)"));
+        l.push_back("R  reset the desk to the house desk");
+        l.push_back(std::string("F  safe mode ........ ") + (g_safe ? "ON: no model calls, no visitors, rules only" : "off"));
+        l.push_back("");
+        l.push_back("House rules: " + path("HOUSE.TXT") + " (" + std::to_string(houseRules().size()) + " lines); visitors in: " +
+                    std::to_string(g_visitors.size()));
+        if (!message.empty()) l.push_back(message);
+        view->drawView();
+    }
+    std::string describeState() const override {
+        return std::string("operator's panel: residents ") + (g_paused ? "paused" : "running") + ", sound " + (g_muted ? "muted" : "on") +
+               ", safe mode " + (g_safe ? "on" : "off");
+    }
+    bool describeText(std::vector<std::string>& out) const override {
+        out = view->lines;
+        return true;
+    }
+    void handleEvent(TEvent& ev) override {
+        if (ev.what == evKeyDown) {
+            char c = (char)std::tolower((unsigned char)ev.keyDown.charScan.charCode);
+            Who w = resident::currentWho();
+            bool used = true;
+            if (w.source != Source::Console && std::string("pmsvrf").find(c) != std::string::npos) {
+                message = "Only the person at the console works the panel.";
+                resident::addAct(w, "panel: refused, not the console", "", "refused");
+            } else if (c == 'p') pauseResidents(!g_paused);
+            else if (c == 'm') setMuted(!g_muted);
+            else if (c == 's') stopMosh();
+            else if (c == 'v') { saveHouseDesk(); message = "This desk is the house desk now."; }
+            else if (c == 'r') { std::string e = resetDesk(this); message = e.empty() ? "The desk is the house desk again." : e; }
+            else if (c == 'f') setSafe(!g_safe);
+            else used = false;
+            if (used) { refresh(); clearEvent(ev); return; }
+        }
+        TWindow::handleEvent(ev);
+    }
+    TOwnView* view;
+    std::string message;
+};
+
+std::string cmdPanel(const KV& kv) {
+    Who w = resident::currentWho();
+    if (str(kv, "action").empty()) return panelJson();
+    resident::addAct(w, "panel action=" + str(kv, "action") + " refused: the panel is the console's", "", "refused");
+    return "err refused: the operator's panel is worked at the console (Tools > Residents > Operator's panel, Alt+Q); this came from " +
+           std::string(resident::sourceName(w.source)) + " " + w.actor;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- public
@@ -3071,6 +3258,11 @@ void wake() {
     logInit();
     guestInit();
     houseInit();
+    {
+        bool ex = false;
+        auto ini = readIni(path("PANEL.INI"), &ex);
+        if (ini["panel.safe"] == "1") { g_safe = true; if (g_hooks.setSafe) g_hooks.setSafe(true); }
+    }
     tools::seed();
 
     g_actsMax = envMs("WWDOS_ACTS_MAX", 1048576);
@@ -3122,14 +3314,19 @@ void insertLifeWindow(TWindow* w) {
 }
 
 bool isDoorWindow(TWindow* w) { return w && dynamic_cast<TDoorWindow*>(w) != nullptr; }
+bool isPanelWindow(TWindow* w) { return w && dynamic_cast<TPanelWindow*>(w) != nullptr; }
+namespace { bool isPanelWindowP(TWindow* w) { return isPanelWindow(w); } }
 namespace { bool safeModeOn() { return g_safe; } }
 
 void tick() {
     if (g_woken && !g_closed) tickScenes();
     tickDoor();
+    for (TWindow* w : deskWindows()) if (auto* p = dynamic_cast<TPanelWindow*>(w)) { static long long px = 0; if (nowMs() >= px) { px = nowMs() + 1000; p->refresh(); } }
     for (TWindow* w : deskWindows()) if (auto* d = dynamic_cast<TDoorWindow*>(w)) { static long long nx = 0; if (nowMs() >= nx) { nx = nowMs() + 1000; d->refresh(); } }
-    tickOwn();
-    tools::tick();
+    if (!g_paused) {   // the operator's pause holds the residents' own activities
+        tickOwn();
+        tools::tick();
+    }
     for (auto* f : openFilms()) f->view->tick();
     if (g_woken && !g_closed && resident::actsClockMs() >= g_actsNextFlush) {
         g_actsNextFlush = resident::actsClockMs() + 500;
@@ -3218,7 +3415,7 @@ bool owns(const std::string& cmd) {
                                   "guestbook_sign", "guestbook_open", "get_guestbook", "get_life",
                                   "residents_sleep", "residents_wake", "acts_history", "residents_will",
                                   "resident_own_time", "door_enter", "door_act", "door_say", "door_leave",
-                                  "door_list", "door_show", "door_invite", "film_open", "film_seek", "film_export", "film_frame"};
+                                  "door_list", "door_show", "door_invite", "panel", "film_open", "film_seek", "film_export", "film_frame"};
     for (auto n : names) if (cmd == n) return true;
     return false;
 }
@@ -3233,6 +3430,7 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "residents_will") return cmdWill(kv);
     if (name == "resident_own_time") return cmdOwnTime(kv);
     if (name.rfind("door_", 0) == 0) return cmdDoor(name, kv);
+    if (name == "panel") return cmdPanel(kv);
     if (name == "film_open" || name == "film_seek" || name == "film_export" || name == "film_frame") return cmdFilm(name, kv);
     if (name == "get_life" || name == "residents_sleep" || name == "residents_wake") return cmdLife(name, kv);
     return "";
@@ -3260,6 +3458,22 @@ bool handleCommand(unsigned short cmd) {
     if (cmd == cmLifeGuestbook) { openBook("GUESTS.TXT", "GUESTS.TXT"); return true; }
     if (cmd == cmLifeSign) { openSignPage(resident::currentWho()); return true; }
     if (cmd == cmLifeTools) { tools::openList(); return true; }
+    if (cmd == cmLifePanel || cmd == cmLifeStopAll) {
+        if (cmd == cmLifeStopAll) stopAll();
+        TPanelWindow* p = nullptr;
+        for (TWindow* w : deskWindows()) if (auto* x = dynamic_cast<TPanelWindow*>(w)) p = x;
+        if (!p) {
+            TRect d = TProgram::deskTop->getExtent();
+            int w = std::min(d.b.x - 2, 78), h = 14;
+            p = new TPanelWindow(TRect(std::max(0, d.b.x - w - 1), 1, std::max(0, d.b.x - w - 1) + w, 1 + h));
+            insertLifeWindow(p);
+            resident::settle();
+        } else {
+            p->refresh();
+            p->select();
+        }
+        return true;
+    }
     if (cmd == cmLifeDoor) {
         TRect d = TProgram::deskTop->getExtent();
         insertLifeWindow(new TDoorWindow(TRect(10, 4, std::min(d.b.x - 2, 90), std::min(d.b.y - 2, 18))));

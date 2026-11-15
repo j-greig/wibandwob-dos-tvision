@@ -1117,7 +1117,79 @@ def group_door():
         d.stop()
 
 
-GROUPS = {"door": group_door, "tools2": group_tools2, "held": group_held, "cast": group_cast, "film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- the operator's panel
+
+def group_panel():
+    print("panel: one window and one key for the invigilator; house rules on the boot screen; safe mode")
+    fresh_home()
+    d = desk(WWDOS_BOOT="1").start()
+    try:
+        boot_done(d)
+        R.check("HOUSE.TXT ...." in screen_text(d) and "house rules" in screen_text(d), "the boot screen names the house rules")
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Kept", **as_res("wib"))["id"]
+        console_menu(d, "n")
+        pw = wait(lambda: of_type(d, "panel"))
+        R.check(bool(pw) and pw[0]["state"] == "operator's panel: residents running, sound on, safe mode off",
+                f"Tools > Residents > Operator's panel opens it: {pw[0]['state'] if pw else None!r}")
+        d.person_keys("M-q")
+        time.sleep(0.5)
+        p = d.j("panel")
+        R.check(p["paused"] and p["muted"], f"Alt+Q pauses the residents and mutes the sound: {p}")
+        R.check("WITNESS" in p["modes"], "each resident is in WITNESS")
+        r = d.ipc("move_window", id=ed, x=10, y=3, **as_res("wib"))
+        R.check(r.startswith("err") and d.windows()[ed]["x"] == 4, f"a paused resident cannot act: {r[:60]}")
+        d.person_keys("M-q")
+        time.sleep(0.5)
+        p = d.j("panel")
+        R.check(not p["paused"] and not p["muted"], "Alt+Q again lets them go on")
+        R.check(d.ipc("panel", action="pause", actor="v1", source="visitor").startswith("err refused"), "the panel's switches are not on the socket")
+        d.ipc("mosh", args="on")
+        time.sleep(0.3)
+        mosh_was = d.j("panel")["mosh"]
+        d.j("focus_window", id=pw[0]["id"])
+        d.person_text("s")
+        time.sleep(0.4)
+        R.check(mosh_was and not d.j("panel")["mosh"], "S stops a desk mosh")
+        d.person_text("v")
+        time.sleep(0.3)
+        R.check(os.path.exists(os.path.join(HOME, "HOUSEDESK.TXT")), "V saves this desk as the house desk")
+        d.j("create_window", type="test_pattern", x=60, y=10, w=30, h=10, title="Mess", **as_res("wob"))
+        d.j("close_window", id=ed, **as_res("wib"))
+        d.j("focus_window", id=pw[0]["id"])
+        d.person_text("r")
+        time.sleep(0.6)
+        titles = [w["title"] for w in glance(d)]
+        kept = [w for w in glance(d) if w["title"] == "Kept"]
+        R.check("Mess" not in titles and kept and kept[0]["owner"] == "wib" and of_type(d, "panel"),
+                f"R resets the desk to the house desk and the panel stays: {titles}")
+        d.j("focus_window", id=of_type(d, "panel")[0]["id"])
+        d.person_text("f")
+        time.sleep(0.3)
+        R.check(d.j("panel")["safe"] and d.ipc("door_enter", name="eri", actor="eri", source="visitor").startswith("err the door is shut"),
+                "F turns safe mode on: the door is shut")
+        R.check("safe=1" in (read("PANEL.INI") or ""), "safe mode is kept in PANEL.INI")
+        R.check(d.quit(), "Exit in safe mode")
+        d.start()
+        boot_done(d)
+        R.check("SAFE MODE ON" in screen_text(d) and d.j("panel")["safe"], "the next boot says safe mode is on")
+        acts = [a["what"] for a in d.j("acts_history", limit=2000)["acts"] if a["what"].startswith("panel:")]
+        R.check(len(acts) >= 6, f"every switch is the person's act in the log ({len(acts)})")
+        d.stop()
+        if os.path.exists(MIND_LOG):
+            os.remove(MIND_LOG)
+        d = desk(NAME + "c", WWDOS_BOOT="0", WWDOS_MIND_CMD=FAKE, FAKE_MIND_LOG=MIND_LOG, WWDOS_OWN_STEP_MS="200").start()
+        d.j("resident_own_time", resident="wob", minutes=5, turns=2, actor="op", source="visitor")
+        wait(lambda: d.j("get_life")["own"]["on"] is False, timeout=8)
+        wob = [a["what"] for a in d.j("acts", by="wob")["acts"] if a["what"].startswith("own time:")]
+        R.check(not mind_calls() and any(w.endswith("(by rule)") for w in wob) and d.j("get_life")["mind"] is False,
+                f"in safe mode no model is called, even with one present: the turns are the rule's ({len(mind_calls())} calls)")
+    finally:
+        d.stop()
+
+
+GROUPS = {"panel": group_panel, "door": group_door, "tools2": group_tools2, "held": group_held, "cast": group_cast, "film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():
