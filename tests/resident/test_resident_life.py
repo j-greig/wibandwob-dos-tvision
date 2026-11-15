@@ -575,7 +575,69 @@ def group_mind():
         d.stop()
 
 
-GROUPS = {"mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- the waking key once; LOG.TXT saves; pages at quit
+
+def console_menu(d, letter):
+    d.person_keys("M-t")
+    time.sleep(0.3)
+    d.person_keys("s")
+    time.sleep(0.3)
+    d.person_keys(letter)
+
+
+def group_fixes():
+    print("fixes: the waking key is logged once; LOG.TXT edited in the editor saves back; a page open at quit is signed")
+    fresh_home()
+    d = desk(WWDOS_SLEEP_MS="1500", WWDOS_DREAM_MS="60000").start()
+    try:
+        boot_done(d)
+        before = d.j("acts")["next"]
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        acts = d.j("acts", since=before)["acts"]
+        R.check(not [a for a in acts if a["what"].startswith("typed")] and
+                [a["actor"] for a in acts if a["what"] == "closed the boot screen (a key)"] == ["person"],
+                f"the key that closes the boot screen is one act, what it did: {[a['what'] for a in acts]}")
+        R.check(wait(lambda: d.j("get_life")["state"] == "asleep", timeout=6), "they fall asleep")
+        before = d.j("acts")["next"]
+        d.person_text("q")
+        wait(lambda: d.j("get_life")["state"] == "awake")
+        acts = [a for a in d.j("acts", since=before - 1)["acts"] if a["actor"] == "person"]
+        R.check([a["what"] for a in acts] == ["woke the residents (a key)"], f"the waking key is logged once: {[a['what'] for a in acts]}")
+        d.stop()
+        d = desk().start()   # no sleep from here: a menu key must not be a waking key
+        boot_done(d)
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+
+        console_menu(d, "l")
+        ed = wait(lambda: [w for w in glance(d) if w["title"] == "LOG.TXT"])
+        R.check(bool(ed) and ed[0]["focused"], "Tools > Residents > Logbook opens LOG.TXT for the person")
+        d.person_type("EDITED ")
+        time.sleep(0.3)
+        d.j("logbook_write", text="written while the editor was open", **as_res("wob"))
+        w = ed[0]
+        d.person_mouse("down", w["x"] + 3, w["y"] + 1)
+        d.person_mouse("up", w["x"] + 3, w["y"] + 1)
+        R.check(wait(lambda: not [x for x in glance(d) if x["title"] == "LOG.TXT"]), "the person closes it")
+        log = read("LOG.TXT") or ""
+        R.check(log.startswith("EDITED WIBWOB-DOS LOGBOOK"), f"the edit is saved back to LOG.TXT: {log[:30]!r}")
+        R.check("written while the editor was open" in log, "and the entry wob wrote meanwhile is kept")
+        R.check(any(a["what"].startswith("edited LOG.TXT in the editor") and a["actor"] == "person"
+                    for a in d.j("acts")["acts"]), "the save is the person's act")
+
+        console_menu(d, "g")
+        R.check(wait(lambda: [x for x in glance(d) if x["title"] == "SIGN THE GUESTBOOK"]), "a sign page is open")
+        d.person_type("left at quit")
+        time.sleep(0.3)
+        R.check(d.quit(), "Exit with the page still open")
+        g = read("GUESTS.TXT") or ""
+        R.check("person (console)" in g and "left at quit" in g, "the page is signed at quit")
+    finally:
+        d.stop()
+
+
+GROUPS = {"fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():

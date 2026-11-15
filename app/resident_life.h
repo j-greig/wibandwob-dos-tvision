@@ -41,6 +41,9 @@ struct Hooks {
     // saveState wrote ("" for none). nullptr and err when it cannot.
     std::function<TWindow*(const std::string& type, int x, int y, int w, int h, const std::string& title,
                            const std::string& stateFile, std::string& err)> restoreWindow;
+    // What an editor openEditor made holds now; its onClose is dropped, so a later close does not
+    // run it again (the app quitting with a sign page open). False for other windows.
+    std::function<bool(TWindow*, std::vector<std::string>&)> takeEditor;
 };
 void setHooks(const Hooks& h);
 
@@ -86,9 +89,11 @@ const char* kaomoji();
 std::string statusWord();
 
 // Menu commands of Tools > Residents handled here.
-const unsigned short cmLifeLogbook = 9960;
-const unsigned short cmLifeGuestbook = 9961;
-const unsigned short cmLifeSign = 9962;
+// 9940-9949 are the life's (9950s are the residents' menu, 9960 the Feed, 9975-9976 the desk mosh).
+const unsigned short cmLifeLogbook = 9940;
+const unsigned short cmLifeGuestbook = 9941;
+const unsigned short cmLifeSign = 9942;
+const unsigned short cmLifeWill = 9943;
 bool handleCommand(unsigned short cmd);
 
 }  // namespace life
