@@ -101,11 +101,20 @@ def main():
             desk.ipc("wibwob_ask", text="open a text editor and type hello in it", source="visitor", actor="selftest")
             got = wait(lambda: set(editors_with(desk, "hello", {"wib", "wob"})) - before, 150)
             check("wibwob", bool(got), f"opened an editor and typed hello as wib or wob ({sorted(got or [])})")
-            n0 = len(describe(desk, cid)["text"])
-            time.sleep(5)
+            # let the first reply finish, then read only what comes after the second question
+            wait(lambda: not describe(desk, cid)["state"].endswith("arriving") or None, 60)
+            time.sleep(3)
             desk.ipc("wibwob_ask", text="which windows are open? answer in one line", source="visitor", actor="selftest")
-            lines = wait(lambda: (lambda t: t if t and not describe(desk, cid)["state"].endswith("arriving") else None)(
-                reply_lines(desk, cid, n0 + 1)), 150) or []
+
+            def answer():
+                d = describe(desk, cid)
+                t = d["text"]
+                q = max((i for i, l in enumerate(t) if "which windows are open" in l), default=None)
+                if q is None or d["state"].endswith("arriving"):
+                    return None
+                after = [l for l in t[q + 1:] if l.strip() and not l.startswith("System")]
+                return after or None
+            lines = wait(answer, 150) or []
             check("wibwob", names_a_window(desk, lines), f"named the desktop's windows: {' '.join(lines)[:120]!r}")
         # The Feed: every resident's acts and the model calls, read back from the window's own text.
         fid = desk.j("open_feed", x=0, y=26, w=120, h=14, actor="selftest").get("id")

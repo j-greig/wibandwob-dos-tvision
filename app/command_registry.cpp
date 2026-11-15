@@ -262,7 +262,27 @@ std::string get_command_capabilities_json() {
     return os.str();
 }
 
+static std::string exec_registry_command_inner(
+    TWwdosApp& app,
+    const std::string& name,
+    const std::map<std::string, std::string>& kv);
+
+// Every command that opens a window answers with the window's id, so the caller (a resident, a
+// model's tool call) can act on the window it opened instead of guessing.
 std::string exec_registry_command(
+    TWwdosApp& app,
+    const std::string& name,
+    const std::map<std::string, std::string>& kv) {
+    (void)api_take_last_registered_window_id(app);   // forget a window registered before this command
+    std::string r = exec_registry_command_inner(app, name, kv);
+    if (r == "ok") {
+        std::string id = api_take_last_registered_window_id(app);
+        if (!id.empty()) return "{\"ok\":true,\"id\":\"" + id + "\"}";
+    }
+    return r;
+}
+
+static std::string exec_registry_command_inner(
     TWwdosApp& app,
     const std::string& name,
     const std::map<std::string, std::string>& kv) {

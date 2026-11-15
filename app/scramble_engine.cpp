@@ -114,6 +114,8 @@ std::string ScrambleHaikuClient::buildSystemPrompt() const
         "resident_mouse id=<window> action=click|drag|scroll x= y= (x2= y2= for a drag; local=1 counts from the window's corner); "
         "resident_press label=<button>; resident_menu choose=<Menu>Item>; "
         "create_window type=text_editor|paint|test_pattern|verse|life x= y= w= h= (after it, id=new names the window it opened); move_window id= x= y=; close_window id=; describe id=<window>. "
+        "to open an editor and write in it, send both lines: ACT: create_window type=text_editor x=4 y=2 w=40 h=8 "
+        "then ACT: resident_key id=new text=\"your words\". "
         "your paw is seen moving to each window before you touch it. act only when asked or when it is kind; "
         "never touch a window the person is typing in. the ACT lines are not shown; say in words what you did.";
 }
