@@ -48,7 +48,7 @@ struct Hit {
     double dueMs = -1;   // when it is heard on the sound clock (sound::clockMs); -1 = now
     int midi = -1;       // a synth note
 };
-double g_lastNoteMs = 0;                          // newest synth note taken from the ears
+double g_lastNoteMs = 0, g_lastDrumEarMs = 0;                          // newest synth note taken from the ears
 double g_heardBass = -1e9, g_heardNote = -1e9, g_heardDrum = -1e9;   // way sound: what sounded last
 
 struct Settings {
@@ -1197,7 +1197,7 @@ void turnOn() {
     captureTrue();
     g_nextAt = Clock::now();
     g_queue.clear();
-    g_lastNoteMs = sound::clockMs();
+    g_lastNoteMs = g_lastDrumEarMs = sound::clockMs();
     g_stepMsAvg = 0; g_loopMsAvg = 0;
     resident::addAct(w, std::string("mosh on (way ") + kWayNames[g_set.way] + ", amount " + std::to_string(g_set.amount) +
                      ", seed " + std::to_string(g_set.seed) + (g_set.scope.empty() ? "" : ", scope " + g_set.scope) + ")", "", "");
@@ -1335,6 +1335,27 @@ void tick() {
         newest = std::max(newest, hd.startMs);
     }
     g_lastNoteMs = newest;
+    // Drum hits heard from anything but a playing TR-808 window (the tracker's drum rows):
+    // one step per hit time.
+    bool tr808Plays = Clock::now() - g_last808 < std::chrono::seconds(1);
+    double newestDrum = g_lastDrumEarMs;
+    std::map<double, Hit> drums;
+    for (const sound::Heard& hd : sound::ears().since(sclock, 3000, "tr808")) {
+        if (hd.startMs <= g_lastDrumEarMs) continue;
+        newestDrum = std::max(newestDrum, hd.startMs);
+        if (tr808Plays) continue;
+        Hit& h = drums[hd.startMs];
+        h.dueMs = hd.startMs;
+        const std::string& v = hd.voice;
+        if (v == "bd") h.kick = true;
+        else if (v == "sd" || v == "cp") h.snare = true;
+        else if (v == "ch" || v == "oh") h.tick = true;
+        else if (v == "cy" || v == "ma") h.metal = true;
+        else h.rat = true;
+        h.accent = h.accent || hd.accent;
+    }
+    g_lastDrumEarMs = newestDrum;
+    for (auto& kv : drums) if (g_queue.size() < 16) g_queue.push_back(kv.second);
     std::stable_sort(g_queue.begin(), g_queue.end(), [](const Hit& a, const Hit& b) { return a.dueMs < b.dueMs; });
     int n = 0;
     while (!g_queue.empty() && n < 4) {

@@ -484,6 +484,16 @@ def group_sound():
         s2 = m(d, "mosh_status")
         R.check(s1["showing"] == "wrap" and s1["step"] >= 1, f"a bass note wraps ({s1['showing']}, {s1['step']} steps)")
         R.check(s2["showing"] == "tear" and s2["step"] > s1["step"], f"note-ons tear ({s2['showing']})")
+        m(d, "mosh_off"); time.sleep(0.3)
+        m(d, "mosh_way", way="sound"); m(d, "mosh_on")
+        d.ipc("exec_command", name="open_tracker", track="arp-and-bass", play="1", x="2", y="2", w="80", h="18")
+        seen = set()
+        for _ in range(10):
+            time.sleep(0.2)
+            seen.add(m(d, "mosh_status")["showing"])
+        st = m(d, "mosh_status")
+        d.ipc("exec_command", name="tracker", action="stop")
+        R.check(st["step"] >= 15 and seen & {"wrap", "tear"}, f"the tracker's notes and drum rows move it too ({st['step']} steps, ways {sorted(seen)})")
         m(d, "mosh_off")
     finally:
         d.stop()
