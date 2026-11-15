@@ -6,6 +6,7 @@
 #include "figlet_utils.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "desk_mosh.h"
 #include "resident_life.h"
 #include "resident_hands.h"
 #include "resident_teach.h"
@@ -181,6 +182,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_synth", "Open the synth: a PC speaker square voice and an FM voice (optional voice=pcspk|fm, patch, octave, gate, audio=0|1, x, y, w, h)", false},
         {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
         {"hear", "The ears: what the synth and the TR-808 sound now and sounded in the last seconds= (default 4): voices, notes, steps, levels, who, a meter and tracker rows; of=all|synth|tr808, row_ms=, window=. Changes nothing", false},
+        {"sound", "The sound stream: action=state (output coreaudio|null|off, rate, lead_ms, the clock, notes, hits, late, FM channels busy) or action=capture ms= (the last ms of the mix: level and onset times on the clock). Changes nothing", false},
         {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
         {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
@@ -210,6 +212,19 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"look_glance", "Every window, one line each: id, type, title, rect, z, owner, whether the person can see it (seen all|part|none), one sentence of state; reader= adds what changed since that reader last looked. Changes nothing", false},
         {"look_read", "One window's text (id=): the model's text for editor, terminal, chat and paint windows, else its cells as drawn; from=, limit= page the lines. Marks the window's frame for the person (reader=). Changes nothing else", false},
         {"look_study", "A rectangle of cells (x, y, w, h in desktop cells; screen=1 for screen rows; id= for a window's own picture) with text, colour runs [x,n,fg,bg] and a ruler of column numbers. Changes nothing", false},
+        {"mosh", "Desk mosh in words (args=): on [way], off, panic, way wrap|tear|mosh|bleed|raw|all, amount 0-100, tempo BPM (0 = manual), seed N, count N, scope desktop|window ID, step HITS; no args = status", false},
+        {"mosh_on", "Desk mosh on: real windows break into shards in time with the TR-808 or the internal tempo (optional way=)", false},
+        {"mosh_off", "Desk mosh off: every shard closes and the desktop is as it was", false},
+        {"mosh_panic", "Desk mosh off at once", false},
+        {"mosh_way", "Desk mosh way: wrap, tear, mosh, bleed, raw or all (way=)", false},
+        {"mosh_amount", "Desk mosh amount 0-100 (value=)", false},
+        {"mosh_tempo", "Desk mosh internal tempo in BPM, 0 = steps only from the TR-808 or mosh_step (bpm=)", false},
+        {"mosh_seed", "Desk mosh seed (n=): same seed and steps give the same frames", false},
+        {"mosh_count", "Desk mosh: most shard windows at once (value=, default 240)", false},
+        {"mosh_scope", "Desk mosh scope: desktop, or window with id= (one window moshes, the rest stay clean)", false},
+        {"mosh_step", "Desk mosh: run steps now (hits=kick,snare,tick,rat,metal,accent; n=)", false},
+        {"mosh_screen", "Desk mosh screen layer on|off (value=): a filter over the desktop rows for colour runs and decay across window edges; the windows layer is mosh_on", false},
+        {"mosh_status", "Desk mosh settings, shard count and step timings", false},
         {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
         {"describe", "What a window is: id= gives one window's sentence of state and its text from its own model (text_from model, cells or controls; limit= lines, text=0 for none); no id lists every window (text=1 adds text). Read-only", false},
         {"person_events", "The person's gestures since=G (typed, key, click, double-click, drag, scroll, command, menu, menu closed, opened, moved, resized, retitled, closed), in order; kinds= a comma list; never a resident's own acts. Read-only", false},
@@ -815,6 +830,7 @@ static std::string exec_registry_command_inner(
         if (name == "look_changes") return resident::cmdChanges(kv);
         if (name == "look_mark") return resident::cmdMark(kv);
     }
+    if (deskmosh::isCommand(name)) return deskmosh::command(name, kv);
     if (name == "describe") return resident::cmdDescribe(kv);
     if (name == "help") return resident::cmdHelp(kv);
     if (name == "resident_selftest") return resident::cmdSelftest(kv);

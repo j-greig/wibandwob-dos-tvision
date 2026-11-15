@@ -77,6 +77,7 @@
 // Generative art: Monster Cam (Emoji)
 #include "generative_monster_cam_view.h"
 #include "contour_map_view.h"
+#include "desk_mosh.h"
 #include "generative_lab_view.h"
 #include "game_of_life_view.h"
 #include "animated_ascii_view.h"
@@ -1274,7 +1275,7 @@ void TWwdosApp::handleEvent(TEvent& event)
         return;
     }
     // The Residents menu: the console key and the residents' rules (resident_acts.cpp).
-    if (event.what == evCommand && resident::handleCommand(event.message.command)) {
+    if (event.what == evCommand && (resident::handleCommand(event.message.command) || deskmosh::handleCommand(event.message.command))) {
         clearEvent(event);
         return;
     }
@@ -2851,6 +2852,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("Monster Cam (Emo~j~i)", cmMonsterCam, kbNoKey) +
             *new TMenuItem("~B~ackrooms TV", cmBackroomsTv, kbNoKey) +
             *new TMenuItem("TR-~8~08 Drum Machine", cmTr808, kbNoKey) +
+            *new TMenuItem("Desk ~M~osh on/off", deskmosh::cmMoshToggle, kbAltM, hcNoContext, "Alt-M") +
             *new TMenuItem("Synth (PC Speaker, FM)", cmSynth, kbNoKey) +
             newLine() +
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
@@ -2927,7 +2929,8 @@ TStatusLine* TWwdosApp::initStatusLine(TRect r)
             *new TStatusItem("~F5~ Repaint", kbF5, cmRepaint) +
             *new TStatusItem("~F6~ Next", kbF6, cmNext) +
             *new TStatusItem("~Alt-F3~ Close", kbAltF3, cmClose) +
-            *new TStatusItem("~F8~ Scramble", kbF8, cmScrambleCat)
+            *new TStatusItem("~F8~ Scramble", kbF8, cmScrambleCat) +
+            *new TStatusItem(0, kbAltM, deskmosh::cmMoshToggle)
     );
 }
 
@@ -3115,10 +3118,13 @@ void TWwdosApp::getEvent(TEvent& event)
     resident::settle();   // window changes since the last event belong to its author
     if (resident::takeEvent(event)) return;
     bool fromPut = pending.what != evNothing;
+    deskmosh::screenBefore();   // the optional screen layer shows only while the screen flushes
     TApplication::getEvent(event);
+    deskmosh::screenAfter();
     resident::noteOrigin(event, fromPut);
     if (!fromPut && (event.what & (evKeyDown | evMouse))) life::consoleInput(event);   // may use the event up
     resident::afterBase(event);
+    deskmosh::noteEvent(event);   // Esc twice stops a desk mosh
 }
 
 void TWwdosApp::putEvent(TEvent& event)
@@ -3132,6 +3138,7 @@ void TWwdosApp::idle()
 {
     TApplication::idle();
     stepSweep();
+    deskmosh::tick();
     life::tick();
     if (g_quitSignal) {
         life::close(g_quitSignal == SIGTERM ? "SIGTERM" : "SIGHUP");
@@ -3413,6 +3420,7 @@ std::string api_take_last_registered_window_id(TWwdosApp& app) {
 }
 
 static const char* windowTypeName(TWindow* w) {
+    if (deskmosh::isShard(w)) return "mosh_shard";
     const auto& specs = all_window_type_specs();
     for (const auto& spec : specs) {
         if (spec.matches && spec.matches(w))
@@ -5316,6 +5324,7 @@ void api_spawn_snake(TWwdosApp& app, const TRect* bounds) {
 
 // Publishes a TR-808 event with the window's API id (tr808_step, tr808_transport).
 void tr808_event_sink(TWindow* w, const char* type, const std::string& body) {
+    deskmosh::noteTr808(type, body);   // the drum steps move a desk mosh
     TWwdosApp* app = tr808_app;
     if (!app || !app->ipcServer) return;
     std::string id;
