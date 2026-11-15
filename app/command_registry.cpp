@@ -187,6 +187,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"tracker", "Write and play the tracker (action=set row ch cell='C-4 01 A37'|write ch row notes='C-2 . E-2 ===' step instr fx|clear row ch|all=1|play row|stop|loop on|tempo value|rows value|cursor row ch field octave|text|load track=|text=|save track=|state; optional id). Effects: Axy arpeggio, Vxx velocity, Gxx gate in sixteenths of a row", false},
         {"open_midi", "Open the MIDI window: what arrives and what leaves (optional x, y, w, h)", false},
         {"midi", "MIDI (action=state|log n=|in data='90 3C 64' (as if it arrived: plays the synth)|out data=|clock on=0|1). The TR-808 and the tracker send clock and notes out; input plays the synth with real key releases", false},
+        {"jam", "Residents jam: action=start as=wib|wob|scramble mode=answer|echo|invert wait_ms= model=auto|off: the resident answers the person's last synth phrase when they stop for wait_ms (by rule, or a confined model call chooses the notes when one is present); stop; state lists the answers", false},
         {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
         {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},

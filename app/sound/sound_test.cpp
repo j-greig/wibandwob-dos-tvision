@@ -5,6 +5,7 @@
 #include <memory>
 #include "score.h"
 #include "tracker.h"
+#include "jam.h"
 #include "synth.h"
 
 #include <cmath>
@@ -340,6 +341,18 @@ static void testTracker() {
     check(!parseSong("channels fm:bass\n00 C-4 | E-4\n", bad, err) && err.find("line 2") == 0, "a row with too many cells is refused with its line");
 }
 
+static void testJam() {
+    std::printf("[jam]\n");
+    const std::vector<std::string> ph = {"C-4", "D-4", "E-4", "F-4"};
+    check(jamRule(ph, "answer") == std::vector<std::string>({"C-5", "B-4", "A-4", "G-4"}), "answer: the phrase backwards, a fifth up");
+    check(jamRule(ph, "echo") == std::vector<std::string>({"C-5", "D-5", "E-5", "F-5"}), "echo: an octave up");
+    check(jamRule(ph, "invert") == std::vector<std::string>({"C-4", "A#3", "G#3", "G-3"}), "invert: mirrored round the first note");
+    check(jamParseReply("G-4 . E-4 C-4\n") == std::vector<std::string>({"G-4", ".", "E-4", "C-4"}), "a model's line of notes is taken");
+    check(jamParseReply("Sure! here you go:\nc4 eb4 g4\n") == std::vector<std::string>({"C-4", "D#4", "G-4"}), "the first line that is all notes");
+    check(jamParseReply("ACT: close_window id=w1\n").empty() && jamParseReply("60 62 64").empty() && jamParseReply("").empty(),
+          "anything else gives nothing (the rule plays instead)");
+}
+
 int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     if (only.empty() || only == "synth") testSynth();
@@ -348,6 +361,7 @@ int main(int argc, char** argv) {
     if (only.empty() || only == "ears") testEars();
     if (only.empty() || only == "score") testScore();
     if (only.empty() || only == "tracker") testTracker();
+    if (only.empty() || only == "jam") testJam();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

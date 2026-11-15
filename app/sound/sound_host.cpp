@@ -12,6 +12,7 @@
 #include "tracker_view.h"
 #include "midi.h"
 #include "midi_view.h"
+#include "jam.h"
 #include "synth_view.h"
 #include "tr808_view.h"
 #include "tr808_audio.h"
@@ -195,6 +196,7 @@ static std::string openSynth(const KV& kv) {
 }
 
 void poll() {
+    jamTick();
     auto msgs = midi::takeIn();
     if (msgs.empty()) return;
     for (const auto& m : msgs) {
@@ -221,7 +223,7 @@ void poll() {
 bool handles(const std::string& name) {
     return name == "open_synth" || name == "synth" || name == "hear" || name == "open_event_score" ||
            name == "event_score" || name == "sound" || name == "open_tracker" || name == "tracker" ||
-           name == "open_midi" || name == "midi";
+           name == "open_midi" || name == "midi" || name == "jam";
 }
 
 // scores/<name>.score: $WWDOS_REPO/scores, ./scores, then the source tree.
@@ -358,6 +360,7 @@ std::string command(const std::string& name, const KV& kv) {
         return streamCommand(kvGet(kv, "action", "state"), kvHas(kv, "ms") ? std::atof(kvGet(kv, "ms").c_str()) : 1000.0);
     if (name == "open_event_score") return openScore(kv);
     if (name == "open_tracker") return openTracker(kv);
+    if (name == "jam") return jamCommand(kv);
     if (name == "open_midi") {
         TWindow* w = new TMidiWindow(boundsFrom(kv, 64, 16));
         const std::string id = g_host.insert ? g_host.insert(w) : "";
