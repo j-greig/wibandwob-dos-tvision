@@ -614,6 +614,9 @@ void afterBase(TEvent& ev) {
     tickSenses();
     tickActs();
     if (ev.what & (evMouse | evKeyDown)) {
+        // A key or click put back by a view (a menu re-reads the key that opened it) is the
+        // person's only when the person's input put it; a resident's passes through.
+        if (eventWho().source != Source::Console) return;
         observePerson(ev);
         if (residentLoop()) {
             routePerson(ev);
@@ -972,12 +975,20 @@ std::string cmdMouse(const KV& kv) {
 }
 
 std::string cmdManners(const KV& kv) {
-    if (has(kv, "share_ms")) g_shareMs = std::max(0, num(kv, "share_ms", g_shareMs));
-    if (has(kv, "wait_on_button")) g_waitOnButton = num(kv, "wait_on_button", 1) != 0;
+    // share_ms and wait_on_button are the residents' rules: only the console with the key
+    // turned changes them (ruleGate). Clearing the queue is not a rule.
+    int wantShare = has(kv, "share_ms") ? std::max(0, num(kv, "share_ms", g_shareMs)) : g_shareMs;
+    bool wantWait = has(kv, "wait_on_button") ? num(kv, "wait_on_button", 1) != 0 : g_waitOnButton;
+    std::string refusal;
+    if (wantShare != g_shareMs || wantWait != g_waitOnButton) {
+        refusal = ruleGate("manners share_ms=" + std::to_string(wantShare) + " wait_on_button=" + (wantWait ? "1" : "0"));
+        if (refusal.empty()) { g_shareMs = wantShare; g_waitOnButton = wantWait; }
+    }
     if (str(kv, "clear") == "1") {
         for (auto& it : g_queue) noteRefused(it, "cleared");
         g_queue.clear();
     }
+    if (!refusal.empty()) return refusal;
     std::ostringstream os;
     os << "{\"share_ms\":" << g_shareMs << ",\"wait_on_button\":" << (g_waitOnButton ? "true" : "false") << "}";
     return os.str();

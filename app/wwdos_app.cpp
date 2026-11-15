@@ -1152,6 +1152,11 @@ TWwdosApp::TWwdosApp() :
 
 void TWwdosApp::handleEvent(TEvent& event)
 {
+    // The Residents menu: the console key and the residents' rules (resident_acts.cpp).
+    if (event.what == evCommand && resident::handleCommand(event.message.command)) {
+        clearEvent(event);
+        return;
+    }
     TApplication::handleEvent(event);
     
     if (event.what == evCommand)
@@ -2758,6 +2763,15 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("~Q~uantum Printer", cmQuantumPrinter, kbF11) +
             newLine() +
             *new TMenuItem("API ~K~ey...", cmApiKey, kbNoKey) +
+            newLine() +
+            (TMenuItem&)(
+                *new TSubMenu("Re~s~idents", kbNoKey) +
+                    *new TMenuItem("Console ~k~ey", resident::cmResidentKey, kbNoKey, hcNoContext, "off") +
+                    *new TMenuItem("Reading ~m~arks", resident::cmResidentMarks, kbNoKey, hcNoContext, "on") +
+                    *new TMenuItem("Visible ~h~and", resident::cmResidentHand, kbNoKey, hcNoContext, "on") +
+                    newLine() +
+                    *new TMenuItem("~A~bout the residents", resident::cmResidentAbout, kbNoKey)
+            ) +
         *new TSubMenu("~H~elp", kbAltH) +
             *new TMenuItem("~A~bout WIBWOBWORLD", cmAbout, kbNoKey) +
             *new TMenuItem("~K~eyboard Shortcuts", cmKeyboardShortcuts, kbNoKey) +

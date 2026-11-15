@@ -485,7 +485,7 @@ std::string cmdRead(const KV& kv) {
     int from_line = std::max(0, num(kv, "from", 0));
     std::ostringstream os;
     os << "{\"id\":" << q(id) << ",\"type\":" << q(typeOfW(w)) << ",\"title\":" << q(titleOf(w))
-       << ",\"from\":" << q(from) << ",\"fresh\":" << (fresh ? "true" : "false")
+       << ",\"standing\":\"data\",\"from\":" << q(from) << ",\"fresh\":" << (fresh ? "true" : "false")
        << ",\"count\":" << lines.size() << ",\"lines\":[";
     int n = 0;
     for (size_t i = (size_t)from_line; i < lines.size() && n < limit; ++i, ++n)
@@ -528,7 +528,7 @@ std::string cmdStudy(const KV& kv) {
         units += (char)('0' + col % 10);
     }
     std::ostringstream os;
-    os << "{\"from\":" << q(from);
+    os << "{\"standing\":\"data\",\"from\":" << q(from);
     if (w) os << ",\"id\":" << q(id);
     os << ",\"x\":" << x << ",\"y\":" << y << ",\"w\":" << wdt << ",\"h\":" << hgt
        << ",\"ruler\":[" << q(tens) << "," << q(units) << "],\"runs_are\":\"[x, n, fg, bg] in BIOS colours 0-15\",\"rows\":[";
@@ -557,13 +557,27 @@ std::string cmdStudy(const KV& kv) {
 
 std::string cmdChanges(const KV& kv) { return changesJson(readerOf(kv)); }
 
+bool marksOn() { return g_marksOn; }
+
+void setMarksOn(bool on) {
+    g_marksOn = on;
+    if (!g_marksOn) for (auto& m : g_marks) dropMark(m.second);
+}
+
 std::string cmdMark(const KV& kv) {
+    bool wantOn = g_marksOn;
+    int wantMs = g_markMs;
     if (has(kv, "on")) {
         std::string v = str(kv, "on");
-        g_marksOn = (v == "1" || v == "true" || v == "on");
-        if (!g_marksOn) for (auto& m : g_marks) dropMark(m.second);
+        wantOn = (v == "1" || v == "true" || v == "on");
     }
-    if (has(kv, "ms")) g_markMs = std::max(200, std::min(num(kv, "ms", g_markMs), 600000));
+    if (has(kv, "ms")) wantMs = std::max(200, std::min(num(kv, "ms", g_markMs), 600000));
+    if (wantOn != g_marksOn || wantMs != g_markMs) {
+        std::string refusal = ruleGate(std::string("reading marks ") + (wantOn ? "on" : "off") + ", " + std::to_string(wantMs) + " ms");
+        if (!refusal.empty()) return refusal;
+        setMarksOn(wantOn);
+        g_markMs = wantMs;
+    }
     std::ostringstream os;
     os << "{\"on\":" << (g_marksOn ? "true" : "false") << ",\"ms\":" << g_markMs << ",\"marks\":[";
     bool first = true;

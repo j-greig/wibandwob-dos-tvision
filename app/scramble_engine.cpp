@@ -5,6 +5,7 @@
 /*                                                         */
 /*---------------------------------------------------------*/
 
+#include "resident_senses.h"
 #include "scramble_engine.h"
 #include "command_registry.h"
 #include "llm/base/auth_config.h"
@@ -639,10 +640,11 @@ std::string ScrambleEngine::ask(const std::string& input)
             haikuClient.canCall() ? 1 : 0,
             input.c_str());
 
-    // Free text → Haiku.
+    // Free text → Haiku, with who is speaking in front of it.
+    const std::string stamped = resident::stampInstruction(input, "scramble");
     if (haikuClient.isAvailable() && haikuClient.canCall()) {
         fprintf(stderr, "[scramble] calling haiku...\n");
-        std::string result = haikuClient.ask(input);
+        std::string result = haikuClient.ask(stamped);
         haikuClient.markCalled();
         fprintf(stderr, "[scramble] haiku response len=%zu\n", result.size());
         if (!result.empty()) {

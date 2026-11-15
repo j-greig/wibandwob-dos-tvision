@@ -200,7 +200,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
-        {"window_owner", "Who opened a window (id=); owner= sets it", false},
+        {"window_owner", "Who opened a window (id=); owner= sets it (a rule: the console with the key turned only)", false},
+        {"standing", "Who you are to the residents (source and standing), the console key, the standing table and the rule commands", false},
+        {"residents_about", "What the residents are, what is logged and what is kept", false},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
@@ -744,6 +746,8 @@ std::string exec_registry_command(
         if (name == "look_mark") return resident::cmdMark(kv);
     }
     if (name == "acts") return resident::cmdActs(kv);
+    if (name == "standing") return resident::cmdStanding(kv);
+    if (name == "residents_about") return resident::cmdAbout(kv);
     if (name == "window_owner") return resident::cmdOwner(kv);
     if (name == "resident_hand") return resident::cmdHand(kv);
     if (name.rfind("resident_", 0) == 0) {
