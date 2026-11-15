@@ -163,6 +163,21 @@ std::string api_paint_export(TWwdosApp& app, const std::string& id);
 std::string api_paint_save(TWwdosApp& app, const std::string& id, const std::string& path);
 std::string api_paint_load(TWwdosApp& app, const std::string& id, const std::string& path);
 std::string api_window_title(TWwdosApp& app, const std::string& id, const std::string& title);
+
+// A text editor the residents' life opened (LOG.TXT, a guestbook sign page): onClose gets what it
+// holds when it closes (resident_life.cpp).
+struct TLifeEditorWindow : public TTextEditorWindow {
+    std::function<void(const std::vector<std::string>&)> onClose;
+    TLifeEditorWindow(const TRect& r, const char* t) : TWindowInit(&TWindow::initFrame), TTextEditorWindow(r, t) {}
+    void close() override {
+        if (onClose && getEditorView()) {
+            auto f = onClose;
+            onClose = nullptr;
+            f(getEditorView()->getLines());
+        }
+        TTextEditorWindow::close();
+    }
+};
 static void onQuitSignal(int signo) { g_quitSignal = signo; }
 #include "window_type_registry.h"
 
@@ -254,7 +269,7 @@ const ushort cmASCIICam     = 157;
 // Tools menu commands (future)
 const ushort cmAnsiEditor = 125;
 const ushort cmPaintTools = 126;
-const ushort cmFeed = 9960;              // Tools > Feed: the act log, live (feed_view.cpp)
+const ushort cmFeed = 9965;              // Tools > Feed: the act log, live (feed_view.cpp)
 const ushort cmAnimationStudio = 127;
 const ushort cmQuantumPrinter = 128;
 const ushort cmWibWobChat = 131;
@@ -1187,19 +1202,6 @@ TWwdosApp::TWwdosApp() :
     };
     lifeHooks.openEditor = [this](const std::string& title, const std::vector<std::string>& lines,
                                   std::function<void(const std::vector<std::string>&)> onClose) -> TWindow* {
-        // A text editor holding a file's lines; onClose gets what it holds when it closes.
-        struct TLifeEditorWindow : public TTextEditorWindow {
-            std::function<void(const std::vector<std::string>&)> onClose;
-            TLifeEditorWindow(const TRect& r, const char* t) : TWindowInit(&TWindow::initFrame), TTextEditorWindow(r, t) {}
-            void close() override {
-                if (onClose && getEditorView()) {
-                    auto f = onClose;
-                    onClose = nullptr;
-                    f(getEditorView()->getLines());
-                }
-                TTextEditorWindow::close();
-            }
-        };
         TRect r = deskTop->getExtent();
         r.grow(-6, -3);
         if (r.b.x - r.a.x > 84) r.b.x = r.a.x + 84;
@@ -1254,6 +1256,13 @@ TWwdosApp::TWwdosApp() :
             if (r.rfind("ok", 0) != 0) err = r;
         }
         return win;
+    };
+    lifeHooks.takeEditor = [](TWindow* w, std::vector<std::string>& lines) {
+        auto* lw = dynamic_cast<TLifeEditorWindow*>(w);
+        if (!lw || !lw->getEditorView()) return false;
+        lines = lw->getEditorView()->getLines();
+        lw->onClose = nullptr;
+        return true;
     };
     life::setHooks(lifeHooks);
 
@@ -3172,8 +3181,10 @@ void TWwdosApp::getEvent(TEvent& event)
     deskmosh::screenBefore();   // the optional screen layer shows only while the screen flushes
     TApplication::getEvent(event);
     deskmosh::screenAfter();
+    // The key that wakes the residents or closes the boot screen is used up here, before it is
+    // logged as the person's typing: it is logged once, as what it did.
+    if (!fromPut && (event.what & (evKeyDown | evMouse))) life::consoleInput(event);
     resident::noteOrigin(event, fromPut);
-    if (!fromPut && (event.what & (evKeyDown | evMouse))) life::consoleInput(event);   // may use the event up
     resident::afterBase(event);
     deskmosh::noteEvent(event);   // Esc twice stops a desk mosh
 }

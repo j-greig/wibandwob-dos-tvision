@@ -236,6 +236,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"resident_reflexes", "Residents inside the app: the reflex script that answers the person's gestures, what it bound and its last results; load=<file> and clear=1 are rules (the console with the key turned; WWDOS_RESIDENTS=<file> at start)", false},
         {"help", "What a command does and whether you may run it: name=<command> gives its description, whether it is a rule and, when you may not, why; no name lists every command and the rules", false},
         {"resident_selftest", "The calling resident tries what a person can do through its own hands (open an editor, type and read back, choose a menu item and answer the dialog, drag, a refused rule, a mistyped command, person_events, close): start=1 begins; no args reports each step", false},
+        {"resident_undo", "Undo your own last change as a resident (an open, a move or resize, a retitle, a run of typing in an editor); refused when someone else changed that window since; list=1 shows your changes", false},
+        {"resident_rehearse", "A rehearsal desk: a nested desktop in a window you own, at its own socket, to try things before acting in public; close=1 ends it; optional x y w h", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -838,6 +840,8 @@ static std::string exec_registry_command_inner(
     if (deskmosh::isCommand(name)) return deskmosh::command(name, kv);
     if (name == "describe") return resident::cmdDescribe(kv);
     if (name == "help") return resident::cmdHelp(kv);
+    if (name == "resident_undo") return resident::cmdUndo(kv);
+    if (name == "resident_rehearse") return resident::cmdRehearse(kv);
     if (name == "resident_selftest") return resident::cmdSelftest(kv);
     if (name == "resident_reflexes") return resident::cmdReflexes(kv);
     if (name == "person_events" || name == "person_wait") return resident::cmdPersonEvents(kv);
