@@ -408,6 +408,7 @@ void deliverAddressed(Item& it) {
         if (e.what != evNothing && it.kind == Kind::Event && (it.ev.what & evKeyDown)) result = "delivered (not handled)";
     }
 
+    f.personFocus = g_frames.back().personFocus;   // the person may have clicked elsewhere meanwhile
     g_frames.pop_back();
 
     // Windows that appeared during the dispatch are the resident's.
@@ -470,6 +471,8 @@ void routePerson(TEvent& ev) {
     else if (ev.what & (evMouseDown | evMouseWheel)) tgt = windowAt(ev.mouse.where, TheTopView);
     else return;   // moves and ups outside a person's drag
     if (!tgt) return;
+    // A click chooses where the person's keys go next, as it would without the dialog.
+    if ((ev.what & evMouseDown) && dynamic_cast<TWindow*>(tgt)) rf.personFocus = tgt;
     if (inFrames(tgt)) { g_heldPerson.push_back(ev); return; }
     TDeskTop* d = TProgram::deskTop;
     Frame f{'P', tgt, TheTopView, d ? d->current : nullptr, ++g_frameSerial};
