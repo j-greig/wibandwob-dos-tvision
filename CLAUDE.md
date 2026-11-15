@@ -30,3 +30,8 @@ When a session touches both, SAY SO explicitly at each switch: name the repo and
   files are compared byte for byte. Its token build is frozen; `app/film/boot/` is compared there, never copied.
 - After changing `app/stage/stage.cpp`'s lists or adding a command: `python3 tests/stage/test_commands_def.py`.
 - Director surface: `tools/api_server/show_ops.py` (batch, names, place, scene, timeline, dive). Window names live in the API process, not the app: restarting the API forgets them, and windows then show their title or id in `/show/scene`.
+- Resident input (`app/resident_input.cpp`, `docs/resident-input.md`): `resident_key`, `resident_mouse`, `resident_press`, `resident_menu` with `id=` reach a window without changing `deskTop->current`; they join the person's events in `TWwdosApp::getEvent`/`putEvent`, so a new override of either must keep calling `resident::takeEvent`, `afterBase` and `interceptPut`.
+- Resident commands queue and reply with seq numbers before anything is delivered; wait for the seqs in `resident_status since=` before reading the screen or `window_text`.
+- `putEvent` (and `inject_command`) holds one event: a second in the same tick replaces the first. Queue several through the resident commands instead.
+- Typing as the person through tmux needs one key per write: three or more printable keys in one read arrive as a paste (`kbPaste`), which `TTextEditorView` drops.
+- `tests/resident/test_resident_input.py` starts its own desktop (`tmux -L residenttest`, its own socket); `WWDOS_BIN` picks the binary. Opening a `backrooms_tv` window stops the app (unmodified build too).
