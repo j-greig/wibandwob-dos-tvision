@@ -914,7 +914,59 @@ def group_film():
         d.stop()
 
 
-GROUPS = {"film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- the film's cast in the cast player
+
+def make_waking(d):
+    ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Plans", **as_res("wib"))["id"]
+    time.sleep(0.3)
+    d.person_type("hi there")
+    time.sleep(0.5)
+    d.j("move_window", id=ed, x=30, y=8, **as_res("wob"))
+    tp = d.j("create_window", type="test_pattern", x=80, y=2, w=30, h=10, title="Gone", **as_res("wob"))["id"]
+    time.sleep(0.4)
+    d.j("close_window", id=tp, **as_res("wob"))
+    time.sleep(0.3)
+    return ed
+
+
+def group_cast():
+    print("cast: film_export's cast opens in the cast player and shows the film's text at chosen seconds, in colour")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0").start()
+    try:
+        make_waking(d)
+        R.check(d.quit(), "a waking to film")
+        d.start()
+        x = d.j("film_export", w=60, h=20)
+        raw = "".join(json.loads(l)[2] for l in open(x["file"], encoding="utf-8").read().splitlines()[1:])
+        R.check("\x1b[93m" in raw and "\x1b[96m" in raw and "\x1b[90m" in raw,
+                "the cast carries colour: wib's window yellow, wob's cyan, the desk dark grey")
+        p = d.j("open_cast", file=x["file"], paused=1)
+        pid = p.get("id") or [w for w in glance(d) if w["type"] not in ("film",) and "cast" in w["title"]][0]["id"]
+        fr = d.j("film_frame", w=60, h=20, ms=0)
+        times = sorted(set(fr["times"]))
+        picks = [times[len(times) // 3], times[2 * len(times) // 3], fr["length"]]
+        same = []
+        for ms in picks:
+            d.j("cast_control", id=pid, action="pause", seek=f"{ms / 1000 + 0.0005:.4f}")
+            time.sleep(0.3)
+            shown = [l.rstrip() for l in d.j("look_read", id=pid)["lines"]][:20]
+            want = [l.rstrip() for l in d.j("film_frame", w=60, h=20, ms=ms)["rows"]]
+            same.append(shown == want)
+            if shown != want:
+                print("    cast:", shown[:12])
+                print("    film:", want[:12])
+        R.check(all(same), f"at {[m / 1000 for m in picks]} s the cast player shows the film's text exactly: {same}")
+        last = [l for l in d.j("look_read", id=pid)["lines"]]
+        R.check(any("Plans" in l for l in last) and any("hi there" in l for l in last), "and at the end the desk with Plans and its text")
+        st = d.j("look_study", id=pid, x=0, y=0, w=62, h=22)
+        fgs = {r[2] for row in st["rows"] for r in row["runs"]}
+        R.check(14 in fgs and 8 in fgs, f"the player draws the cast's colours: yellow and dark grey among {sorted(fgs)}")
+    finally:
+        d.stop()
+
+
+GROUPS = {"cast": group_cast, "film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():

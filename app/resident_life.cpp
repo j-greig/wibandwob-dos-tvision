@@ -2277,7 +2277,7 @@ std::string cmdOwnTime(const KV& kv) {
 // window from the record: it opens no windows and sends no commands, so it cannot touch the live
 // desk. film_export writes the same film as an asciinema v2 cast.
 struct FilmWin {
-    std::string id, type, title;
+    std::string id, type, title, owner;
     int x = 0, y = 0, w = 10, h = 4;
     std::vector<std::string> text;
 };
@@ -2351,6 +2351,7 @@ std::vector<FilmWin> deskAt(const Film& f, long long t) {
         if (w.rfind("opened ", 0) == 0) {
             FilmWin fw;
             fw.id = e.a.window;
+            fw.owner = e.a.source == "console" ? "person" : e.a.actor;
             size_t q1 = w.find('"'), q2 = w.find('"', q1 + 1), at = w.rfind(" at ");
             fw.type = w.substr(7, q1 == std::string::npos ? std::string::npos : q1 - 8);
             if (q1 != std::string::npos && q2 != std::string::npos) fw.title = w.substr(q1 + 1, q2 - q1 - 1);
@@ -2379,12 +2380,28 @@ std::vector<FilmWin> deskAt(const Film& f, long long t) {
     return ws;
 }
 
-// The film's picture at time t on a W x H grid of characters (the desk scaled to fit).
-std::vector<std::string> filmFrame(const Film& f, long long t, int W, int H) {
-    std::vector<std::u32string> g(H, std::u32string(W, U'░'));
+// The film's picture at time t on a W x H grid of characters (the desk scaled to fit), with a
+// BIOS colour per cell: the desk dark grey, each window's frame in its owner's colour.
+struct FCell {
+    char32_t c = U'░';
+    unsigned char fg = 8;
+};
+
+unsigned char ownerColour(const std::string& o) {
+    if (o == "wib") return 14;
+    if (o == "wob") return 11;
+    if (o == "scramble") return 13;
+    if (o == "person") return 15;
+    if (o == "app") return 7;
+    return 10;
+}
+
+std::vector<std::vector<FCell>> filmCells(const Film& f, long long t, int W, int H) {
+    std::vector<std::vector<FCell>> g(H, std::vector<FCell>(W));
     double sx = std::min(1.0, (double)W / f.deskW), sy = std::min(1.0, (double)H / f.deskH);
-    auto put = [&](int x, int y, char32_t c) { if (x >= 0 && y >= 0 && x < W && y < H) g[y][x] = c; };
+    auto put = [&](int x, int y, char32_t c, unsigned char fg) { if (x >= 0 && y >= 0 && x < W && y < H) g[y][x] = FCell{c, fg}; };
     for (auto& w : deskAt(f, t)) {
+        unsigned char oc = ownerColour(w.owner);
         int x0 = (int)(w.x * sx), y0 = (int)(w.y * sy);
         int x1 = std::max(x0 + 3, (int)((w.x + w.w) * sx) - 1), y1 = std::max(y0 + 2, (int)((w.y + w.h) * sy) - 1);
         for (int y = y0; y <= y1; ++y)
@@ -2393,26 +2410,48 @@ std::vector<std::string> filmFrame(const Film& f, long long t, int W, int H) {
                 bool top = y == y0, bot = y == y1, l = x == x0, r = x == x1;
                 if (top && l) c = U'┌'; else if (top && r) c = U'┐'; else if (bot && l) c = U'└';
                 else if (bot && r) c = U'┘'; else if (top || bot) c = U'─'; else if (l || r) c = U'│';
-                put(x, y, c);
+                put(x, y, c, (top || bot || l || r) ? oc : 7);
             }
         std::string title = w.title.empty() ? w.type : w.title;
         for (size_t k = 0; k < title.size() && x0 + 2 + (int)k < x1; ++k)
-            put(x0 + 2 + (int)k, y0, (unsigned char)title[k] < 0x80 ? (char32_t)title[k] : U'?');
+            put(x0 + 2 + (int)k, y0, (unsigned char)title[k] < 0x80 ? (char32_t)title[k] : U'?', 15);
         for (size_t ln = 0; ln < w.text.size() && y0 + 1 + (int)ln < y1; ++ln)
             for (size_t k = 0; k < w.text[ln].size() && x0 + 1 + (int)k < x1; ++k)
-                put(x0 + 1 + (int)k, y0 + 1 + (int)ln, (unsigned char)w.text[ln][k] < 0x80 ? (char32_t)w.text[ln][k] : U'?');
+                put(x0 + 1 + (int)k, y0 + 1 + (int)ln, (unsigned char)w.text[ln][k] < 0x80 ? (char32_t)w.text[ln][k] : U'?', 7);
     }
+    return g;
+}
+
+void utf8(std::string& s, char32_t c) {
+    if (c < 0x80) s += (char)c;
+    else if (c < 0x800) { s += (char)(0xC0 | (c >> 6)); s += (char)(0x80 | (c & 0x3F)); }
+    else { s += (char)(0xE0 | (c >> 12)); s += (char)(0x80 | ((c >> 6) & 0x3F)); s += (char)(0x80 | (c & 0x3F)); }
+}
+
+std::vector<std::string> filmFrame(const Film& f, long long t, int W, int H) {
     std::vector<std::string> out;
-    for (auto& row : g) {
+    for (auto& row : filmCells(f, t, W, H)) {
         std::string s;
-        for (char32_t c : row) {
-            if (c < 0x80) s += (char)c;
-            else if (c < 0x800) { s += (char)(0xC0 | (c >> 6)); s += (char)(0x80 | (c & 0x3F)); }
-            else { s += (char)(0xE0 | (c >> 12)); s += (char)(0x80 | ((c >> 6) & 0x3F)); s += (char)(0x80 | (c & 0x3F)); }
-        }
+        for (auto& c : row) utf8(s, c.c);
         out.push_back(s);
     }
     return out;
+}
+
+// The same picture as terminal output: SGR colours (30-37, 90-97) and the characters, row by row.
+std::string filmAnsi(const Film& f, long long t, int W, int H) {
+    static const int sgr[16] = {30, 34, 32, 36, 31, 35, 33, 37, 90, 94, 92, 96, 91, 95, 93, 97};
+    std::string out;
+    auto g = filmCells(f, t, W, H);
+    for (size_t y = 0; y < g.size(); ++y) {
+        int cur = -1;
+        for (auto& c : g[y]) {
+            if (c.fg != cur) { out += "\x1b[" + std::to_string(sgr[c.fg & 15]) + "m"; cur = c.fg; }
+            utf8(out, c.c);
+        }
+        if (y + 1 < g.size()) out += "\r\n";
+    }
+    return out + "\x1b[0m";
 }
 
 std::string mmss(long long ms) {
@@ -2539,8 +2578,7 @@ std::string exportFilm(int waking, int W, int H, std::string& file) {
     for (long long t : times) {
         auto rows = filmFrame(f, t, W, H);
         if (rows == prev) continue;
-        std::string data = std::string(frames ? "" : "\x1b[2J") + "\x1b[H";
-        for (size_t i = 0; i < rows.size(); ++i) data += rows[i] + (i + 1 < rows.size() ? "\r\n" : "");
+        std::string data = std::string(frames ? "" : "\x1b[0m\x1b[2J") + "\x1b[H" + filmAnsi(f, t, W, H);
         char ts[32];
         std::snprintf(ts, sizeof ts, "%.3f", t / 1000.0);
         os << "[" << ts << ", \"o\", \"" << jsonEsc(data) << "\"]\n";
@@ -2568,6 +2606,21 @@ std::string cmdFilm(const std::string& name, const KV& kv) {
                    ",\"playing\":" + (f->view->playing ? "true" : "false") + "}";
         }
         return "err no film window " + str(kv, "id");
+    }
+    if (name == "film_frame") {   // the film's picture at ms=, as film_export draws it (w= h=)
+        Film f;
+        std::string err;
+        if (!loadFilm(filmWaking(kv), f, err)) return "err " + err;
+        int W = std::max(20, std::min(240, std::atoi(str(kv, "w", "100").c_str())));
+        int H = std::max(8, std::min(80, std::atoi(str(kv, "h", "32").c_str())));
+        auto rows = filmFrame(f, std::atoll(str(kv, "ms", "0").c_str()), W, H);
+        std::ostringstream os;
+        os << "{\"waking\":" << f.waking << ",\"length\":" << f.length << ",\"times\":[";
+        for (size_t i = 0; i < f.events.size(); ++i) os << (i ? "," : "") << f.events[i].t;
+        os << "],\"rows\":[";
+        for (size_t i = 0; i < rows.size(); ++i) os << (i ? "," : "") << q(rows[i]);
+        os << "]}";
+        return os.str();
     }
     // film_export
     int W = std::max(20, std::min(240, std::atoi(str(kv, "w", "100").c_str())));
@@ -2750,7 +2803,7 @@ bool owns(const std::string& cmd) {
     static const char* names[] = {"get_self", "self_note", "get_note", "logbook_write", "logbook_open", "get_logbook",
                                   "guestbook_sign", "guestbook_open", "get_guestbook", "get_life",
                                   "residents_sleep", "residents_wake", "acts_history", "residents_will",
-                                  "resident_own_time", "film_open", "film_seek", "film_export"};
+                                  "resident_own_time", "film_open", "film_seek", "film_export", "film_frame"};
     for (auto n : names) if (cmd == n) return true;
     return false;
 }
@@ -2764,7 +2817,7 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "acts_history") return cmdActsHistory(kv);
     if (name == "residents_will") return cmdWill(kv);
     if (name == "resident_own_time") return cmdOwnTime(kv);
-    if (name == "film_open" || name == "film_seek" || name == "film_export") return cmdFilm(name, kv);
+    if (name == "film_open" || name == "film_seek" || name == "film_export" || name == "film_frame") return cmdFilm(name, kv);
     if (name == "get_life" || name == "residents_sleep" || name == "residents_wake") return cmdLife(name, kv);
     return "";
 }
