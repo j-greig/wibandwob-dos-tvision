@@ -8,7 +8,7 @@ it after. Binary: WWDOS_BIN or build-resident/app/wwdos.
 Usage:
     python3 tests/resident/test_machine_sound.py            # all groups
     python3 tests/resident/test_machine_sound.py synth      # chosen groups
-Groups: synth, ears.
+Groups: synth, ears, score.
 """
 
 import json
@@ -191,7 +191,122 @@ def test_ears(desk):
     R.check(any(line.find(" ears ") >= 0 for line in desk.screen()), "the synth window shows the ears' meter to the person")
 
 
-GROUPS = {"synth": test_synth, "ears": test_ears}
+# ---------------------------------------------------------------------------- score
+
+TEST_SCORE = """title Test answer
+tempo 480
+part person the person at the console
+part wib a resident
+1 all listen
+do tr808 preset electro
+do tr808 play
+do synth patch pluck
+2 person play a phrase
+2 wib answer the last phrase
+2 all rest two bars
+do tr808 stop
+"""
+
+
+def wait_section(desk, sid, n, timeout=6.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        s = x(desk, "event_score", id=sid, action="state")
+        if s.get("section", 0) >= n or s.get("done"):
+            return s
+        time.sleep(0.03)
+    raise AssertionError(f"score did not reach section {n}")
+
+
+def test_score(desk):
+    print("\n[score] a person and a resident perform an event score on the synth and the drum machine")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    sid = x(desk, "open_event_score", text=TEST_SCORE, x=40, y=26, w=78, h=14, actor="wib", source="resident")["id"]
+    drm = x(desk, "open_tr808", x=2, y=26, w=118, h=20)["id"]
+    syn = x(desk, "open_synth", x=2, y=1, w=60, h=18)["id"]     # opened last: the person's keys go here
+    time.sleep(2.2)   # older notes age out of the ears
+    g = glance_of(desk, sid) or {}
+    R.check(g.get("type") == "event_score", f"look_glance names the type event_score ({g.get('type')})")
+    R.check(g.get("state") == 'event score "Test answer", stopped: 4 sections, 7 bars at 480 bpm',
+            f"look_glance gives one sentence: {g.get('state')!r}")
+    n0 = last_act(desk)
+
+    s = x(desk, "event_score", id=sid, action="start", actor="wib", source="resident")
+    R.check(s["running"] and s["section"] == 1 and s["now"]["text"] == "listen" and s["next"]["who"] == "person",
+            "wib starts the score: section 1 now, the person next")
+    R.check(s["standing"] == "data" and s["from"] == "text", "the score's state is marked data")
+
+    s = wait_section(desk, sid, 2)
+    R.check(s["now"]["who"] == "person" and s["bars"] == 2, f"section 2 is the person's phrase ({s['now']})")
+    desk.person_type("zxcv", gap=0.06)        # the person plays C D E F
+
+    s = wait_section(desk, sid, 3)
+    R.check(s["now"]["kind"] == "answer", "section 3 asks wib to answer")
+    ans = s.get("answering", {})
+    R.check(ans.get("notes") == ["C-4", "D-4", "E-4", "F-4"] and ans.get("by") == "person 4",
+            f"the score gives wib the phrase to answer: {ans}")
+    # wib answers: the phrase backwards, a fifth up.
+    x(desk, "synth", id=syn, action="notes", notes="C-5 B-4 A-4 G-4", step=100, actor="wib", source="resident")
+    h = x(desk, "hear", seconds=0.6, of="synth")
+    R.check([e["note"] for e in h["heard"]][:1] == ["C-5"], "wib hears its own answer begin")
+
+    s = wait_section(desk, sid, 4)
+    R.check(s["now"]["kind"] == "rest", "section 4 is a rest")
+    t0 = time.time()
+    while not s.get("done") and time.time() - t0 < 4:
+        time.sleep(0.05)
+        s = x(desk, "event_score", id=sid, action="state")
+    R.check(s.get("done") and not s.get("running"), "the score finishes on the app's clock")
+    secs = s["sections"]
+    R.check(secs[1]["heard"]["by"] == {"person": 4}, f"section 2 heard 4 notes by the person ({secs[1]['heard']})")
+    R.check(secs[2]["heard"]["by"] == {"wib": 4} and secs[2]["heard"]["notes"] == ["C-5", "B-4", "A-4", "G-4"],
+            f"section 3 heard wib's answer ({secs[2]['heard']})")
+    R.check(secs[3].get("kept") is True, "section 4, the rest, was kept (no synth notes)")
+    R.check(secs[1]["heard"]["hits"] > 0, f"the drum machine played under the person ({secs[1]['heard']['hits']} hits)")
+    R.check(s["acts"] == ["tr808 preset electro: ok", "tr808 play: ok", "synth patch pluck: ok", "tr808 stop: ok"],
+            f"the score's do lines ran ({s['acts']})")
+    d = x(desk, "tr808", id=drm, action="state")
+    R.check(d["transport"] == "stopped" and d["pattern"] == "A1-A", "the drum machine stopped when the score said so")
+    syns = x(desk, "synth", id=syn, action="state")
+    R.check(syns["patch"] == "pluck", "the synth took the score's patch")
+
+    acts = acts_since(desk, n0)
+    R.check(any(a["actor"] == "wib" and "event_score action=start" in a["what"] for a in acts), "the log has wib starting the score")
+    secacts = [a["what"] for a in acts if a["actor"] == "score" and " section " in a["what"]]
+    R.check(len(secacts) == 4 and secacts[1].endswith("section 2 of 4: person: play a phrase"),
+            f"the log has each section, by the score ({len(secacts)})")
+    R.check(any(a["actor"] == "score" and a["what"] == "score do tr808 play" and a["result"] == "ok" for a in acts),
+            "the log has the score's do lines, by the score")
+    R.check(any(a["actor"] == "score" and a["what"].endswith("finished") for a in acts), "the log has the score finishing")
+    R.check(any(a["actor"] == "person" and a["window"] == syn for a in acts), "the log has the person's notes")
+    hits = x(desk, "hear", seconds=10, of="tr808", window=drm)["heard"]
+    R.check(hits and all(e["who"] == "score" for e in hits), "the ears say the score started the drum machine")
+
+    # A score is data: anything outside the fixed list is refused before a window opens.
+    before = len(desk.state()["windows"])
+    r1 = xraw(desk, "open_event_score", text="part p x\n1 p go\ndo shell rm -rf ~\n")
+    r2 = xraw(desk, "open_event_score", text="exec_command name=close_all\n1 all go\n")
+    r3 = xraw(desk, "open_event_score", score="../../etc/passwd")
+    R.check(r1.startswith("err score line 3: do acts on tr808 or synth only"), f"a do line outside the list is refused ({r1})")
+    R.check(r2.startswith("err score line 1: unknown line"), f"a command in a score is refused ({r2})")
+    R.check(r3.startswith("err name is"), f"a score name cannot leave scores/ ({r3})")
+    R.check(len(desk.state()["windows"]) == before, "no window opened or closed")
+
+    # The older open_score (the animated Score window) still opens its own window.
+    n_before = len(desk.state()["windows"])
+    R.check(xraw(desk, "open_score") == "ok" and len(desk.state()["windows"]) == n_before + 1,
+            "open_score still opens the animated Score window")
+
+    # The worked example in the repo.
+    ex = x(desk, "open_event_score", score="call-and-answer")
+    R.check(ex.get("title") == "Call and answer" and ex.get("sections") == 8, f"scores/call-and-answer.score opens ({ex})")
+    st = x(desk, "event_score", id=ex["id"], action="state")
+    R.check(st["from"] == "scores/call-and-answer.score" and [p["name"] for p in st["parts"]] == ["person", "wib"],
+            "its parts are the person and wib")
+
+
+GROUPS = {"synth": test_synth, "ears": test_ears, "score": test_score}
 
 
 def main():

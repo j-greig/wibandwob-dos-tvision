@@ -22,11 +22,12 @@ struct Host {
     std::function<std::string(TWindow*)> insert;           // put on the desktop, register, return its API id
     std::function<TWindow*(const std::string&)> find;      // window by API id
     std::function<std::string(TWindow*)> idOf;             // API id of a window ("" when none)
+    std::function<std::string(const KV&)> tr808;           // exec_command name=tr808 (scores' do lines)
 };
 void setHost(const Host& h);
 const Host& host();
 
-// True for the names command() answers: open_synth, synth.
+// True for the names command() answers: open_synth, synth, hear, open_event_score, event_score.
 bool handles(const std::string& name);
 std::string command(const std::string& name, const KV& kv);
 // One sentence of state for look_glance; "" when w is not a sound window.

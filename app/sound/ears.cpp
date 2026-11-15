@@ -110,7 +110,8 @@ std::vector<std::string> Ears::rows(double now, double ms, double rowMs, const s
 std::string Ears::summary(double now, double ms, const std::string& source) const {
     const auto hs = since(now, ms, source);
     std::ostringstream o;
-    o << "in the last " << num(ms / 1000.0, ms < 1000 ? 2 : 0) << " s: ";
+    const double secs = ms / 1000.0;
+    o << "in the last " << num(secs, std::fabs(secs - std::floor(secs + 0.5)) < 1e-9 ? 0 : (ms < 1000 ? 2 : 1)) << " s: ";
     std::vector<int> notes;
     std::map<std::string, int> whoSynth, drumCount;
     std::string drumWho;

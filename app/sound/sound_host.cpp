@@ -6,12 +6,14 @@
 
 #include "resident_senses.h"
 #include "ears.h"
+#include "score_view.h"
 #include "synth_view.h"
 #include "tr808_view.h"
 #include "tr808_audio.h"
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -165,17 +167,70 @@ static std::string withId(TWindow* w, const std::string& json) {
 }
 
 static std::string openSynth(const KV& kv) {
-    TWindow* w = createSynthWindow(boundsFrom(kv, 60, 18), kv);
+    TWindow* w = createSynthWindow(boundsFrom(kv, 68, 18), kv);
     const std::string id = g_host.insert ? g_host.insert(w) : "";
     return "{\"ok\":true,\"id\":\"" + id + "\"}";
 }
 
 bool handles(const std::string& name) {
-    return name == "open_synth" || name == "synth" || name == "hear";
+    return name == "open_synth" || name == "synth" || name == "hear" || name == "open_event_score" || name == "event_score";
+}
+
+// scores/<name>.score: $WWDOS_REPO/scores, ./scores, then the source tree.
+static bool readScoreFile(const std::string& name, std::string& text, std::string& origin) {
+    std::vector<std::string> dirs;
+    if (const char* r = std::getenv("WWDOS_REPO")) if (*r) dirs.push_back(std::string(r) + "/scores");
+    dirs.push_back("scores");
+#ifdef WWDOS_SOURCE_DIR
+    dirs.push_back(std::string(WWDOS_SOURCE_DIR) + "/scores");
+#endif
+    for (const auto& d : dirs) {
+        const std::string p = d + "/" + name + ".score";
+        FILE* f = std::fopen(p.c_str(), "rb");
+        if (!f) continue;
+        char buf[4096];
+        size_t n;
+        text.clear();
+        while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0 && text.size() < 65536) text.append(buf, n);
+        std::fclose(f);
+        origin = "scores/" + name + ".score";
+        return true;
+    }
+    return false;
+}
+
+static std::string openScore(const KV& kv) {
+    std::string text, origin;
+    // score= (exec_command's name= is the command's own name)
+    if (kvHas(kv, "score")) {
+        const std::string name = kvGet(kv, "score");
+        for (char c : name)
+            if (!(std::isalnum((unsigned char)c) || c == '-' || c == '_')) return "err name is letters, digits, - and _";
+        if (!readScoreFile(name, text, origin)) return "err no score scores/" + name + ".score";
+    } else if (kvHas(kv, "text")) {
+        text = kvGet(kv, "text");
+        origin = "text";
+    } else {
+        return "err open_event_score needs score=<name> (scores/<name>.score) or text=";
+    }
+    Score s;
+    std::string err;
+    if (!parseScore(text, s, err)) return "err score " + err;
+    TWindow* w = new TScoreWindow(boundsFrom(kv, 78, std::min(30, (int)s.sections.size() + 9)), s, origin);
+    const std::string id = g_host.insert ? g_host.insert(w) : "";
+    if (truthy(kvGet(kv, "start"))) static_cast<TScoreWindow*>(w)->view()->start();
+    return "{\"ok\":true,\"id\":\"" + id + "\",\"title\":\"" + jsonEscape(s.title) + "\",\"sections\":" +
+           std::to_string(s.sections.size()) + "}";
 }
 
 std::string command(const std::string& name, const KV& kv) {
     if (name == "open_synth") return openSynth(kv);
+    if (name == "open_event_score") return openScore(kv);
+    if (name == "event_score") {
+        auto* w = findOrFront<TScoreWindow>(kv);
+        if (!w) return kvHas(kv, "id") ? "err score window not found" : "err no score window (open_event_score opens one)";
+        return withId(w, w->view()->apiAction(kvGet(kv, "action"), kv));
+    }
     if (name == "hear") {
         // of= (not source=, which names the caller's standing)
         const std::string src = kvGet(kv, "of", "all");
@@ -203,6 +258,7 @@ std::string command(const std::string& name, const KV& kv) {
 
 std::string stateOf(TWindow* w) {
     if (auto* s = dynamic_cast<TSynthWindow*>(w)) return s->view()->sentence();
+    if (auto* sc = dynamic_cast<TScoreWindow*>(w)) return sc->view()->sentence();
     if (auto* t = dynamic_cast<TTR808Window*>(w)) {
         const tr808::Engine& e = t->view()->engine();
         int programmed = 0;

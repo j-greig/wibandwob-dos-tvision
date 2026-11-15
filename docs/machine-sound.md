@@ -116,3 +116,117 @@ nothing and is not logged as an act.
 The person sees the same meter: the synth window's `ears` line shows the last 4 s of every source.
 `look_glance` now gives the TR-808 a sentence too: `TR-808 drum machine, playing pattern A1-A at 120 bpm, step 5
 of 16; 4 instruments programmed; sound off`.
+
+## Event scores
+
+A score is a short text file that a person and a resident perform together. Each section has a length in bars,
+who it is for, and an open instruction. The machine keeps time on the app's clock, shows the instruction now and
+the bar and beat, listens through the ears, and acts itself only on `do` lines. The worked example is
+`scores/call-and-answer.score`.
+
+### Format
+
+    # a comment
+    title Call and answer
+    tempo 120                 # beats per minute, 30-600
+    beats 4                   # beats in a bar (default 4)
+    part person the person at the console
+    part wib a resident
+
+    1 all     listen: the drum machine counts you in
+    do tr808 preset electro
+    do tr808 play
+    4 person  play a phrase on the synth, four to eight notes
+    4 wib     answer the last phrase
+    2 all     rest two bars
+    do tr808 stop
+
+- A section line is `<bars> <who> <instruction>`: 1-64 bars, `who` a part named before it or `all`.
+- An instruction that starts with `rest` is a rest; one that holds `answer` is an answer; any other is open.
+  The machine does not judge how an instruction is followed. It reports what it heard in each section, whether a
+  rest was kept (no synth notes in it), and, during an answer, the notes of the section before.
+- `do` lines run when the section above them starts, from this list only: `do tr808 play`, `do tr808 stop`,
+  `do tr808 preset <name>`, `do tr808 tempo <bpm>`, `do synth voice pcspk|fm`, `do synth patch <name>`.
+  Any other line is refused with its line number before a window opens. Score text is data: it is shown and
+  timed, never sent to a model and never run as a command.
+
+### Commands
+
+    exec_command name=open_event_score score=call-and-answer [start=1] [x y w h]   # reads scores/<score>.score
+    exec_command name=open_event_score text="title ...\n1 all listen\n..."
+    -> {"ok":true,"id":"w5","title":"Call and answer","sections":8}
+
+    exec_command name=event_score action=start|stop|state [id=w5]
+
+(`score=`, because exec_command's `name=` is the command's own name.) A score file is looked for in
+`$WWDOS_REPO/scores`, `./scores` and the source tree's `scores/`; the name is letters, digits, `-` and `_`.
+
+The window shows the sections with the one now marked, what was heard in each (`[4 notes: person 4]`, `[kept]`),
+the instruction now and the beat. Enter starts and stops it. `look_glance`: `event score "Call and answer",
+running: section 2 of 8, bar 1 of 4; now person: play a phrase on the synth, four to eight notes`.
+
+`event_score action=state` while running:
+
+    {"id":"w5","ok":true,"standing":"data","title":"Call and answer","from":"scores/call-and-answer.score",
+     "tempo":120,"beats":4,"bar_ms":2000,"running":true,"done":false,"started_by":"wib",
+     "parts":[{"name":"person","is":"the person at the console"},{"name":"wib","is":"a resident"}],
+     "section":3,"of":8,"bar":1,"bars":4,"beat":2,"ms_left":7400,
+     "now":{"who":"wib","text":"answer the last phrase","kind":"answer"},
+     "next":{"who":"all","text":"rest two bars","in_ms":7400},
+     "answering":{"section":2,"notes":["C-4","D-4","E-4","F-4"],"by":"person 4"},
+     "sections":[{"n":1,"bars":1,"who":"all","text":"listen: ...","kind":"open","state":"done",
+                  "do":["tr808 preset electro","tr808 play"],"heard":{"notes":[],"by":{},"hits":7}}, ...],
+     "acts":["tr808 preset electro: ok","tr808 play: ok","synth patch bass: ok"]}
+
+### Who did what
+
+The score acts as `score` (source app). Each section start is an act (`score "Call and answer" section 2 of 8:
+person: play a phrase ...`), each `do` line is an act with its result, and so is the finish. Starting and
+stopping it is logged with whoever did it. The ears name `score` as the one who started the drum machine when a
+`do` line started it.
+
+### A resident performing
+
+A resident performs a score with the commands it already has: `event_score action=state` for the instruction and the
+phrase to answer, `hear` for what sounds, `synth action=notes` (or its own keys to the synth window) to play.
+Nothing in the score runs the resident; it decides when and what to play.
+
+## Tests
+
+`app/sound/sound_test` (ctest `sound`) renders to buffers and needs no desktop: synth (17: note names, the PC
+speaker's divisor and pitch measured by zero crossings, one speaker voice, FM level, release and silence, patches,
+nine channels, envelope, WAV), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
+report, window filter, the keep limit), score (14: parsing, kinds, timing, and seven refused scores).
+
+`python3 tests/resident/test_machine_sound.py [synth] [ears] [score]` starts its own silent desktop
+(`tmux -L soundtest`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
+the binary.
+
+| group | what it shows |
+|---|---|
+| synth | wib opens the synth (owner wib, a glance sentence); wib's phrase by command, the person's C D E from z x c, Tab to the PC speaker and `]` to octave 5, and wob's key through `resident_key` each play and name their player; nothing reaches the speakers when silent (sent 0); the acts log has all three; `render` of the PC speaker's A-4 is 22050 samples with 439 upward zero crossings, the same twice, and plays nothing |
+| ears | silence first; right after wib's phrase starts, C-4 by wib is sounding; wob then hears C-4 E-4 G-4, 200 ms apart, as played, with a summary and 16 rows; with the TR-808 started by wob, every hit heard is a step the engine's pattern has on, names wob and 120 bpm; `window=` filters; hear is not logged; the synth window shows the meter |
+| score | wib starts a score at 480 bpm; the person plays C D E F in their section; in wib's answer section the score hands wib those four notes; wib answers; the rest is kept; the score finishes on the clock; each section's notes are attributed (person 4, wib 4), the drum machine played under the person and stopped when the score said; the log has the sections, the `do` lines and the finish by `score`; a `do shell` line, a command line and a path outside `scores/` are refused and no window opens; the worked example opens with 8 sections |
+
+On origin/main (before these commits) every group fails at its first sound command (`err unknown command`, or the animated Score window's plain `ok` for `open_score`, which is why the event score commands are named `open_event_score` and `event_score`).
+
+## What is weak
+
+- **Latency.** Each phrase is a WAV file handed to `afplay`, which takes tens of milliseconds to start. Fine for
+  a phrase from a command; a person playing fast from the keyboard hears each note late and unevenly. A real
+  audio stream (CoreAudio, or SDL) would fix it.
+- **Overlapping phrases are separate processes.** The PC speaker is one voice inside a phrase, but two phrases
+  sent close together play over each other, and FM's nine channels are counted per phrase, not across them.
+- **No key releases.** A terminal sends key presses only, so every keyboard note lasts the gate length.
+- **Mac only.** Sound goes out through `afplay`. The engine is plain C++ with no dependencies and could feed a
+  Web Audio buffer in the browser build, but that is not wired; the browser desktop is silent.
+- **The ears hear what was played, not what came out.** They take the engines' own notes and hits; they do not
+  measure the audio (no onsets from the signal, no mixing of the drum samples). A TR-808 level is its playback
+  volume, not a loudness.
+- **Ears are in memory.** 4096 sounds, lost on restart. No event stream: a resident polls `hear`.
+- **Scores do not check instructions.** "Answer the last phrase" is reported (the phrase, who played what), not
+  judged. Only rests are checked, and only for synth notes. One score runs per window; nothing stops two windows
+  running scores that both drive the TR-808.
+- **No tracker editing.** The ears print tracker rows; nobody can write music in them yet.
+- **Score timing is the window's timer** (20 ms), not sample-accurate, and it does not share a clock with the
+  TR-808: a score's bars and the drum machine's steps can drift apart over a long score.

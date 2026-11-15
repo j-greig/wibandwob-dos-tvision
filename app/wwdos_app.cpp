@@ -1128,6 +1128,7 @@ TWwdosApp::TWwdosApp() :
         sh.insert = [this](TWindow* w) { deskTop->insert(w); return registerWindow(w); };
         sh.find = [this](const std::string& id) { return findWindowById(id); };
         sh.idOf = [this](TWindow* w) { auto it = winToId.find(w); return it == winToId.end() ? std::string() : it->second; };
+        sh.tr808 = [this](const sound::KV& kv) { return api_tr808_action(*this, kv); };
         sound::setHost(sh);
     }
 

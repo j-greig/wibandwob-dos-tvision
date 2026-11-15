@@ -1,6 +1,7 @@
 // Tests for the machine's sound: notes rendered to buffers and compared.
 // Run: build/app/sound_test (ctest name: sound).
 #include "ears.h"
+#include "score.h"
 #include "synth.h"
 
 #include <cmath>
@@ -169,10 +170,59 @@ static void testEars() {
     check(small.size() == 3 && small.since(1000, 1000).front().step == 2, "the ears keep the newest N and drop the oldest");
 }
 
+static void testScore() {
+    std::printf("[score]\n");
+    const char* text =
+        "# a test score\n"
+        "title Two bars each\n"
+        "tempo 240\n"
+        "part person the person\n"
+        "part wib a resident\n"
+        "1 all listen\n"
+        "do tr808 preset electro\n"
+        "do tr808 play\n"
+        "2 person play a phrase\n"
+        "2 wib answer the last phrase\n"
+        "1 all rest one bar\n"
+        "do tr808 stop\n";
+    Score s;
+    std::string err;
+    check(parseScore(text, s, err), "a score parses (" + err + ")");
+    check(s.title == "Two bars each" && s.tempo == 240 && s.parts.size() == 2 && s.sections.size() == 4,
+          "title, tempo, two parts and four sections");
+    check(s.sections[0].acts.size() == 2 && s.sections[0].acts[0].text() == "tr808 preset electro" &&
+          s.sections[3].acts[0].text() == "tr808 stop", "do lines belong to the section before them");
+    check(s.sections[1].kind == "open" && s.sections[2].kind == "answer" && s.sections[3].kind == "rest",
+          "kinds: open, answer, rest from the instruction's words");
+    check(barMs(s) == 1000 && totalMs(s) == 6000 && sectionStartMs(s, 2) == 3000, "at 240 bpm a bar is 1 s; six bars are 6 s");
+    ScorePos p = positionAt(s, 3600);
+    check(p.section == 2 && p.bar == 0 && p.beat == 2 && std::fabs(p.leftMs - 1400) < 1e-9 && !p.done,
+          "at 3.6 s: section 3, bar 1, beat 3, 1.4 s left");
+    check(positionAt(s, 6000).done && positionAt(s, 0).section == 0, "at 6 s the score is done; at 0 it is in section 1");
+
+    struct Bad { const char* text; const char* why; };
+    const Bad bad[] = {
+        {"part p x\n1 p go\ndo shell rm\n", "do acts on tr808 or synth only"},
+        {"part p x\n1 p go\ndo tr808 load_preset x\n", "tr808 does play"},
+        {"1 nobody go\n", "no part named nobody"},
+        {"do tr808 play\n", "a do line follows"},
+        {"tempo 5000\n1 all go\n", "tempo is 30 to 600"},
+        {"exec_command name=close_all\n", "unknown line"},
+        {"# only a comment\n", "at least one section"},
+    };
+    for (const auto& b : bad) {
+        Score x;
+        std::string e;
+        const bool ok = parseScore(b.text, x, e);
+        check(!ok && e.find(b.why) != std::string::npos, std::string("refused: ") + e);
+    }
+}
+
 int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     if (only.empty() || only == "synth") testSynth();
     if (only.empty() || only == "ears") testEars();
+    if (only.empty() || only == "score") testScore();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
