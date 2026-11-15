@@ -565,6 +565,10 @@ void settle() {
             addAct(w, "closed " + it->second.type + " \"" + it->second.title + "\"", it->second.id, "", 0, it->second.type);
             g_owner.erase(it->first);
             g_lastChanger.erase(it->first);
+            for (auto& st : g_undo) {   // a closed window's changes cannot be undone, and its address may be reused
+                auto& v = st.second;
+                v.erase(std::remove_if(v.begin(), v.end(), [&](const Undo& u) { return u.win == it->first; }), v.end());
+            }
             it = g_known.erase(it);
         } else {
             ++it;
