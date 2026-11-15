@@ -2,9 +2,11 @@
 #
 # vendor/tvision is a git submodule and is left untouched. At configure time its
 # sources are copied into the build tree and the patches in patches/tvision/ are
-# applied to the copy in order. The native build keeps using the submodule as is.
+# applied to the copy in order. The native desktop build keeps using the submodule as is; the
+# film's native terminal build (app/film) includes this file for the patched copy and defines its
+# own ncurses library from WWDOS_TV_SOURCES.
 
-set(WWDOS_TV_SRC ${CMAKE_SOURCE_DIR}/../vendor/tvision)
+set(WWDOS_TV_SRC ${CMAKE_CURRENT_LIST_DIR}/../../../vendor/tvision)
 set(WWDOS_TV_PATCHES_DIR ${CMAKE_CURRENT_LIST_DIR}/patches/tvision)
 set(WWDOS_TV ${CMAKE_BINARY_DIR}/tvision-src)
 
@@ -35,6 +37,9 @@ endforeach()
 
 file(GLOB_RECURSE WWDOS_TV_SOURCES ${WWDOS_TV}/source/*/*.cpp)
 list(REMOVE_ITEM WWDOS_TV_SOURCES ${WWDOS_TV}/source/tvision/geninc.cpp)
+if(NOT EMSCRIPTEN)
+    return()
+endif()
 add_library(tvision STATIC ${WWDOS_TV_SOURCES})
 target_include_directories(tvision PUBLIC ${WWDOS_TV}/include)
 target_include_directories(tvision PRIVATE

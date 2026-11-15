@@ -1,0 +1,7 @@
+{"about": "Boot scene for the wasm build (Zilla 5 Nov: 'that is the right kind of arrangement for the onchain test'). Desktop 180x47, mono theme. Rects are x,y,w,h in cells; open each file as a primer window with this title.",
+ "windows": [
+  {"title": "the island",   "file": "/Users/james/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/island/island-sun.txt",        "rect": [4, 2, 46, 19]},
+  {"title": "WWW",          "file": "/Users/james/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/tower.txt",                           "rect": [54, 3, 17, 16]},
+  {"title": "Wib&Wob",      "file": "/Users/james/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/pair-small.txt",                      "rect": [75, 5, 18, 11]},
+  {"title": "the wibblers", "file": "/Users/james/Repos/wibandwob-heartbeat/.claude/skills/termsong-v3/brand/parts/creatures/wibblers-happy.txt",  "rect": [20, 23, 24, 9]}
+ ]}

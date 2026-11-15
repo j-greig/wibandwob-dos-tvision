@@ -13,6 +13,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-Os -DNDEBUG")
 set(CMAKE_C_FLAGS_RELEASE "-Os -DNDEBUG")
 
 option(WWDOS_WEB_APP "Also build the WibWob-DOS desktop (app/web), not only the Turbo Vision demo" ON)
+option(WWDOS_WEB_FILM "Also build the terminal-film player (app/film: the stage driver on a small desktop)" ON)
 option(WWDOS_SINGLE_FILE "Inline the wasm into the .js as base64 (needed for one-file pages)" ON)
 
 include(platform/web/tvision.cmake)
@@ -42,4 +43,8 @@ set_target_properties(hello PROPERTIES SUFFIX ".js")
 
 if(WWDOS_WEB_APP)
     add_subdirectory(${CMAKE_SOURCE_DIR}/../app/web ${CMAKE_BINARY_DIR}/app-web)
+endif()
+
+if(WWDOS_WEB_FILM)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/../app/film ${CMAKE_BINARY_DIR}/app-film)
 endif()

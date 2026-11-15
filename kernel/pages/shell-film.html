@@ -1,0 +1,579 @@
+<!-- Film page template (the stage driver's page; the on-chain repository's web/shell-webgl.html): WebGL, no xterm.js. kernel/tools/bundle.py --shell kernel/pages/shell-film.html --atlas kernel/pages/atlas-film.js fills the INLINE markers. -->
+<title>WIBWOB-DOS</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: none; }
+  #term { display: block; position: absolute; left: 0; top: 0; outline: none; cursor: none;
+          image-rendering: pixelated; image-rendering: crisp-edges; }
+  #boot { position: absolute; left: 16px; top: 16px; color: #aaa; font: 14px Menlo, Consolas, monospace; }
+</style>
+<canvas id="term" class="xterm-screen" tabindex="0"></canvas>
+<div id="boot">loading WIBWOB-DOS...</div>
+<!--INLINE_ATLAS-->
+<script>
+(function () {
+  // ---- the cell renderer: one instanced quad per cell, glyphs from a 1-bit atlas ----
+  var A = window.WWDOS_ATLAS, GW = 8, GH = 16, ACOLS = 32;
+  var canvas = document.getElementById('term');
+  var gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true });
+  if (!gl) { document.getElementById('boot').textContent = 'WebGL2 is needed to draw this page.'; return; }
+  var glyphOf = new Map(), wideOf = new Map();
+  for (var i = 0; i < A.cps.length; i++) { glyphOf.set(A.cps[i], A.idx[i]); wideOf.set(A.cps[i], A.wide[i]); }
+  var UNKNOWN = glyphOf.get(63), BLANK = glyphOf.get(32);
+  var arows = Math.ceil(A.n / ACOLS);
+  (function uploadAtlas() {
+    var raw = atob(A.bits), tex = new Uint8Array(ACOLS * GW * arows * GH);
+    for (var g = 0; g < A.n; g++) {
+      var gx = (g % ACOLS) * GW, gy = Math.floor(g / ACOLS) * GH;
+      for (var y = 0; y < GH; y++) {
+        var b = raw.charCodeAt(g * GH + y);
+        for (var x = 0; x < GW; x++) if (b & (0x80 >> x)) tex[(gy + y) * ACOLS * GW + gx + x] = 255;
+      }
+    }
+    var t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, ACOLS * GW, arows * GH, 0, gl.RED, gl.UNSIGNED_BYTE, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  })();
+  function shader(type, src) {
+    var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  var prog = gl.createProgram();
+  gl.attachShader(prog, shader(gl.VERTEX_SHADER, [
+    '#version 300 es', 'precision highp float;',
+    'in uint a_glyph; in vec4 a_fg; in vec4 a_bg;',
+    'uniform vec2 u_px; uniform int u_cols; uniform vec2 u_atlas;',
+    'out vec4 fg; out vec4 bg; out vec2 st; out vec2 uv;',
+    'void main(){',
+    '  vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));',
+    '  vec2 cell = vec2(float(gl_InstanceID % u_cols), float(gl_InstanceID / u_cols));',
+    '  vec2 p = (cell + c) * u_px;',
+    '  gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);',
+    '  uint cols = uint(u_atlas.x);',
+    '  vec2 ac = vec2(float(a_glyph % cols), float(a_glyph / cols));',
+    '  st = (c + ac) / u_atlas; uv = c; fg = a_fg; bg = a_bg;',
+    '}'].join('\n')));
+  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, [
+    '#version 300 es', 'precision highp float;',
+    'uniform sampler2D u_tex; in vec4 fg; in vec4 bg; in vec2 st; in vec2 uv; out vec4 o;',
+    'void main(){',
+    '  float m = texture(u_tex, st).r;',
+    '  if (fg.a > 0.5 && uv.y > 0.9) m = 1.0;',   // underline row
+    '  o = vec4(mix(bg.rgb, fg.rgb, m), 1.0);',
+    '}'].join('\n')));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  var uPx = gl.getUniformLocation(prog, 'u_px'), uCols = gl.getUniformLocation(prog, 'u_cols'),
+      uAtlas = gl.getUniformLocation(prog, 'u_atlas');
+  gl.uniform2f(uAtlas, ACOLS, arows);
+  gl.uniform1i(gl.getUniformLocation(prog, 'u_tex'), 0);
+  var vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  function attrib(name, size, type, norm) {
+    var b = gl.createBuffer(), loc = gl.getAttribLocation(prog, name);
+    gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.enableVertexAttribArray(loc);
+    if (type === gl.UNSIGNED_SHORT && !norm) gl.vertexAttribIPointer(loc, size, type, 0, 0);
+    else gl.vertexAttribPointer(loc, size, type, norm, 0, 0);
+    gl.vertexAttribDivisor(loc, 1);
+    return b;
+  }
+  var bGlyph = attrib('a_glyph', 1, gl.UNSIGNED_SHORT, false),
+      bFg = attrib('a_fg', 4, gl.UNSIGNED_BYTE, true), bBg = attrib('a_bg', 4, gl.UNSIGNED_BYTE, true);
+
+  // ---- grid size follows the window; cells are 8x16 font pixels at an integer device scale ----
+  // Viewer options. URL: ?scale=1..4 (css px per font px) &bars=0 (no menu bar or status line)
+  // &paused=1 (animations wait for F8). An NFT can bake the same in window.wwdosOpts.
+  // Keys: F3 or Alt+Enter fullscreen (page), F4 bars, F9 pause, F8 step (app, see minimal_app.cpp).
+  var q = new URLSearchParams(location.search), opts = window.wwdosOpts || {};
+  if (q.has('bars')) opts.bars = q.get('bars') | 0;
+  if (q.has('paused')) opts.paused = q.get('paused') | 0;
+  // &t=S (stage pages) seeks to S seconds once the app is up; with &paused=1 that frame is drawn and held.
+  if (q.has('t')) opts.t = parseFloat(q.get('t'));
+  var dpr = window.devicePixelRatio || 1;
+  var scale = parseInt(q.get('scale') || '0', 10) || opts.scale || 0; // css px per font px
+  // A stage page with no scale fits its cell size: the largest whole device-pixel multiple of the 8x16 cell
+  // at which the scene's size, plus the two bar rows, still fits the window (on load and on every resize).
+  var SZ = window.wwdosScene && window.wwdosScene.files && window.wwdosScene.files['stage.txt'] && !scale &&
+           /^size (\d+) (\d+)/.exec(window.wwdosScene.scene || '');
+  var devScale = 1, cols = 80, rows = 25, cellCssW = 8, cellCssH = 16;
+  var glyphs, fgs, bgs, last = null, lastCols = 0, lastRows = 0;
+  function measure() {
+    var w = window.innerWidth, h = window.innerHeight;
+    dpr = window.devicePixelRatio || 1;
+    devScale = Math.max(1, Math.round((scale || 1) * dpr));
+    if (SZ) for (var k = 16; k >= 1; k--)
+      if (k === 1 || (Math.floor(w * dpr / (GW * k)) >= +SZ[1] && Math.floor(h * dpr / (GH * k)) >= +SZ[2] + (opts.bars === 0 ? 0 : 2))) { devScale = k; break; }
+    cellCssW = GW * devScale / dpr; cellCssH = GH * devScale / dpr;
+    var c = Math.max(20, Math.floor(w / cellCssW)), r = Math.max(5, Math.floor(h / cellCssH));
+    var fit = false;
+    if (SZ) {
+      var needC = +SZ[1], needR = +SZ[2] + (opts.bars === 0 ? 0 : 2);
+      var f = Math.min(w * dpr / (GW * needC), h * dpr / (GH * needR));
+      // The grid is always the film's own sheet, centred, so corner drawings sit at the film's corners. A whole
+      // multiple is used when it fills at least four fifths of what a fractional one would (crisp pixels); a
+      // fractional one otherwise (a phone), drawn at the next whole multiple and scaled down by the browser.
+      var whole = Math.floor(f);
+      c = needC; r = needR;
+      if (whole >= 1 && f / whole <= 1.25) { devScale = whole; cellCssW = GW * whole / dpr; cellCssH = GH * whole / dpr; }
+      else { fit = true; devScale = Math.max(1, Math.ceil(f)); cellCssW = GW * f / dpr; cellCssH = GH * f / dpr; }
+    }
+    canvas.style.imageRendering = fit ? 'auto' : '';
+    if (c * r > 65535) r = Math.floor(65535 / c);
+    var changed = (c !== cols || r !== rows);
+    cols = c; rows = r;
+    canvas.width = cols * GW * devScale; canvas.height = rows * GH * devScale;
+    canvas.style.width = (cols * cellCssW) + 'px'; canvas.style.height = (rows * cellCssH) + 'px';
+    canvas.style.left = Math.floor((w - cols * cellCssW) / 2) + 'px';
+    canvas.style.top = Math.floor((h - rows * cellCssH) / 2) + 'px';
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform2f(uPx, 1 / cols, 1 / rows); gl.uniform1i(uCols, cols);
+    return changed;
+  }
+  measure();
+
+  // The mouse pointer is a text-mode block: the cell under it drawn reversed (the system pointer is hidden).
+  var mouseCell = -1, mouseCols = 0, lastCx = -1, lastCy = -1;
+  // ---- flush: the wasm hands over cols*rows*3 uint32 [cp|flags, fg, bg] ----
+  function draw(cells, c, r, cx, cy) {
+    var t0 = performance.now();
+    var n = c * r;
+    if (!glyphs || glyphs.length !== n) { glyphs = new Uint16Array(n); fgs = new Uint8Array(n * 4); bgs = new Uint8Array(n * 4); }
+    var prevGlyph = BLANK, prevWide = 0;
+    for (var i = 0; i < n; i++) {
+      var w = cells[i * 3], fg = cells[i * 3 + 1], bg = cells[i * 3 + 2], g;
+      if (w & 0x40000000) g = prevWide ? prevGlyph + 1 : BLANK;            // trail of a wide char
+      else { var cp = w & 0x1FFFFF; g = glyphOf.get(cp); if (g === undefined) g = UNKNOWN; prevGlyph = g; prevWide = wideOf.get(cp) || 0; }
+      if (cx === i % c && cy === Math.floor(i / c)) { var t = fg; fg = bg; bg = t; }  // caret: reverse the cell
+      if (i === mouseCell && c === mouseCols) { var t2 = fg; fg = bg; bg = t2; }       // the mouse: a reversed cell, as in DOS
+      glyphs[i] = g;
+      fgs[i * 4] = (fg >> 16) & 255; fgs[i * 4 + 1] = (fg >> 8) & 255; fgs[i * 4 + 2] = fg & 255; fgs[i * 4 + 3] = (fg >> 24) & 1 ? 255 : 0;
+      bgs[i * 4] = (bg >> 16) & 255; bgs[i * 4 + 1] = (bg >> 8) & 255; bgs[i * 4 + 2] = bg & 255; bgs[i * 4 + 3] = 255;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, bGlyph); gl.bufferData(gl.ARRAY_BUFFER, glyphs, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bFg); gl.bufferData(gl.ARRAY_BUFFER, fgs, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bBg); gl.bufferData(gl.ARRAY_BUFFER, bgs, gl.DYNAMIC_DRAW);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+    window.wwdosFrames = (window.wwdosFrames | 0) + 1;
+    window.wwdosDrawMs = (window.wwdosDrawMs || 0) + performance.now() - t0;   // tools/paint_bench.py
+  }
+
+  // ---- the module: same queue contract as the xterm page (wasmcon.cpp) ----
+  var enc = new TextEncoder();
+  var M = {
+    wwdosOpts: opts,
+    wwdosQueue: [], wwdosResized: false, wwdosWake: null,
+    wwdosWrite: function () {},           // ANSI mode-set sequences from TermIO: nothing to do here
+    wwdosCols: function () { return cols; },
+    wwdosRows: function () { return rows; },
+    wwdosGrid: function (cells, c, r, cx, cy) {
+      last = new Uint32Array(cells); lastCols = c; lastRows = r; lastCx = cx; lastCy = cy;   // copy: wasm memory may move
+      flushes++;
+      draw(menuNote(last, c), c, r, cx, cy);
+    },
+    print: function (s) { console.log(s); },
+    printErr: function (s) { console.warn(s); },
+    onRuntimeInitialized: function () {
+      var b = document.getElementById('boot'); if (b) b.remove();
+      window.wwdosBootMs = performance.now();
+      if (opts.t >= 0) M._wwdos_stage_seek(opts.t);   // applied at the stage's first timer event
+    }
+  };
+  // ---- sound: clips baked into the page (scene manifest "sounds") and synthesised effects ("sfx") ----
+  // The stage sends a clip name (stage command "sound NAME") or ~open ~close ~say ~shake ~tile ~flash.
+  // Browsers allow audio only after a click or a key, so nothing plays before the first one.
+  var SC = window.wwdosScene || {}, SND = SC.sounds || {}, SFX = SC.sfx || {};
+  var actx = null, master = null, bufs = {}, lastSfx = {}, hint = false;
+  // Until the first click or key the menu bar carries a note, written into the grid's top row in its own colours.
+  function withHint(cells, c) {
+    if (!hint || window.wwdosStage.waiting()) return cells;   // at a gate the title screen says it
+    var text = '\u266a click for sound', x0 = c - 14 - text.length, out = new Uint32Array(cells);
+    if (x0 < 30) return cells;
+    for (var i = 0; i < text.length; i++) out[(x0 + i) * 3] = text.charCodeAt(i);
+    return out;
+  }
+  // ---- diagnostics: a note in the menu bar row (same grid, same colours), a stall watchdog, context-loss recovery ----
+  // ?debug=1 keeps a readout there: stage time, grid flushes per second, audio state, clips playing, last command.
+  var note = '', dbg = q.has('debug'), flushes = 0, fps = 0, lastT = -1, still = 0;
+  function ascii(s) { return String(s).replace(/[^ -~]/g, '?'); }
+  function dbgLine() {
+    var S = window.wwdosStage, tr = window.wwdosTrace || [], lc = tr.length ? tr[tr.length - 1] : null;
+    return 't=' + S.time().toFixed(1) + ' ' + fps + '/s snd=' + (actx ? actx.state : 'off') + ' clips=' + live.length +
+           (lc ? ' ' + ascii(lc.cmd || '').slice(0, 22) : '');
+  }
+  function menuNote(cells, c) {
+    var text = note || (dbg ? dbgLine() : '');
+    if (!text) return withHint(cells, c);
+    text = ' ' + text.slice(0, Math.max(0, c - 46)) + ' ';
+    var x0 = c - 14 - text.length, out = new Uint32Array(cells);
+    for (var i = 0; i < text.length; i++) out[(x0 + i) * 3] = text.charCodeAt(i);
+    return out;
+  }
+  setInterval(function () {
+    fps = flushes; flushes = 0;
+    var S = window.wwdosStage, t = S && S.length() > 0 ? S.time() : -1;
+    if (t >= 0 && !userPaused && !opts.paused && !S.waiting() && document.visibilityState === 'visible') {
+      still = t === lastT ? still + 1 : 0;
+    } else still = 0;
+    lastT = t;
+    if (!/^error/.test(note)) note = still >= 3 ? 'stalled at ' + t.toFixed(1) + 's  F5 skips on' : '';
+    if ((note || dbg) && last) draw(menuNote(last, lastCols), lastCols, lastRows, -1, -1);
+  }, 1000);
+  window.addEventListener('error', function (e) { note = 'error: ' + ascii(e.message || e.type); });
+  // A lost graphics context leaves a frozen picture while the sound runs on. Say so, and when the browser gives
+  // the context back, load the page again at the same second (the stage rebuilds its screen from the script).
+  function lostBox(text) {
+    var d = document.getElementById('wwdos-lost') || document.body.appendChild(document.createElement('div'));
+    d.id = 'wwdos-lost'; d.textContent = text;
+    d.style.cssText = 'position:fixed;left:0;right:0;bottom:0;font:16px monospace;color:#000;background:#aaa;padding:2px 8px;z-index:9';
+  }
+  canvas.addEventListener('webglcontextlost', function (e) {
+    e.preventDefault();
+    var S = window.wwdosStage;
+    lostBox('graphics context lost at ' + (S ? S.time().toFixed(1) : '?') + ' s. waiting for the browser to give it back...');
+  });
+  canvas.addEventListener('webglcontextrestored', function () {
+    var S = window.wwdosStage, t = S && S.length() > 0 ? S.time() : 0, u = new URLSearchParams(location.search);
+    u.set('t', t.toFixed(2)); u.set('autostart', '1');
+    location.search = '?' + u.toString();
+  });
+  var userPaused = false, muted = false;            // muted: File > Mute or the status line's sound icon                           // the app paused the stage: keys must not resume the audio
+  function unlockSound(e) {
+    if (e && e.key === 'Tab' && window.wwdosStage.waiting()) return;   // Tab on a title screen is fullscreen only
+    if (M._wwdos_stage_go) M._wwdos_stage_go();   // the first click or key also opens a stage gate
+    if (actx) { if (actx.state === 'suspended' && !userPaused) actx.resume(); return; }
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    actx = new AC(); master = actx.createGain(); master.gain.value = muted ? 0 : (SC.volume === undefined ? 0.9 : SC.volume);
+    master.connect(actx.destination);
+    Object.keys(SND).forEach(function (name) {
+      var b = atob(SND[name].slice(SND[name].indexOf(',') + 1)), a = new Uint8Array(b.length);
+      for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+      actx.decodeAudioData(a.buffer, function (buf) { bufs[name] = buf; }, function () {});
+    });
+    if (hint) { hint = false; if (last) draw(last, lastCols, lastRows, -1, -1); }
+  }
+  function synth(q) {
+    var t = actx.currentTime, d = (q.ms || 60) / 1000, g = actx.createGain(), f = q.f || [440, 440], src;
+    g.gain.setValueAtTime(q.gain || 0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    if (q.noise) {
+      var n = Math.ceil(actx.sampleRate * d), nb = actx.createBuffer(1, n, actx.sampleRate), ch = nb.getChannelData(0);
+      for (var i = 0; i < n; i++) ch[i] = Math.random() * 2 - 1;
+      src = actx.createBufferSource(); src.buffer = nb;
+      var lp = actx.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(f[0], t); lp.frequency.exponentialRampToValueAtTime(f[1] || f[0], t + d);
+      src.connect(lp); lp.connect(g);
+    } else {
+      src = actx.createOscillator(); src.type = q.wave || 'square';
+      src.frequency.setValueAtTime(f[0], t); src.frequency.exponentialRampToValueAtTime(f[1] || f[0], t + d);
+      src.connect(g);
+    }
+    g.connect(master); src.start(t); src.stop(t + d + 0.02);
+  }
+  // Page commands from the app arrive on the same channel with a "!" in front.
+  // pend: a quantised jump the stage announced ("!jump LAND TARGET"): the audio clock time it lands at and its target.
+  var live = [], clipBase = null, sched = {}, pend = null, atT = 0, atFloor = 0;
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(function () {});
+    else document.documentElement.requestFullscreen().catch(function () {});
+  }
+  // File > Exit: framed by the films player, hand back to it; on its own, stop and leave a DOS prompt
+  // (a click or key starts the page again).
+  function exitPage() {
+    live.forEach(function (s) { try { s.stop(); } catch (e) {} }); live = [];
+    if (actx) actx.suspend();
+    if (window.parent !== window) { window.parent.postMessage({ wwdos: 'exit' }, '*'); return; }
+    if (document.fullscreenElement) document.exitFullscreen().catch(function () {});
+    var d = document.createElement('pre');
+    d.style.cssText = 'position:fixed;inset:0;margin:0;padding:24px;background:#000;color:#aaa;font:16px/1.25 Menlo,Consolas,monospace;z-index:9;cursor:default';
+    d.textContent = 'C:\\CASTLE>exit\n\nC:\\>';
+    var cur = document.createElement('span'); cur.textContent = '_'; d.appendChild(cur);
+    var note = document.createElement('div'); note.style.cssText = 'margin-top:2em;color:#555'; note.textContent = 'click or press a key to start again';
+    d.appendChild(note);
+    setInterval(function () { cur.style.visibility = cur.style.visibility === 'hidden' ? 'visible' : 'hidden'; }, 530);
+    document.body.appendChild(d);
+    setTimeout(function () {
+      var again = function () { location.reload(); };
+      addEventListener('keydown', again, true); d.addEventListener('click', again);
+    }, 400);
+  }
+  function pageCommand(c) {
+    if (c === 'exit') { exitPage(); return; }
+    if (c === 'mute' || c === 'unmute') { muted = c === 'mute'; if (master) master.gain.value = muted ? 0 : (SC.volume === undefined ? 0.9 : SC.volume); return; }
+    if (c === 'fullscreen') toggleFullscreen();
+    if (!actx) return;
+    if (c === 'pause') { userPaused = true; actx.suspend(); }
+    else if (c === 'resume') { userPaused = false; actx.resume(); }
+    else if (c.slice(0, 5) === 'jump ') {
+      // A quantised jump lands at script time LAND on the old timeline; on the audio clock that is clipBase + LAND.
+      var p = c.slice(5).split(' '), L = parseFloat(p[0]), T = parseFloat(p[1]), now0 = actx.currentTime;
+      var a = clipBase !== null ? clipBase + L : now0 + (L - window.wwdosStage.time());
+      pend = { a: Math.max(a, now0), L: L, T: T, sent: now0 };
+    }
+    else if (c.slice(0, 4) === 'cut ') pend = { cut: true, T: parseFloat(c.slice(4)), sent: actx.currentTime };   // OFF: lands now
+    else if (c === 'stop') {
+      // During a quantised jump the old clips play on to the landing frame, so the cut is on the beat.
+      var held = pend && !pend.cut, stopAt = held ? Math.max(pend.a, actx.currentTime) : 0;
+      live.forEach(function (s) { try { if (held) s.stop(stopAt); else s.stop(); } catch (e) {} });
+      if (!held) live = [];
+      clipBase = null; sched = {};
+    }
+    else if (c.slice(0, 3) === 'at ') {             // after a seek: script time t is now (or, for a jump, at its landing)
+      atT = parseFloat(c.slice(3));
+      if (pend && pend.cut) {
+        clipBase = actx.currentTime - atT; atFloor = actx.currentTime;
+        (window.wwdosJumps = window.wwdosJumps || []).push({ land: window.wwdosStage.time(), target: pend.T, audioLand: actx.currentTime,
+          announced: pend.sent, landed: actx.currentTime, perf: performance.now(), seekT: atT, base: clipBase, cut: true });
+        pend = null;
+      } else if (pend) {
+        clipBase = pend.a - pend.T; atFloor = pend.a;
+        (window.wwdosJumps = window.wwdosJumps || []).push({ land: pend.L, target: pend.T, audioLand: pend.a,
+          announced: pend.sent, landed: actx.currentTime, perf: performance.now(), seekT: atT, base: clipBase });
+        pend = null;
+      } else { clipBase = actx.currentTime - atT; atFloor = actx.currentTime; }
+    }
+  }
+  function playSound(name) {
+    if (name.charAt(0) === '!') { pageCommand(name.slice(1)); return; }
+    if (!actx) return;
+    if (name.charAt(0) === '~') {
+      var q = SFX[name.slice(1)], t = actx.currentTime;
+      if (!q || (lastSfx[name] !== undefined && t - lastSfx[name] < 0.05)) return;
+      lastSfx[name] = t; synth(q); return;
+    }
+    var from = 0, cut = name.indexOf('@'), atWhen = -1;   // "NAME@SECONDS": the clip began SECONDS before the seek's time
+    if (cut > 0) {
+      // Placed on the audio clock from the seek's base: its start is script time atT - SECONDS. Nothing starts
+      // before the seek's floor (now, or a jump's landing frame); a clip that began earlier starts part-way.
+      var x = parseFloat(name.slice(cut + 1)) || 0; name = name.slice(0, cut);
+      var nowA = actx.currentTime, floor = Math.max(nowA, atFloor);
+      atWhen = clipBase !== null ? clipBase + atT - x : nowA - x;
+      if (atWhen < floor) { from = floor - atWhen; atWhen = floor; }
+      (window.wwdosSched = window.wwdosSched || []).push({ name: name, at: atT - x, when: atWhen, now: nowA, base: clipBase });
+    }
+    // "NAME#SECONDS": the clip's exact script time. Clips are placed on the audio clock from one base, so two clips
+    // cut from one song meet with no gap or overlap whatever the stage's tick rate. The base is set by the first
+    // clip, by a seek ("!at"), and again after a loop (when the times no longer fit it).
+    var when = 0, hash = name.indexOf('#'), now = actx.currentTime;
+    if (hash > 0) {
+      var st = parseFloat(name.slice(hash + 1)) || 0; name = name.slice(0, hash);
+      // The base ties script time to the audio clock: the stage is at T now. Re-tie when they have drifted apart
+      // (a loop, a pause the audio did not share, a slow machine).
+      var T = window.wwdosStage.time();
+      if (clipBase === null || Math.abs(clipBase + T - now) > 0.2) clipBase = now - T;
+      when = clipBase + st;
+      if (sched[name] !== undefined && Math.abs(sched[name] - when) < 0.02) return;   // already placed (a resize replays the script)
+      sched[name] = when;
+      (window.wwdosSched = window.wwdosSched || []).push({ name: name, at: st, when: when, now: now });
+      if (when < now) { from += now - when; when = now; }
+    }
+    // A clip handed over early and then met by a seek has a negative age: it starts that far ahead, from its top.
+    if (atWhen >= 0) when = atWhen;
+    if (!bufs[name] || from >= bufs[name].duration) return;
+    var s = actx.createBufferSource(); s.buffer = bufs[name]; s.connect(master); s.start(when, from);
+    live.push(s); s.onended = function () { var i = live.indexOf(s); if (i >= 0) live.splice(i, 1); };
+  }
+  if (Object.keys(SND).length || Object.keys(SFX).length) {
+    hint = true;
+    window.addEventListener('pointerdown', unlockSound, true);
+    window.addEventListener('keydown', unlockSound, true);
+  }
+  M.wwdosSound = playSound;
+  M.wwdosAudioTime = function () { return actx && clipBase !== null && actx.state === 'running' ? actx.currentTime - clipBase : -1; };
+  M.wwdosGatePass = function () {
+    return !hint || opts.t >= 0 || q.get('autostart') === '1' || opts.autostart === 1 ? 1 : 0;
+  };
+  if (window.wwdosWasm) M.instantiateWasm = function (info, done) {
+    WebAssembly.instantiate(window.wwdosWasm, info).then(function (r) { done(r.instance); });
+    return {};
+  };
+  // Scene pages (tools/scene.py) and the NFT's live state: identical to web/shell.html.
+  if (window.wwdosScene) M.preRun = [function () {
+    var s = window.wwdosScene;
+    try { M.FS.mkdir('/boot'); } catch (e) {}
+    for (var name in s.files) M.FS.writeFile('/boot/' + name, s.files[name]);
+    var scene = s.scene, L = window.wwdosLive;
+    if (L) {
+      var A2 = s.asleep, lines = scene.trim().split('\n').map(function (l) {
+        var bar = l.indexOf('|'), head = l.slice(0, bar).split(' '), title = l.slice(bar + 1);
+        if (!A2 || title !== A2.title) return l;
+        if (!L.awake) { head[4] = A2.file; title = A2.as; }
+        return head.join(' ') + '|' + title + '  block ' + L.block;
+      });
+      if (s.notes) {
+        M.FS.writeFile('/boot/notes.txt', (L.notes.length ? L.notes : ['no notes yet']).join('\n') + '\n');
+        lines.splice(lines.length - 1, 0, s.notes + ' /boot/notes.txt|notes');
+      }
+      scene = lines.join('\n') + '\n';
+    }
+    M.FS.writeFile('/boot/scene.txt', scene);
+  }];
+  function wake() { if (M.wwdosWake) M.wwdosWake(); }
+  function push(str) { var b = enc.encode(str); for (var i = 0; i < b.length; i++) M.wwdosQueue.push(b[i]); wake(); }
+
+  // ---- keyboard -> the escape sequences TermIO parses (CSI keys, tilde keys, ESC+key = Alt) ----
+  var CSI = { ArrowUp: 'A', ArrowDown: 'B', ArrowRight: 'C', ArrowLeft: 'D', Home: 'H', End: 'F' };
+  // F1-F4 go as ESC[11~..14~: tvision's TermIO rejects the ESC O P form and reads it as Alt+O.
+  var TILDE = { Insert: 2, Delete: 3, PageUp: 5, PageDown: 6, F1: 11, F2: 12, F3: 13, F4: 14, F5: 15, F6: 17, F7: 18, F8: 19, F9: 20, F10: 21, F11: 23, F12: 24 };
+  window.addEventListener('keydown', function (e) {
+    if (e.metaKey && !e.altKey) return;  // leave Cmd shortcuts to the browser
+    var k = e.key;
+    // Fullscreen is the page's job: F3, Alt+Enter, and Tab while a title screen waits at its gate.
+    if (k === 'F3' || (k === 'Enter' && e.altKey) || (k === 'Tab' && window.wwdosStage.waiting())) {
+      e.preventDefault();
+      toggleFullscreen();
+      return;
+    }
+    var mod = 1 + (e.shiftKey ? 1 : 0) + (e.altKey ? 2 : 0) + (e.ctrlKey ? 4 : 0), s = null;
+    if (CSI[k]) s = mod > 1 ? '\x1b[1;' + mod + CSI[k] : '\x1b[' + CSI[k];
+    else if (TILDE[k]) s = mod > 1 ? '\x1b[' + TILDE[k] + ';' + mod + '~' : '\x1b[' + TILDE[k] + '~';
+    else if (k === 'Enter') s = '\r';
+    else if (k === 'Backspace') s = '\x7f';
+    else if (k === 'Tab') s = e.shiftKey ? '\x1b[Z' : '\t';
+    else if (k === 'Escape') s = '\x1b';
+    else if (k.length === 1 || (e.altKey && /^Key[A-Z]$|^Digit[0-9]$/.test(e.code))) {
+      var ch = k;
+      if (e.altKey && e.code.indexOf('Key') === 0) ch = e.code.slice(3).toLowerCase();   // macOS Option changes e.key
+      else if (e.altKey && e.code.indexOf('Digit') === 0) ch = e.code.slice(5);
+      if (e.ctrlKey && ch.length === 1) {
+        var c = ch.toUpperCase().charCodeAt(0);
+        if (c >= 64 && c < 96) ch = String.fromCharCode(c & 31); else if (c >= 97 && c < 123) ch = String.fromCharCode(c & 31);
+      }
+      s = (e.altKey ? '\x1b' : '') + ch;
+    }
+    if (s !== null) { e.preventDefault(); push(s); }
+  });
+  window.addEventListener('paste', function (e) {
+    var t = (e.clipboardData || window.clipboardData).getData('text');
+    if (t) { e.preventDefault(); push('\x1b[200~' + t + '\x1b[201~'); }
+  });
+
+  // ---- mouse -> SGR 1006 reports ----
+  var buttons = 0;
+  function cellAt(e) {
+    var r = canvas.getBoundingClientRect();
+    return [Math.max(1, Math.min(cols, Math.floor((e.clientX - r.left) / cellCssW) + 1)),
+            Math.max(1, Math.min(rows, Math.floor((e.clientY - r.top) / cellCssH) + 1))];
+  }
+  function mods(e) { return (e.shiftKey ? 4 : 0) + (e.altKey ? 8 : 0) + (e.ctrlKey ? 16 : 0); }
+  function report(b, e, release) { var p = cellAt(e); push('\x1b[<' + b + ';' + p[0] + ';' + p[1] + (release ? 'm' : 'M')); }
+  canvas.addEventListener('mousedown', function (e) { canvas.focus(); buttons |= (1 << e.button); report(e.button + mods(e), e, false); e.preventDefault(); });
+  window.addEventListener('mouseup', function (e) { if (!(buttons & (1 << e.button))) return; buttons &= ~(1 << e.button); report(e.button + mods(e), e, true); });
+  function movePointer(e) {
+    var r = canvas.getBoundingClientRect(), x = Math.floor((e.clientX - r.left) / cellCssW), y = Math.floor((e.clientY - r.top) / cellCssH);
+    var at = (x >= 0 && x < cols && y >= 0 && y < rows) ? y * cols + x : -1;
+    if (at === mouseCell && mouseCols === cols) return;
+    mouseCell = at; mouseCols = cols;
+    if (last && lastCols === cols) draw(menuNote(last, lastCols), lastCols, lastRows, lastCx, lastCy);
+  }
+  document.addEventListener('mouseleave', function () { mouseCell = -1; if (last) draw(menuNote(last, lastCols), lastCols, lastRows, lastCx, lastCy); });
+  window.addEventListener('mousemove', function (e) {
+    movePointer(e);
+    if (!buttons) return;
+    var b = buttons & 1 ? 0 : buttons & 4 ? 2 : 1;   // bit 2 of the mask is the right button
+    report(32 + b + mods(e), e, false);
+  });
+  canvas.addEventListener('wheel', function (e) { report((e.deltaY < 0 ? 64 : 65) + mods(e), e, false); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  var rt = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () { if (measure()) { M.wwdosResized = true; wake(); } else if (last) draw(last, lastCols, lastRows, -1, -1); }, 60);
+  });
+
+  // The test harness (tools/shoot.py) reads the screen through an xterm-shaped object.
+  window.wwdosTerm = {
+    get cols() { return cols; }, get rows() { return rows; },
+    buffer: { active: { getLine: function (y) { return { translateToString: function () {
+      if (!last || y >= lastRows) return '';
+      var s = '';
+      for (var x = 0; x < lastCols; x++) { var w = last[(y * lastCols + x) * 3]; if (w & 0x40000000) continue; s += String.fromCodePoint(w & 0x1FFFFF || 32); }
+      return s.replace(/\s+$/, '');
+    } }; } } },
+    // every cell of the last grid as [codepoint|flags, fg, bg] (tests/stage/test_seek_play.py compares two of them)
+    cells: function () { return last ? Array.from(last) : []; }
+  };
+  // Stage clock for tools: seek(S) applies at the next stage tick (within one clock period).
+  window.wwdosStage = {
+    time: function () { return M._wwdos_stage_time ? M._wwdos_stage_time() : 0; },
+    seek: function (s) { if (M._wwdos_stage_seek) M._wwdos_stage_seek(+s); },
+    length: function () { return M._wwdos_stage_length ? M._wwdos_stage_length() : 0; },
+    // The tick on screen, in seconds. While playing, time() is one tick ahead of it; after a seek they are equal.
+    shown: function () { return M._wwdos_stage_shown ? M._wwdos_stage_shown() : this.time(); },
+    waiting: function () { return !!(M._wwdos_stage_waiting && M._wwdos_stage_waiting()); },
+    go: function () { if (M._wwdos_stage_go) M._wwdos_stage_go(); },
+    // Playing a film live (docs/stage.md): bars count from bar 1 of the film (the stage's tempo command).
+    bars: function () { return M._wwdos_stage_bars ? M._wwdos_stage_bars() : 0; },
+    bar: function () { return M._wwdos_stage_bar ? M._wwdos_stage_bar() : 0; },
+    jump: function (b) { if (M._wwdos_stage_jump) M._wwdos_stage_jump(+b); },
+    quantise: function (m) {
+      var k = { off: 0, beat: 1, bar: 2 }, n = m === undefined ? -1 : (k[String(m).toLowerCase()] !== undefined ? k[String(m).toLowerCase()] : -1);
+      var r = M._wwdos_stage_quantise ? M._wwdos_stage_quantise(n) : -1;
+      return ['off', 'beat', 'bar'][r] || null;
+    },
+    queued: function () { return M._wwdos_stage_queued ? M._wwdos_stage_queued() : -1; },
+    seekMs: function () { return M._wwdos_stage_seek_ms ? M._wwdos_stage_seek_ms() : 0; },
+    // One stage command now, no time field: run('open t 2 2 20 5 cyan |hello'). Returns '' or the reason it cannot
+    // run. The window is a stage window: the next seek or replay closes it. lastError(): why the last applied
+    // command did nothing. pause(on): true pauses, false plays, no argument asks; returns true when paused.
+    run: function (line) { return M.ccall ? M.ccall('wwdos_stage_run', 'string', ['string'], [String(line)]) : 'the app is not up yet'; },
+    lastError: function () { return M.ccall ? M.ccall('wwdos_stage_live_error', 'string', [], []) : ''; },
+    // The stage's windows, front first: [{name, x, y, w, h, ghost, title, file}] in desktop cells. screen(): the
+    // grid as text rows (row 0 is the menu bar). With run() these are the three verbs of the live bridge.
+    windows: function () { try { return JSON.parse(M.ccall('wwdos_stage_windows', 'string', [], [])); } catch (e) { return []; } },
+    screen: function () { var o = [], b = window.wwdosTerm.buffer.active; for (var y = 0; y < window.wwdosTerm.rows; y++) o.push(b.getLine(y).translateToString()); return o; },
+    pause: function (on) { return M._wwdos_stage_pause ? !!M._wwdos_stage_pause(on === undefined ? -1 : on ? 1 : 0) : false; },
+    sectionsList: function () { return (window.wwdosSections || []).map(function (s) { return { name: s.name, bar: s.bar, time: s.time }; }); },
+    audio: function () { return actx ? { now: actx.currentTime, base: clipBase, state: actx.state } : null; },
+    get scale() { return devScale; }
+  };
+  // A page that holds this film in an iframe may be another origin (every file:// page is), so it cannot call
+  // wwdosStage directly. It posts {wwdos: 'seek', t: SECONDS} or {wwdos: 'time'}; the answer to either is
+  // {wwdos: 'time', t, length} posted back to the sender. It may also post {wwdos: 'run', line}, {wwdos: 'jump', bar},
+  // {wwdos: 'quantise', mode}, {wwdos: 'pause', on} or {wwdos: 'state'}; each is answered with
+  // {wwdos: 'state', t, length, bar, bars, quantise, queued, paused, sections, error}. error is run()'s answer for a
+  // 'run' message, else why the last live command did nothing ('' when it worked).
+  window.addEventListener('message', function (e) {
+    var d = e.data, S = window.wwdosStage;
+    if (!d || typeof d !== 'object' || !d.wwdos) return;
+    if (d.wwdos === 'seek' && isFinite(+d.t)) S.seek(+d.t);
+    if ((d.wwdos === 'seek' || d.wwdos === 'time') && e.source) {
+      e.source.postMessage({ wwdos: 'time', t: S.time(), length: S.length() }, '*');
+      return;
+    }
+    var error = null;
+    if (d.wwdos === 'windows' || d.wwdos === 'screen') {
+      if (e.source) e.source.postMessage(d.wwdos === 'windows' ? { wwdos: 'windows', windows: S.windows() } : { wwdos: 'screen', rows: S.screen() }, '*');
+      return;
+    }
+    if (d.wwdos === 'run') error = S.run(d.line === undefined ? '' : d.line);
+    else if (d.wwdos === 'jump' && isFinite(+d.bar)) S.jump(+d.bar);
+    else if (d.wwdos === 'quantise') S.quantise(d.mode);
+    else if (d.wwdos === 'pause') S.pause(d.on === undefined ? !S.pause() : !!d.on);
+    else if (d.wwdos !== 'state') return;
+    if (error === null) error = S.lastError();
+    if (e.source)
+      e.source.postMessage({ wwdos: 'state', t: S.time(), length: S.length(), bar: S.bar(), bars: S.bars(),
+        quantise: S.quantise(), queued: S.queued(), paused: S.pause(), sections: S.sectionsList(), error: error }, '*');
+  });
+  window.wwdosRenderer = 'webgl-grid';
+  window.wwdosModule = M;
+  window.addEventListener('load', function () {
+    var tries = 0;
+    (function start() {
+      measure();
+      if ((rows < 20 || cols < 60) && tries++ < 60) { requestAnimationFrame(start); return; }
+      canvas.focus();
+      WWDOS(M);
+    })();
+  });
+})();
+</script>
+<!--INLINE_APP-->

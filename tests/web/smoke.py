@@ -11,7 +11,8 @@ own Chromium after `uv run --with playwright==1.49.1 playwright install chromium
 For each page: load it from file:// with every other request blocked and counted, wait for the
 menu bar ("File"; "Hello" in the demo), open the first menu by its hot key and check an item draws,
 then open a window: the Greeting dialog in the demo; in the desktop pages (wwdos*.html) check the
-start-screen windows and open a Test Pattern window with Ctrl+N. Exit 0 when every page passes.
+start-screen windows and open a Test Pattern window with Ctrl+N; in the film page (film.html, no stage
+loaded) check the boot scene's windows and tile them from the Window menu. Exit 0 when every page passes.
 """
 import os, pathlib, sys, time
 from playwright.sync_api import sync_playwright
@@ -55,7 +56,8 @@ def check(browser, path: pathlib.Path) -> list:
         return [f"menu bar never showed {first!r}; first row: {text.splitlines()[:1]}"] + errors
     boot = time.time() - t0
     demo = path.name.startswith("hello")
-    item = "Greeting" if demo else "New Test Pattern"
+    film = path.name.startswith("film")
+    item = "Greeting" if demo else "Play / Pause" if film else "New Test Pattern"
     page.keyboard.press("Alt+h" if demo else "Alt+f")   # open the first menu by its hot key
     ok, text = wait_for(page, lambda s: item in s, 5)
     if not ok:
@@ -65,6 +67,20 @@ def check(browser, path: pathlib.Path) -> list:
         ok, text = wait_for(page, lambda s: "Hello, World" in s, 5)
         if not ok:
             errors.append("Greeting dialog did not open")
+    elif film:
+        page.keyboard.press("Escape")
+        ok, before = wait_for(page, lambda s: "the island" in s and "the tower walks" in s and item not in s, 5)
+        if not ok:
+            errors.append("boot-scene windows not on screen")
+        # Window > Tile rearranges the five windows: the screen changes and every title stays.
+        page.keyboard.press("Alt+w")
+        ok, _ = wait_for(page, lambda s: "Tile" in s, 5)
+        if not ok:
+            errors.append("the Window menu did not open")
+        page.keyboard.press("l")
+        ok, text = wait_for(page, lambda s: s != before and "Tile" not in s and "the island" in s and "the tower walks" in s, 5)
+        if not ok:
+            errors.append("Window > Tile did not rearrange the windows")
     else:
         page.keyboard.press("Escape")
         ok, before = wait_for(page, lambda s: "the island" in s and "the wibblers" in s and item not in s, 5)
