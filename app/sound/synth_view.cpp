@@ -88,6 +88,58 @@ void TSynthView::playNotes(const std::vector<Note>& notes, const std::string& wh
     drawView();
 }
 
+void TSynthView::midiNote(int midi, int vel, bool on, const std::string& who) {
+    if (midi < 0 || midi > 127) return;
+    const double asked = clockMs();
+    const double now = asked + leadMs();
+    TWindow* win = dynamic_cast<TWindow*>(owner);
+    const std::string wid = (win && host().idOf) ? host().idOf(win) : "";
+    const double kHeldMs = 60000;   // a key held this long is let go by the mixer
+    if (on) {
+        if (held_.count(midi)) midiNote(midi, 0, false, who);   // the same key again: let the first go
+        Note n = makeNote(midi, 0, kHeldMs, std::max(1, std::min(127, vel)));
+        uint64_t id = 0;
+        const bool audible = synthAudioEnabled() && streamRunning();
+        if (audible) id = mixer().schedule(n, sampleForClock(asked));
+        held_[midi] = {id, now};
+        Played p{midi, voice_, voice_ == Voice::Fm ? n.patch.name : std::string("square"), n.vel, now, kHeldMs, now + 1e9, who};
+        recent_.push_back(p);
+        while (recent_.size() > 32) recent_.pop_front();
+        ++played_;
+        if (audible) ++sent_; else ++silenced_;
+        Heard h;
+        h.startMs = now;
+        h.endMs = now + 1e9;
+        h.held = true;
+        h.source = "synth";
+        h.window = wid;
+        h.voice = voiceId(voice_);
+        h.patch = p.patch;
+        h.midi = midi;
+        h.level = voice_ == Voice::Fm ? (n.vel / 127.0) * n.patch.level : speakerPatch().level;
+        h.who = who;
+        h.hasEnvelope = voice_ == Voice::Fm;
+        h.envPatch = n.patch;
+        h.durMs = kHeldMs;
+        ears().hear(h);
+    } else {
+        auto it = held_.find(midi);
+        if (it == held_.end()) return;
+        if (it->second.id) mixer().release(it->second.id, sampleForClock(asked));
+        const double dur = std::max(1.0, now - it->second.startMs);
+        for (auto r = recent_.rbegin(); r != recent_.rend(); ++r)
+            if (r->midi == midi && r->endMs > now + 1e8) {
+                r->durMs = dur;
+                r->endMs = now + (r->voice == Voice::Fm ? fmPatches()[patch_].releaseMs : 0);
+                break;
+            }
+        ears().release(wid, midi, now);
+        held_.erase(it);
+    }
+    if (!timer_) timer_ = setTimer(50, 50);
+    drawView();
+}
+
 void TSynthView::tick() {
     const double now = clockMs();
     bool any = false;

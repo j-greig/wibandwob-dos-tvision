@@ -46,6 +46,16 @@ void Ears::hear(const Heard& h) {
     while (log_.size() > keep_) log_.pop_front();
 }
 
+void Ears::release(const std::string& window, int midi, double atMs) {
+    for (auto it = log_.rbegin(); it != log_.rend(); ++it) {
+        if (it->source != "synth" || it->window != window || it->midi != midi || !it->held) continue;
+        it->held = false;
+        it->durMs = std::max(1.0, atMs - it->startMs);
+        it->endMs = atMs + (it->hasEnvelope ? it->envPatch.releaseMs : 0);
+        return;
+    }
+}
+
 double Ears::levelAt(const Heard& h, double t) {
     if (t < h.startMs || t >= h.endMs) return 0;
     if (h.hasEnvelope) return h.level * envelope(h.envPatch, t - h.startMs, h.durMs);

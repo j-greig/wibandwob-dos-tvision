@@ -553,6 +553,7 @@ bool readOnly(const std::string& name, const KV& kv) {
     // themselves through ruleGate; only resident_manners clear=1 is an ordinary act.
     if (name.rfind("look_", 0) == 0 || name == "resident_hand" || name == "window_owner") return true;
     if (name == "hear" || name == "sound") return true;   // the ears and the stream's state change nothing
+    if (name == "midi") { std::string a = str(kv, "action"); return a.empty() || a == "state" || a == "log"; }
     if (name == "resident_manners") return !has(kv, "clear");
     return false;
 }

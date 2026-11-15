@@ -12,7 +12,7 @@ double sampleToMs(int64_t s) { return (double)s * 1000.0 / kRate; }
 
 Mixer::Mixer(size_t ringSamples) : ring_(ringSamples, 0) {}
 
-void Mixer::insert(Pending p) {
+uint64_t Mixer::insert(Pending p) {
     std::lock_guard<std::mutex> lk(mu_);
     const int64_t now = clock_.load();
     if (p.at < now) { p.at = now; ++late_; }
@@ -21,13 +21,32 @@ void Mixer::insert(Pending p) {
     auto it = std::upper_bound(pending_.begin(), pending_.end(), p, [](const Pending& a, const Pending& b) {
         return a.at < b.at || (a.at == b.at && a.seq < b.seq);
     });
+    const uint64_t id = p.seq;
     pending_.insert(it, std::move(p));
     if (pending_.size() > 8192) pending_.pop_back();   // runaway: drop the latest
+    return id;
 }
 
-void Mixer::schedule(const Note& n, int64_t at) {
+uint64_t Mixer::schedule(const Note& n, int64_t at) {
     Pending p{at, 0, true, n, nullptr, 0};
-    insert(std::move(p));
+    return insert(std::move(p));
+}
+
+void Mixer::release(uint64_t id, int64_t at) {
+    std::lock_guard<std::mutex> lk(mu_);
+    at = std::max(at, clock_.load());
+    for (auto& p : pending_)
+        if (p.isNote && p.seq == id) { p.note.durMs = std::max(1.0, sampleToMs(at - p.at)); return; }
+    if (spk_.on && spk_.id == id) { spk_.b = std::min(spk_.b, at); return; }
+    for (auto& ch : ch_)
+        if (ch.on && ch.id == id) {
+            const double gate = std::max(0.0, sampleToMs(at - ch.a));
+            if (gate < ch.n.durMs) {
+                ch.n.durMs = gate;
+                ch.end = at + msToSample(ch.n.patch.releaseMs);
+            }
+            return;
+        }
 }
 
 void Mixer::scheduleSample(Pcm pcm, double gain, int64_t at) {
@@ -51,6 +70,7 @@ void Mixer::activate(const Pending& p, int64_t s) {
         spk_.a = s;
         spk_.b = s + msToSample(n.durMs);
         spk_.hz = speakerHz(n.midi);
+        spk_.id = p.seq;
         return;
     }
     int c = -1;
@@ -67,6 +87,7 @@ void Mixer::activate(const Pending& p, int64_t s) {
     ch.prev = 0;
     ch.f = noteHz(n.midi);
     ch.vel = std::max(1, std::min(127, n.vel)) / 127.0;
+    ch.id = p.seq;
 }
 
 void Mixer::render(int16_t* out, size_t n) {

@@ -156,6 +156,28 @@ static void testMixer() {
     }
 }
 
+static void testHold() {
+    std::printf("[hold]\n");
+    Mixer m;
+    Note n = note(Voice::Fm, "C-4", 0, 60000, 100, "organ");
+    const uint64_t id = m.schedule(n, 0);
+    std::vector<int16_t> out(msToSample(1000));
+    m.render(out.data(), msToSample(300));
+    m.release(id, msToSample(300));
+    m.render(out.data() + msToSample(300), out.size() - msToSample(300));
+    const double rel = fmPatches()[patchIndex("organ")].releaseMs;
+    check(rms(out, msToSample(200), msToSample(300)) > 0.05, "a held note sounds while the key is down");
+    check(rms(out, msToSample(300 + rel + 2), out.size()) == 0.0, "after the key is let go it is silent once its release is over");
+    check(rms(out, msToSample(300), msToSample(300 + rel / 2)) > 0.0, "and it rings through the release");
+    Mixer m2;
+    const uint64_t id2 = m2.schedule(n, msToSample(100));
+    m2.release(id2, msToSample(150));   // let go before it started: a 50 ms note
+    std::vector<int16_t> o2(msToSample(400));
+    m2.render(o2.data(), o2.size());
+    check(rms(o2, msToSample(150 + rel + 2), o2.size()) == 0.0 && rms(o2, msToSample(100), msToSample(150)) > 0.0,
+          "a key let go before its note started gives a short note");
+}
+
 static Heard synthHeard(const char* n, double at, double dur, const std::string& who) {
     Heard h;
     const Patch& p = fmPatches()[patchIndex("bass")];
@@ -322,6 +344,7 @@ int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     if (only.empty() || only == "synth") testSynth();
     if (only.empty() || only == "mixer") testMixer();
+    if (only.empty() || only == "hold") testHold();
     if (only.empty() || only == "ears") testEars();
     if (only.empty() || only == "score") testScore();
     if (only.empty() || only == "tracker") testTracker();
