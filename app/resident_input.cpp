@@ -76,6 +76,7 @@ enum class Kind { Event, Press, Command };
 struct Item {
     uint64_t seq = 0;
     Kind kind = Kind::Event;
+    std::string actor = "resident";  // the resident's name (actor=)
     TEvent ev{};
     TView* target = nullptr;      // nullptr: unaddressed (routed as the person's input is)
     std::string targetId;         // for the log
@@ -101,6 +102,7 @@ struct Frame {
     TView* topAtEntry;
     TView* personFocus;
     uint64_t serial;
+    std::string actor;            // the resident's name for 'R'
 };
 
 Hooks g_hooks;
@@ -124,6 +126,7 @@ std::deque<TEvent> g_heldPerson;   // person input that reached a window busy un
 
 // The resident's mouse button, between its down and its up.
 bool g_resDown = false;
+std::string g_resDownActor = "resident";
 bool g_resDownRaw = false;          // the down went into a running loop, not to an address
 TView* g_resDownTarget = nullptr;
 uint64_t g_resDownFrame = 0;
@@ -250,13 +253,17 @@ void addLog(uint64_t seq, const std::string& what, const std::string& target, co
     while (g_log.size() > kLogMax) g_log.pop_front();
 }
 
+Who whoOf(const Item& it) { return Who{it.actor, Source::Resident}; }
+
 void noteDelivered(const Item& it, const std::string& how) {
     ++g_delivered;
     addLog(it.seq, it.what, it.targetId, how);
+    addAct(whoOf(it), it.what, it.targetId, how, it.seq);
 }
 
 // Change the result of an entry already in the log (newest first).
 void updateLog(uint64_t seq, const std::string& result) {
+    updateAct(seq, result);
     for (auto it = g_log.rbegin(); it != g_log.rend(); ++it)
         if (it->seq == seq) { it->result = result; return; }
 }
@@ -264,6 +271,7 @@ void updateLog(uint64_t seq, const std::string& result) {
 void noteRefused(const Item& it, const std::string& why) {
     ++g_refused;
     addLog(it.seq, it.what, it.targetId, "refused: " + why);
+    addAct(whoOf(it), it.what, it.targetId, "refused: " + why, it.seq);
 }
 
 // The person is acting in this window: their button is down in it, or they gave it
@@ -366,7 +374,8 @@ void collectWindows(std::vector<TView*>& out) {
 // person's focus chain. The person's focused window is restored afterwards.
 void deliverAddressed(Item& it) {
     TDeskTop* d = TProgram::deskTop;
-    Frame f{'R', it.target, TheTopView, d ? d->current : nullptr, ++g_frameSerial};
+    WhoScope acting(whoOf(it));
+    Frame f{'R', it.target, TheTopView, d ? d->current : nullptr, ++g_frameSerial, it.actor};
     std::vector<TView*> before;
     collectWindows(before);
     // Logged before the dispatch: a dialog the input opens runs inside it.
@@ -383,6 +392,7 @@ void deliverAddressed(Item& it) {
         bool fakeSel = false, fakeFrame = false;
         if (e.what & evMouseDown) {
             g_resDown = true;
+            g_resDownActor = it.actor;
             g_resDownRaw = false;
             g_resDownTarget = it.target;
             g_resDownFrame = f.serial;
@@ -429,18 +439,21 @@ void deliverAddressed(Item& it) {
     } else if (result != "delivered") {
         updateLog(it.seq, result);
     }
+    settle();   // windows the act opened, moved or closed are the resident's
 }
 
 // Give an item to the loop that is running (the person's main loop for
 // unaddressed input, or a resident dialog's loop).
 void deliverRaw(Item& it, TEvent& ev) {
     ev = it.ev;
+    setEventWho(whoOf(it));
     if (!it.target && TProgram::statusLine &&
         ((ev.what & evKeyDown) ||
          ((ev.what & evMouseDown) && TProgram::statusLine->getBounds().contains(ev.mouse.where))))
         TProgram::statusLine->handleEvent(ev);   // status-line hot keys, as TProgram::getEvent does
     if (it.ev.what & evMouseDown) {
         g_resDown = true;
+        g_resDownActor = it.actor;
         g_resDownRaw = true;
         g_resDownTarget = nullptr;
     } else if (it.ev.what & evMouseUp) {
@@ -464,6 +477,18 @@ std::deque<Item>::iterator pickDeliverable() {
     return g_queue.end();
 }
 
+// The resident's hand moves to where the item lands before it is delivered.
+bool handReadyFor(const Item& it) {
+    if (it.kind == Kind::Command && !it.target) return true;   // an application command: no window
+    if (it.kind == Kind::Event && (it.ev.what & evMouse))
+        return handReady(it.actor, it.ev.mouse.where.x, it.ev.mouse.where.y);
+    TView* t = (it.kind == Kind::Press && it.control) ? it.control : (it.target ? it.target : personKeyTarget());
+    if (!t || dynamic_cast<TMenuView*>(t)) return true;
+    TPoint o{t->origin.x, t->origin.y};
+    for (TView* g = t->owner; g; g = g->owner) { o.x += g->origin.x; o.y += g->origin.y; }
+    return handReady(it.actor, o.x, o.y);
+}
+
 // Send the person's input to the person's window while a resident dialog runs.
 void routePerson(TEvent& ev) {
     Frame& rf = g_frames.back();
@@ -476,7 +501,8 @@ void routePerson(TEvent& ev) {
     if ((ev.what & evMouseDown) && dynamic_cast<TWindow*>(tgt)) rf.personFocus = tgt;
     if (inFrames(tgt)) { g_heldPerson.push_back(ev); return; }
     TDeskTop* d = TProgram::deskTop;
-    Frame f{'P', tgt, TheTopView, d ? d->current : nullptr, ++g_frameSerial};
+    WhoScope acting(personWho());
+    Frame f{'P', tgt, TheTopView, d ? d->current : nullptr, ++g_frameSerial, "person"};
     g_frames.push_back(f);
     auto* w = dynamic_cast<TWindow*>(tgt);
     bool fake = false;
@@ -485,6 +511,7 @@ void routePerson(TEvent& ev) {
     tgt->handleEvent(e);
     if (fake && alive(w)) w->state &= ~sfSelected;
     g_frames.pop_back();
+    settle();   // what the person's input changed is the person's
 }
 
 }  // namespace
@@ -494,7 +521,11 @@ void routePerson(TEvent& ev) {
 void setHooks(const Hooks& h) { g_hooks = h; }
 const Hooks& hooks() { return g_hooks; }
 
-std::string ownerOf(TView* v) { return g_owned.count(v) ? "resident" : "person"; }
+std::string ownerOf(TView* v) {
+    std::string o = ownerName(v);
+    if (!o.empty()) return o;
+    return g_owned.count(v) ? "resident" : "person";
+}
 
 bool takeEvent(TEvent& ev) {
     // 1. Between the resident's mouse down and up, its own pointer events come first.
@@ -514,11 +545,14 @@ bool takeEvent(TEvent& ev) {
             item.target = g_resDownRaw ? nullptr : g_resDownTarget;
             item.targetId = item.target ? nameOf(item.target) : "";
             item.what = "mouse up (added: a down needs an up)";
+            item.actor = g_resDownActor;
         }
+        handFollow(item.actor, item.ev.mouse.where.x, item.ev.mouse.where.y);
         bool inside = false;
         for (auto& f : g_frames) if (f.serial == g_resDownFrame) inside = true;
         if (g_resDownRaw || inside) {
             ev = item.ev;
+            setEventWho(whoOf(item));
             if (item.ev.what & evMouseUp) g_resDown = false;
             g_resLastWhere = item.ev.mouse.where;
             noteDelivered(item, "delivered");
@@ -538,6 +572,7 @@ bool takeEvent(TEvent& ev) {
         if (!(g_waitOnButton && g_personButtons)) {
             auto it = pickDeliverable();
             if (it != g_queue.end()) {
+                if (!handReadyFor(*it)) { TEventQueue::wakeUp(); return false; }
                 Item item = *it;
                 g_queue.erase(it);
                 if (personActingIn(effectiveTarget(item))) {
@@ -559,6 +594,7 @@ bool takeEvent(TEvent& ev) {
 
     // 3. Person input that waited while a window was busy under a resident dialog.
     if (!g_heldPerson.empty()) {
+        setEventWho(personWho());
         ev = g_heldPerson.front();
         g_heldPerson.pop_front();
         return true;
@@ -570,7 +606,13 @@ bool takeEvent(TEvent& ev) {
 }
 
 void afterBase(TEvent& ev) {
+    // Forget windows that are gone: a new view can be allocated at a closed one's address.
+    for (auto it = g_owned.begin(); it != g_owned.end();) {
+        if (!alive(*it)) it = g_owned.erase(it);
+        else ++it;
+    }
     tickSenses();
+    tickActs();
     if (ev.what & (evMouse | evKeyDown)) {
         observePerson(ev);
         if (residentLoop()) {
@@ -584,6 +626,7 @@ void afterBase(TEvent& ev) {
     if (residentLoop()) return;
     auto it = pickDeliverable();
     if (it == g_queue.end()) return;
+    if (!handReadyFor(*it)) return;
     Item item = *it;
     g_queue.erase(it);
     if (personActingIn(effectiveTarget(item))) {
@@ -609,6 +652,7 @@ bool interceptPut(TEvent& ev) {
     it.ev = ev;
     it.target = f.target;
     it.targetId = nameOf(f.target);
+    it.actor = f.actor.empty() ? "resident" : f.actor;
     it.what = (ev.what & evKeyDown) ? "put key" : ("put command " + std::to_string(ev.message.command));
     if (ev.what & evKeyDown) it.kind = Kind::Event;
     g_queue.push_front(it);
@@ -767,6 +811,13 @@ std::string str(const KV& kv, const char* k, const std::string& def = "") {
 
 bool has(const KV& kv, const char* k) { return kv.find(k) != kv.end(); }
 
+// The resident's name: actor=, else "resident" (the API server's default "api" is not a name).
+std::string actorOf(const KV& kv) {
+    auto it = kv.find("actor");
+    if (it == kv.end() || it->second.empty() || it->second == "api") return "resident";
+    return it->second;
+}
+
 int num(const KV& kv, const char* k, int def) {
     auto it = kv.find(k);
     return it == kv.end() || it->second.empty() ? def : std::atoi(it->second.c_str());
@@ -812,6 +863,7 @@ std::string cmdKey(const KV& kv) {
             if (!parseKeyToken(tok, it.ev)) return "err unknown key: " + tok;
             it.target = target;
             it.targetId = id;
+            it.actor = actorOf(kv);
             it.what = "key " + tok;
             items.push_back(it);
         }
@@ -829,6 +881,7 @@ std::string cmdKey(const KV& kv) {
             else { charKey(ch, 0, it.ev); it.what = "key " + ch; }
             it.target = target;
             it.targetId = id;
+            it.actor = actorOf(kv);
             items.push_back(it);
         }
     }
@@ -879,6 +932,7 @@ std::string cmdMouse(const KV& kv) {
         it.ev.mouse.wheel = wheel;
         it.target = target;
         it.targetId = id;
+        it.actor = actorOf(kv);
         it.what = desc + " " + std::to_string(where.x - base.x) + "," + std::to_string(where.y - base.y);
         items.push_back(it);
     };
@@ -1221,6 +1275,7 @@ std::string cmdPress(const KV& kv) {
     if (personActingIn(g)) return sharingError(g);
     Item it;
     it.kind = Kind::Press;
+    it.actor = actorOf(kv);
     it.target = g;
     it.targetId = nameOf(g);
     it.control = f.control;
@@ -1265,6 +1320,7 @@ std::string cmdMenu(const KV& kv) {
     if (t && personActingIn(t)) return sharingError(t);
     Item it;
     it.kind = Kind::Command;
+    it.actor = actorOf(kv);
     it.ev = TEvent{};
     it.ev.what = evCommand;
     it.ev.message.command = item->command;

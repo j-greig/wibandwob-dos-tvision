@@ -41,6 +41,7 @@
 
 #include "test_pattern.h"
 #include "resident_input.h"
+#include "resident_senses.h"
 #include "core/json_utils.h"
 #include "gradient.h"
 #include "ui/ui_helpers.h"
@@ -2959,14 +2960,18 @@ void TWwdosApp::stepSweep()
 
 void TWwdosApp::getEvent(TEvent& event)
 {
+    resident::settle();   // window changes since the last event belong to its author
     if (resident::takeEvent(event)) return;
+    bool fromPut = pending.what != evNothing;
     TApplication::getEvent(event);
+    resident::noteOrigin(event, fromPut);
     resident::afterBase(event);
 }
 
 void TWwdosApp::putEvent(TEvent& event)
 {
     if (resident::interceptPut(event)) return;
+    resident::notePut(event);
     TApplication::putEvent(event);
 }
 

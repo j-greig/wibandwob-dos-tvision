@@ -7,7 +7,7 @@ Binary: WWDOS_BIN or build-resident/app/wwdos.
 Usage:
     python3 tests/resident/test_resident_senses.py            # all groups
     python3 tests/resident/test_resident_senses.py look       # chosen groups
-Groups: look (glance, read, study, changes, mark).
+Groups: look (glance, read, study, changes, mark), acts (authorship, owners, the log, the hand).
 """
 
 import json
@@ -49,6 +49,17 @@ def settle(desk, t=0.4):
     time.sleep(t)
 
 
+def still(desk, timeout=5.0):
+    """Wait until no resident hand or reading mark is on screen."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        hands = desk.j("resident_hand").get("hands", []) if desk.ipc("resident_hand").startswith("{") else []
+        if not any(h["visible"] for h in hands) and not desk.j("look_mark")["marks"]:
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def marks_off(desk):
     return desk.j("look_mark", on="0")
 
@@ -75,7 +86,7 @@ def test_look(desk):
 
     # ---- nothing changes: marks off, every look command, screen with colours before and after
     R.check(marks_off(desk)["on"] is False, "marks can be switched off")
-    settle(desk, 0.2)
+    still(desk)
     before_screen = screen_with_colours(desk)
     before_layout = layout(desk)
     before_text = {w: desk.ipc("window_text", id=w) for w in (a, b, hidden)}
@@ -160,7 +171,7 @@ def test_look(desk):
 
     # ---- the reading mark
     desk.j("focus_window", id=b)
-    settle(desk, 0.3)
+    still(desk)
     base = desk.screen()
     base_layout = layout(desk)
     marks_on(desk, ms=1500)
@@ -192,12 +203,134 @@ def test_look(desk):
     R.check(desk.screen() == base, "with marks off a read leaves no mark")
 
 
+# ---------------------------------------------------------------------------- acts
+
+def acts_since(desk, n0):
+    return [a for a in desk.j("acts", since=str(n0 - 1), limit="4000")["acts"]]
+
+
+def test_acts(desk):
+    print("\n[acts] two actors: who did what, owners, the log, the hand")
+    desk.ipc("close_all", actor="setup")
+    still(desk)
+    n0 = desk.j("acts", limit="1")["next"]
+
+    # wob (a resident, through the socket) opens the person's editor P.
+    p = desk.j("create_window", type="text_editor", x=2, y=1, w=40, h=10, title="P", actor="wob", source="resident")["id"]
+    # wib opens its own editor from the menu, by name.
+    j, _ = q(desk, "resident_menu", choose="Window>Text Editor", actor="wib")
+    settle(desk, 0.3)
+    wq = [w for w in desk.state()["windows"] if w["id"] != p and w["type"] == "text_editor"]
+    qid = wq[0]["id"] if wq else None
+    desk.j("move_window", id=qid, x=60, y=2, actor="wib", source="resident")
+    desk.j("resize_window", id=qid, width=40, height=10, actor="wib", source="resident")
+    settle(desk, 0.2)
+
+    # The person clicks into P and types; then opens a test pattern with Ctrl+N.
+    wp = desk.windows()[p]
+    desk.person_mouse("down", wp["x"] + 5, wp["y"] + 3)
+    desk.person_mouse("up", wp["x"] + 5, wp["y"] + 3)
+    settle(desk, 0.2)
+    desk.person_type("hello")
+    settle(desk, 0.3)
+    desk.person_keys("C-n")
+    settle(desk, 0.5)
+    pats = [w for w in desk.state()["windows"] if w["type"] == "test_pattern"]
+    pat = pats[0]["id"] if pats else None
+
+    # wib types into its own window Q; its hand moves there first.
+    still(desk)
+    j, log = q(desk, "resident_key", id=qid, text="from wib", actor="wib")
+    hand = [h for h in desk.j("resident_hand")["hands"] if h["actor"] == "wib"]
+    wqq = desk.windows()[qid]
+    screen_q = desk.screen()
+    # The person drags the test pattern by its title bar.
+    wpt = desk.windows()[pat]
+    x0, y0 = wpt["x"] + 8, wpt["y"] + 1
+    desk.person_mouse("down", x0, y0)
+    for k in range(1, 11):
+        desk.person_mouse("drag", x0 + k, y0 + k // 2)
+        time.sleep(0.02)
+    desk.person_mouse("up", x0 + 10, y0 + 5)
+    settle(desk, 0.4)
+    # wob moves P; wib closes Q.
+    desk.j("move_window", id=p, x=4, y=3, actor="wob", source="resident")
+    g = desk.j("look_glance")
+    owners = {w["id"]: w["owner"] for w in g["windows"]}
+    desk.j("close_window", id=qid, actor="wib", source="resident")
+    settle(desk, 0.3)
+    acts = acts_since(desk, n0)
+
+    R.check(qid is not None and pat is not None, f"windows: P={p} Q={qid} pattern={pat}")
+    R.check(owners.get(p) == "wob" and owners.get(qid) == "wib" and owners.get(pat) == "person",
+            f"owners: P by wob, Q by wib, the pattern by the person ({owners})")
+
+    def expect(a):
+        w, what = a["window"], a["what"]
+        if w == qid or what.startswith("menu "):
+            return "wib"
+        if w == pat:
+            return "person"
+        if w == p:
+            if what.startswith(("opened", "moved", "create_window", "move_window")):
+                return "wob"
+            return "person"
+        if what.startswith(("command ", "key ", "typed", "click", "drag")):
+            return "person"
+        return "?"
+
+    wrong = [a for a in acts if expect(a) != a["actor"]]
+    R.check(len(acts) >= 12 and not wrong,
+            f"every one of {len(acts)} acts is attributed to the right actor ({len(wrong)} wrong: {wrong[:3]})")
+    whats = [(a["actor"], a["what"], a["window"]) for a in acts]
+    R.check(("person", "typed hello", p) in whats, "the person's typing is one act: typed hello in P")
+    R.check(any(a == "wib" and w == qid and t.startswith("opened text_editor") for a, t, w in whats), "Q opened by wib")
+    R.check(any(a == "person" and w == pat and t.startswith("opened test_pattern") for a, t, w in whats),
+            "the test pattern opened by the person (Ctrl+N)")
+    R.check(any(a == "person" and t == "command New Test Pattern" for a, t, w in whats), "the person's menu command is named")
+    R.check(any(a == "person" and w == pat and t.startswith("drag ") for a, t, w in whats), "the person's drag is one act")
+    moved_pat = [t for a, t, w in whats if w == pat and t.startswith("moved")]
+    R.check(len(moved_pat) == 1 and moved_pat[0].startswith("moved to"), f"the window the drag moved: one act, by the person ({moved_pat})")
+    R.check(sum(1 for a, t, w in whats if a == "wib" and w == qid and t.startswith("key ")) == 8, "wib's 8 keys to Q, each an act")
+    R.check(any(a == "wob" and w == p and t.startswith("moved to 4,3") for a, t, w in whats), "wob moved P")
+    R.check(any(a == "wib" and w == qid and t.startswith("closed") for a, t, w in whats), "wib closed Q")
+    R.check(all(a["source"] == ("console" if a["actor"] == "person" else "resident") for a in acts),
+            "sources: the person at the console, wib and wob as residents")
+    R.check(all(acts[i]["n"] < acts[i + 1]["n"] and acts[i]["ms"] <= acts[i + 1]["ms"] for i in range(len(acts) - 1)),
+            "the log is ordered by number and time")
+
+    # The hand: it moved to Q's corner before the first key landed.
+    keys_q = [a for a in acts if a["actor"] == "wib" and a["window"] == qid and a["what"].startswith("key ")]
+    h = hand[0] if hand else {}
+    R.check(h.get("to") == [wqq["x"], wqq["y"] + 1], f"wib's hand went to Q's top-left corner: {h.get('to')} (Q at {wqq['x']},{wqq['y'] + 1})")
+    R.check(h.get("steps", 0) >= 2 and h.get("arrived_ms", 0) - h.get("started_ms", 0) >= 100,
+            f"the hand glided ({h.get('steps')} steps, {h.get('arrived_ms', 0) - h.get('started_ms', 0)} ms)")
+    R.check(keys_q and keys_q[0]["ms"] >= h.get("arrived_ms", 1 << 60), "the first key landed after the hand arrived")
+    sy, sx = wqq["y"] + 1, wqq["x"]
+    R.check(screen_q[sy][sx:sx + 1] == "W", f"the hand is drawn as W on Q's corner: {screen_q[sy][sx:sx + 1]!r}")
+    R.check(still(desk), "the hand goes away when wib stops")
+
+    # With the hand off, the act lands at once and no hand is drawn.
+    desk.j("resident_hand", on="0")
+    e2 = desk.editor(110, 14, 30, 8, "R")
+    before = desk.screen()
+    q(desk, "resident_key", id=e2, text="x", actor="wib")
+    after = desk.screen()
+    h2 = [h for h in desk.j("resident_hand")["hands"] if h["actor"] == "wib"][0]
+    R.check(not h2["visible"] and desk.text(e2) == ["x"], "with the hand off the key lands and no hand is drawn")
+    desk.j("resident_hand", on="1")
+
+    # The log is bounded.
+    a = desk.j("acts", limit="1")
+    R.check(a["kept"] == 4000, f"the log keeps the last {a['kept']} acts ({a['dropped']} dropped so far)")
+
+
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["look"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["look", "acts"]
     desk = Desk(os.environ.get("SENSES_TEST_NAME", "sensestest")).start()
     try:
         for g in groups:
-            {"look": test_look}[g](desk)
+            {"look": test_look, "acts": test_acts}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()

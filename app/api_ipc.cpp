@@ -1,6 +1,7 @@
 #define Uses_TEventQueue
 #include <tvision/tv.h>
 
+#include "resident_senses.h"
 #include "api_ipc.h"
 #include "command_registry.h"
 #include "core/json_utils.h"
@@ -510,6 +511,7 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
     if (cmd == "batch") {
         // Many commands in one message, run in order in this one tick:
         // lines=base64:<"cmd:a k=v\ncmd:b k=v\n...">. Returns {"results":["<resp a>","<resp b>",...]}.
+        resident::ipcBegin("batch", kv);
         std::string payload = kv["lines"];
         if (payload.rfind("base64:", 0) == 0) payload = base64_decode(payload.substr(7));
         std::string out = "{\"results\":[";
@@ -531,8 +533,11 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
         }
         out += "]}\n";
         last_command_time_ = std::chrono::steady_clock::now();
+        resident::ipcEnd("batch", kv, out);
         return out;
     }
+    // Every command below runs as the caller it names (actor=, source=) and is logged as an act.
+    resident::ipcBegin(cmd, kv);
     if (cmd == "get_capabilities") {
         resp = get_command_capabilities_json() + "\n";
     } else if (cmd == "get_window_types") {
@@ -927,12 +932,14 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
                 resp = view->handleApiAction(action_it->second, kv) + "\n";
             }
         }
-    } else if (cmd.rfind("resident_", 0) == 0 || cmd.rfind("look_", 0) == 0 || cmd == "window_text") {
+    } else if (cmd.rfind("resident_", 0) == 0 || cmd.rfind("look_", 0) == 0 || cmd == "window_text" ||
+               cmd == "acts" || cmd == "window_owner") {
         resp = exec_registry_command(*app_, cmd, kv) + "\n";
     } else {
         resp = "err unknown cmd\n";
     }
 
+    resident::ipcEnd(cmd, kv, resp);
     return resp;
 }
 

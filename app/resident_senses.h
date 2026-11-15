@@ -10,6 +10,8 @@
 
 #include "resident_input.h"
 
+#include <cstdint>
+
 namespace resident {
 
 // Registry commands (see command_registry.cpp).
@@ -20,8 +22,64 @@ std::string cmdChanges(const KV& kv);   // look_changes
 std::string cmdMark(const KV& kv);      // look_mark
 
 // Called on every pass of the event loop (from afterBase): moves marks with their
-// windows and takes them down when their time is up.
+// windows, takes marks and hands down when their time is up.
 void tickSenses();
+
+// ---------------------------------------------------------------- authorship
+
+// Where an instruction or an act came from. Console: the keyboard and mouse at the
+// machine. Resident: a resident's own commands. Guest: a person at another seat
+// (the room chat). Visitor: any other caller on the socket or the API. File: text
+// read from a file. App: the app itself (timers, boot).
+enum class Source { Console, Resident, Guest, Visitor, File, App };
+struct Who {
+    std::string actor;
+    Source source;
+};
+const char* sourceName(Source s);
+bool parseSource(const std::string& s, Source& out);
+Who currentWho();
+Who personWho();   // {"person", Console}
+
+// The app acts for w while the scope lives (a resident dispatch, an IPC command).
+class WhoScope {
+public:
+    explicit WhoScope(const Who& w);
+    ~WhoScope();
+    WhoScope(const WhoScope&) = delete;
+    WhoScope& operator=(const WhoScope&) = delete;
+};
+
+// The event getEvent is about to return came from w.
+void setEventWho(const Who& w);
+// TWwdosApp::getEvent: settle() first (window changes since the last event go to that
+// event's author), then the base getEvent, then noteOrigin (whose event this is).
+void settle();
+void noteOrigin(const TEvent& ev, bool fromPut);
+// TWwdosApp::putEvent: an event put now carries the current author.
+void notePut(const TEvent& ev);
+
+// One ordered log of acts by everyone (acts command).
+void addAct(const Who& w, const std::string& what, const std::string& window, const std::string& result,
+            uint64_t rseq = 0);
+void updateAct(uint64_t rseq, const std::string& result);
+// Who opened a window ("" when not known).
+std::string ownerName(TView* v);
+
+// IPC: every command runs as the caller it names (actor=, source=).
+void ipcBegin(const std::string& cmd, const KV& kv);
+void ipcEnd(const std::string& cmd, const KV& kv, const std::string& resp);
+
+// The visible hand: false while the actor's pointer is still moving to (x, y) in
+// screen cells; the act waits until it is there.
+bool handReady(const std::string& actor, int x, int y);
+void handFollow(const std::string& actor, int x, int y);
+// Takes hands down after they have been still for a while (called with tickSenses).
+void tickActs();
+
+std::string cmdActs(const KV& kv);    // acts
+std::string cmdHand(const KV& kv);    // resident_hand
+std::string cmdOwner(const KV& kv);   // window_owner
 
 }  // namespace resident
 

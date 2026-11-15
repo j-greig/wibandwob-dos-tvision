@@ -14,6 +14,7 @@ set(TV_COMMON_SOURCES
     command_registry.cpp
     resident_input.cpp
     resident_senses.cpp
+    resident_acts.cpp
     wibwob_background.cpp
     window_type_registry.cpp
     theme_manager.cpp
@@ -180,6 +181,7 @@ add_executable(command_registry_test EXCLUDE_FROM_ALL
     command_registry.cpp
     resident_input.cpp
     resident_senses.cpp
+    resident_acts.cpp
 )
 target_link_libraries(command_registry_test PRIVATE tvision)
 
@@ -192,6 +194,7 @@ add_executable(scramble_engine_test EXCLUDE_FROM_ALL
     command_registry.cpp
     resident_input.cpp
     resident_senses.cpp
+    resident_acts.cpp
     llm/base/auth_config.cpp
 )
 target_link_libraries(scramble_engine_test PRIVATE tvision)

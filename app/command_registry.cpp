@@ -198,6 +198,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"look_study", "A rectangle of cells (x, y, w, h in desktop cells; screen=1 for screen rows; id= for a window's own picture) with text, colour runs [x,n,fg,bg] and a ruler of column numbers. Changes nothing", false},
         {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
+        {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
+        {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
+        {"window_owner", "Who opened a window (id=); owner= sets it", false},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
@@ -740,6 +743,9 @@ std::string exec_registry_command(
         if (name == "look_changes") return resident::cmdChanges(kv);
         if (name == "look_mark") return resident::cmdMark(kv);
     }
+    if (name == "acts") return resident::cmdActs(kv);
+    if (name == "window_owner") return resident::cmdOwner(kv);
+    if (name == "resident_hand") return resident::cmdHand(kv);
     if (name.rfind("resident_", 0) == 0) {
         if (name == "resident_key") return resident::cmdKey(kv);
         if (name == "resident_mouse") return resident::cmdMouse(kv);
