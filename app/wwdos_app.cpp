@@ -1179,6 +1179,10 @@ TWwdosApp::TWwdosApp() :
         registerWindow(w);
     };
     lifeHooks.modelPresent = []() { return AuthConfig::instance().mode() != AuthMode::NoAuth; };
+    lifeHooks.modelCli = []() {
+        const AuthConfig& auth = AuthConfig::instance();
+        return auth.isClaudeCode() ? auth.claudePath() : std::string();
+    };
     lifeHooks.openEditor = [this](const std::string& title, const std::vector<std::string>& lines,
                                   std::function<void(const std::vector<std::string>&)> onClose) -> TWindow* {
         // A text editor holding a file's lines; onClose gets what it holds when it closes.
