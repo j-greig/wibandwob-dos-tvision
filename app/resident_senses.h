@@ -90,6 +90,16 @@ std::string cmdActs(const KV& kv);    // acts
 // reply until a gesture comes or ms pass), or receives pushed on subscribe_events as "gesture".
 // A continued act (typing, a drag, a scroll, a run of moves) comes again with update=true.
 std::string cmdPersonEvents(const KV& kv);   // person_events (and person_wait's immediate answer)
+
+// The act log for in-app readers (the Feed window): the last count acts, oldest first.
+struct ActRecord {
+    uint64_t n;
+    long long ms;
+    std::string actor, source, what, window, result;
+};
+void lastActs(size_t count, std::vector<ActRecord>& out);
+uint64_t actsRevision();     // changes whenever the log does
+long long actsClockMs();     // the log's clock now (ms since the app started)
 uint64_t gestureLast();
 std::string gestureJson(uint64_t g);
 std::string gesturesSince(uint64_t since, int limit, const std::string& kinds, int& count);

@@ -44,6 +44,7 @@
 #include "resident_senses.h"
 #include "describe.h"
 #include "resident_hands.h"
+#include "feed_view.h"
 #include "core/json_utils.h"
 #include "gradient.h"
 #include "ui/ui_helpers.h"
@@ -238,6 +239,7 @@ const ushort cmASCIICam     = 157;
 // Tools menu commands (future)
 const ushort cmAnsiEditor = 125;
 const ushort cmPaintTools = 126;
+const ushort cmFeed = 9960;              // Tools > Feed: the act log, live (feed_view.cpp)
 const ushort cmAnimationStudio = 127;
 const ushort cmQuantumPrinter = 128;
 const ushort cmWibWobChat = 131;
@@ -1009,6 +1011,7 @@ private:
     friend void api_spawn_quadra(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_snake(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_tr808(TWwdosApp&, const TRect* bounds, const std::map<std::string, std::string>& kv);
+    friend void api_spawn_feed(TWwdosApp&, const TRect* bounds, const std::string& by);
     friend std::string api_tr808_action(TWwdosApp&, const std::map<std::string, std::string>& kv);
     friend void tr808_event_sink(TWindow* w, const char* type, const std::string& body);
     friend TTR808Window* find_tr808(TWwdosApp& app, const std::string& id);
@@ -1190,6 +1193,11 @@ TWwdosApp::TWwdosApp() :
 
 void TWwdosApp::handleEvent(TEvent& event)
 {
+    if (event.what == evCommand && event.message.command == cmFeed) {
+        api_spawn_feed(*this, nullptr, "");
+        clearEvent(event);
+        return;
+    }
     // The Residents menu: the console key and the residents' rules (resident_acts.cpp).
     if (event.what == evCommand && resident::handleCommand(event.message.command)) {
         clearEvent(event);
@@ -2794,6 +2802,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
         *new TSubMenu("~T~ools", kbAltT) +
             *new TMenuItem("~W~ib&Wob Chat", cmWibWobChat, kbF12) +
             *new TMenuItem("~R~oom Chat", cmRoomChat, kbNoKey) +
+            *new TMenuItem("~F~eed (who did what)", cmFeed, kbNoKey) +
             // REMOVED E009: Test A/B/C (dev-only, type fallback to test_pattern)
             // REMOVED E009: Glitch Effects submenu (entire submenu disabled)
             // REMOVED E009: ANSI Editor, Animation Studio (placeholders)
@@ -3038,6 +3047,7 @@ void TWwdosApp::idle()
     scrambleEngine.poll();
     // Residents inside the app answer the person's gestures (resident_hands.cpp).
     resident::tickReflexes();
+    TFeedView::tickAll();   // feeds follow the act log
 
     // DISABLED: Update animated kaomoji in menu bar (causing crashes + freezes)
     // if (menuBar) {
@@ -5208,6 +5218,13 @@ void tr808_event_sink(TWindow* w, const char* type, const std::string& body) {
     auto it = app->winToId.find(w);
     if (it != app->winToId.end()) id = it->second;
     app->ipcServer->publish_event(type, "{\"id\":\"" + id + "\"," + body + "}");
+}
+
+void api_spawn_feed(TWwdosApp& app, const TRect* bounds, const std::string& by) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 100, 18);
+    TWindow* w = createFeedWindow(r, by);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
 }
 
 void api_spawn_tr808(TWwdosApp& app, const TRect* bounds, const std::map<std::string, std::string>& kv) {

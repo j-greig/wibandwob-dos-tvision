@@ -134,7 +134,17 @@ std::string actAs(const std::string& actor, const std::string& name, KV kv) {
     if (!hooks().exec) return "err no app";
     kv["actor"] = actor;
     kv["source"] = "resident";
-    return hooks().exec(name, kv);   // the socket's dispatcher in process: logs the act in actor's name
+    // A window a resident opens must not take the person's focus: put the person's window back as
+    // current without changing the z-order, as resident input does for its own dispatches.
+    TDeskTop* d = TProgram::deskTop;
+    TView* before = d ? d->current : nullptr;
+    std::string resp = hooks().exec(name, kv);   // the socket's dispatcher in process: logs the act in actor's name
+    if (d && before && d->current != before) {
+        bool alive = false;
+        if (TView* f = d->first()) { TView* v = f; do { if (v == before) alive = true; v = v->next; } while (v != f); }
+        if (alive) d->setCurrent(before, TView::normalSelect);
+    }
+    return resp;
 }
 
 bool parseCommandLine(const std::string& line, std::string& name, KV& kv) {

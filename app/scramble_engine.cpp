@@ -6,6 +6,7 @@
 /*---------------------------------------------------------*/
 
 #include "resident_senses.h"
+#include <chrono>
 #include "resident_hands.h"
 #include "scramble_engine.h"
 #include "command_registry.h"
@@ -710,7 +711,12 @@ bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
     // Who is asking, with their standing in front (docs/resident-senses.md, Who is speaking).
     const std::string asker = resident::standingOf(resident::currentWho());
     const std::string stamped = resident::stampInstruction(input, "scramble");
-    auto filteredCallback = [this, callback, asker](const std::string& raw) {
+    const auto callStart = std::chrono::steady_clock::now();
+    auto filteredCallback = [this, callback, asker, callStart](const std::string& raw) {
+        double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - callStart).count();
+        char took[64];
+        std::snprintf(took, sizeof took, "scramble's model call finished after %.1f s", secs);
+        resident::addAct(resident::Who{"app", resident::Source::App}, took, "", raw.empty() ? "no reply" : "");
         // Her ACT lines run through the resident path as actor scramble (resident_hands.cpp): her paw is
         // seen moving before each act, and every act is logged in her name. Text read from a file is
         // data and never instructs: then her acts are refused.
@@ -732,6 +738,7 @@ bool ScrambleEngine::askAsync(const std::string& input, std::string& syncResult,
     const std::string withDesk = "THE DESKTOP (the only windows that exist for you, front first):\n" +
                                  resident::deskForPrompt() + "\n" + stamped;
     bool started = haikuClient.startAsync(withDesk, filteredCallback);
+    if (started) resident::addAct(resident::Who{"app", resident::Source::App}, "scramble's model call started", "", "");
     if (started) {
         haikuClient.markCalled();  // Only consume rate-limit window on success
     }

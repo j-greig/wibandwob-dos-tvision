@@ -88,6 +88,7 @@ add_executable(wwdos
     figlet_utils.cpp
     figlet_text_view.cpp
     backrooms_tv_view.cpp
+    feed_view.cpp
 )
 target_include_directories(wwdos PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # The TR-808 finds modules/tr808/samples in the source tree when run from elsewhere.

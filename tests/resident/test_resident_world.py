@@ -372,7 +372,7 @@ def wait_text(desk, wid, needle, timeout=6.0):
 
 def test_hands(_desk):
     print("hands")
-    name = "handstest"
+    name = os.environ.get("WORLD_TEST_NAME", "worldtest") + "_hands"
     fake = f"/tmp/wibwob_{name}_fake"
     os.makedirs(fake, exist_ok=True)
     with open(f"{fake}/claude", "w") as f:
@@ -413,6 +413,7 @@ def test_hands(_desk):
         hands = {h["actor"]: h for h in desk.j("resident_hand")["hands"]}
         marks = desk.j("look_mark")["marks"]
         R.check(ok, "the person opens a test pattern; wib writes in its notes, through the resident path")
+        R.check(pat and desk.focused() == pat[0]["id"], "the residents' answer leaves the person's focus on the window they opened")
         R.check("wib" in hands and hands["wib"]["steps"] > 0 and hands["wib"]["arrived_ms"] >= 0,
                 f"wib's hand glided to its notes before the keys landed ({hands.get('wib')})")
         R.check(pat and any(m["reader"] == "wob" and m["window"] == pat[0]["id"] for m in marks),
@@ -483,6 +484,33 @@ def test_hands(_desk):
                 and any(a["actor"] == "wob" and a["source"] == "resident" and a["window"] == notes
                         for a in desk.j("acts", by="wob")["acts"]),
                 f"the chat's tool client acts on the desktop's own socket as wob ({node.stdout.strip()[:50]!r})")
+        # The Feed: the act log, live, one line per act with a tag for who acted.
+        f = desk.j("open_feed", x=0, y=24, w=110, h=14, actor="setup")
+        fid = f.get("id")
+        time.sleep(0.6)
+        fd = desk.j("describe", id=fid)
+        lines = fd["text"]
+        tags = {t: [l for l in lines if f" {t} " in l[:14]] for t in ("PER", "WIB", "WOB", "SCR", "VIS", "SYS")}
+        R.check(fd["contract"] and all(tags.values()),
+                f"the feed shows every kind of actor by its tag: {({t: len(v) for t, v in tags.items()})}")
+        R.check(any("model call finished after" in l for l in tags["SYS"]),
+                f"system events are in it: {[l for l in tags['SYS'] if 'model' in l][:2]}")
+        R.check(any("refused" in l for l in lines), "a refused act carries its reason")
+        R.check(any(l[8:13] == " PER " and "typed hi there" in l for l in lines),
+                "the person's typing is one line, tagged PER")
+        n1 = desk.j("acts", limit=1)["next"]
+        time.sleep(1.5)
+        R.check(desk.j("acts", limit=1)["next"] == n1, "the feed's own redraws are not acts")
+        desk.ipc("resident_key", id=notes, text="!", actor="wob")
+        time.sleep(1.0)
+        R.check(desk.j("describe", id=fid)["text"][-1:] and "WOB" in desk.j("describe", id=fid)["text"][-1][:14]
+                or any("WOB" in l[:14] and "key !" in l for l in desk.j("describe", id=fid)["text"][-6:]),
+                "a new act appears at the bottom of the open feed")
+        w2 = desk.j("open_feed", by="wib", actor="setup").get("id")
+        time.sleep(0.4)
+        only = desk.j("describe", id=w2)
+        R.check(only["text"] and all(" WIB " in l[:14] for l in only["text"]) and "only WIB" in only["state"],
+                f"a feed filtered by actor shows only that actor ({len(only['text'])} lines)")
     finally:
         R.check(desk.alive(), "the hands desktop is still running")
         desk.stop()

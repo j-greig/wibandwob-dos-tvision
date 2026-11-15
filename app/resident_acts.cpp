@@ -232,6 +232,7 @@ struct Act {
 
 std::deque<Act> g_acts;
 uint64_t g_actN = 1;
+uint64_t g_actRevision = 1;   // grows on every add, merge or result change (the feed redraws on it)
 uint64_t g_actDropped = 0;
 const size_t kActsMax = 4000;
 
@@ -258,6 +259,7 @@ std::string windowTypeOf(const std::string& id) {
 }
 
 void emitGesture(const Act& a, bool update, const std::string& type = "") {
+    if (update) ++g_actRevision;   // a merged act changed (typing, a drag, a run of moves)
     if (a.source != Source::Console) return;
     std::string kind = a.what.substr(0, a.what.find(' '));
     if (kind == "opened" && a.what.rfind("opened menu", 0) == 0) kind = "menu";
@@ -463,6 +465,7 @@ void noteOrigin(const TEvent& ev, bool fromPut) {
 void addAct(const Who& w, const std::string& what, const std::string& window, const std::string& result, uint64_t rseq,
             const std::string& type) {
     g_acts.push_back(Act{g_actN++, nowMs(), w.actor, w.source, what, window, result, rseq});
+    ++g_actRevision;
     emitGesture(g_acts.back(), false, type);
     while (g_acts.size() > kActsMax) { g_acts.pop_front(); ++g_actDropped; }
 }
@@ -470,7 +473,7 @@ void addAct(const Who& w, const std::string& what, const std::string& window, co
 void updateAct(uint64_t rseq, const std::string& result) {
     if (!rseq) return;
     for (auto it = g_acts.rbegin(); it != g_acts.rend(); ++it)
-        if (it->rseq == rseq) { it->result = result; return; }
+        if (it->rseq == rseq) { it->result = result; ++g_actRevision; return; }
 }
 
 std::string ownerName(TView* v) {
@@ -716,6 +719,19 @@ std::string gestureJson(uint64_t g) {
 }
 
 uint64_t gestureLast() { return g_gestureN - 1; }
+
+uint64_t actsRevision() { return g_actRevision; }
+
+void lastActs(size_t count, std::vector<ActRecord>& out) {
+    out.clear();
+    size_t start = g_acts.size() > count ? g_acts.size() - count : 0;
+    for (size_t i = start; i < g_acts.size(); ++i) {
+        const Act& a = g_acts[i];
+        out.push_back(ActRecord{a.n, a.ms, a.actor, sourceName(a.source), a.what, a.window, a.result});
+    }
+}
+
+long long actsClockMs() { return nowMs(); }
 
 std::string gesturesSince(uint64_t since, int limit, const std::string& kinds, int& count) {
     count = 0;
