@@ -274,6 +274,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"residents_wake", "Wake the residents (the person's first key or click at the console also wakes them)", true},
         {"film_open", "Play a waking back from ACTS.TXT as a film of the desktop inside a window of its own (it opens no windows and sends no commands): waking= (default the last), speed=", false},
         {"film_seek", "Scrub a film window: id=, ms= the film time, play=0|1, speed=", false},
+        {"film_frame", "A film's picture at ms= (waking=, w= h=), as film_export draws it, and the times of its acts", false},
         {"film_export", "Write a waking's film as an asciinema v2 cast, FILMS/WAKING-N.cast: waking=, w= h= its size in characters (100x32)", false},
         {"tool_save", "Save a resident's tool: name= (1-8 letters), text= the program in the tools' BASIC; from the resident itself (actor=wib|wob|scramble source=resident); only a tool's author changes it", true},
         {"tool_run", "Open a tool as a window and run it: name=, optional x y w h", true},

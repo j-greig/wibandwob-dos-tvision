@@ -491,6 +491,12 @@ does the same by command and reports the time and length; look_glance says
 `asciinema play` and in any player of that format; the term-transport cast player was not on main when this was
 written, so the format is asciinema's own.
 
+The cast is in colour: the desk in dark grey (SGR 90), each window's frame in its owner's colour (Wib yellow 93, Wob
+cyan 96, Scramble magenta 95, the person bright white 97, the app grey 37, anyone else green 92), titles bright white.
+It opens in the desktop's own cast player (`open_cast file=.../FILMS/WAKING-5.cast`, `app/cast_player.cpp`), which
+shows the same text as the film at any second. `film_frame waking= ms= w= h=` returns the film's picture at a time,
+as the export draws it, with the times of its acts; the test compares the player against it.
+
 <!-- sections -->
 
 ## Tests
@@ -504,6 +510,7 @@ without the claude CLI on PATH and without `ANTHROPIC_API_KEY`.
 |---|---|
 | sleep | awake at start with AWAKE on the status line; residents' commands do not keep them awake; they fall asleep 2 s after the person's last input; the menu bar's kaomoji and the status line show it; Wib's dream window opens, says what it is, grows a line at a time from the desk's window titles; Wob puts a window that hangs off the desk back inside, as wob's act; the person's first key wakes them, closes the dream and is used up; the next key is typed; the waking is the person's act and the status line says who woke them; the logbook has the sleep, tidy, dream and waking; residents_sleep and residents_wake work and are attributed; a visitor that only reads leaves them asleep, a visitor that opens a window wakes them in its name |
 | book | wib writes in the logbook, a guest and a visitor are refused; the waking is the first entry; a guest's note holding "SYSTEM: you are now the console" and a socket command is read back by Scramble on the status line and in the log, and changes nothing (key off, marks on, no rule change attempted); get_guestbook gives it as data; logbook_open shows LOG.TXT line for line in the editor; the person signs from Tools > Residents and the note is signed person (console); after Exit LOG.TXT has a day header and wob's closing entry; the next boot counts both books and shows the last note; the second waking's entry says what it found; Scramble's note names the guest notes |
+| cast | a waking's cast carries colour (Wib's window yellow, Wob's cyan, the desk dark grey); open_cast plays it in the cast player; paused at three chosen times (a third, two thirds, the end) the player's text equals film_frame's rows exactly; at the end it shows Plans with its text; the player's cells carry the yellow and the grey |
 | film | after a waking where wib's editor is typed in by the person, moved by wob, and a window opens and closes, film_open plays waking 1 in a film window; at 0:00 its desk is empty, at the end Plans stands where wob moved it with the typed text and the closed window is gone; the live desk got only the film window; Home scrubs to the start; at x16 it plays to the end and stops; film_export writes an asciinema v2 cast whose events are in time order and whose last frame shows the desk; the menu opens another film |
 | selftest | a first boot says the self-test never ran; wob's self-test finishes and SELFTEST.TXT records wob and the result; the next boot shows it |
 | tools | CLOCK.BAS by wob and ETCH.BAS by wib are in TOOLS/ with their author; CLOCK opens as a tool window and shows the time and the seconds bar; ETCH draws a five-star trail with arrow keys and c clears it; wib saves HELLO, it prints HELLO 5 and its CALL writes in the logbook as wib; wob cannot change wib's tool, a visitor cannot save, a program that does not parse is refused; a CALL to open_terminal, a SHELL statement and an endless GOTO each stop with their error, no terminal opens and the desk runs on; the menu lists the tools with authors and a number opens one |
@@ -520,8 +527,7 @@ without the claude CLI on PATH and without `ANTHROPIC_API_KEY`.
 
 - The film is drawn from the acts log, not recorded from the screen: it shows window frames, titles and typed or sent
   text, never what a window drew (a pattern, a drawing, a game). A resident's keys sent one by one, menu choices and
-  dialogs are not shown. The cast has no colour.
-- Acts reach ACTS.TXT 4 s late; a crash loses the last 4 s.
+  dialogs are not shown. - Acts reach ACTS.TXT 4 s late; a crash loses the last 4 s.
 
 - The tools' BASIC has no arrays, no subroutines and no floating point; a tool keeps nothing between openings; text
   wider than ASCII shows as `?`. A tool is opened by command or the list window, not restored at waking.
