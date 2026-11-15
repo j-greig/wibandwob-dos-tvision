@@ -27,6 +27,7 @@
 #define Uses_cmTile
 #define Uses_cmCascade
 #include <tvision/tv.h>
+#include <tvision/internal/codepage.h>   // tvision::CpTranslator, for cellCodepoint
 
 #include <algorithm>
 #include <chrono>
@@ -61,6 +62,42 @@ struct StageTickTimer {
     ~StageTickTimer() { g_tickMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(); ++g_ticks; }
 };
 
+// Under-glyphs (docs/stage.md § Marks): drawLayers lists every line-art mark cell that stands on a patterned
+// desktop, with the pattern cell it covers. The WebGL page draws that pattern glyph under the mark's glyph, so the
+// dots run on behind the line. The cell itself keeps its flat paper (the pattern's average colour), which is what
+// a display with one glyph per cell shows: the ANSI page, the native build, a terminal.
+// Seven words per cell: x | y << 16 (screen), the mark's code point, its ink, its paper (RGB), then the pattern's
+// code point, ink and paper. The page draws the pattern only while the screen cell still shows that mark.
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+EM_JS(void, wwdos_js_under, (const uint32_t* p, int n), {
+    if (Module.wwdosUnder) Module.wwdosUnder(n > 0 ? HEAPU32.slice(p >> 2, (p >> 2) + n * 7) : null);
+});
+#else
+static void wwdos_js_under(const uint32_t*, int) {}
+#endif
+static const int kUnderWords = 7;
+
+// The first code point of a cell's text (a single byte is a code page 437 character, as the display reads it).
+static uint32_t cellCodepoint(const TScreenCell& c)
+{
+    TStringView t = c.character.getText();
+    if (t.empty() || t[0] == 0) return ' ';
+    unsigned char b = t[0];
+    if (t.size() == 1 && b >= 0x80) { const char* u = tvision::CpTranslator::toUtf8(b); t = TStringView(u, strnlen(u, 4)); b = t[0]; }
+    size_t n = b >= 0xF0 ? 4 : b >= 0xE0 ? 3 : b >= 0xC0 ? 2 : 1;
+    if (n > t.size()) n = t.size();
+    uint32_t u = n == 1 ? b : n == 2 ? (b & 0x1F) : n == 3 ? (b & 0x0F) : (b & 0x07);
+    for (size_t i = 1; i < n; ++i) u = (u << 6) | ((unsigned char) t[i] & 0x3F);
+    return u;
+}
+// A colour as the page's grid holds it (the web display's rule: RGB as it is, BIOS through the EGA palette).
+static uint32_t gridRGB(TColor c, bool fg)
+{
+    TColorRGB v = c.isRGB() ? c.asRGB() : c.isBIOS() ? ww::egaRGB(c.asBIOS()) : fg ? TColorRGB(0xC0, 0xC0, 0xC0) : TColorRGB(0, 0, 0);
+    return ((uint32_t) v.getRed() << 16) | ((uint32_t) v.getGreen() << 8) | v.getBlue();
+}
+
 // The desktop background with weather: rain falls across the whole desktop under the windows
 // (stage command "weather rain"), a flash lights it for two ticks ("weather flash").
 class TWeatherBackground : public TWibWobBackground
@@ -78,6 +115,8 @@ public:
     // start: the tick the file was placed; a file that animates on its own (frame -1) steps every 3 ticks from it.
     struct Ink { StageMark m; int start = 0; std::shared_ptr<pic::Picture> pic; std::vector<std::vector<std::string>> frames; };
     std::map<std::string, Ink> inks;
+    std::vector<uint32_t> underList;   // the under-glyph list of the last drawLayers (kUnderWords per cell)
+    bool underSent = false;        // the page holds a non-empty list
     bool dirty = false;     // a mark changed since the last full redraw (redraw() clears it; a draw for an exposed
                             // region does not, since it may cover only part of the desktop)
     void redraw() { dirty = false; drawView(); }
@@ -194,9 +233,24 @@ public:
             if (l.w <= 0 || l.h <= 0) continue;
             ls.push_back(std::move(l));
         }
+        // Under-glyphs: per column, what the layers left there (0 the desktop, 1 a line-art glyph, 2 a picture cell).
+        const TPoint org = makeGlobal(TPoint {0, 0});
+        underList.clear();
+        std::vector<uint8_t> kind(size.x);
+        std::vector<uint32_t> mark(size.x), markInk(size.x);
+        std::vector<TScreenCell> sky(size.x), before;
+        const uint32_t paperRGB = ((uint32_t) paper.getRed() << 16) | ((uint32_t) paper.getGreen() << 8) | paper.getBlue();
+        TScreenCell patCell {};
+        patCell.character.initWithChar(getPattern());
+        const uint32_t patCp = cellCodepoint(patCell);   // only a cell showing the desktop's own pattern counts (not a raindrop)
+        // Only a shade pattern (░ ▒ ▓) gets under-glyphs: its line-art cells have the blended paper that reads as a
+        // patch. On a plain desktop, or a pattern of another character (noise's %), the paper is the pattern's own.
+        const bool patterned = patCp >= 0x2591 && patCp <= 0x2593;
         for (int y = 0; y < size.y; ++y) {
             pic::Row b;
             skyRow(b, y);
+            std::copy(b.cells(), b.cells() + size.x, sky.begin());
+            std::fill(kind.begin(), kind.end(), 0);
             for (auto& l : ls) {
                 int r = y - l.y0;
                 if (l.k->m.wrapY) r = ((r % l.h) + l.h) % l.h;
@@ -204,7 +258,12 @@ public:
                 int xa = l.x0;
                 if (l.k->m.wrapX) xa = ((l.x0 % l.w) + l.w) % l.w - l.w;
                 for (int x0 = xa; x0 < size.x; x0 += l.w) {
-                    if (l.fr) pic::drawRow(*l.k->pic, *l.fr, r, b.cells(), size.x, x0, l.pal.data());
+                    if (l.fr) {
+                        const int a = std::max(0, x0), e = std::min(size.x, x0 + l.w);
+                        if (a < e) before.assign(b.cells() + a, b.cells() + e);
+                        pic::drawRow(*l.k->pic, *l.fr, r, b.cells(), size.x, x0, l.pal.data());
+                        for (int x = a; x < e; ++x) if (b.cells()[x] != before[x - a]) kind[x] = 2;
+                    }
                     else {
                         const TColorAttr ink(ww::egaRGB(l.k->m.ink), paper);
                         const std::string& s = (*l.art)[r];
@@ -215,20 +274,36 @@ public:
                             std::string gl = s.substr(i, n); i += n;
                             int cw = std::max(1, (int) TText::width(TStringView(gl.c_str(), gl.size())));
                             int X = x0 + col;
-                            if (gl != " " && X >= 0 && X + cw <= size.x) b.moveStr(X, gl.c_str(), ink);
+                            if (gl != " " && X >= 0 && X + cw <= size.x) {
+                                b.moveStr(X, gl.c_str(), ink);
+                                // a wide glyph, or a line over a picture cell, gets no under-glyph
+                                for (int j = 0; j < cw; ++j) kind[X + j] = cw == 1 && kind[X + j] != 2 ? 1 : 2;
+                                if (cw == 1) { mark[X] = cellCodepoint(b.cells()[X]); markInk[X] = gridRGB(ink.getForeground(), true); }
+                            }
                             col += cw;
                         }
                     }
                     if (!l.k->m.wrapX) break;
                 }
             }
+            for (int x = 0; x < size.x; ++x) {
+                if (kind[x] != 1 || !patterned) continue;
+                const uint32_t u = cellCodepoint(sky[x]);
+                if (u != patCp) continue;
+                const TColorAttr sa = sky[x].attribute;
+                underList.insert(underList.end(), {(uint32_t) (org.x + x) | ((uint32_t) (org.y + y) << 16), mark[x], markInk[x], paperRGB,
+                                           u, gridRGB(sa.getForeground(), true), gridRGB(sa.getBackground(), false)});
+            }
             writeLine(0, y, size.x, 1, b);
         }
+        if (!underList.empty() || underSent) wwdos_js_under(underList.data(), (int) (underList.size() / kUnderWords));
+        underSent = !underList.empty();
     }
 
     void draw() override
     {
         auto t0 = std::chrono::steady_clock::now();
+        if (inks.empty() && underSent) { underList.clear(); wwdos_js_under(nullptr, 0); underSent = false; }
         if (!inks.empty()) drawLayers();
         else if (!weather && !lit()) TWibWobBackground::draw();
         else for (int y = 0; y < size.y; ++y) { pic::Row b; skyRow(b, y); writeLine(0, y, size.x, 1, b); }
