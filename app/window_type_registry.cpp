@@ -376,6 +376,7 @@ static const WindowTypeSpec k_specs[] = {
     { "tool",              nullptr,                 tools::isToolWindow     },  // a program a resident wrote
     { "tool_list",         nullptr,                 tools::isToolListWindow },  // the list of those programs
     { "film",              nullptr,                 life::isFilmWindow      },  // a waking replayed from ACTS.TXT
+    { "door",              nullptr,                 life::isDoorWindow      },  // who came in by the door
     { "browser",           spawn_browser,           match_browser           },
     { "verse",             spawn_verse,             match_verse             },
     { "mycelium",          spawn_mycelium,          match_mycelium          },
