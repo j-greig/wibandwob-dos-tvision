@@ -52,9 +52,18 @@ def wait(pred, timeout):
     return None
 
 
+def describe(desk, wid):
+    """describe, read again if a reply comes back empty (a slow moment while a model call starts)."""
+    for _ in range(5):
+        r = desk.ipc("describe", id=wid, timeout=10)
+        if r.startswith("{"):
+            return json.loads(r)
+        time.sleep(1.0)
+    raise AssertionError(f"describe {wid}: no answer (desktop alive: {desk.alive()})")
+
+
 def reply_lines(desk, wid, after):
-    d = desk.j("describe", id=wid)
-    return d["text"][after:]
+    return describe(desk, wid)["text"][after:]
 
 
 def names_a_window(desk, lines):
@@ -76,7 +85,7 @@ def main():
         desk.ipc("scramble_say", text="open a text editor and type hello in it", source="visitor", actor="selftest")
         got = wait(lambda: editors_with(desk, "hello", {"scramble"}), 60)
         check("scramble", bool(got), f"opened an editor and typed hello ({got})")
-        n0 = len(desk.j("describe", id=sid)["text"])
+        n0 = len(describe(desk, sid)["text"])
         time.sleep(3)
         desk.ipc("scramble_say", text="which windows are open?", source="visitor", actor="selftest")
         lines = wait(lambda: [l for l in reply_lines(desk, sid, n0 + 1) if l.startswith("scramble:")], 60) or []
@@ -92,15 +101,23 @@ def main():
             desk.ipc("wibwob_ask", text="open a text editor and type hello in it", source="visitor", actor="selftest")
             got = wait(lambda: set(editors_with(desk, "hello", {"wib", "wob"})) - before, 150)
             check("wibwob", bool(got), f"opened an editor and typed hello as wib or wob ({sorted(got or [])})")
-            n0 = len(desk.j("describe", id=cid)["text"])
+            n0 = len(describe(desk, cid)["text"])
             time.sleep(5)
             desk.ipc("wibwob_ask", text="which windows are open? answer in one line", source="visitor", actor="selftest")
-            lines = wait(lambda: (lambda t: t if t and not desk.j("describe", id=cid)["state"].endswith("arriving") else None)(
+            lines = wait(lambda: (lambda t: t if t and not describe(desk, cid)["state"].endswith("arriving") else None)(
                 reply_lines(desk, cid, n0 + 1)), 150) or []
             check("wibwob", names_a_window(desk, lines), f"named the desktop's windows: {' '.join(lines)[:120]!r}")
+        # The Feed: every resident's acts and the model calls, read back from the window's own text.
+        fid = desk.j("open_feed", x=0, y=26, w=120, h=14, actor="selftest").get("id")
+        time.sleep(1.0)
+        lines = describe(desk, fid)["text"]
+        has = lambda tag: any(f" {tag} " in l[:14] for l in lines)
+        check("feed", has("SCR") and has("VIS") and has("SYS") and (has("WIB") or has("WOB")),
+              f"the feed shows Scramble, the chat (WIB/WOB), the visitor and system lines ({len(lines)} lines)")
+        check("feed", any("model call finished after" in l for l in lines), "model calls appear with their seconds")
     finally:
         desk.stop()
-    for who in ("scramble", "wibwob"):
+    for who in ("scramble", "wibwob", "feed"):
         mine = [ok for w, ok in results if w == who]
         print(f"{who}: {'PASS' if mine and all(mine) else 'FAIL'} ({sum(mine)}/{len(mine)})")
     return 0 if all(ok for _, ok in results) else 1

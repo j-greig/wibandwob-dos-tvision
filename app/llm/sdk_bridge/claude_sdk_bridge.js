@@ -310,8 +310,12 @@ class ClaudeSDKBridge {
             console.error('[BRIDGE] Allowed tools list:', toolList);
 
             // Helper to emit deltas and accumulate full response
+            // Text after a tool call starts on a new line: without it the words before and after the call run together.
+            let afterTool = false;
             const pushDelta = (text) => {
                 if (!text) return;
+                if (afterTool && fullResponse && !fullResponse.endsWith('\n')) text = '\n' + text;
+                afterTool = false;
                 this.sendResponse('CONTENT_DELTA', {
                     sessionId: this.sessionId,
                     content: text,
@@ -346,6 +350,10 @@ class ClaudeSDKBridge {
                     options: queryOptions
                 })) {
                     messageCount++;
+                    const blocks = message.message?.content;
+                    if ((message.type === 'assistant' && Array.isArray(blocks) && blocks.some(b => b.type === 'tool_use')) ||
+                        (message.type === 'stream_event' && message.event?.type === 'content_block_start' &&
+                         message.event?.content_block?.type === 'tool_use')) afterTool = true;
 
                     // Only log complete messages (assistant text, tool calls, results, errors)
                     // Skip noisy stream deltas (content_block_delta, message_delta, start/stop)
