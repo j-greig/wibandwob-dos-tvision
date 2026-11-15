@@ -229,6 +229,27 @@ def test_menu_ids(desk):
     # the same item listed in two submenus (a FIGlet font in two categories) may share its command
     shared = {c: n for c, n in by_cmd.items() if len({x.split(">")[-1].strip() for x in n}) > 1}
     R.check(len(by_cmd) > 20 and not shared, f"no two menu items share a command id ({len(by_cmd)} commands; shared: {shared})")
+    # Within one menu or submenu, no two items share a hotkey letter (the letter after ~ in the menu text).
+    clashes = []
+
+    def hot(items, path):
+        seen = {}
+        for it in items if isinstance(items, list) else []:
+            k = it.get("hotkey")
+            if k:
+                if k in seen:
+                    clashes.append(f"{path or 'menu bar'}: '{k}' on {seen[k]} and {it.get('name')}")
+                seen[k] = it.get("name")
+            if it.get("items"):
+                hot(it["items"], (path + ">" if path else "") + it.get("name", ""))
+    hot(tree.get("menus", []), "")
+    n_hot = 0
+    stack = list(tree.get("menus", []))
+    while stack:
+        it = stack.pop()
+        n_hot += 1 if it.get("hotkey") else 0
+        stack.extend(it.get("items", []) or [])
+    R.check(n_hot > 30 and not clashes, f"no two items in one menu share a hotkey letter ({n_hot} hotkeys; clashes: {clashes})")
     feed = [n for c, n in by_cmd.items() if any("Feed" in x for x in n)]
     R.check(bool(feed), "the Feed has its own menu command")
 
