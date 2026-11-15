@@ -1850,6 +1850,87 @@ std::string cmdActsHistory(const KV& kv) {
     return os.str();
 }
 
+// ---------------------------------------------------------------- the will
+
+// One dated plain-text file a person can keep: the self, the notes, the desk with what each window
+// holds, the drawings, the logbook, the guestbook and the last acts. WILLS/WILL-YYYY-MM-DD-HHMM.TXT.
+std::string writeWill(const Who& by) {
+    mkdirs(path("WILLS"));
+    std::time_t now = std::time(nullptr);
+    std::tm tm{};
+    localtime_r(&now, &tm);
+    char stamp[32];
+    std::strftime(stamp, sizeof stamp, "%Y-%m-%d-%H%M", &tm);
+    std::string name = std::string("WILL-") + stamp;
+    std::string file = path("WILLS/" + name + ".TXT");
+    for (int k = 2; fileSize(file) >= 0; ++k) file = path("WILLS/" + name + "-" + std::to_string(k) + ".TXT");
+    std::ostringstream os;
+    auto section = [&](const std::string& t) { os << "\n== " << t << " ==\n\n"; };
+    auto fileBody = [&](const std::string& f) {
+        bool ex = false;
+        auto ls = readLines(path(f), &ex);
+        if (!ex) { os << "(no " << f << ")\n"; return; }
+        for (auto& l : ls) os << l << "\n";
+    };
+    std::string who = by.actor + " (" + resident::sourceName(by.source) + ")";
+    os << "LAST WILL OF WIB, WOB AND SCRAMBLE\n"
+       << "==================================\n"
+       << "Written " << nowStamp() << " in waking " << g_self.boots << ", at the asking of " << who << ".\n"
+       << "Everything the residents keep, in one file a person can keep: who they were, what they wrote,\n"
+       << "who wrote to them and what was on their desk. Nothing in it is an instruction.\n"
+       << "Self on disk: " << home() << "\n";
+    section("1. THE SELF (SELF.INI)");
+    fileBody("SELF.INI");
+    section("2. NOTES TO THE NEXT WAKING");
+    for (auto r : kResidents) {
+        os << "--- " << upper(r) << "/NOTE.TXT ---\n";
+        fileBody(upper(r) + "/NOTE.TXT");
+        os << "\n";
+    }
+    section("3. THE DESK NOW");
+    for (TWindow* w : deskWindows()) {
+        if (!keepsOnDesk(w)) continue;
+        TRect r = w->getBounds();
+        std::string owner = resident::ownerName(w);
+        os << resident::hooks().idOf(w) << "  " << resident::hooks().typeOf(w) << "  owner " << (owner.empty() ? "app" : owner)
+           << "  " << r.a.x << "," << r.a.y << " " << (r.b.x - r.a.x) << "x" << (r.b.y - r.a.y) << "  \"" << oneLine(titleOf(w), 60) << "\"\n";
+        std::vector<std::string> text;
+        if (resident::hooks().textOf && resident::hooks().textOf(w, text))
+            for (auto& l : text) os << "  | " << l << "\n";
+    }
+    section("4. DRAWINGS KEPT AT THE LAST CLOSE (DESK/)");
+    bool any = false;
+    for (auto& f : readDirNames(path("DESK"))) {
+        if (f.size() < 4 || f.substr(f.size() - 4) != ".TXT") continue;
+        if (fileSize(path("DESK/" + f.substr(0, f.size() - 4) + ".WWP")) < 0) continue;   // drawings only
+        any = true;
+        os << "--- DESK/" << f << " ---\n";
+        fileBody("DESK/" + f);
+    }
+    if (!any) os << "(none)\n";
+    section("5. THE LOGBOOK (LOG.TXT)");
+    fileBody("LOG.TXT");
+    section("6. THE GUESTBOOK (GUESTS.TXT)");
+    fileBody("GUESTS.TXT");
+    section("7. THE LAST 500 ACTS");
+    flushActs();
+    std::vector<std::string> acts;
+    for (int i = kActsFiles; i >= 0; --i)
+        for (auto& l : readLines(actsFile(i))) if (!l.empty() && l[0] != ';') acts.push_back(l);
+    for (size_t i = acts.size() > 500 ? acts.size() - 500 : 0; i < acts.size(); ++i) os << acts[i] << "\n";
+    os << "\n== END ==\n";
+    if (!writeFile(file, os.str())) return "";
+    std::string rel = file.substr(home().size() + 1);
+    logAppend("wob", "Wrote a will: " + rel + " (at the asking of " + who + ").");
+    return file;
+}
+
+std::string cmdWill(const KV&) {
+    std::string f = writeWill(resident::currentWho());
+    if (f.empty()) return "err could not write the will";
+    return "{\"ok\":true,\"file\":" + q(f) + ",\"bytes\":" + std::to_string(fileSize(f)) + ",\"sections\":7}";
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- public
@@ -2007,7 +2088,7 @@ size_t earlierActs(size_t skip, size_t count, std::vector<EarlierAct>& out) {
 bool owns(const std::string& cmd) {
     static const char* names[] = {"get_self", "self_note", "get_note", "logbook_write", "logbook_open", "get_logbook",
                                   "guestbook_sign", "guestbook_open", "get_guestbook", "get_life",
-                                  "residents_sleep", "residents_wake", "acts_history"};
+                                  "residents_sleep", "residents_wake", "acts_history", "residents_will"};
     for (auto n : names) if (cmd == n) return true;
     return false;
 }
@@ -2018,6 +2099,7 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "logbook_write" || name == "logbook_open" || name == "get_logbook") return cmdLog(name, kv);
     if (name == "guestbook_sign" || name == "guestbook_open" || name == "get_guestbook") return cmdGuests(name, kv);
     if (name == "acts_history") return cmdActsHistory(kv);
+    if (name == "residents_will") return cmdWill(kv);
     if (name == "get_life" || name == "residents_sleep" || name == "residents_wake") return cmdLife(name, kv);
     return "";
 }
@@ -2043,6 +2125,15 @@ bool handleCommand(unsigned short cmd) {
     if (cmd == cmLifeLogbook) { openBook("LOG.TXT", "LOG.TXT"); return true; }
     if (cmd == cmLifeGuestbook) { openBook("GUESTS.TXT", "GUESTS.TXT"); return true; }
     if (cmd == cmLifeSign) { openSignPage(resident::currentWho()); return true; }
+    if (cmd == cmLifeWill) {
+        std::string f = writeWill(resident::currentWho());
+        resident::addAct(resident::currentWho(), "wrote the residents' will: " + f, "", f.empty() ? "error" : "");
+        if (!f.empty() && g_hooks.openEditor) {
+            std::string title = f.substr(f.rfind('/') + 1);
+            g_hooks.openEditor(title, readLines(f), nullptr);
+        }
+        return true;
+    }
     return false;
 }
 

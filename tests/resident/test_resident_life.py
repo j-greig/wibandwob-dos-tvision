@@ -637,7 +637,57 @@ def group_fixes():
         d.stop()
 
 
-GROUPS = {"fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- the will
+
+def group_will():
+    print("will: one dated file a person can keep, by command and from the menu")
+    fresh_home()
+    d = desk(WWDOS_RESTORE="1").start()
+    try:
+        boot_done(d)
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Plans", **as_res("wib"))["id"]
+        d.ipc("send_text", id=ed, content="the castle needs a moon", **as_res("wib"))
+        p = d.j("create_window", type="paint", x=60, y=2, w=50, h=18, title="Sketch", **as_res("wob"))["id"]
+        d.ipc("paint_text", id=p, x=2, y=2, text="WOB", fg=15, bg=0, **as_res("wob"))
+        d.j("guestbook_sign", name="eri", text="lovely cat", actor="eri", source="guest")
+        d.j("self_note", text="Ask about the moon.", **as_res("wib"))
+        R.check(d.quit(), "a first waking closes")
+        d.start()
+        boot_done(d)
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        r = d.j("residents_will", actor="eri", source="guest")
+        R.check(r.get("ok") is True and "/WILLS/WILL-" in r["file"] and r["file"].endswith(".TXT"),
+                f"residents_will writes one dated file in WILLS/: {r.get('file')}")
+        w = open(r["file"], encoding="utf-8").read() if r.get("ok") else ""
+        R.check(w.startswith("LAST WILL OF WIB, WOB AND SCRAMBLE") and "at the asking of eri (guest)" in w,
+                "it says whose will it is and who asked for it")
+        R.check(all(f"== {i}." in w for i in range(1, 8)) and w.rstrip().endswith("== END =="), "seven sections and an end")
+        R.check("boots=2" in w and "Ask about the moon." in w, "the self and wib's own note are in it")
+        R.check('"Plans"' in w and "  | the castle needs a moon" in w, "the desk now, with the editor's text")
+        R.check("--- DESK/" in w and "WOB" in w.split("== 4.")[1].split("== 5.")[0], "the drawing kept at the last close")
+        R.check("lovely cat" in w and "eri (guest)" in w and "Woke. Waking 2." in w, "the guestbook and the logbook")
+        R.check('opened text_editor "Plans"' in w.split("== 7.")[1], "and the acts, from disk, across both wakings")
+        R.check(any(e["text"].startswith("Wrote a will: WILLS/WILL-") for e in d.j("get_logbook")["entries"]),
+                "the logbook records the will")
+        d.person_keys("M-t")
+        time.sleep(0.3)
+        d.person_keys("s")
+        time.sleep(0.3)
+        d.person_keys("w")
+        opened = wait(lambda: [x for x in glance(d) if x["title"].startswith("WILL-")])
+        R.check(bool(opened), "Tools > Residents > Write the will writes another and opens it in the editor")
+        wills = sorted(os.listdir(os.path.join(HOME, "WILLS")))
+        R.check(len(wills) == 2 and len(set(wills)) == 2, f"each will is its own file: {wills}")
+        R.check(any(a["what"].startswith("wrote the residents' will") and a["actor"] == "person" for a in d.j("acts")["acts"]),
+                "the menu's will is the person's act")
+    finally:
+        d.stop()
+
+
+GROUPS = {"will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():
