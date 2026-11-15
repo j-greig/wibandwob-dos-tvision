@@ -17,6 +17,7 @@ set(TV_COMMON_SOURCES
     resident_acts.cpp
     desk_mosh.cpp
     resident_life.cpp
+    resident_tool.cpp
     describe.cpp
     resident_hands.cpp
     resident_teach.cpp
@@ -102,6 +103,7 @@ add_executable(wwdos
     micropolis_ascii_view.cpp
     micropolis_tool_palette.cpp
     tvterm_view.cpp
+    terminal_transport.cpp
     figlet_utils.cpp
     figlet_text_view.cpp
     backrooms_tv_view.cpp
@@ -215,6 +217,7 @@ add_executable(command_registry_test EXCLUDE_FROM_ALL
     desk_mosh.cpp
     ega_theme.cpp
     resident_life.cpp
+    resident_tool.cpp
     describe.cpp
     resident_hands.cpp
     resident_teach.cpp
@@ -234,6 +237,7 @@ add_executable(scramble_engine_test EXCLUDE_FROM_ALL
     desk_mosh.cpp
     ega_theme.cpp
     resident_life.cpp
+    resident_tool.cpp
     describe.cpp
     resident_hands.cpp
     resident_teach.cpp

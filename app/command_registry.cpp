@@ -16,6 +16,9 @@ extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 // registry without the sound files still link; there it is null.
 std::string sound_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
                                    bool* handled) __attribute__((weak));
+// Terminal transport (app/terminal_transport.cpp): weak for the same reason.
+std::string terminal_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
+                                      bool* handled) __attribute__((weak));
 
 #include <cstdint>
 #include <sys/stat.h>
@@ -200,6 +203,10 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_terminal", "Open a terminal emulator window (optional x, y, w, h, title; exec=<command> runs it instead of a shell, no prompt or echo; hold=1 keeps the last screen after it exits)", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
+        {"terminal_pause", "Pause what runs in a terminal window: its program and everything it started stop (id=, default the focused terminal, else the only one)", false},
+        {"terminal_resume", "Resume a paused terminal window's program from where it stopped (id=, default as terminal_pause)", false},
+        {"terminal_toggle", "Pause a running terminal window's program, or resume a paused one (id=, default as terminal_pause)", false},
+        {"terminal_state", "A terminal window's program: state running|paused|exited, its name, seconds paused, and whether the window holds the keyboard (id=)", false},
         {"chat_receive", "Display a remote chat message in Scramble (sender + text params)", true},
         {"wibwob_ask", "Send a user message to the Wib&Wob chat window, triggering an AI response (text param)", true},
         {"get_chat_history", "Return Wib&Wob chat history as JSON array of {role, content} messages", false},
@@ -257,6 +264,11 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"get_life", "Whether the residents are awake or asleep, how long the person has been away, the dream and what was tidied, the kaomoji and status line shown", false},
         {"residents_sleep", "Put the residents to sleep now (they also sleep after WWDOS_SLEEP_MS without the person's input)", true},
         {"residents_wake", "Wake the residents (the person's first key or click at the console also wakes them)", true},
+        {"tool_save", "Save a resident's tool: name= (1-8 letters), text= the program in the tools' BASIC; from the resident itself (actor=wib|wob|scramble source=resident); only a tool's author changes it", true},
+        {"tool_run", "Open a tool as a window and run it: name=, optional x y w h", true},
+        {"tool_list", "The residents' tools in TOOLS/: name, author, what it is", false},
+        {"tool_read", "A tool's program text: name=", false},
+        {"resident_own_time", "Time of a resident's own: resident= wib|wob|scramble (default the next in turn), minutes= (60), turns= (6): every WWDOS_OWN_STEP_MS it thinks, draws, writes in the log or does nothing; stop=1 ends it; no args reports", true},
         {"residents_will", "Write the residents' will: one dated plain-text file (WILLS/WILL-YYYY-MM-DD-HHMM.TXT in the self's directory) holding the self, the notes, the desk with each window's text, the drawings, the logbook, the guestbook and the last 500 acts", true},
         {"acts_history", "Acts of earlier wakings read back from ACTS.TXT and its rotations, newest first: skip=, limit= (at most 2000)", false},
         {"get_self", "The residents' self on disk: home directory, this waking's number, the last waking and whether it closed cleanly, the windows at the last close with owners, the boot screen", false},
@@ -340,6 +352,11 @@ static std::string exec_registry_command_inner(
     if (sound_registry_command) {
         bool handled = false;
         std::string r = sound_registry_command(name, kv, &handled);
+        if (handled) return r;
+    }
+    if (terminal_registry_command && name.rfind("terminal_", 0) == 0) {
+        bool handled = false;
+        std::string r = terminal_registry_command(name, kv, &handled);
         if (handled) return r;
     }
     if (name == "cascade") {
