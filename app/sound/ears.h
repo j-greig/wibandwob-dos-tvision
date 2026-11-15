@@ -14,7 +14,8 @@ namespace sound {
 
 struct Heard {
     double startMs = 0, endMs = 0;
-    std::string source;      // "synth" or "tr808"
+    std::string source;      // "synth", "tr808" or "voice"
+    std::string word;        // a sung word (source voice)
     std::string window;      // API id of the window that sounded it
     std::string voice;       // synth: pcspk|fm; tr808: bd, sd, ... ch
     std::string patch;       // synth FM patch, else ""

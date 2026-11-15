@@ -10,6 +10,7 @@
 #include "stream.h"
 #include "tr808_audio.h"
 #include "midi.h"
+#include "voice.h"
 
 #include <algorithm>
 #include <cctype>
@@ -72,6 +73,11 @@ void TTrackerView::play(int pos, int row, bool patternOnly) {
     nextPos_ = std::max(0, std::min((int)song_.order.size() - 1, pos));
     const int pat = patternOnly ? editPat_ : song_.order[nextPos_];
     nextRowIdx_ = std::max(0, std::min(song_.rows(pat) - 1, row));
+    // Render every sung word before the first row, so 'say' never runs while the song plays.
+    for (const auto& pt : song_.pats)
+        for (const auto& line : pt.grid)
+            for (size_t c = 0; c < song_.chans.size(); ++c)
+                if (song_.chans[c].kind == ChanKind::Voice && !line[c].word.empty()) voice::spoken(song_.chans[c].singer, line[c].word);
     startMs_ = nextAt_ = clockMs();
     if (midi::clockOut()) midi::send({0xFA}, nextAt_, "tracker");
     timer_ = setTimer(5, 5);
@@ -95,6 +101,31 @@ void TTrackerView::playRow(int pat, int row, double atMs, double rm) {
     }
     for (const RowSound& r : rowSounds(song_, pat, row, rm)) {
         if (!audible(r.chan)) continue;   // muted, or another channel soloed
+        if (r.sing) {
+            Pcm p = voice::sung(r.singer, r.word, r.note.midi, r.note.durMs);
+            if (!p) continue;
+            const voice::Singer sg = voice::singer(r.singer);
+            if (streamRunning() && synthAudioEnabled())
+                mixer().scheduleSample(p, 0.9 * sg.gain * r.note.vel / 100.0, sampleForClock(atMs) + msToSample(r.atMs));
+            Heard h;
+            h.window = wid;
+            h.channel = r.chan;
+            h.channels = chans;
+            h.cell = r.cell;
+            h.row = row;
+            h.rowAtMs = atMs + leadMs();
+            h.startMs = atMs + leadMs() + r.atMs;
+            h.durMs = (double)p->size() * 1000.0 / kRate;
+            h.endMs = h.startMs + h.durMs;
+            h.source = "voice";
+            h.voice = r.singer;
+            h.word = r.word;
+            h.midi = r.note.midi;
+            h.level = 0.9 * sg.gain;
+            h.who = r.singer;   // the one who sang
+            ears().hear(h);
+            continue;
+        }
         if (r.drum) {
             const uint8_t key = (uint8_t)midi::gmDrum(r.drum_voice);
             midi::send({0x99, key, (uint8_t)std::max(1, (int)std::lround(r.gain * 127))}, atMs + r.atMs, "tracker");
@@ -247,6 +278,7 @@ void TTrackerView::handleEvent(TEvent& ev) {
         }
         case kbBack: case kbDel:
             if (curField_ == 0) cell = TrackCell();
+            else if (curField_ == 1 && chan.kind == ChanKind::Voice) { if (!cell.word.empty()) cell.word.pop_back(); }
             else if (curField_ == 1) cell.instr = -1;
             else { cell.fx = 0; cell.fxv = 0; }
             break;
@@ -281,6 +313,10 @@ void TTrackerView::handleEvent(TEvent& ev) {
                     }
                 }
             }
+        } else if (curField_ == 1 && chan.kind == ChanKind::Voice) {
+            // a voice channel's word: letters, ' and -
+            if ((std::isalpha((unsigned char)ch) || ch == '\'' || ch == '-') && cell.word.size() < 12) cell.word += ch;
+            else handled = false;
         } else if (curField_ == 1) {
             const int d = hexDigit(ch);
             if (d < 0) handled = false;
@@ -359,13 +395,14 @@ void TTrackerView::draw() {
                     if (c) { b.moveStr((ushort)x, " | ", dim); x += 3; }
                     const TrackCell& tc = song_.cell(editPat_, r, (int)c);
                     const std::string t = cellText(song_.chans[c], tc);
-                    const int fs[3] = {0, 4, 7}, fl[3] = {3, 2, 3};
+                    const int tl = (int)t.size();
+                    const int fs[3] = {0, 4, tl - 3}, fl[3] = {3, tl - 8, 3};   // note, instrument or word, effect
                     for (int f = 0; f < 3; ++f) {
                         TColorAttr a = isPlay ? playA : ((tc.empty() || !audible((int)c)) ? dim : base);
                         if (r == curRow_ && (int)c == curChan_ && f == curField_) a = cur;
                         b.moveStr((ushort)(x + fs[f]), t.substr(fs[f], fl[f]), a);
                     }
-                    x += 10;
+                    x += tl;
                 }
             }
         } else if (y == H - 1) {
