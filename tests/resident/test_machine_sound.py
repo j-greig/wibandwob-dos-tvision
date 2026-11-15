@@ -22,7 +22,7 @@ from resident_lib import REPO, Desk, Results  # noqa: E402
 
 R = Results()
 QUIET = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "ANTHROPIC_API_KEY": "", "WWDOS_SYNTH_AUDIO": "0",
-         "WWDOS_SOUND_OUT": "null"}   # the stream runs on the clock and plays nowhere
+         "WWDOS_SOUND_OUT": "null", "WWDOS_MIDI": "null"}   # the stream runs on the clock and plays nowhere
 
 
 def q(desk, cmd, **kv):
@@ -580,7 +580,84 @@ def test_tracker(desk):
     x(desk, "synth", action="audio", on=0)
 
 
-GROUPS = {"tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
+# ---------------------------------------------------------------------------- midi
+
+def test_midi(desk):
+    print("\n[midi] MIDI in plays the synth with real releases; the TR-808 and the tracker send clock and notes out")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    st = x(desk, "midi", action="state")
+    R.check(st["device"] == "null", f"the test desktop's MIDI device is null ({st['device']})")
+    mon = x(desk, "open_midi", x=70, y=1, w=64, h=16)["id"]
+    syn = x(desk, "open_synth", x=2, y=1, w=68, h=18)["id"]
+    x(desk, "synth", id=syn, action="audio", on=1)
+    x(desk, "synth", id=syn, action="patch", value="organ")
+    time.sleep(2.2)
+
+    x(desk, "midi", action="in", data="90 3C 64")
+    time.sleep(0.1)
+    h = x(desk, "hear", seconds=1, of="synth")
+    R.check(any(s["note"] == "C-4" and s["who"] == "person" for s in h["sounding"]), "a MIDI note on plays C-4 on the synth, as the person's")
+    R.check(x(desk, "sound", action="state")["fm_busy"] == 1, "the note holds an FM channel while the key is down")
+    time.sleep(0.3)
+    x(desk, "midi", action="in", data="80 3C 00")
+    time.sleep(0.3)
+    h = x(desk, "hear", seconds=2, of="synth")
+    c4 = [e for e in h["heard"] if e["note"] == "C-4"]
+    R.check(c4 and 360 <= c4[-1]["dur_ms"] <= 460 and h["sounding"] == [],
+            f"the note off ends it: C-4 lasted as long as the key was held ({c4[-1]['dur_ms'] if c4 else None} ms)")
+    R.check(x(desk, "sound", action="state")["fm_busy"] == 0, "the channel is free after the release")
+    x(desk, "midi", action="in", data="90 40 50")
+    time.sleep(0.15)
+    x(desk, "midi", action="in", data="90 40 00")       # velocity 0 is a note off
+    time.sleep(0.2)
+    e4 = [e for e in x(desk, "hear", seconds=1, of="synth")["heard"] if e["note"] == "E-4"]
+    R.check(e4 and e4[-1]["dur_ms"] < 300, f"a note on with velocity 0 lets the key go ({e4[-1]['dur_ms'] if e4 else None} ms)")
+    acts = desk.j("acts", by="person")["acts"]
+    R.check(any(a["what"].startswith("midi note on C-4 v100 ch1") and a["window"] == syn for a in acts), "the log has the person's MIDI note")
+    x(desk, "synth", id=syn, action="audio", on=0)
+
+    # TR-808 out: start, clock ticks 24 a beat on the one clock, drums on channel 10, stop.
+    drm = x(desk, "open_tr808", x=2, y=20, w=118, h=26)["id"]
+    x(desk, "tr808", id=drm, action="load_preset", preset="electro")
+    n0 = x(desk, "midi", action="state")["out"]
+    x(desk, "tr808", id=drm, action="play")
+    time.sleep(1.0)
+    x(desk, "tr808", id=drm, action="stop")
+    st = x(desk, "midi", action="log", n=1000)
+    out = [m for m in st["log"] if m["dir"] == "out" and m["from"] == "tr808"][-(st["out"] - n0):]
+    clocks = [m["ms"] for m in out if m["hex"] == "F8"]
+    gaps = [b - a for a, b in zip(clocks, clocks[1:])]
+    R.check(out and out[0]["hex"] == "FA" and out[-1]["hex"] == "FC", "the drum machine sends start first and stop last")
+    R.check(len(clocks) >= 40 and all(abs(g - 20.833) < 0.01 for g in gaps),
+            f"clock ticks are 24 a beat at 120 bpm, 20.833 ms apart on the clock ({len(clocks)} ticks)")
+    drums = [m for m in out if m["hex"].startswith("99 ")]
+    bd = [m for m in drums if m["hex"].startswith("99 24 ")]
+    heard_bd = [e for e in x(desk, "hear", seconds=3, of="tr808", window=drm)["heard"] if e["voice"] == "bd"]
+    R.check(drums and len(bd) == len(heard_bd) and all(abs(a["ms"] - b["at_ms"]) < 0.01 for a, b in zip(bd, heard_bd)),
+            f"each bass drum goes out as note 36 on channel 10 at the time it sounds ({len(bd)} out, {len(heard_bd)} heard)")
+
+    # Tracker out: a note on channel 1 and its note off one gate later.
+    song = "channels fm:bass drums\n00 C-4 01 G08 | BD- 7F ...\n01 --- .. ... | --- .. ...\n"
+    tid = x(desk, "open_tracker", text=song)["id"]
+    x(desk, "tracker", id=tid, action="loop", on=0)
+    n1 = x(desk, "midi", action="state")["out"]
+    x(desk, "tracker", id=tid, action="play")
+    time.sleep(0.6)
+    st = x(desk, "midi", action="log", n=1000)
+    tout = [m for m in st["log"] if m["dir"] == "out" and m["from"] == "tracker"]
+    on = [m for m in tout if m["hex"] == "90 3C 64"]
+    off = [m for m in tout if m["hex"] == "80 3C 00"]
+    R.check(on and off and abs((off[-1]["ms"] - on[-1]["ms"]) - 62.5) < 0.01,
+            "the tracker sends C-4 on channel 1 and its note off 62.5 ms later (G08 at 120 bpm)")
+    R.check(any(m["hex"] == "99 24 7F" for m in tout) and sum(m["hex"] == "F8" for m in tout) == 12,
+            "and its drum on channel 10, and 6 clock ticks a row")
+    d = desk.j("describe", id=mon)
+    R.check(d["state"].startswith("MIDI monitor, device null,") and any(l.startswith("IN ") for l in d["text"]) and any(l.startswith("OUT") for l in d["text"]),
+            f"the MIDI window says what arrived and what left ({d['state']!r})")
+
+
+GROUPS = {"midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():

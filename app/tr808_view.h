@@ -58,6 +58,7 @@ private:
     size_t presetIdx_ = 0;
     TTimerId timer_ = nullptr;
     std::string startedBy_ = "app";   // who started the pattern (the ears name it)
+    double midiLastMs_ = 0;           // the time after the last MIDI clock tick sent
     std::string startPreset_;         // the preset play() loaded into an empty pattern ("" when none)
 };
 

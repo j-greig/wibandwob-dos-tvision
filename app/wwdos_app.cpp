@@ -3202,6 +3202,7 @@ void TWwdosApp::idle()
     stepSweep();
     deskmosh::tick();
     life::tick();
+    sound::poll();   // MIDI input to the synth (app/sound)
     if (g_quitSignal) {
         life::close(g_quitSignal == SIGTERM ? "SIGTERM" : "SIGHUP");
         g_quitSignal = 0;

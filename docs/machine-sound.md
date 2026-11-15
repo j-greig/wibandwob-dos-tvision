@@ -168,6 +168,34 @@ a sentence and the rows as text.
 tracker's own row grid, printed as the tracker prints it, from the cells the ears heard. A cell that made no sound (a
 note off) is printed `--- .. ...` there.
 
+## MIDI
+
+MIDI in and out through CoreMIDI (`app/sound/midi.cpp`), timestamped on the one clock.
+
+- **In.** Every MIDI source (a keyboard plugged in later too) and a virtual destination named `WibWob-DOS` feed
+  the front synth window (one opens if none is). A note on starts a held note at the key's velocity; the note off
+  (or a note on with velocity 0) lets it go, so the gate is as long as the key was down and the release follows.
+  The keys are the person's: each note on is an act by `person` (`midi note on C-4 v100 ch1 from keyboard`), and
+  the ears hear the note held until it is let go (`dur_ms` is then the time it was held).
+- **Out.** A virtual source named `WibWob-DOS` sends what the TR-808 and the tracker play: start (`FA`), clock
+  (`F8`, 24 a beat), stop (`FC`), the TR-808's hits as General MIDI drums on channel 10 (bd 36, sd 38, lt 41, mt
+  45, ht 48, rs 37, cb 56, cp 39, ma 70, cl 75, cy 49, oh 46, ch 42) with a note off 50 ms later, and the tracker's
+  notes on channel n+1 for its channel n (drums on 10) with the note off one gate later. Every message leaves at
+  its time on the clock plus the stream's lead, so it lines up with the audio.
+
+| `WWDOS_MIDI` | what |
+|---|---|
+| `coremidi` (default on macOS) | the device above |
+| `null` | no device: `midi action=in` stands in for a keyboard, and what would leave is logged (tests) |
+| `off` | nothing in or out |
+
+    exec_command name=midi action=state          # device, sources connected, counts, clock_out
+    exec_command name=midi action=log n=100      # the last messages, in and out: ms, dir, from, hex, text
+    exec_command name=midi action=in data="90 3C 64"    # as if it arrived (plays the synth)
+    exec_command name=midi action=out data="B0 07 64"   # send bytes
+    exec_command name=midi action=clock on=0|1          # clock, start and stop out
+    exec_command name=open_midi                         # the window: what arrives and leaves, clock runs folded
+
 ## Ears
 
 The synth and the TR-808 tell the ears every note and hit as the engine plays it: the window, the voice, the note
@@ -292,17 +320,18 @@ hears as wib or wob with no change; `tui_list_commands` lists `synth`, `open_syn
 
 `app/sound/sound_test` (ctest `sound`) renders to buffers and needs no desktop: synth (17: note names, the PC
 speaker's divisor and pitch measured by zero crossings, one speaker voice, FM level, release and silence, patches,
-nine channels, envelope, WAV), mixer (7: the same samples in blocks of 1, 64 and 4096 and in the offline render, a
+nine channels, envelope, WAV), hold (4: a held note sounds until it is let go, rings through its release, then silence; a key let go before its note starts gives a short note), mixer (7: the same samples in blocks of 1, 64 and 4096 and in the offline render, a
 later call's speaker note replacing the one sounding, ten calls holding nine FM channels, a drum hit on its exact
 sample, late counting, capture), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
 report, window filter, the keep limit), score (14: parsing, kinds, timing, and seven refused scores).
 
-`python3 tests/resident/test_machine_sound.py [tracker] [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
-(`tmux -L soundtest`, `WWDOS_SOUND_OUT=null`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
+`python3 tests/resident/test_machine_sound.py [midi] [tracker] [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
+(`tmux -L soundtest`, `WWDOS_SOUND_OUT=null`, `WWDOS_MIDI=null`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
 the binary.
 
 | group | what it shows |
 |---|---|
+| midi | a note on plays C-4 as the person's and holds an FM channel; the note off ends it after as long as it was held (measured 412 ms for a 400 ms hold) and frees the channel; velocity 0 is a note off; the log has the person's note; the TR-808 sends start first, stop last, clock ticks 20.833 ms apart (24 a beat at 120 bpm) and each bass drum as note 36 on channel 10 at the time the ears say it sounds; the tracker sends C-4 on channel 1 and its note off 62.5 ms later, its drum on 10 and 6 ticks a row; the MIDI window says what arrived and left |
 | tracker | the person's z x c write C-4 D-4 E-4; wib writes drums and a bass cell by command, wob an arpeggio cell with its own keys (note, then `a37` in the effect field); the log names all three; save writes `tracks/<name>.trk` as plain text and open_tracker loads the same rows; a name with `..` is refused; one pass: the ears' `tracker_rows` equal the tracker's rows that sounded, and the stream mixed the 7 notes; with loop on it plays round |
 | drums | a new TR-808 is empty; play loads classic-house, the stream counts the hits it mixed and the ears hear them; a pattern with one step on plays as it is |
 | synth | wib opens the synth (owner wib, a glance sentence); wib's phrase by command, the person's C D E from z x c, Tab to the PC speaker and `]` to octave 5, and wob's key through `resident_key` each play and name their player; nothing reaches the speakers when silent (sent 0); the acts log has all three; `render` of the PC speaker's A-4 is 22050 samples with 439 upward zero crossings, the same twice, and plays nothing |
@@ -318,7 +347,8 @@ On origin/main (before these commits) every group fails at its first sound comma
 - **The lead is fixed at 46 ms.** Every sound asked for now plays 46 ms later. It keeps keyboard playing even and
   never late, but a player hears the delay; a smaller AudioQueue buffer would cut it at the risk of drop-outs, which
   are not counted.
-- **No key releases.** A terminal sends key presses only, so every keyboard note lasts the gate length.
+- **No key releases from the computer keyboard.** A terminal sends key presses only, so a typed note lasts the gate length; a MIDI keyboard gives real releases.
+- **MIDI out goes to the virtual source only.** A DAW or another app listening to `WibWob-DOS` gets it; a hardware synth needs that routed (Audio MIDI Setup). Input ignores everything but notes (no controllers, no pitch bend), and no MIDI clock is followed.
 - **Mac only for sound.** The stream plays through an AudioQueue; elsewhere it runs `null`. The browser build is not
   wired and stays silent.
 - **The ears hear the schedule, the capture hears the mix.** `hear` reports notes and hits as scheduled; only

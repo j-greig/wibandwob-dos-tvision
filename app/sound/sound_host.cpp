@@ -1,5 +1,6 @@
 #include "sound_host.h"
 
+#define Uses_TEventQueue
 #define Uses_TProgram
 #define Uses_TDeskTop
 #include <tvision/tv.h>
@@ -9,6 +10,8 @@
 #include "stream.h"
 #include "score_view.h"
 #include "tracker_view.h"
+#include "midi.h"
+#include "midi_view.h"
 #include "synth_view.h"
 #include "tr808_view.h"
 #include "tr808_audio.h"
@@ -27,9 +30,13 @@
 namespace sound {
 
 static Host g_host;
+static void wakeApp() { TEventQueue::wakeUp(); }
+
 void setHost(const Host& h) {
     g_host = h;
     startStream();
+    midi::setWake(&wakeApp);
+    midi::start();
 }
 const Host& host() { return g_host; }
 
@@ -187,9 +194,34 @@ static std::string openSynth(const KV& kv) {
     return "{\"ok\":true,\"id\":\"" + id + "\"}";
 }
 
+void poll() {
+    auto msgs = midi::takeIn();
+    if (msgs.empty()) return;
+    for (const auto& m : msgs) {
+        if (m.bytes.size() < 3) continue;
+        const int kind = m.bytes[0] & 0xF0;
+        if (kind != 0x90 && kind != 0x80) continue;
+        const bool on = kind == 0x90 && m.bytes[2] > 0;
+        auto* w = frontMost<TSynthWindow>();
+        if (!w) {
+            if (!on) continue;
+            openSynth({});
+            w = frontMost<TSynthWindow>();
+            if (!w) return;
+        }
+        // A MIDI keyboard is the person's hands: its notes are the person's, from the console.
+        resident::WhoScope as(resident::personWho());
+        w->view()->midiNote(m.bytes[1], m.bytes[2], on, "person");
+        if (on)
+            resident::addAct(resident::personWho(), "midi " + midi::describe(m.bytes) + " from " + m.from,
+                             g_host.idOf ? g_host.idOf(w) : "", "");
+    }
+}
+
 bool handles(const std::string& name) {
     return name == "open_synth" || name == "synth" || name == "hear" || name == "open_event_score" ||
-           name == "event_score" || name == "sound" || name == "open_tracker" || name == "tracker";
+           name == "event_score" || name == "sound" || name == "open_tracker" || name == "tracker" ||
+           name == "open_midi" || name == "midi";
 }
 
 // scores/<name>.score: $WWDOS_REPO/scores, ./scores, then the source tree.
@@ -326,6 +358,38 @@ std::string command(const std::string& name, const KV& kv) {
         return streamCommand(kvGet(kv, "action", "state"), kvHas(kv, "ms") ? std::atof(kvGet(kv, "ms").c_str()) : 1000.0);
     if (name == "open_event_score") return openScore(kv);
     if (name == "open_tracker") return openTracker(kv);
+    if (name == "open_midi") {
+        TWindow* w = new TMidiWindow(boundsFrom(kv, 64, 16));
+        const std::string id = g_host.insert ? g_host.insert(w) : "";
+        return "{\"ok\":true,\"id\":\"" + id + "\"}";
+    }
+    if (name == "midi") {
+        const std::string action = kvGet(kv, "action", "state");
+        if (action == "in" || action == "out") {
+            std::vector<uint8_t> b;
+            if (!midi::parseHex(kvGet(kv, "data"), b)) return "err data is hex bytes, as 90 3C 64";
+            if (action == "in") { midi::inject(b, "test"); poll(); }
+            else midi::send(b, clockMs(), currentActor());
+        } else if (action == "clock") {
+            midi::setClockOut(truthy(kvGet(kv, "on", "1")));
+        } else if (action != "state" && action != "log") {
+            return "err action is state|log|in|out|clock";
+        }
+        std::ostringstream o;
+        o << "{\"ok\":true,\"standing\":\"data\",\"device\":\"" << midi::device() << "\",\"sources\":" << midi::sourcesConnected()
+          << ",\"in\":" << midi::inCount() << ",\"out\":" << midi::outCount() << ",\"clock_out\":" << (midi::clockOut() ? "true" : "false");
+        if (action == "log") {
+            o << ",\"log\":[";
+            auto r = midi::recent((size_t)std::max(1, std::min(1024, toInt(kvGet(kv, "n"), 100))));
+            for (size_t i = 0; i < r.size(); ++i)
+                o << (i ? "," : "") << "{\"ms\":" << r[i].ms << ",\"dir\":\"" << (r[i].out ? "out" : "in") << "\",\"from\":\""
+                  << jsonEscape(r[i].from) << "\",\"hex\":\"" << midi::hex(r[i].bytes) << "\",\"text\":\""
+                  << jsonEscape(midi::describe(r[i].bytes)) << "\"}";
+            o << "]";
+        }
+        o << "}";
+        return o.str();
+    }
     if (name == "tracker") {
         const std::string action = kvGet(kv, "action");
         auto* w = findOrFront<TTrackerWindow>(kv);
