@@ -91,32 +91,40 @@ bool parseCell(const TrackChannel& c, const std::string& text, TrackCell& out, s
     if (t.size() > 2 && t[2] != "..." && t[2] != ".") {
         const std::string& f = t[2];
         const char k = (char)std::toupper((unsigned char)f[0]);
-        if (f.size() != 3 || (k != 'A' && k != 'V' && k != 'G') || hexv(f[1]) < 0 || hexv(f[2]) < 0) {
-            err = "effect is A, V or G and two hex digits: " + f;
+        if (f.size() != 3 || (k != 'A' && k != 'V' && k != 'G' && k != 'F') || hexv(f[1]) < 0 || hexv(f[2]) < 0) {
+            err = "effect is A, V, G or F and two hex digits: " + f;
             return false;
         }
         cell.fx = k;
         cell.fxv = hexv(f[1]) * 16 + hexv(f[2]);
+        if (k == 'F' && cell.fxv == 0) { err = "F00 is not a speed or a tempo"; return false; }
     }
     out = cell;
     return true;
 }
 
-std::string rowText(const Song& s, int row) {
+std::string rowText(const Song& s, int pat, int row) {
     char head[8];
     std::snprintf(head, sizeof(head), "%02d ", row);
     std::string out = head;
     for (size_t c = 0; c < s.chans.size(); ++c) {
         if (c) out += " | ";
-        out += cellText(s.chans[c], s.grid[row][c]);
+        out += cellText(s.chans[c], s.cell(pat, row, (int)c));
     }
     return out;
+}
+
+TrackPattern emptyPattern(const Song& s, int rows) {
+    TrackPattern p;
+    p.grid.assign((size_t)std::max(1, std::min(128, rows)), std::vector<TrackCell>(s.chans.size()));
+    return p;
 }
 
 Song newSong(int rows, const std::vector<TrackChannel>& chans) {
     Song s;
     s.chans = chans;
-    s.grid.assign((size_t)std::max(1, std::min(128, rows)), std::vector<TrackCell>(chans.size()));
+    s.pats.push_back(emptyPattern(s, rows));
+    s.order = {0};
     return s;
 }
 
@@ -128,25 +136,31 @@ std::string songText(const Song& s) {
       << "rpb " << s.rpb << "\n"
       << "channels";
     for (const auto& c : s.chans) o << " " << chanName(c);
+    o << "\norder";
+    for (int p : s.order) o << " " << p;
     o << "\n";
-    for (int r = 0; r < s.rows(); ++r) o << rowText(s, r) << "\n";
+    for (size_t p = 0; p < s.pats.size(); ++p) {
+        o << "pattern " << p << "\n";
+        for (int r = 0; r < s.pats[p].rows(); ++r) o << rowText(s, (int)p, r) << "\n";
+    }
     return o.str();
 }
 
 bool parseSong(const std::string& text, Song& out, std::string& err) {
     Song s;
-    s.chans.clear();
     std::istringstream is(text);
     std::string line;
     int n = 0;
     bool haveChans = false;
+    int cur = -1;                    // the pattern rows go to
+    std::vector<int> order;
     auto fail = [&](const std::string& why) { err = "line " + std::to_string(n) + ": " + why; return false; };
     while (std::getline(is, line)) {
         ++n;
-        if (n > 300) return fail("a song has at most 300 lines");
-        size_t a = line.find_first_not_of(" \t\r");
-        if (a == std::string::npos || line[a] == '#') continue;
-        line = line.substr(a);
+        if (n > 4000) return fail("a song has at most 4000 lines");
+        size_t a0 = line.find_first_not_of(" \t\r");
+        if (a0 == std::string::npos || line[a0] == '#') continue;
+        line = line.substr(a0);
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         std::istringstream ls(line);
         std::string k;
@@ -154,8 +168,8 @@ bool parseSong(const std::string& text, Song& out, std::string& err) {
         if (k == "title") {
             std::string rest;
             std::getline(ls, rest);
-            size_t b = rest.find_first_not_of(' ');
-            s.title = b == std::string::npos ? "untitled" : rest.substr(b, 60);
+            size_t b0 = rest.find_first_not_of(' ');
+            s.title = b0 == std::string::npos ? "untitled" : rest.substr(b0, 60);
         } else if (k == "tempo") {
             if (!(ls >> s.tempo) || s.tempo < 30 || s.tempo > 300) return fail("tempo is 30 to 300");
         } else if (k == "rpb") {
@@ -168,9 +182,23 @@ bool parseSong(const std::string& text, Song& out, std::string& err) {
             }
             if (s.chans.empty() || s.chans.size() > 12) return fail("1 to 12 channels");
             haveChans = true;
+        } else if (k == "order") {
+            order.clear();
+            for (std::string w; ls >> w;) {
+                if (w.empty() || !std::isdigit((unsigned char)w[0])) return fail("order is pattern numbers: " + w);
+                order.push_back(std::atoi(w.c_str()));
+            }
+            if (order.empty() || order.size() > 256) return fail("order holds 1 to 256 pattern numbers");
+        } else if (k == "pattern") {
+            int p = -1;
+            if (!(ls >> p) || p != (int)s.pats.size()) return fail("patterns are numbered in order from 0: pattern " + std::to_string(s.pats.size()));
+            if (s.pats.size() >= 64) return fail("at most 64 patterns");
+            s.pats.push_back(TrackPattern());
+            cur = p;
         } else if (std::isdigit((unsigned char)k[0])) {
             if (!haveChans) return fail("a row comes after the channels line");
-            if (s.rows() >= 128) return fail("at most 128 rows");
+            if (cur < 0) { s.pats.push_back(TrackPattern()); cur = 0; }   // the first format: rows, no pattern line
+            if (s.pats[cur].rows() >= 128) return fail("a pattern has at most 128 rows");
             std::string rest;
             std::getline(ls, rest);
             std::vector<std::string> cells;
@@ -188,27 +216,46 @@ bool parseSong(const std::string& text, Song& out, std::string& err) {
                 std::string e;
                 if (!parseCell(s.chans[c], cells[c], row[c], e)) return fail(e);
             }
-            s.grid.push_back(row);
+            s.pats[cur].grid.push_back(row);
         } else {
-            return fail("unknown line (title, tempo, rpb, channels, or a row starting with its number)");
+            return fail("unknown line (title, tempo, rpb, channels, order, pattern, or a row starting with its number)");
         }
     }
-    if (!haveChans) { n = 0; return fail("a song needs a channels line"); }
-    if (s.grid.empty()) { n = 0; return fail("a song needs at least one row"); }
+    n = 0;
+    if (!haveChans) return fail("a song needs a channels line");
+    if (s.pats.empty()) return fail("a song needs at least one row");
+    for (size_t p = 0; p < s.pats.size(); ++p)
+        if (s.pats[p].rows() == 0) return fail("pattern " + std::to_string(p) + " has no rows");
+    if (order.empty()) for (size_t p = 0; p < s.pats.size(); ++p) order.push_back((int)p);
+    for (int p : order) if (p < 0 || p >= (int)s.pats.size()) return fail("order names pattern " + std::to_string(p) + ", which is not in the song");
+    s.order = order;
     out = s;
     err.clear();
     return true;
 }
 
-double rowMs(const Song& s) { return 60000.0 / (s.tempo * s.rpb); }
+int speedOf(int rpb) { return std::max(1, 24 / std::max(1, rpb)); }
+double rowMs(int tempo, int speed) { return 60000.0 / tempo * speed / 24.0; }
+double rowMs(const Song& s) { return rowMs(s.tempo, speedOf(s.rpb)); }
 
-std::vector<RowSound> rowSounds(const Song& s, int row) {
+RowFx rowEffects(const Song& s, int pat, int row) {
+    RowFx fx;
+    if (row < 0 || row >= s.rows(pat)) return fx;
+    for (size_t c = 0; c < s.chans.size(); ++c) {
+        const TrackCell& cell = s.cell(pat, row, (int)c);
+        if (cell.fx != 'F') continue;
+        if (cell.fxv < 0x20) fx.speed = cell.fxv;
+        else fx.tempo = std::min(300, cell.fxv);
+    }
+    return fx;
+}
+
+std::vector<RowSound> rowSounds(const Song& s, int pat, int row, double rm) {
     std::vector<RowSound> out;
-    if (row < 0 || row >= s.rows()) return out;
-    const double rm = rowMs(s);
+    if (row < 0 || row >= s.rows(pat)) return out;
     for (size_t c = 0; c < s.chans.size(); ++c) {
         const TrackChannel& ch = s.chans[c];
-        const TrackCell& cell = s.grid[row][c];
+        const TrackCell& cell = s.cell(pat, row, (int)c);
         if (cell.note < 0) continue;
         const std::string text = cellText(ch, cell);
         if (ch.kind == ChanKind::Drums) {
@@ -223,12 +270,13 @@ std::vector<RowSound> rowSounds(const Song& s, int row) {
             out.push_back(r);
             continue;
         }
-        // Gate: G in sixteenths of a row; else until the next note or note off in the channel (at most 16 rows).
+        // Gate: G in sixteenths of a row; else until the next note or note off in the channel's
+        // pattern (at most 16 rows).
         double gate;
         if (cell.fx == 'G') gate = std::max(1, cell.fxv) * rm / 16.0;
         else {
             int k = 1;
-            while (k < 16 && row + k < s.rows() && s.grid[row + k][c].note == -1) ++k;
+            while (k < 16 && row + k < s.rows(pat) && s.cell(pat, row + k, (int)c).note == -1) ++k;
             gate = k * rm * 0.95;
         }
         Note n;
@@ -237,7 +285,6 @@ std::vector<RowSound> rowSounds(const Song& s, int row) {
         n.vel = cell.fx == 'V' ? std::max(1, std::min(127, cell.fxv)) : 100;
         n.patch = fmPatches()[cell.instr >= 1 && cell.instr <= (int)fmPatches().size() ? cell.instr - 1 : ch.patch];
         if (cell.fx == 'A') {
-            // Arpeggio: the row split in three, the note, then up x semitones, then up y.
             const int offs[3] = {0, cell.fxv >> 4, cell.fxv & 0xF};
             for (int k = 0; k < 3; ++k) {
                 RowSound r;

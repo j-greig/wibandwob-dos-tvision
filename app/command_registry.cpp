@@ -17,6 +17,9 @@ extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 // registry without the sound files still link; there it is null.
 std::string sound_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
                                    bool* handled) __attribute__((weak));
+// Terminal transport (app/terminal_transport.cpp): weak for the same reason.
+std::string terminal_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
+                                      bool* handled) __attribute__((weak));
 
 #include <cstdint>
 #include <sys/stat.h>
@@ -188,6 +191,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"tracker", "Write and play the tracker (action=set row ch cell='C-4 01 A37'|write ch row notes='C-2 . E-2 ===' step instr fx|clear row ch|all=1|play row|stop|loop on|tempo value|rows value|cursor row ch field octave|text|load track=|text=|save track=|state; optional id). Effects: Axy arpeggio, Vxx velocity, Gxx gate in sixteenths of a row", false},
         {"open_midi", "Open the MIDI window: what arrives and what leaves (optional x, y, w, h)", false},
         {"midi", "MIDI (action=state|log n=|in data='90 3C 64' (as if it arrived: plays the synth)|out data=|clock on=0|1). The TR-808 and the tracker send clock and notes out; input plays the synth with real key releases", false},
+        {"jam", "Residents jam: action=start as=wib|wob|scramble mode=answer|echo|invert wait_ms= model=auto|off: the resident answers the person's last synth phrase when they stop for wait_ms (by rule, or a confined model call chooses the notes when one is present); stop; state lists the answers", false},
         {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
         {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
@@ -200,6 +204,15 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_terminal", "Open a terminal emulator window (optional x, y, w, h, title; exec=<command> runs it instead of a shell, no prompt or echo; hold=1 keeps the last screen after it exits)", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
+        {"terminal_pause", "Pause what runs in a terminal window: its program and everything it started stop (id=, default the focused terminal, else the only one)", false},
+        {"terminal_resume", "Resume a paused terminal window's program from where it stopped (id=, default as terminal_pause)", false},
+        {"terminal_toggle", "Pause a running terminal window's program, or resume a paused one (id=, default as terminal_pause)", false},
+        {"terminal_state", "A terminal window's program: state running|paused|exited, its name, seconds paused, and keyboard grab|focus|none (grab: the window holds the keyboard) (id=)", false},
+        {"terminal_record", "Record a terminal window's output as an asciinema v2 cast: action=start file=<path.cast>, action=stop, action=state (id=)", false},
+        {"open_cast", "Open a cast player window for an asciinema v2 file (file=, optional x, y, speed=, loop=1, paused=1); no child process runs", false},
+        {"cast_control", "Drive a cast player window: action=play|pause|toggle, seek=<seconds>, speed=<0.25-8>, loop=0|1 (id=, default the focused player)", false},
+        {"cast_state", "A cast player window's file, size, duration, position, playing, speed and loop (id=)", false},
+        {"terminal_release", "Give the keyboard back from a terminal window that holds it (Window > Grab Keyboard); the person's chord is Alt-End (id=)", false},
         {"chat_receive", "Display a remote chat message in Scramble (sender + text params)", true},
         {"wibwob_ask", "Send a user message to the Wib&Wob chat window, triggering an AI response (text param)", true},
         {"get_chat_history", "Return Wib&Wob chat history as JSON array of {role, content} messages", false},
@@ -217,17 +230,18 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"look_glance", "Every window, one line each: id, type, title, rect, z, owner, whether the person can see it (seen all|part|none), one sentence of state; reader= adds what changed since that reader last looked. Changes nothing", false},
         {"look_read", "One window's text (id=): the model's text for editor, terminal, chat and paint windows, else its cells as drawn; from=, limit= page the lines. Marks the window's frame for the person (reader=). Changes nothing else", false},
         {"look_study", "A rectangle of cells (x, y, w, h in desktop cells; screen=1 for screen rows; id= for a window's own picture) with text, colour runs [x,n,fg,bg] and a ruler of column numbers. Changes nothing", false},
-        {"mosh", "Desk mosh in words (args=): on [way], off, panic, way wrap|tear|mosh|bleed|raw|all, amount 0-100, tempo BPM (0 = manual), seed N, count N, scope desktop|window ID, step HITS; no args = status", false},
+        {"mosh", "Desk mosh in words (args=): on [way], off, panic, way wrap|tear|mosh|bleed|raw|all, amount 0-100, tempo BPM (0 = manual), seed N, count N, scope desktop|window ID, step HITS, score PATH, screen on|off; no args = status", false},
         {"mosh_on", "Desk mosh on: real windows break into shards in time with the TR-808 or the internal tempo (optional way=)", false},
         {"mosh_off", "Desk mosh off: every shard closes and the desktop is as it was", false},
         {"mosh_panic", "Desk mosh off at once", false},
-        {"mosh_way", "Desk mosh way: wrap, tear, mosh, bleed, raw or all (way=)", false},
+        {"mosh_way", "Desk mosh way: wrap, tear, mosh, bleed, raw, all (two bars each) or sound (bass notes wrap, other notes tear, drums mosh, quiet bleeds) (way=)", false},
         {"mosh_amount", "Desk mosh amount 0-100 (value=)", false},
         {"mosh_tempo", "Desk mosh internal tempo in BPM, 0 = steps only from the TR-808 or mosh_step (bpm=)", false},
         {"mosh_seed", "Desk mosh seed (n=): same seed and steps give the same frames", false},
         {"mosh_count", "Desk mosh: most shard windows at once (value=, default 240)", false},
         {"mosh_scope", "Desk mosh scope: desktop, or window with id= (one window moshes, the rest stay clean)", false},
         {"mosh_step", "Desk mosh: run steps now (hits=kick,snare,tick,rat,metal,accent; n=)", false},
+        {"mosh_score", "Desk mosh score: path= a file of parts (bars N WAY [amount A] [tempo BPM], end|loop), text= the same inline, or path=off; scores/catmosh.mosh is the film's five parts", false},
         {"mosh_screen", "Desk mosh screen layer on|off (value=): a filter over the desktop rows for colour runs and decay across window edges; the windows layer is mosh_on", false},
         {"mosh_status", "Desk mosh settings, shard count and step timings", false},
         {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
@@ -258,6 +272,14 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"get_life", "Whether the residents are awake or asleep, how long the person has been away, the dream and what was tidied, the kaomoji and status line shown", false},
         {"residents_sleep", "Put the residents to sleep now (they also sleep after WWDOS_SLEEP_MS without the person's input)", true},
         {"residents_wake", "Wake the residents (the person's first key or click at the console also wakes them)", true},
+        {"film_open", "Play a waking back from ACTS.TXT as a film of the desktop inside a window of its own (it opens no windows and sends no commands): waking= (default the last), speed=", false},
+        {"film_seek", "Scrub a film window: id=, ms= the film time, play=0|1, speed=", false},
+        {"film_export", "Write a waking's film as an asciinema v2 cast, FILMS/WAKING-N.cast: waking=, w= h= its size in characters (100x32)", false},
+        {"tool_save", "Save a resident's tool: name= (1-8 letters), text= the program in the tools' BASIC; from the resident itself (actor=wib|wob|scramble source=resident); only a tool's author changes it", true},
+        {"tool_run", "Open a tool as a window and run it: name=, optional x y w h", true},
+        {"tool_list", "The residents' tools in TOOLS/: name, author, what it is", false},
+        {"tool_read", "A tool's program text: name=", false},
+        {"resident_own_time", "Time of a resident's own: resident= wib|wob|scramble (default the next in turn), minutes= (60), turns= (6): every WWDOS_OWN_STEP_MS it thinks, draws, writes in the log or does nothing; stop=1 ends it; no args reports", true},
         {"residents_will", "Write the residents' will: one dated plain-text file (WILLS/WILL-YYYY-MM-DD-HHMM.TXT in the self's directory) holding the self, the notes, the desk with each window's text, the drawings, the logbook, the guestbook and the last 500 acts", true},
         {"acts_history", "Acts of earlier wakings read back from ACTS.TXT and its rotations, newest first: skip=, limit= (at most 2000)", false},
         {"get_self", "The residents' self on disk: home directory, this waking's number, the last waking and whether it closed cleanly, the windows at the last close with owners, the boot screen", false},
@@ -341,6 +363,11 @@ static std::string exec_registry_command_inner(
     if (sound_registry_command) {
         bool handled = false;
         std::string r = sound_registry_command(name, kv, &handled);
+        if (handled) return r;
+    }
+    if (terminal_registry_command && (name.rfind("terminal_", 0) == 0 || name.rfind("cast_", 0) == 0 || name == "open_cast")) {
+        bool handled = false;
+        std::string r = terminal_registry_command(name, kv, &handled);
         if (handled) return r;
     }
     if (name == "cascade") {

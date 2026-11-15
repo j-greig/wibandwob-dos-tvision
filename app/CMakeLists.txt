@@ -17,6 +17,7 @@ set(TV_COMMON_SOURCES
     resident_acts.cpp
     desk_mosh.cpp
     resident_life.cpp
+    resident_tool.cpp
     describe.cpp
     resident_hands.cpp
     resident_teach.cpp
@@ -67,6 +68,8 @@ add_executable(wwdos
     sound/tracker_view.cpp
     sound/midi.cpp
     sound/midi_view.cpp
+    sound/jam.cpp
+    sound/jam_rule.cpp
     rogue_view.cpp
     deep_signal_view.cpp
     app_launcher_view.cpp
@@ -101,6 +104,9 @@ add_executable(wwdos
     micropolis_ascii_view.cpp
     micropolis_tool_palette.cpp
     tvterm_view.cpp
+    terminal_transport.cpp
+    cast_record.cpp
+    cast_player.cpp
     figlet_utils.cpp
     figlet_text_view.cpp
     backrooms_tv_view.cpp
@@ -201,7 +207,7 @@ add_executable(tr808_engine_test tr808_engine_test.cpp tr808_engine.cpp)
 add_test(NAME tr808_engine COMMAND tr808_engine_test)
 
 # sound_test (the machine's synth, ears and scores rendered to buffers; no tvision)
-add_executable(sound_test sound/sound_test.cpp sound/synth.cpp sound/mixer.cpp sound/ears.cpp sound/score.cpp sound/tracker.cpp)
+add_executable(sound_test sound/sound_test.cpp sound/synth.cpp sound/mixer.cpp sound/ears.cpp sound/score.cpp sound/tracker.cpp sound/jam_rule.cpp)
 add_test(NAME sound COMMAND sound_test)
 
 # command_registry_test (native ctest coverage for registry capability payload)
@@ -214,6 +220,7 @@ add_executable(command_registry_test EXCLUDE_FROM_ALL
     desk_mosh.cpp
     ega_theme.cpp
     resident_life.cpp
+    resident_tool.cpp
     describe.cpp
     resident_hands.cpp
     resident_teach.cpp
@@ -234,6 +241,7 @@ add_executable(scramble_engine_test EXCLUDE_FROM_ALL
     desk_mosh.cpp
     ega_theme.cpp
     resident_life.cpp
+    resident_tool.cpp
     describe.cpp
     resident_hands.cpp
     resident_teach.cpp

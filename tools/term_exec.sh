@@ -13,6 +13,7 @@ cmd=$WWDOS_TERM_EXEC
 hold=$WWDOS_TERM_HOLD
 # The window kills this process group when it closes; it finds us by this file.
 [ -n "$WWDOS_TERM_PIDFILE" ] && echo $$ > "$WWDOS_TERM_PIDFILE"
+pidfile=$WWDOS_TERM_PIDFILE
 SHELL=${WWDOS_TERM_SHELL:-/bin/zsh}
 export SHELL
 unset WWDOS_TERM_EXEC WWDOS_TERM_HOLD WWDOS_TERM_SHELL WWDOS_TERM_PIDFILE
@@ -21,6 +22,8 @@ printf '\033[?25l'
 run='$SIG{$_}="DEFAULT" for qw(HUP INT TERM QUIT PIPE); exec "/bin/sh", "-c", $ARGV[0] or exit 127'
 if [ "$hold" = 1 ]; then
   perl -e "$run" "$cmd"
+  # The window reads <pidfile>.exit to report the program as exited while it holds the screen.
+  [ -n "$pidfile" ] && echo $? > "$pidfile.exit"
   printf '\033[?25l'
   exec perl -e '$SIG{$_}="DEFAULT" for qw(HUP INT TERM QUIT); sleep'
 fi

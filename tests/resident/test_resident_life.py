@@ -35,11 +35,11 @@ def no_model_env():
     return {"PATH": path, "ANTHROPIC_API_KEY": ""}
 
 
-def desk(**env):
+def desk(name=None, **env):
     base = {"WWDOS_HOME": HOME, "WWDOS_BOOT": "1", "WWDOS_BOOT_MS": "10", "WWDOS_BOOT_HOLD_MS": "0",
             "WWDOS_SLEEP_MS": "0", **no_model_env()}
     base.update({k: str(v) for k, v in env.items()})
-    return Desk(NAME, env=base)
+    return Desk(name or NAME, env=base)
 
 
 def fresh_home():
@@ -469,7 +469,7 @@ def group_acts():
     try:
         ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Alpha", **as_res("wib"))["id"]
         d.j("move_window", id=ed, x=6, y=4, actor="v1", source="visitor")
-        time.sleep(1.0)
+        time.sleep(5.0)   # acts are written once they are 4 s old
         txt = read("ACTS.TXT") or ""
         R.check(txt.startswith("; WIBWOB-DOS acts log.") and "\twib\tresident\t" + ed + "\topened text_editor \"Alpha\"" in txt,
                 "acts reach ACTS.TXT while the desk runs, one tab-separated line each")
@@ -687,7 +687,234 @@ def group_will():
         d.stop()
 
 
-GROUPS = {"will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- time of its own
+
+def group_own():
+    print("own: a resident is given time with no request in it; what it did is in the log and the Feed")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0", WWDOS_OWN_STEP_MS="200", WWDOS_OWN_TURNS="4").start()
+    try:
+        d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Alpha", **as_res("wib"))
+        R.check(d.j("resident_own_time")["own"]["on"] is False, "no resident has time of its own at start")
+        console_menu(d, "t")
+        own = wait(lambda: of_type(d, "own_time"))
+        R.check(bool(own) and own[0]["owner"] == "wib" and own[0]["title"] == "WIB'S OWN TIME",
+                "Tools > Residents > Time of their own gives Wib a window of its own")
+        R.check(wait(lambda: d.j("get_life")["own"]["on"] is False and d.j("get_life")["own"]["turns"] == 4, timeout=8),
+                "it takes its four turns and stops: the budget of turns is spent")
+        o = d.j("get_life")["own"]
+        R.check((o["thought"], o["drew"], o["logged"], o["nothing"]) == (1, 1, 1, 1),
+                f"by rule it thought, drew, wrote in the log and did nothing once each: {o}")
+        st = of_type(d, "own_time")[0]["state"]
+        R.check(st.startswith("time of Wib's own: 4 turns taken, ended (the budget of turns is spent)"), f"look_glance says what it is: {st!r}")
+        lines = d.j("look_read", id=own[0]["id"])["lines"]
+        R.check(any(l.startswith("drew:") for l in lines) and any('thought: about "Alpha"' in l for l in lines),
+                "the window shows the drawing and the thought, made from the desk")
+        log = [e for e in d.j("get_logbook")["entries"] if e["author"] == "WIB"]
+        texts = [e["text"] for e in log]
+        R.check(any(x.startswith("Given time of my own by person (console)") for x in texts)
+                and any(x.startswith("Time of my own: ") for x in texts)
+                and any(x.startswith("Time of my own ended (the budget of turns is spent): 1 thoughts, 1 drawings, 1 log lines, 1 times nothing.") for x in texts),
+                "the logbook has the start, its own line and the end with what it did")
+        feed = d.j("create_window", type="feed", x=60, y=2, w=90, h=30)["id"]
+        time.sleep(0.4)
+        fl = d.j("look_read", id=feed)["lines"]
+        R.check(sum(1 for l in fl if "own time:" in l) >= 6, "the Feed shows each turn as wib's act")
+        R.check(d.ipc("resident_own_time", resident="eri").startswith("err"), "only Wib, Wob or Scramble get time of their own")
+    finally:
+        d.stop()
+
+    print("own: the sleep clock gives time of its own, and a visitor's key ends it")
+    fresh_home()
+    d = desk(NAME + "b", WWDOS_BOOT="0", WWDOS_SLEEP_MS="1200", WWDOS_OWN_AFTER_MS="400", WWDOS_OWN_STEP_MS="300",
+             WWDOS_OWN_TURNS="20", WWDOS_DREAM_MS="60000", WWDOS_TIDY_MS="60000").start()
+    try:
+        o = wait(lambda: (d.j("get_life").get("own") or {}).get("on") and d.j("get_life").get("own"), timeout=6)
+        R.check(bool(o) and o["from_sleep"] is True and o["resident"] == "wib", f"asleep, the sleep clock gives wib time of its own ({o})")
+        time.sleep(0.8)
+        d.person_text("q")
+        R.check(wait(lambda: d.j("get_life")["own"]["ended"] == "a visitor woke us"), "a visitor's key ends it")
+        R.check(d.j("get_life")["own"]["turns"] >= 1, "after at least one turn")
+    finally:
+        d.stop()
+
+    print("own: with a mind, the resident chooses its turns through the confined call")
+    fresh_home()
+    if os.path.exists(MIND_LOG):
+        os.remove(MIND_LOG)
+    d = desk(NAME + "c", WWDOS_BOOT="0", WWDOS_MIND_CMD=FAKE, FAKE_MIND_LOG=MIND_LOG, WWDOS_OWN_STEP_MS="200").start()
+    try:
+        r = d.j("resident_own_time", resident="wob", minutes=5, turns=4, actor="op", source="visitor")
+        R.check(r.get("ok") is True and r["own"]["resident"] == "wob", "a socket caller gives wob time of its own")
+        R.check(wait(lambda: d.j("get_life")["own"]["on"] is False, timeout=10), "wob takes its turns")
+        o = d.j("get_life")["own"]
+        R.check((o["thought"], o["drew"], o["logged"], o["nothing"]) == (1, 1, 1, 1), f"the mind chose each kind once: {o}")
+        wob = [a["what"] for a in d.j("acts", by="wob")["acts"] if a["what"].startswith("own time:")]
+        R.check(any(w.endswith("(mind)") for w in wob) and any("drew 3 lines (mind)" in w for w in wob), f"the acts say the mind chose: {wob}")
+        R.check(any(e["author"] == "WOB" and e["text"] == "a line I wrote in my own time" for e in d.j("get_logbook")["entries"]),
+                "its LOG line is in the logbook")
+        calls = [c for c in mind_calls() if "time of your own" in c["argv"][-1]]
+        R.check(len(calls) == 4 and all(confined(c["argv"]) for c in calls), f"four calls, each confined ({len(calls)})")
+    finally:
+        d.stop()
+
+
+# ---------------------------------------------------------------- tools in a language of their own
+
+def group_tools():
+    print("tools: residents write small programs in a BASIC of the app's own, and they become windows")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0").start()
+    try:
+        tl = {t["name"]: t for t in d.j("tool_list")["tools"]}
+        R.check(tl.get("CLOCK", {}).get("author") == "wob" and tl.get("ETCH", {}).get("author") == "wib",
+                f"two worked tools are in TOOLS/, CLOCK.BAS by wob and ETCH.BAS by wib: {list(tl)}")
+        R.check((read("TOOLS/CLOCK.BAS") or "").startswith("REM AUTHOR: wob (resident, seeded with the app)"),
+                "a tool is plain text with its author in the first line")
+        r = d.j("tool_run", name="clock", x=2, y=2, w=30, h=7, **as_res("wob"))
+        time.sleep(0.8)
+        clk = [w for w in glance(d) if w["id"] == r["id"]][0]
+        R.check(clk["type"] == "tool" and clk["owner"] == "wob" and clk["state"].startswith("tool CLOCK.BAS by wob, running"),
+                f"CLOCK opens as a tool window: {clk['state']!r}")
+        import re
+        lines = d.j("look_read", id=r["id"])["lines"]
+        R.check(any(re.search(r"\d\d:\d\d:\d\d", l) for l in lines) and any("." in l or "#" in l for l in lines),
+                f"it shows the time and the seconds bar: {lines}")
+        e = d.j("tool_run", name="ETCH", x=40, y=2, w=24, h=9, **as_res("wib"))
+        q = d.j("resident_key", id=e["id"], keys="Right Right Right Down Down", **as_res("wib"))
+        d.wait_seqs(q["first"], q["last"])
+        time.sleep(0.2)
+        lines = d.j("look_read", id=e["id"])["lines"]
+        R.check(sum(l.count("*") for l in lines) == 5 and sum(l.count("@") for l in lines) == 1,
+                f"ETCH draws a trail with the arrow keys: {lines}")
+        q = d.j("resident_key", id=e["id"], text="c", **as_res("wib"))
+        d.wait_seqs(q["first"], q["last"])
+        time.sleep(0.2)
+        R.check(sum(l.count("*") for l in d.j("look_read", id=e["id"])["lines"]) == 0, "and c clears it")
+
+        prog = 'REM says hello\nON START\n  AT 0, 0 PRINT "HELLO " + STR$(2 + 3)\n  CALL "logbook_write", "text=from-a-tool"\nEND\n'
+        s = d.j("tool_save", name="hello", text=prog, **as_res("wib"))
+        R.check(s.get("ok") is True and (read("TOOLS/HELLO.BAS") or "").startswith("REM AUTHOR: wib (resident)"),
+                "wib saves a tool of its own, signed")
+        h = d.j("tool_run", name="hello", x=70, y=2, w=20, h=4, **as_res("wib"))
+        time.sleep(0.3)
+        R.check(d.j("look_read", id=h["id"])["lines"][0].startswith("HELLO 5"), "it runs: HELLO 5")
+        R.check(any(x["author"] == "WIB" and x["text"] == "from-a-tool" for x in d.j("get_logbook")["entries"]),
+                "its CALL wrote in the logbook as wib")
+        R.check(d.ipc("tool_save", name="hello", text=prog, **as_res("wob")).startswith("err refused: HELLO.BAS is wib's"),
+                "only a tool's author changes it")
+        R.check(d.ipc("tool_save", name="x", text=prog, actor="v1", source="visitor").startswith("err refused"),
+                "a visitor cannot save a tool")
+        R.check(d.ipc("tool_save", name="bad", text='ON START\n PRINT "x\nEND', **as_res("wob")).startswith("err the tool does not parse"),
+                "a program that does not parse is refused")
+        n0 = len(glance(d))
+        for nm, body, want in (("term", 'ON START\n CALL "open_terminal", ""\nEND', "is not one a tool may call"),
+                               ("shell", 'ON START\n SHELL "ls"\nEND', "unknown statement SHELL"),
+                               ("loop", 'ON START\nagain:\n GOTO again\nEND', "more than 5000 statements")):
+            d.j("tool_save", name=nm, text=body, **as_res("wob"))
+            rr = d.j("tool_run", name=nm, x=2, y=30, w=40, h=4, **as_res("wob"))
+            R.check(want in rr["error"], f"{nm}: stopped with '{want}' ({rr['error']!r})")
+        R.check(not [w for w in glance(d) if w["type"] == "terminal"] and len(glance(d)) == n0 + 3 and d.alive(),
+                "no terminal opened and the desk is still running")
+        console_menu(d, "p")
+        lw = wait(lambda: of_type(d, "tool_list"))
+        R.check(bool(lw) and any("CLOCK.BAS" in l and "by wob" in l for l in d.j("look_read", id=lw[0]["id"])["lines"]),
+                "Tools > Residents > Their programs lists the tools with their authors")
+        before = len(of_type(d, "tool"))
+        d.person_text("1")
+        R.check(wait(lambda: len(of_type(d, "tool")) == before + 1), "and a number opens one")
+    finally:
+        d.stop()
+
+
+# ---------------------------------------------------------------- the self-test on the boot screen
+
+def group_selftest():
+    print("selftest: the last self-test's result is kept and shown on the boot screen")
+    fresh_home()
+    d = desk().start()
+    try:
+        boot_done(d)
+        R.check("SELFTEST ..... never run" in screen_text(d), "a first boot says the self-test has never run")
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        r = d.ipc("resident_selftest", start=1, **as_res("wob"))
+        R.check(r.startswith("{"), f"wob starts its self-test: {r[:60]}")
+        st = wait(lambda: (lambda j: j if not j["running"] and j["passed"] + j["failed"] > 0 else None)(d.j("resident_selftest")), timeout=40)
+        R.check(bool(st), "it finishes")
+        total = st["passed"] + st["failed"] if st else 0
+        line = wait(lambda: [l for l in (read("SELFTEST.TXT") or "").splitlines() if l and not l.startswith(";")], timeout=10) or []
+        R.check(len(line) == 1 and line[0].split("\t")[1] == "wob" and f"{st['passed']} of {total} passed" in line[0],
+                f"SELFTEST.TXT records who ran it and the result: {line}")
+        R.check(d.quit(), "Exit")
+        d.start()
+        boot_done(d)
+        sc = screen_text(d)
+        R.check(f"SELFTEST ..... last run" in sc and f"by wob: {st['passed']} of {total} passed" in sc,
+                "the next boot shows the last result")
+    finally:
+        d.stop()
+
+
+# ---------------------------------------------------------------- the session as a film
+
+def group_film():
+    print("film: a waking's acts on disk play back as a film of the desktop, scrubbable, and export as a cast")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0").start()
+    try:
+        ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Plans", **as_res("wib"))["id"]
+        time.sleep(0.3)
+        d.person_type("hi there")
+        time.sleep(0.5)
+        d.j("move_window", id=ed, x=30, y=8, **as_res("wob"))
+        tp = d.j("create_window", type="test_pattern", x=80, y=2, w=30, h=10, title="Gone", **as_res("wob"))["id"]
+        time.sleep(0.3)
+        d.j("close_window", id=tp, **as_res("wob"))
+        time.sleep(0.3)
+        R.check(d.quit(), "a waking with an editor typed in, moved, and a window opened and closed")
+        d.start()
+        n0 = len(glance(d))
+        r = d.j("film_open", **as_res("wob"))
+        R.check(r.get("ok") is True and r["waking"] == 1, f"film_open plays the last waking: {r}")
+        fid = r["id"]
+        fw = [w for w in glance(d) if w["id"] == fid][0]
+        R.check(fw["type"] == "film" and fw["state"].startswith("film of waking 1 from the acts log"), f"look_glance: {fw['state']!r}")
+        s = d.j("film_seek", id=fid, ms=0, play=0)
+        frame0 = d.j("look_read", id=fid)["lines"]
+        R.check(not any("Plans" in l for l in frame0), "at 0:00 the film's desk is empty")
+        d.j("film_seek", id=fid, ms=s["length"])
+        frame = d.j("look_read", id=fid)["lines"]
+        R.check(any("Plans" in l for l in frame) and any("hi there" in l for l in frame),
+                "at its end Plans is on the film's desk with the text the person typed")
+        R.check(not any("Gone" in l for l in frame), "and the window that was closed is gone")
+        mid = [l for l in frame if "Plans" in l]
+        R.check(mid and mid[0].index("Plans") > 10, "Plans stands where wob moved it, not where it opened")
+        R.check(len(glance(d)) == n0 + 1 and not [w for w in glance(d) if w["title"] == "Plans"],
+                "the live desk got the film window and nothing else")
+        q = d.j("resident_key", id=fid, keys="Home", **as_res("wob"))
+        d.wait_seqs(q["first"], q["last"])
+        R.check(d.j("film_seek", id=fid)["ms"] == 0, "Home scrubs to the start")
+        d.j("film_seek", id=fid, ms=0, play=1, speed=16)
+        R.check(wait(lambda: not d.j("film_seek", id=fid)["playing"], timeout=s["length"] / 16000 + 5),
+                "played at x16 it reaches the end and stops")
+        x = d.j("film_export", w=100, h=32)
+        R.check(x.get("ok") is True and x["file"].endswith("FILMS/WAKING-1.cast"), f"film_export writes a cast: {x}")
+        lines = open(x["file"], encoding="utf-8").read().splitlines() if x.get("ok") else []
+        head = json.loads(lines[0]) if lines else {}
+        R.check(head.get("version") == 2 and head.get("width") == 100 and head.get("height") == 32,
+                "an asciinema v2 header")
+        ev = [json.loads(l) for l in lines[1:]]
+        R.check(ev and all(e[1] == "o" for e in ev) and all(ev[i][0] <= ev[i + 1][0] for i in range(len(ev) - 1)),
+                f"{len(ev)} output events in time order")
+        R.check(ev and "Plans" in ev[-1][2] and "hi there" in ev[-1][2], "its last frame shows the desk at the end")
+        console_menu(d, "f")
+        R.check(wait(lambda: len(of_type(d, "film")) == 2), "Tools > Residents > Film of the last waking opens another")
+    finally:
+        d.stop()
+
+
+GROUPS = {"film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():

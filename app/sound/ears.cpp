@@ -117,34 +117,29 @@ std::vector<std::string> Ears::rows(double now, double ms, double rowMs, const s
     return out;
 }
 
-std::vector<std::string> Ears::cellRows(double now, double ms, double rowMs, double originMs, const std::string& window,
-                                        int songRows) const {
+std::vector<std::string> Ears::cellRows(double now, double ms, const std::string& window) const {
+    // Rows by the time they started: (rowAtMs, row) -> cells by channel.
+    std::map<std::pair<double, int>, std::pair<int, std::map<int, std::string>>> rows;
+    for (const auto& h : log_) {
+        if (h.window != window || h.channel < 0 || h.row < 0) continue;
+        if (h.rowAtMs < now - ms - 1e-6 || h.rowAtMs >= now) continue;
+        auto& r = rows[{h.rowAtMs, h.row}];
+        r.first = std::max(r.first, h.channels);
+        if (!r.second.count(h.channel)) r.second[h.channel] = h.cell;
+    }
     std::vector<std::string> out;
-    if (rowMs <= 0 || songRows <= 0) return out;
-    long k0 = (long)std::ceil((now - ms - originMs) / rowMs - 1e-9);
-    long k1 = (long)std::ceil((now - originMs) / rowMs - 1e-9);   // rows k0..k1-1 started in [now - ms, now)
-    k0 = std::max(0L, k0);
-    if (k1 - k0 > 256) k0 = k1 - 256;
-    for (long k = k0; k < k1; ++k) {
-        int chans = 0;
-        std::map<int, std::string> cells;
-        const double a = originMs + k * rowMs;
-        for (const auto& h : log_) {
-            if (h.window != window || h.channel < 0 || h.startMs < a - 1e-6 || h.startMs >= a + rowMs - 1e-6) continue;
-            chans = std::max(chans, h.channels);
-            if (!cells.count(h.channel)) cells[h.channel] = h.cell;
-        }
-        if (!chans) continue;   // a row where nothing sounded
+    for (const auto& kv : rows) {
         char head[8];
-        std::snprintf(head, sizeof(head), "%02ld ", k % songRows);
+        std::snprintf(head, sizeof(head), "%02d ", kv.first.second);
         std::string line = head;
-        for (int c = 0; c < chans; ++c) {
+        for (int c = 0; c < kv.second.first; ++c) {
             if (c) line += " | ";
-            auto it = cells.find(c);
-            line += it == cells.end() ? std::string("--- .. ...") : it->second;
+            auto it = kv.second.second.find(c);
+            line += it == kv.second.second.end() ? std::string("--- .. ...") : it->second;
         }
         out.push_back(line);
     }
+    if (out.size() > 256) out.erase(out.begin(), out.end() - 256);
     return out;
 }
 

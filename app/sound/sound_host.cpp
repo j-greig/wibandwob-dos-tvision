@@ -12,6 +12,7 @@
 #include "tracker_view.h"
 #include "midi.h"
 #include "midi_view.h"
+#include "jam.h"
 #include "synth_view.h"
 #include "tr808_view.h"
 #include "tr808_audio.h"
@@ -195,6 +196,7 @@ static std::string openSynth(const KV& kv) {
 }
 
 void poll() {
+    jamTick();
     auto msgs = midi::takeIn();
     if (msgs.empty()) return;
     for (const auto& m : msgs) {
@@ -221,7 +223,7 @@ void poll() {
 bool handles(const std::string& name) {
     return name == "open_synth" || name == "synth" || name == "hear" || name == "open_event_score" ||
            name == "event_score" || name == "sound" || name == "open_tracker" || name == "tracker" ||
-           name == "open_midi" || name == "midi";
+           name == "open_midi" || name == "midi" || name == "jam";
 }
 
 // scores/<name>.score: $WWDOS_REPO/scores, ./scores, then the source tree.
@@ -321,11 +323,11 @@ static std::string openTracker(const KV& kv) {
         if (kvHas(kv, "tempo")) song.tempo = std::max(30, std::min(300, toInt(kvGet(kv, "tempo"), 120)));
     }
     const int w = std::min(160, 6 + 13 * (int)song.chans.size());
-    TWindow* win = new TTrackerWindow(boundsFrom(kv, std::max(60, w), std::min(36, song.rows() + 5)), song, origin);
+    TWindow* win = new TTrackerWindow(boundsFrom(kv, std::max(60, w), std::min(36, song.rows(0) + 6)), song, origin);
     const std::string id = g_host.insert ? g_host.insert(win) : "";
     if (truthy(kvGet(kv, "play"))) static_cast<TTrackerWindow*>(win)->view()->play(0);
     return "{\"ok\":true,\"id\":\"" + id + "\",\"title\":\"" + jsonEscape(song.title) + "\",\"rows\":" +
-           std::to_string(song.rows()) + ",\"channels\":" + std::to_string(song.chans.size()) + "}";
+           std::to_string(song.rows(0)) + ",\"patterns\":" + std::to_string(song.pats.size()) + ",\"channels\":" + std::to_string(song.chans.size()) + "}";
 }
 
 static std::string openScore(const KV& kv) {
@@ -358,6 +360,7 @@ std::string command(const std::string& name, const KV& kv) {
         return streamCommand(kvGet(kv, "action", "state"), kvHas(kv, "ms") ? std::atof(kvGet(kv, "ms").c_str()) : 1000.0);
     if (name == "open_event_score") return openScore(kv);
     if (name == "open_tracker") return openTracker(kv);
+    if (name == "jam") return jamCommand(kv);
     if (name == "open_midi") {
         TWindow* w = new TMidiWindow(boundsFrom(kv, 64, 16));
         const std::string id = g_host.insert ? g_host.insert(w) : "";
@@ -381,10 +384,13 @@ std::string command(const std::string& name, const KV& kv) {
         if (action == "log") {
             o << ",\"log\":[";
             auto r = midi::recent((size_t)std::max(1, std::min(1024, toInt(kvGet(kv, "n"), 100))));
-            for (size_t i = 0; i < r.size(); ++i)
-                o << (i ? "," : "") << "{\"ms\":" << r[i].ms << ",\"dir\":\"" << (r[i].out ? "out" : "in") << "\",\"from\":\""
+            for (size_t i = 0; i < r.size(); ++i) {
+                char ms[32];
+                std::snprintf(ms, sizeof(ms), "%.3f", r[i].ms);   // fixed: the default precision drops the decimals after 10 s
+                o << (i ? "," : "") << "{\"ms\":" << ms << ",\"dir\":\"" << (r[i].out ? "out" : "in") << "\",\"from\":\""
                   << jsonEscape(r[i].from) << "\",\"hex\":\"" << midi::hex(r[i].bytes) << "\",\"text\":\""
                   << jsonEscape(midi::describe(r[i].bytes)) << "\"}";
+            }
             o << "]";
         }
         o << "}";
@@ -437,10 +443,8 @@ std::string command(const std::string& name, const KV& kv) {
         // A tracker's window: the rows as the tracker prints them, on its own row grid.
         if (kvHas(kv, "window") && g_host.find)
             if (auto* tw = dynamic_cast<TTrackerWindow*>(g_host.find(kvGet(kv, "window")))) {
-                const TTrackerView* v = tw->view();
-                const double origin = v->startedMs() + leadMs();
-                auto cr = ears().cellRows(clockMs(), std::max(0.05, std::min(120.0, secs)) * 1000.0, rowMs(v->song()), origin,
-                                          kvGet(kv, "window"), v->song().rows());
+                (void)tw;
+                auto cr = ears().cellRows(clockMs(), std::max(0.05, std::min(120.0, secs)) * 1000.0, kvGet(kv, "window"));
                 std::string arr = "[";
                 for (size_t i = 0; i < cr.size(); ++i) arr += (i ? ",\"" : "\"") + jsonEscape(cr[i]) + "\"";
                 arr += "]";

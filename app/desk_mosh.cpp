@@ -16,6 +16,9 @@
 #include "describe.h"
 #include "ega_theme.h"
 #include "resident_senses.h"
+#include "sound/ears.h"
+#include "sound/sound_host.h"
+#include "sound/stream.h"
 
 #include <algorithm>
 #include <chrono>
@@ -35,13 +38,18 @@ using Cells = std::vector<TScreenCell>;
 
 // ---------------------------------------------------------------- settings and state
 
-enum Way { Wrap, Tear, Mosh, Bleed, Raw, All };
-const char* kWayNames[] = {"wrap", "tear", "mosh", "bleed", "raw", "all"};
+enum Way { Wrap, Tear, Mosh, Bleed, Raw, All, Sound };
+const char* kWayNames[] = {"wrap", "tear", "mosh", "bleed", "raw", "all", "sound"};
+const int kWays = 7;
 
 struct Hit {
     bool kick = false, snare = false, tick = false, rat = false, metal = false, accent = false;
-    int step = -1;   // position in the bar (0-15), -1 = count on from the last
+    int step = -1;   // position in the bar (0-15), -1 = count on from the last, -2 = a synth note (no clock step)
+    double dueMs = -1;   // when it is heard on the sound clock (sound::clockMs); -1 = now
+    int midi = -1;       // a synth note
 };
+double g_lastNoteMs = 0, g_lastDrumEarMs = 0;                          // newest synth note taken from the ears
+double g_heardBass = -1e9, g_heardNote = -1e9, g_heardDrum = -1e9;   // way sound: what sounded last
 
 struct Settings {
     Way way = All;
@@ -131,6 +139,43 @@ TScreenCell blankCell() {
     setColours(c, 7, 0);
     return c;
 }
+// ---------------------------------------------------------------- the desktop's own palette (bleed)
+//
+// The film rotates colours within the palette of its stills. Bleed does the same with the
+// colours the desktop shows now, most used first, so a rotated band turns into another of
+// the desktop's colours (blue texture to grey, grey to white) rather than a foreign one.
+
+uint32_t rgbOf(TColor c, bool fg) {
+    if (c.isRGB()) return (uint32_t) c.asRGB();
+    return (uint32_t) ww::egaRGB(idxOf(c, fg));
+}
+int lumRGB(uint32_t v) { return (int)(((v >> 16) & 255) * 0.3 + ((v >> 8) & 255) * 0.59 + (v & 255) * 0.11); }
+
+struct Pal {
+    std::vector<uint32_t> c;
+    std::vector<TColor> as;   // each colour as the desktop wrote it (BIOS, xterm or RGB)
+    std::map<uint32_t, int> at;
+    int idx(uint32_t v) {
+        auto it = at.find(v);
+        if (it != at.end()) return it->second;
+        int best = 0, bd = 1 << 30;
+        for (size_t i = 0; i < c.size(); ++i) {
+            int dr = (int)((v >> 16) & 255) - (int)((c[i] >> 16) & 255), dg = (int)((v >> 8) & 255) - (int)((c[i] >> 8) & 255),
+                db = (int)(v & 255) - (int)(c[i] & 255);
+            int d = dr * dr + dg * dg + db * db;
+            if (d < bd) { bd = d; best = (int)i; }
+        }
+        at[v] = best;
+        return best;
+    }
+    int size() const { return (int)c.size(); }
+};
+
+void setPal(TScreenCell& cell, const Pal& P, int f, int b) {
+    cell.attribute.setForeground(P.as[(size_t)f]);
+    cell.attribute.setBackground(P.as[(size_t)b]);
+}
+
 // A wide character cut from its trail (or a trail cut from its lead) draws as a space.
 void fixWide(TScreenCell* row, int w) {
     for (int x = 0; x < w; ++x) {
@@ -186,9 +231,38 @@ Grid captureScreenDesk() {
     return g;
 }
 
-// The desktop as the real windows draw it now: the first capture, with each real
-// window's own buffer laid on it back to front. Shards are never in it.
+// Real windows' places and order, to see when one moved, opened or closed.
+std::vector<std::pair<TWindow*, TRect>> g_layout;
+bool g_repaintAll = false;
+
+std::vector<std::pair<TWindow*, TRect>> layoutNow() {
+    std::vector<std::pair<TWindow*, TRect>> v;
+    for (TWindow* w : realWindows()) v.emplace_back(w, w->getBounds());
+    return v;
+}
+
+// The desktop with every shard hidden, drawn and captured. Turbo Vision draws into the
+// screen buffer, which reaches the terminal only when the event loop flushes; apply()
+// repaints the shards (g_repaintAll) before that.
+void captureTrue() {
+    TDeskTop* d = TProgram::deskTop;
+    if (!d) return;
+    std::vector<TWindow*> hidden;
+    for (TWindow* w : deskWindows())
+        if (isShard(w) && (w->state & sfVisible)) { w->state &= ~sfVisible; hidden.push_back(w); }
+    d->redraw();
+    g_bg = captureScreenDesk();
+    for (TWindow* w : hidden) w->state |= sfVisible;
+    g_layout = layoutNow();
+    g_repaintAll = !hidden.empty();
+}
+
+// The desktop as the real windows draw it now: the last true capture, with each real
+// window's own buffer laid on it back to front. Shards are never in it. When a real
+// window has moved, opened or closed since that capture, the capture is taken again, so
+// shards take the new picture and nothing is left where a window used to be.
 Grid trueDesk() {
+    if (layoutNow() != g_layout) captureTrue();
     Grid g = g_bg;
     if (g.c.empty()) return g;
     auto wins = realWindows();
@@ -224,6 +298,9 @@ std::map<int, TMoshShard*> g_pool;       // live shards the mosh drives, by slot
 std::vector<TMoshShard*> g_held;         // shards a person grabbed: left where they were put
 
 TFrame* noFrame(TRect) { return nullptr; }
+const int kHoldMs = 300;   // a left press held this long on a shard grabs it
+struct Flight;
+void land(class TMoshShard* s);
 
 class TMoshShard : public TWindow, public ww::Describable {
 public:
@@ -243,6 +320,7 @@ public:
         auto it = g_pool.find(slot_);
         if (it != g_pool.end() && it->second == this) g_pool.erase(it);
         g_held.erase(std::remove(g_held.begin(), g_held.end(), this), g_held.end());
+        land(this);
         ++g_closed;
     }
     bool framed() const { return framed_; }
@@ -255,6 +333,7 @@ public:
     }
     bool held() const { return std::find(g_held.begin(), g_held.end(), this) != g_held.end(); }
     void handleEvent(TEvent& ev) override;
+    void grab(TEvent& ev);
 private:
     int slot_;
     bool framed_;
@@ -272,21 +351,77 @@ TView* viewBelow(TView* from, TPoint where) {
     return nullptr;
 }
 
+// A shard in flight after a throw: it slides, bounces off the desk's edges and slows.
+struct Flight { TMoshShard* s; double x, y, vx, vy; };
+std::vector<Flight> g_flights;
+
+void land(TMoshShard* s) {
+    g_flights.erase(std::remove_if(g_flights.begin(), g_flights.end(), [s](const Flight& f) { return f.s == s; }),
+                    g_flights.end());
+}
+
+// The person (or a resident's hand) holds the shard: it leaves the mosh, follows the
+// pointer, and keeps the pointer's speed when let go.
+void TMoshShard::grab(TEvent& ev) {
+    auto it = g_pool.find(slot_);
+    if (it != g_pool.end() && it->second == this) g_pool.erase(it);
+    if (std::find(g_held.begin(), g_held.end(), this) == g_held.end()) g_held.push_back(this);
+    land(this);
+    makeFirst();
+    resident::Who who = resident::eventWho();
+    TPoint off = ev.mouse.where - makeGlobal(TPoint{0, 0});
+    struct Mark { Clock::time_point t; TPoint p; };
+    std::deque<Mark> trail;
+    trail.push_back({Clock::now(), origin});
+    TEvent e;
+    while (mouseEvent(e, evMouseMove | evMouseAuto)) {
+        TPoint p = owner->makeLocal(e.mouse.where) - off;
+        if (p != origin) moveTo(p.x, p.y);
+        if (trail.back().p != origin) trail.push_back({Clock::now(), origin});
+        while (trail.size() > 3) trail.pop_front();
+    }
+    // The speed of the last move, when the release follows it within 0.3 s.
+    double vx = 0, vy = 0;
+    if (trail.size() >= 2 && Clock::now() - trail.back().t < std::chrono::milliseconds(300)) {
+        const Mark& a = trail[trail.size() - 2];
+        const Mark& b = trail.back();
+        double dt = std::max(0.02, std::chrono::duration<double>(b.t - a.t).count());
+        vx = (b.p.x - a.p.x) / dt;   // cells a second
+        vy = (b.p.y - a.p.y) / dt;
+    }
+    bool thrown = std::abs(vx) + std::abs(vy) > 50;   // cells a second at the release
+    if (thrown) g_flights.push_back({this, (double)origin.x, (double)origin.y, vx, vy});
+    resident::addAct(who, thrown ? "threw a desk mosh shard" : "grabbed a desk mosh shard", "", "");
+}
+
 void TMoshShard::handleEvent(TEvent& ev) {
     if (ev.what == evMouseDown) {
         ++g_busy;
         if (ev.mouse.buttons & mbRightButton) {
-            // A person grabs the shard: it leaves the mosh and stays where it is put.
-            auto it = g_pool.find(slot_);
-            if (it != g_pool.end() && it->second == this) { g_pool.erase(it); g_held.push_back(this); }
-            TRect lim = owner->getExtent();
-            lim.grow(size.x, size.y);
-            dragView(ev, dmDragMove, lim, size, size);
+            grab(ev);
             clearEvent(ev);
         } else if (framed_ && ev.mouse.where.y == makeGlobal(TPoint{0, 0}).y) {
             TWindow::handleEvent(ev);   // the frame: drag or close as any window
-        } else if (TView* v = viewBelow(this, ev.mouse.where)) {
-            v->handleEvent(ev);         // a left click goes through to the real desktop
+        } else {
+            // A left press held still for a moment grabs the shard; a click or a press that
+            // moves at once goes through to the real desktop under it.
+            TEvent down = ev, e;
+            auto t0 = Clock::now();
+            bool through = false, upSeen = false;
+            for (;;) {
+                bool held = mouseEvent(e, evMouseMove | evMouseAuto);
+                bool long_ = Clock::now() - t0 >= std::chrono::milliseconds(kHoldMs);
+                if (!held) { through = !long_; upSeen = through; break; }
+                if (long_) break;                                   // held long enough: grab, even if it now moves
+                if (e.mouse.where != down.mouse.where) { through = true; break; }
+            }
+            if (!through) {
+                grab(down);
+            } else if (TView* v = viewBelow(this, down.mouse.where)) {
+                v->handleEvent(down);
+                if (upSeen && TProgram::application) TProgram::application->putEvent(e);
+            }
+            clearEvent(ev);
         }
         --g_busy;
         return;
@@ -355,7 +490,10 @@ TPoint caretPoint() {
     if (!d || !d->current) return {-1, -1};
     TView* v = d->current;
     while (auto* g = dynamic_cast<TGroup*>(v)) { if (!g->current) break; v = g->current; }
-    if (!(v->state & sfCursorVis)) return {-1, -1};
+    // The view's caret, shown by the terminal (sfCursorVis) or drawn by the view itself at the
+    // same cell, as the text editor does.
+    if (!(v->state & sfFocused) || v->cursor.x < 0 || v->cursor.y < 0 || v->cursor.x >= v->size.x || v->cursor.y >= v->size.y)
+        return {-1, -1};
     return d->makeLocal(v->makeGlobal(v->cursor));
 }
 
@@ -480,19 +618,63 @@ void wayMosh(const Grid& t, std::vector<Spec>& out) {
     g_shown = std::move(next);
 }
 
-// bleed: colour changes dropped so colours run on, palette rotates in bands on snares,
-// glyphs decay to shade blocks.
+// The desktop's colours, most used first (at most 16), as the film's palette.
+Pal paletteOf(const Grid& t) {
+    std::map<uint32_t, int> n;
+    std::map<uint32_t, TColor> form;
+    for (const TScreenCell& c : t.c) {
+        TColor f = c.attribute.getForeground(), b = c.attribute.getBackground();
+        uint32_t fv = rgbOf(f, true), bv = rgbOf(b, false);
+        n[fv]++;
+        n[bv] += 2;
+        if (!form.count(fv) && !f.isDefault()) form[fv] = f;
+        if (!form.count(bv) && !b.isDefault()) form[bv] = b;
+    }
+    std::vector<std::pair<int, uint32_t>> v;
+    for (auto& kv : n) v.emplace_back(-kv.second, kv.first);
+    std::sort(v.begin(), v.end());
+    Pal p;
+    for (size_t i = 0; i < v.size() && i < 16; ++i) {
+        p.at[v[i].second] = (int)i;
+        p.c.push_back(v[i].second);
+        auto it = form.find(v[i].second);
+        p.as.push_back(it != form.end() ? it->second : TColor(TColorRGB(v[i].second)));
+    }
+    if (p.c.empty()) { p.c.push_back(0); p.as.push_back(TColor(TColorRGB(0u))); }
+    return p;
+}
+
+// One bleed cell, the film's way: in a rotated band ink and paper move along the palette;
+// in a decayed block (4x2 cells) the glyph becomes a shade block by the paper's
+// brightness, inked in the paper colour on the next palette colour.
+void bleedCell(Pal& P, TScreenCell& c, int X, int Y, int rot, double decay) {
+    int NP = P.size();
+    int f = P.idx(rgbOf(c.attribute.getForeground(), true)), b = P.idx(rgbOf(c.attribute.getBackground(), false));
+    bool changed = false;
+    if (rot) { f = (f + rot) % NP; b = (b + rot) % NP; changed = true; }
+    if (decay > 0 && h3(X >> 2, Y >> 1, B.blockSeed + B.stutSeed) < decay) {
+        setGlyph(c, SHADE[std::max(1, std::min(4, lumRGB(P.c[b]) * 5 / 256))]);
+        f = b; b = (b + 1) % NP;
+        changed = true;
+    }
+    if (changed) setPal(c, P, f, b);
+}
+
+// bleed: colour changes dropped so colours run on along the row (the glyphs stay), the
+// palette rotates in 4-row bands on snares, glyphs decay to shade blocks in small blocks.
 void wayBleed(const Grid& t, std::vector<Spec>& out) {
     int W = t.w, H = t.h;
+    Pal P = paletteOf(t);
+    int NP = P.size();
     double sn = env(B.sinceSnare, 0.8), met = env(B.sinceMetal, 0.5);
     double drop = (0.25 + 0.6 * sn) * amt();
-    double decay = (0.08 + 0.5 * met + 0.25 * sn) * amt();
+    double decay = (0.08 + 0.5 * met + 0.25 * sn) * amt() * 0.7;
     int bandH = 4, bands = (H + bandH - 1) / bandH;
     int sw = segWidth(bands, W);
     int slot = 0;
     for (int by = 0; by < bands; ++by) {
         int y0 = by * bandH, h = std::min(bandH, H - y0);
-        int rot = h3(by, B.rot, 11) < 0.5 ? B.rot : 0;
+        int rot = NP > 1 && h3(by, B.rot, 11) < 0.5 ? 1 + B.rot % (NP - 1) : 0;
         for (int x0 = 0; x0 < W; x0 += sw) {
             int w = std::min(sw, W - x0);
             std::vector<TColorAttr> last((size_t)h);
@@ -500,13 +682,8 @@ void wayBleed(const Grid& t, std::vector<Spec>& out) {
             out.push_back(cut(slot++, TRect(x0, y0, x0 + w, y0 + h), [&](int x, int y) {
                 int X = x0 + x, Y = y0 + y;
                 TScreenCell c = t.at(X, Y);
-                int f = fgIdx(c), b = bgIdx(c);
-                if (rot) { f = (f + rot) % 16; b = (b + rot) % 16; setColours(c, f, b); }
-                if (h3(X >> 2, Y >> 1, B.blockSeed + B.stutSeed) < decay) {
-                    setGlyph(c, SHADE[std::max(1, std::min(4, lumOf(b) * 5 / 256))]);
-                    setColours(c, b, b + 1);
-                }
-                // a colour change that never arrives: the last colour runs on
+                bleedCell(P, c, X, Y, rot, decay);
+                // a colour change that never arrives: the last colours run on over the next glyphs
                 if (has[y] && h3(X, Y, (int)(g_step >> 1)) < drop) c.attribute = last[y];
                 last[y] = c.attribute; has[y] = true;
                 return c;
@@ -606,6 +783,9 @@ Grid screenCompose(const Grid& S) {
     double decay = p == Bleed ? (0.08 + 0.5 * met + 0.25 * sn) * a * 0.6 : 0;
     double drop = p == Bleed ? (0.25 + 0.6 * sn) * a : p == Raw ? 0.3 * a : 0;
     int z = p == Raw ? B.zoom : 1;
+    Pal pal;
+    if (p == Bleed) pal = paletteOf(S);
+    int NP = std::max(1, pal.size());
     for (int y = 0; y < H; ++y) {
         if (p == Raw && h3(y >> 1, (int)(g_step >> 3), 13) < 0.3 * a) {   // rows left as they were
             for (int x = 0; x < W; ++x) N.c[(size_t)y * W + x] = P.at(x, y);
@@ -614,7 +794,7 @@ Grid screenCompose(const Grid& S) {
         int ys = y;
         if (p == Tear && sn > 0.3 && B.stutH > 1 && h3(y / (B.stutH * 3), B.stutSeed, 9) < 0.6) ys = y - (y % B.stutH);
         int off = (p == Wrap ? B.phase : 0) + (tearAmp ? (int)std::lround((h3(ys / bandH, B.tearSeed, 7) - 0.5) * 2 * tearAmp) : 0);
-        int rot = (p == Bleed) && h3(y / 4, B.rot, 11) < 0.5 ? B.rot : 0;
+        int rot = (p == Bleed) && NP > 1 && h3(y / 4, B.rot, 11) < 0.5 ? 1 + B.rot % (NP - 1) : 0;
         bool have = false;
         TColorAttr last{};
         for (int x = 0; x < W; ++x) {
@@ -622,12 +802,7 @@ Grid screenCompose(const Grid& S) {
             if (z > 1) c = S.at(x / z + B.zx, (ys + B.scroll) / z + B.zy);
             else if (p == Wrap) c = S.flat((long)ys * stride + x + off);
             else c = S.at(x + off, ys + (p == Raw ? B.scroll : 0));
-            if (rot) setColours(c, fgIdx(c) + rot, bgIdx(c) + rot);
-            if (decay && h3(x >> 2, y >> 1, B.blockSeed + B.stutSeed) < decay) {
-                int b = bgIdx(c);
-                setGlyph(c, SHADE[std::max(1, std::min(4, lumOf(b) * 5 / 256))]);
-                setColours(c, b, b + 1);
-            }
+            if (p == Bleed) bleedCell(pal, c, x, y, rot, decay);
             if (have && drop && h3(x, y, (int)(g_step >> 1)) < drop) c.attribute = last;
             last = c.attribute; have = true;
             N.c[(size_t)y * W + x] = c;
@@ -666,7 +841,16 @@ void screenRefreshAll() {
 
 // ---------------------------------------------------------------- the beat
 
+// A synth note between clock steps: every note-on tears (a kick's impulse, its pitch
+// picks the bands), a bass note (below C-3) also picks the wrap width.
+void noteImpulse(const Hit& hit) {
+    B.sinceKick = 0;
+    B.tearSeed = B.nk * 31 + hit.midi;
+    if (hit.midi < 48) { B.stride = WRAPS[hit.midi % NWRAPS]; B.phase += hit.midi % 7; }
+}
+
 void advance(const Hit& hit) {
+    if (hit.step == -2) { noteImpulse(hit); return; }
     int pos = hit.step >= 0 ? hit.step : (B.pos + 1) % 16;
     if (pos <= B.pos) {
         B.bar++;
@@ -703,7 +887,83 @@ void advance(const Hit& hit) {
     if (hit.metal) { B.sinceMetal = 0; B.blockSeed++; B.vecSeed += 7; }
 }
 
+// ---------------------------------------------------------------- a mosh score
+//
+// A text file of parts, one a line: "bars N WAY [amount A] [tempo BPM]", then "end"
+// (the mosh stops) or "loop" (the score starts again). "#" starts a comment. The mosh
+// follows the score bar by bar; scores/catmosh.mosh is the film's five parts.
+
+struct ScorePart { int bars = 0; int way = Wrap; int amount = -1; int tempo = 0; };
+struct MoshScore { std::string name; std::vector<ScorePart> parts; bool loop = false; int total = 0; };
+MoshScore g_score;
+bool g_scoreOn = false, g_scoreEnded = false;
+int g_scorePart = -1;
+
+bool parseScore(const std::string& text, MoshScore& out, std::string& err) {
+    out = MoshScore{};
+    std::istringstream in(text);
+    std::string line;
+    int n = 0;
+    while (std::getline(in, line)) {
+        ++n;
+        size_t h = line.find('#');
+        if (h != std::string::npos) line.erase(h);
+        std::istringstream ls(line);
+        std::string w;
+        if (!(ls >> w)) continue;
+        if (w == "end") break;
+        if (w == "loop") { out.loop = true; break; }
+        if (w != "bars") { err = "line " + std::to_string(n) + ": expected bars, end or loop"; return false; }
+        ScorePart p;
+        std::string way;
+        if (!(ls >> p.bars >> way) || p.bars < 1) { err = "line " + std::to_string(n) + ": bars N WAY"; return false; }
+        p.way = -1;
+        for (int i = 0; i < kWays; ++i) if (way == kWayNames[i] && i != All) p.way = i;
+        if (p.way < 0) { err = "line " + std::to_string(n) + ": unknown way " + way; return false; }
+        std::string k;
+        int v;
+        while (ls >> k >> v) {
+            if (k == "amount") p.amount = std::max(0, std::min(100, v));
+            else if (k == "tempo") p.tempo = std::max(20, std::min(400, v));
+            else { err = "line " + std::to_string(n) + ": unknown " + k; return false; }
+        }
+        out.parts.push_back(p);
+        out.total += p.bars;
+    }
+    if (out.parts.empty()) { err = "no parts"; return false; }
+    return true;
+}
+
+// The score part a bar falls in (-1 when the score has ended).
+int scorePartAt(int bar) {
+    if (g_score.total <= 0) return -1;
+    if (bar >= g_score.total) { if (!g_score.loop) return -1; bar %= g_score.total; }
+    for (size_t i = 0; i < g_score.parts.size(); ++i) {
+        if (bar < g_score.parts[i].bars) return (int)i;
+        bar -= g_score.parts[i].bars;
+    }
+    return -1;
+}
+
 int wayFor(int bar) {
+    if (g_scoreOn) {
+        int p = scorePartAt(bar);
+        if (p < 0) { g_scoreEnded = true; return B.active; }
+        if (p != g_scorePart) {
+            g_scorePart = p;
+            const ScorePart& sp = g_score.parts[(size_t)p];
+            if (sp.amount >= 0) g_set.amount = sp.amount;
+            if (sp.tempo > 0 && g_set.tempo > 0) g_set.tempo = sp.tempo;   // tempo 0 (manual steps) stays manual
+        }
+        return g_score.parts[(size_t)p].way == Sound ? Mosh : g_score.parts[(size_t)p].way;
+    }
+    if (g_set.way == Sound) {
+        // the newest sound picks the way: a bass note wraps, other notes tear, drums mosh, quiet bleeds
+        double now = sound::clockMs(), note = std::max(g_heardBass, g_heardNote);
+        if (now - note < 1000) return g_heardBass >= g_heardNote ? Wrap : Tear;
+        if (now - g_heardDrum < 1000) return Mosh;
+        return Bleed;
+    }
     if (g_set.way != All) return g_set.way;
     return (bar / 2) % 5;
 }
@@ -724,10 +984,39 @@ void clearShards(bool held) {
     if (d) d->unlock();
 }
 
+// A frameless shard over the person's caret becomes up to four shards around it, so the
+// caret's own cell (and only that cell) shows the real window and the caret stays drawn.
+void holeAtCaret(std::vector<Spec>& specs) {
+    std::vector<Spec> out;
+    for (Spec& s : specs) {
+        TRect r = s.r;
+        r.move(g_region.a.x, g_region.a.y);
+        if (s.keep || !r.contains(g_caret)) { out.push_back(std::move(s)); continue; }
+        if (s.framed) { s.r.move(0, 10000); out.push_back(std::move(s)); continue; }
+        int w = s.r.b.x - s.r.a.x, cx = g_caret.x - r.a.x, cy = g_caret.y - r.a.y;
+        auto piece = [&](int k, int x0, int y0, int x1, int y1) {
+            if (x1 <= x0 || y1 <= y0) return;
+            Spec p;
+            p.slot = s.slot + 200000 * k;
+            p.r = TRect(s.r.a.x + x0, s.r.a.y + y0, s.r.a.x + x1, s.r.a.y + y1);
+            for (int y = y0; y < y1; ++y)
+                for (int x = x0; x < x1; ++x) p.cells.push_back(s.cells[(size_t)y * w + x]);
+            out.push_back(std::move(p));
+        };
+        int h = s.r.b.y - s.r.a.y;
+        piece(1, 0, 0, w, cy);              // rows above
+        piece(2, 0, cy + 1, w, h);          // rows below
+        piece(3, 0, cy, cx, cy + 1);        // left of the caret
+        piece(4, cx + 1, cy, w, cy + 1);    // right of the caret
+    }
+    specs.swap(out);
+}
+
 void apply(std::vector<Spec>& specs) {
     TDeskTop* d = TProgram::deskTop;
     if (!d) return;
     if ((int)specs.size() > g_set.count) specs.resize((size_t)g_set.count);
+    holeAtCaret(specs);
     d->lock();
     std::map<int, bool> want;
     for (Spec& s : specs) {
@@ -735,8 +1024,6 @@ void apply(std::vector<Spec>& specs) {
         if (s.keep) continue;   // stale on purpose
         TRect r = s.r;
         r.move(g_region.a.x, g_region.a.y);
-        // the person's caret stays visible: a shard over it steps off the desk
-        if (r.contains(g_caret)) r.move(0, 10000);
         auto it = g_pool.find(s.slot);
         TMoshShard* w = it == g_pool.end() ? nullptr : it->second;
         if (w && w->framed() != s.framed) {
@@ -769,16 +1056,39 @@ void apply(std::vector<Spec>& specs) {
         }
     }
     d->unlock();
+    if (g_repaintAll) { d->redraw(); g_repaintAll = false; }
 }
 
 std::string idOfWin(TWindow* w) { return resident::hooks().idOf ? resident::hooks().idOf(w) : ""; }
+
+// Thrown shards slide, bounce off the desk's edges and slow to a stop.
+void fly(double dt) {
+    TDeskTop* d = TProgram::deskTop;
+    if (!d || g_flights.empty() || dt <= 0) return;
+    std::vector<Flight> next;
+    for (Flight f : g_flights) {
+        int w = f.s->size.x, h = f.s->size.y, W = d->size.x, H = d->size.y;
+        f.x += f.vx * dt; f.y += f.vy * dt;
+        if (f.x < 0) { f.x = -f.x; f.vx = -f.vx; }
+        if (f.x > W - w) { f.x = 2.0 * (W - w) - f.x; f.vx = -f.vx; }
+        if (f.y < 0) { f.y = -f.y; f.vy = -f.vy; }
+        if (f.y > H - h) { f.y = 2.0 * (H - h) - f.y; f.vy = -f.vy; }
+        double k = std::pow(0.2, dt);   // keeps a fifth of its speed each second
+        f.vx *= k; f.vy *= k;
+        f.s->moveTo((int)std::lround(f.x), (int)std::lround(f.y));
+        if (std::abs(f.vx) + std::abs(f.vy) > 3) next.push_back(f);
+    }
+    g_flights.swap(next);
+}
+
+bool g_scopeLost = false;   // the window a scoped mosh follows has closed
 
 TRect regionRect() {
     TDeskTop* d = TProgram::deskTop;
     TRect all = d ? d->getExtent() : TRect(0, 0, 0, 0);
     if (g_set.scope.empty()) return all;
     TWindow* w = resident::hooks().findWindow ? resident::hooks().findWindow(g_set.scope) : nullptr;
-    if (!w || isShard(w)) return all;
+    if (!w || isShard(w)) { g_scopeLost = true; return all; }
     TRect r = w->getBounds();
     r.intersect(all);
     return r;
@@ -802,8 +1112,10 @@ void runStep(const Hit& hit) {
         g_step++;
         return;
     }
-    int pos = hit.step >= 0 ? hit.step : (B.pos + 1) % 16;
-    int w = wayFor(B.bar + (pos <= B.pos ? 1 : 0));
+    int pos = hit.step >= 0 ? hit.step : hit.step == -2 ? B.pos : (B.pos + 1) % 16;
+    if (hit.step == -2) { if (hit.midi < 48) g_heardBass = sound::clockMs(); else g_heardNote = sound::clockMs(); }
+    else if (hit.kick || hit.snare || hit.tick || hit.rat || hit.metal) g_heardDrum = sound::clockMs();
+    int w = wayFor(B.bar + (hit.step != -2 && pos <= B.pos ? 1 : 0));
     if (w != B.active) {
         clearShards(false);
         restoreReal();
@@ -830,15 +1142,8 @@ void runStep(const Hit& hit) {
                 ++i;
             }
         }
-        if (w == Bleed && hit.snare) {
-            const int fam[] = {1, 3, 7, 0, 5, 4, 2, 6};
-            int i = 0;
-            for (TWindow* rw : realWindows()) {
-                if (h3(i, B.stutSeed, 21) < 0.5 * amt()) colourReal(rw, fam[(B.rot + i) % 8]);
-                ++i;
-            }
-        }
     }
+    if (g_scopeLost) return;   // its shards die with the window (tick turns the mosh off)
     Grid t = crop(trueDesk(), g_region);
     std::vector<Spec> specs;
     switch (w) {
@@ -886,10 +1191,13 @@ void turnOn() {
     g_by = w.actor;
     g_step = 0;
     B = Beat{};
+    g_scorePart = -1;
+    g_scoreEnded = false;
     B.active = wayFor(0);
-    g_bg = captureScreenDesk();
+    captureTrue();
     g_nextAt = Clock::now();
     g_queue.clear();
+    g_lastNoteMs = g_lastDrumEarMs = sound::clockMs();
     g_stepMsAvg = 0; g_loopMsAvg = 0;
     resident::addAct(w, std::string("mosh on (way ") + kWayNames[g_set.way] + ", amount " + std::to_string(g_set.amount) +
                      ", seed " + std::to_string(g_set.seed) + (g_set.scope.empty() ? "" : ", scope " + g_set.scope) + ")", "", "");
@@ -924,7 +1232,9 @@ std::string statusJson() {
       << ",\"showing\":" << q(g_on ? kWayNames[B.active] : "") << ",\"amount\":" << g_set.amount
       << ",\"tempo\":" << g_set.tempo << ",\"seed\":" << g_set.seed << ",\"count\":" << g_set.count
       << ",\"scope\":" << q(g_set.scope.empty() ? "desktop" : g_set.scope) << ",\"shards\":" << g_pool.size()
-      << ",\"held\":" << g_held.size() << ",\"screen\":" << (g_screenOn ? "true" : "false") << ",\"step\":" << g_step << ",\"bar\":" << B.bar
+      << ",\"held\":" << g_held.size() << ",\"screen\":" << (g_screenOn ? "true" : "false")
+      << ",\"score\":" << q(g_scoreOn ? g_score.name : "") << ",\"score_part\":" << (g_scoreOn ? g_scorePart : -1)
+      << ",\"score_bars\":" << (g_scoreOn ? g_score.total : 0) << ",\"flying\":" << g_flights.size() << ",\"caret\":[" << g_caret.x << "," << g_caret.y << "]" << ",\"step\":" << g_step << ",\"bar\":" << B.bar
       << ",\"clock\":" << q(Clock::now() - g_last808 < std::chrono::seconds(1) ? "tr808" : g_set.tempo > 0 ? "internal" : "manual")
       << ",\"opened\":" << g_opened << ",\"closed\":" << g_closed << ",\"by\":" << q(g_by)
       << ",\"step_ms\":" << (int)(g_stepMs * 10) / 10.0 << ",\"step_ms_avg\":" << (int)(g_stepMsAvg * 10) / 10.0
@@ -1000,7 +1310,9 @@ void tick() {
         double gap = std::chrono::duration<double, std::milli>(now - g_lastTick).count();
         g_loopMsAvg = g_loopMsAvg == 0 ? gap : g_loopMsAvg * 0.95 + gap * 0.05;
     }
+    double dt = g_lastTick.time_since_epoch().count() ? std::chrono::duration<double>(now - g_lastTick).count() : 0;
     g_lastTick = now;
+    fly(std::min(dt, 0.1));
     if (!g_on && !g_screenOn) return;
     if (TheTopView) return;   // a menu or dialog is open: the mosh waits
     bool from808 = now - g_last808 < std::chrono::seconds(1);
@@ -1010,12 +1322,57 @@ void tick() {
         g_nextAt += std::chrono::microseconds((long long)(stepMs() * 1000));
         if (now - g_nextAt > std::chrono::milliseconds(200)) g_nextAt = now;   // fell behind: resync
     }
+    // Synth notes, from the ears (one sound clock for the synth and the TR-808).
+    double sclock = sound::clockMs();
+    double newest = g_lastNoteMs;
+    for (const sound::Heard& hd : sound::ears().since(sclock, 3000, "synth")) {
+        if (hd.startMs <= g_lastNoteMs || hd.midi < 0) continue;
+        Hit h;
+        h.step = -2;
+        h.midi = hd.midi;
+        h.dueMs = hd.startMs;
+        if (g_queue.size() < 16) g_queue.push_back(h);
+        newest = std::max(newest, hd.startMs);
+    }
+    g_lastNoteMs = newest;
+    // Drum hits heard from anything but a playing TR-808 window (the tracker's drum rows):
+    // one step per hit time.
+    bool tr808Plays = Clock::now() - g_last808 < std::chrono::seconds(1);
+    double newestDrum = g_lastDrumEarMs;
+    std::map<double, Hit> drums;
+    for (const sound::Heard& hd : sound::ears().since(sclock, 3000, "tr808")) {
+        if (hd.startMs <= g_lastDrumEarMs) continue;
+        newestDrum = std::max(newestDrum, hd.startMs);
+        if (tr808Plays) continue;
+        Hit& h = drums[hd.startMs];
+        h.dueMs = hd.startMs;
+        const std::string& v = hd.voice;
+        if (v == "bd") h.kick = true;
+        else if (v == "sd" || v == "cp") h.snare = true;
+        else if (v == "ch" || v == "oh") h.tick = true;
+        else if (v == "cy" || v == "ma") h.metal = true;
+        else h.rat = true;
+        h.accent = h.accent || hd.accent;
+    }
+    g_lastDrumEarMs = newestDrum;
+    for (auto& kv : drums) if (g_queue.size() < 16) g_queue.push_back(kv.second);
+    std::stable_sort(g_queue.begin(), g_queue.end(), [](const Hit& a, const Hit& b) { return a.dueMs < b.dueMs; });
     int n = 0;
     while (!g_queue.empty() && n < 4) {
         Hit h = g_queue.front();
+        if (h.dueMs > sclock) break;   // not heard yet: the picture waits for the sound
         g_queue.pop_front();
         runStep(h);
         ++n;
+    }
+    if (g_scoreEnded) {
+        g_scoreEnded = false;
+        turnOff("ended: the score is over");
+    }
+    if (g_scopeLost) {
+        g_scopeLost = false;
+        g_set.scope.clear();
+        turnOff("ended: its window closed");
     }
 }
 
@@ -1032,11 +1389,16 @@ void noteEvent(const TEvent& ev) {
 }
 
 void noteTr808(const char* type, const std::string& body) {
-    if (!(g_on || g_screenOn) || std::strcmp(type, "tr808_step") != 0) return;
+    if (!(g_on || g_screenOn)) return;
+    bool tick = std::strcmp(type, "tr808_tick") == 0;   // a silent step: it moves the mosh too
+    if (!tick && std::strcmp(type, "tr808_step") != 0) return;
     g_last808 = Clock::now();
     Hit h;
     size_t p = body.find("\"step\":");
     if (p != std::string::npos) h.step = std::atoi(body.c_str() + p + 7) % 16;
+    size_t c = body.find("\"clock_ms\":");
+    if (c != std::string::npos) h.dueMs = std::atof(body.c_str() + c + 11);
+    if (tick) { if (g_queue.size() < 8) g_queue.push_back(h); return; }
     size_t v0 = body.find("\"voices\":[");
     size_t v1 = v0 == std::string::npos ? v0 : body.find(']', v0);
     std::string vs = v0 == std::string::npos ? "" : body.substr(v0, v1 - v0);
@@ -1070,8 +1432,33 @@ std::string command(const std::string& nameIn, const KV& kvIn) {
         else if (verb == "scope") { kv["scope"] = val; std::string id; ss >> id; if (!id.empty()) kv["id"] = id; }
         else if (verb == "step") kv["hits"] = val;
         else if (verb == "screen") kv["value"] = val.empty() ? "on" : val;
+        else if (verb == "score") kv["path"] = val;
     }
     if (name == "mosh_status") return statusJson();
+    if (name == "mosh_score") {
+        std::string path = str(kv, "path"), text = str(kv, "text");
+        if (path == "off" || str(kv, "off") == "1") { g_scoreOn = false; return statusJson(); }
+        if (path.empty() && text.empty()) return "err mosh_score needs path= or text= (or path=off)";
+        if (!path.empty()) {
+            FILE* f = std::fopen(path.c_str(), "rb");
+            if (!f) return "err cannot read " + path;
+            char buf[4096];
+            size_t k;
+            while ((k = std::fread(buf, 1, sizeof buf, f)) > 0 && text.size() < 65536) text.append(buf, k);
+            std::fclose(f);
+        }
+        MoshScore sc;
+        std::string err;
+        if (!parseScore(text, sc, err)) return "err score: " + err;
+        sc.name = path.empty() ? "inline" : path;
+        g_score = sc;
+        g_scoreOn = true;
+        g_scorePart = -1;
+        if (g_on) { B.bar = 0; B.pos = -1; }   // the score starts on the next step
+        resident::addAct(resident::currentWho(), "mosh score " + g_score.name + " (" + std::to_string(g_score.parts.size()) +
+                         " parts, " + std::to_string(g_score.total) + " bars)", "", "");
+        return statusJson();
+    }
     if (name == "mosh_screen") {
         std::string v = str(kv, "value", str(kv, "on", "on"));
         bool want = v == "on" || v == "1" || v == "true";
@@ -1089,7 +1476,7 @@ std::string command(const std::string& nameIn, const KV& kvIn) {
         return statusJson();
     }
     if (name == "mosh_on") {
-        if (kv.count("way")) { std::string w = kv["way"]; for (int i = 0; i < 6; ++i) if (w == kWayNames[i]) g_set.way = (Way)i; }
+        if (kv.count("way")) { std::string w = kv["way"]; for (int i = 0; i < kWays; ++i) if (w == kWayNames[i]) g_set.way = (Way)i; }
         turnOn();
         return statusJson();
     }
@@ -1098,8 +1485,8 @@ std::string command(const std::string& nameIn, const KV& kvIn) {
     if (name == "mosh_toggle") { if (g_on) turnOff("off"); else turnOn(); return statusJson(); }
     if (name == "mosh_way") {
         std::string w = str(kv, "way");
-        for (int i = 0; i < 6; ++i) if (w == kWayNames[i]) { g_set.way = (Way)i; return statusJson(); }
-        return "err way must be wrap|tear|mosh|bleed|raw|all";
+        for (int i = 0; i < kWays; ++i) if (w == kWayNames[i]) { g_set.way = (Way)i; return statusJson(); }
+        return "err way must be wrap|tear|mosh|bleed|raw|all|sound";
     }
     if (name == "mosh_amount") {
         int v = std::atoi(str(kv, "value", str(kv, "amount", "-1")).c_str());

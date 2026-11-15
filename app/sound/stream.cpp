@@ -227,6 +227,8 @@ std::string streamCommand(const std::string& action, double captureMs) {
                 lastOn = at;
             }
         }
+        o.setf(std::ios::fixed);
+        o.precision(3);   // times on the clock to the microsecond, however long the app has run
         o << "{\"ok\":true,\"standing\":\"data\",\"out\":\"" << streamOut() << "\",\"rate\":" << kRate
           << ",\"samples\":" << s.size() << ",\"from_ms\":" << g_offsetMs + sampleToMs(first)
           << ",\"to_ms\":" << g_offsetMs + sampleToMs(end) << ",\"peak\":" << peak(s) << ",\"rms\":" << rms(s)

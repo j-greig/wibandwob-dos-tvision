@@ -1,0 +1,11 @@
+# catmosh: the film's five parts, in its order, bars and tempi
+# (from catmosh score3.json: part starts 0.3, 9.0, 19.8, 29.6, 40.5 s; end 51.1 s).
+# bars N WAY [amount A] [tempo BPM]; the tempo drives the internal clock (a playing
+# TR-808 keeps its own). "end" stops the mosh; "loop" would start again.
+
+bars 5  wrap  amount 70  tempo 138
+bars 9  tear  amount 80  tempo 200
+bars 7  mosh  amount 85  tempo 170
+bars 12 bleed amount 85  tempo 264
+bars 7  raw   amount 90  tempo 158
+end

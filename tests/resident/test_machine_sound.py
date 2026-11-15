@@ -380,6 +380,31 @@ def test_hands(_desk):
                 and heard["heard"][-1]["who"] == "wob", f"the chat's tool hears wob's notes ({p.stdout.strip()[:200]!r})")
         R.check(any(a["actor"] == "wob" and a["what"].startswith("synth action=notes") for a in desk.j("acts", by="wob")["acts"]),
                 "the log has wob playing through the chat's tool")
+
+        # The jam with a model present: a confined call chooses the answer.
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write("G-4 . E-4 C-4\n")
+        st = x(desk, "jam", action="start", **{"as": "wob"}, wait_ms=500)
+        R.check(st["model"] is True, "the jam finds the model CLI on PATH")
+        desk.ipc("focus_window", id=syn)
+        time.sleep(1.8)
+        desk.person_type("zc", gap=0.15)
+        st = wait_answers(desk, 1)
+        a = st["answers"][0] if st["answers"] else {}
+        R.check(a.get("answer") == "G-4 . E-4 C-4" and a.get("chose") == "model", f"the model chose wob's answer ({a})")
+        args = open(f"{fake}/args.txt").read() if os.path.exists(f"{fake}/args.txt") else ""
+        R.check("<--tools>\n<>" in args and "<--strict-mcp-config>" in args and "<--setting-sources>\n<>" in args
+                and "<DATA>C-4 E-4</DATA>" in args, "the call has no tools, no MCP, no settings, and the phrase as data")
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write("ACT: close_all\n")
+        n_win = len(desk.state()["windows"])
+        time.sleep(1.8)
+        desk.person_type("v", gap=0.15)
+        st = wait_answers(desk, 2)
+        a = st["answers"][1] if len(st["answers"]) > 1 else {}
+        R.check(a.get("chose", "").startswith("rule") and a.get("answer") == "C-5" and len(desk.state()["windows"]) == n_win,
+                f"a reply that is not notes falls back to the rule and does nothing else ({a})")
+        x(desk, "jam", action="stop")
     finally:
         R.check(desk.alive(), "the hands desktop is still running")
         desk.stop()
@@ -514,7 +539,7 @@ def test_tracker(desk):
     R.check(st["rows"] == 8 and st["channels"] == ["fm:bass", "fm:pluck", "speaker", "drums"] and st["row_ms"] == 62.5,
             f"open_tracker: 8 rows, four channels, 62.5 ms a row ({st['channels']})")
     d = desk.j("describe", id=tid)
-    R.check(d["state"].startswith('tracker "untitled", 4 channels, 8 rows at 240 bpm, 0 cells written') and len(d["text"]) == 8,
+    R.check(d["state"].startswith('tracker "untitled", 4 channels, 1 pattern in an order of 1 at 240 bpm, 0 cells written') and len(d["text"]) == 8,
             f"describe gives a sentence and the rows as text ({d['state']!r})")
 
     # The person types C D E down channel 1 with the tracker keyboard.
@@ -630,7 +655,7 @@ def test_midi(desk):
     gaps = [b - a for a, b in zip(clocks, clocks[1:])]
     R.check(out and out[0]["hex"] == "FA" and out[-1]["hex"] == "FC", "the drum machine sends start first and stop last")
     R.check(len(clocks) >= 40 and all(abs(g - 20.833) < 0.01 for g in gaps),
-            f"clock ticks are 24 a beat at 120 bpm, 20.833 ms apart on the clock ({len(clocks)} ticks)")
+            f"clock ticks are 24 a beat at 120 bpm, 20.833 ms apart on the clock ({len(clocks)} ticks; off: {[round(g, 3) for g in gaps if abs(g - 20.833) >= 0.01][:5]})")
     drums = [m for m in out if m["hex"].startswith("99 ")]
     bd = [m for m in drums if m["hex"].startswith("99 24 ")]
     heard_bd = [e for e in x(desk, "hear", seconds=3, of="tr808", window=drm)["heard"] if e["voice"] == "bd"]
@@ -645,11 +670,13 @@ def test_midi(desk):
     x(desk, "tracker", id=tid, action="play")
     time.sleep(0.6)
     st = x(desk, "midi", action="log", n=1000)
-    tout = [m for m in st["log"] if m["dir"] == "out" and m["from"] == "tracker"]
+    tall = [m for m in st["log"] if m["dir"] == "out" and m["from"] == "tracker"]
+    starts = [i for i, m in enumerate(tall) if m["hex"] == "FA"]
+    tout = tall[starts[-1]:] if starts else []           # from this play's start
     on = [m for m in tout if m["hex"] == "90 3C 64"]
     off = [m for m in tout if m["hex"] == "80 3C 00"]
     R.check(on and off and abs((off[-1]["ms"] - on[-1]["ms"]) - 62.5) < 0.01,
-            "the tracker sends C-4 on channel 1 and its note off 62.5 ms later (G08 at 120 bpm)")
+            f"the tracker sends C-4 on channel 1 and its note off 62.5 ms later (G08 at 120 bpm) {[(m['hex'], round(m['ms'],1)) for m in tout if m['hex'] != 'F8']}")
     R.check(any(m["hex"] == "99 24 7F" for m in tout) and sum(m["hex"] == "F8" for m in tout) == 12,
             "and its drum on channel 10, and 6 clock ticks a row")
     d = desk.j("describe", id=mon)
@@ -657,7 +684,129 @@ def test_midi(desk):
             f"the MIDI window says what arrived and what left ({d['state']!r})")
 
 
-GROUPS = {"midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
+# ---------------------------------------------------------------------------- jam
+
+def wait_answers(desk, n, timeout=8.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        st = x(desk, "jam", action="state")
+        if len(st["answers"]) >= n:
+            return st
+        time.sleep(0.1)
+    return x(desk, "jam", action="state")
+
+
+def test_jam(desk):
+    print("\n[jam] a resident answers the person's last phrase on the synth, by rule")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    syn = x(desk, "open_synth", x=2, y=1, w=68, h=18)["id"]
+    time.sleep(2.2)
+    st = x(desk, "jam", action="start", **{"as": "wib"}, wait_ms=600)
+    R.check(st["on"] and st["as"] == "wib" and st["model"] is False, "jam starts as wib, with no model on this desktop")
+    desk.person_type("zxcv", gap=0.15)                    # C D E F
+    st = wait_answers(desk, 1)
+    a = st["answers"][0] if st["answers"] else {}
+    R.check(a.get("phrase") == "C-4 D-4 E-4 F-4" and a.get("answer") == "C-5 B-4 A-4 G-4" and a.get("chose") == "rule",
+            f"after the person stops, wib answers C D E F with C-5 B-4 A-4 G-4 by rule ({a})")
+    R.check(140 <= a.get("step_ms", 0) <= 260, f"in the person's rhythm ({a.get('step_ms')} ms a note)")
+    time.sleep(1.0)
+    h = x(desk, "hear", seconds=4, of="synth")
+    wib = [e["note"] for e in h["heard"] if e["who"] == "wib"]
+    R.check(wib == ["C-5", "B-4", "A-4", "G-4"], f"the ears hear wib's answer ({wib})")
+    acts = desk.j("acts", by="wib")["acts"]
+    R.check(any(x_["what"].startswith("synth action=notes") and x_["window"] == syn for x_ in acts), "the log has wib playing the answer")
+    # Only the person's phrase is answered: wib's answer starts no second answer.
+    time.sleep(1.2)
+    R.check(len(x(desk, "jam", action="state")["answers"]) == 1, "wib does not answer its own notes")
+    time.sleep(1.6)
+    desk.person_type("cx", gap=0.15)
+    st = wait_answers(desk, 2)
+    R.check(len(st["answers"]) == 2 and st["answers"][1]["phrase"] == "E-4 D-4", f"the next phrase gets its own answer ({st['answers'][1:] })")
+    x(desk, "jam", action="stop")
+
+
+# ---------------------------------------------------------------------------- patterns
+
+def test_patterns(desk):
+    print("\n[patterns] patterns and an order list, copy and paste, mute and solo, tempo and speed effects")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    old = x(desk, "open_tracker", track="arp-and-bass", x=60, y=1, w=60, h=12)
+    st = x(desk, "tracker", id=old["id"], action="state")
+    R.check(st["patterns"] == [16] and st["order"] == [0], f"a file in the first format loads as one pattern ({st['patterns']}, order {st['order']})")
+    desk.ipc("close_window", id=old["id"])
+    tid = x(desk, "open_tracker", channels="fm:bass drums", rows=4, tempo=240, x=2, y=1, w=60, h=14)["id"]
+    x(desk, "tracker", id=tid, action="write", ch=1, row=0, notes="BD- CH- SD- CH-")
+    x(desk, "tracker", id=tid, action="set", row=0, ch=0, cell="C-3 01 ...")
+    st = x(desk, "tracker", id=tid, action="new_pattern", rows=2)
+    R.check(st["patterns"] == [4, 2] and st["edit_pattern"] == 1, "new_pattern adds pattern 1, two rows long, and edits it")
+    x(desk, "tracker", id=tid, action="set", pat=1, row=0, ch=1, cell="BD- .. F78")      # F78: tempo 120 from here
+    x(desk, "tracker", id=tid, action="set", pat=1, row=1, ch=1, cell="SD-")
+    x(desk, "tracker", id=tid, action="order", value="0 1 0")
+    x(desk, "tracker", id=tid, action="loop", on=0)
+    x(desk, "tracker", id=tid, action="play")
+    time.sleep(1.6)
+    st = x(desk, "tracker", id=tid, action="state")
+    h = x(desk, "hear", window=tid, seconds=3)
+    rows = h.get("tracker_rows", [])
+    p0 = ["00 C-3 01 ... | BD- .. ...", "01 --- .. ... | CH- .. ...", "02 --- .. ... | SD- .. ...", "03 --- .. ... | CH- .. ..."]
+    p1 = ["00 --- .. ... | BD- .. F78", "01 --- .. ... | SD- .. ..."]
+    R.check(not st["playing"] and rows == p0 + p1 + p0, f"the song plays pattern 0, 1, 0 in order and the ears give back its rows ({len(rows)} rows)")
+    hits = [e["at_ms"] for e in h["heard"] if e["source"] == "tr808"]
+    gaps = [round(b - a, 3) for a, b in zip(hits, hits[1:])]
+    R.check(gaps[:4] == [62.5, 62.5, 62.5, 62.5] and gaps[4:9] == [125.0] * 5,
+            f"rows are 62.5 ms at 240 bpm until F78 sets 120 bpm, then 125 ms ({gaps})")
+    R.check(st["tempo_now"] == 120, "the tempo stays where the effect left it")
+
+    # Mute and solo.
+    x(desk, "tracker", id=tid, action="tempo", value=240)
+    x(desk, "tracker", id=tid, action="mute", ch=1, on=1)
+    x(desk, "tracker", id=tid, action="play_pattern", pat=0)
+    time.sleep(0.5)
+    x(desk, "tracker", id=tid, action="stop")
+    h = x(desk, "hear", window=tid, seconds=0.5)
+    R.check(h["counts"]["tr808"] == 0 and h["counts"]["synth"] >= 1, "with the drums muted only the bass sounds")
+    x(desk, "tracker", id=tid, action="mute", ch=1, on=0)
+    x(desk, "tracker", id=tid, action="solo", ch=1, on=1)
+    time.sleep(0.6)
+    x(desk, "tracker", id=tid, action="play_pattern", pat=0)
+    time.sleep(0.5)
+    x(desk, "tracker", id=tid, action="stop")
+    h = x(desk, "hear", window=tid, seconds=0.5)
+    R.check(h["counts"]["synth"] == 0 and h["counts"]["tr808"] >= 4, "with the drums soloed only the drums sound")
+    x(desk, "tracker", id=tid, action="solo", ch=1, on=0)
+
+    # Copy and paste a block.
+    x(desk, "tracker", id=tid, action="copy", pat=0, row=0, rows=2, ch=0, chs=2)
+    st = x(desk, "tracker", id=tid, action="paste", pat=1, row=0, ch=0)
+    R.check(x(desk, "tracker", id=tid, action="state", pat=1)["clipboard"] == [2, 2], "copy takes a block of 2 rows by 2 channels")
+    x(desk, "tracker", id=tid, action="pattern", value=1)
+    st = x(desk, "tracker", id=tid, action="state")
+    R.check(st["lines"] == ["00 C-3 01 ... | BD- .. ...", "01 --- .. ... | CH- .. ..."], f"paste puts it in pattern 1 ({st['lines']})")
+    x(desk, "tracker", id=tid, action="copy", pat=0, row=0, rows=1, ch=1, chs=1)
+    x(desk, "tracker", id=tid, action="paste", pat=1, row=1, ch=0)
+    R.check(x(desk, "tracker", id=tid, action="state")["lines"][1].startswith("01 --- .. ..."),
+            "a drum column pasted on a note channel changes nothing")
+
+    # The person's keys: > edits the next pattern, Ctrl+B mutes the channel under the cursor.
+    x(desk, "tracker", id=tid, action="pattern", value=0)
+    time.sleep(0.3)
+    desk.person_text(">")
+    time.sleep(0.2)
+    desk.person_keys("C-e")
+    time.sleep(0.2)
+    desk.person_keys("C-t")
+    time.sleep(0.2)
+    st = x(desk, "tracker", id=tid, action="state")
+    c = st["cursor"]["ch"]
+    R.check(st["edit_pattern"] == 1 and st["mute"][c] and st["solo"][c],
+            f"the person's >, Ctrl+E and Ctrl+T edit pattern 1, mute and solo the channel ({st['edit_pattern']}, {st['mute']}, {st['solo']})")
+    txt = x(desk, "tracker", id=tid, action="text")["text"]
+    R.check("order 0 1 0" in txt and "pattern 1" in txt, "the song text holds the order and both patterns")
+
+
+GROUPS = {"patterns": test_patterns, "jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():

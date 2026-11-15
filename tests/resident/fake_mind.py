@@ -16,7 +16,12 @@ if log:
 if os.environ.get("FAKE_MIND_FAIL") == "1":
     sys.exit(1)
 prompt = sys.argv[-1] if sys.argv else ""
-if "dreaming" in prompt:
+if "time of your own" in prompt:
+    import re
+    m = re.search(r"so far in this time: (\d+) thoughts, (\d+) drawings, (\d+) log lines", prompt)
+    done = sum(int(x) for x in m.groups()) if m else 0
+    print(["THINK: the moon sits in the corner of the desk", "DRAW:\n  /\\\n /__\\\n |[]|", "LOG: a line I wrote in my own time", "NOTHING"][min(done, 3)])
+elif "dreaming" in prompt:
     for i in range(7):
         print(f"mind dream line {i}: a moon over the desk")
 else:

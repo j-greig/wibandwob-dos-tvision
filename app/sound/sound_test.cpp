@@ -5,6 +5,7 @@
 #include <memory>
 #include "score.h"
 #include "tracker.h"
+#include "jam.h"
 #include "synth.h"
 
 #include <cmath>
@@ -318,26 +319,65 @@ static void testTracker() {
     check(!parseCell(dr, "C-4", c, err) && !parseCell(fm, "C-4 01 X12", c, err), "a note on a drum channel and an unknown effect are refused");
 
     Song s = newSong(8, {fm, sp, dr});
-    parseCell(fm, "C-2 01", s.grid[0][0], err);
-    parseCell(fm, "G-2 .. A47", s.grid[4][0], err);
-    parseCell(sp, "C-6 .. G08", s.grid[1][1], err);
-    parseCell(dr, "SD- 40", s.grid[2][2], err);
+    parseCell(fm, "C-2 01", s.cell(0, 0, 0), err);
+    parseCell(fm, "G-2 .. A47", s.cell(0, 4, 0), err);
+    parseCell(sp, "C-6 .. G08", s.cell(0, 1, 1), err);
+    parseCell(dr, "SD- 40", s.cell(0, 2, 2), err);
     Song back;
     check(parseSong(songText(s), back, err) && songText(back) == songText(s), "a song saved as text loads back the same (" + err + ")");
-    check(rowText(s, 4) == "04 G-2 .. A47 | --- .. ... | --- .. ...", "row text: " + rowText(s, 4));
+    check(rowText(s, 0, 4) == "04 G-2 .. A47 | --- .. ... | --- .. ...", "row text: " + rowText(s, 0, 4));
     check(rowMs(s) == 125, "at 120 bpm and 4 rows a beat a row is 125 ms");
-    auto r0 = rowSounds(s, 0);
+    auto r0 = rowSounds(s, 0, 0, rowMs(s));
     check(r0.size() == 1 && r0[0].note.durMs == 4 * 125 * 0.95 && r0[0].note.patch.name == "bass",
           "C-2 rings until the next note in its channel, four rows on (gate 475 ms)");
-    auto r4 = rowSounds(s, 4);
+    auto r4 = rowSounds(s, 0, 4, rowMs(s));
     check(r4.size() == 3 && r4[1].note.midi == 43 + 4 && r4[2].note.midi == 43 + 7 && std::fabs(r4[2].atMs - 250.0 / 3) < 1e-9,
           "A47 plays G-2, B-2, D-3 across the row");
-    auto r1 = rowSounds(s, 1);
+    auto r1 = rowSounds(s, 0, 1, rowMs(s));
     check(r1.size() == 1 && r1[0].note.voice == Voice::PcSpeaker && r1[0].note.durMs == 62.5, "G08 gates the speaker note to half a row");
-    auto r2 = rowSounds(s, 2);
+    auto r2 = rowSounds(s, 0, 2, rowMs(s));
     check(r2.size() == 1 && r2[0].drum && r2[0].drum_voice == 1 && std::fabs(r2[0].gain - 64 / 127.0) < 1e-9, "SD- 40 is a snare at level 0x40");
     Song bad;
     check(!parseSong("channels fm:bass\n00 C-4 | E-4\n", bad, err) && err.find("line 2") == 0, "a row with too many cells is refused with its line");
+}
+
+static void testPatterns() {
+    std::printf("[patterns]\n");
+    std::string err;
+    // The first format (rows and no pattern line) still loads: pattern 0, order 0.
+    Song old;
+    check(parseSong("title old\nchannels fm:bass drums\n00 C-4 | BD-\n01 --- | ---\n", old, err) && old.pats.size() == 1 &&
+          old.order == std::vector<int>({0}) && old.rows(0) == 2, "an old file loads as pattern 0 in an order of 0 (" + err + ")");
+    const char* text =
+        "title two\ntempo 120\nrpb 4\nchannels fm:bass drums\norder 0 1 0\n"
+        "pattern 0\n00 C-3 .. ... | BD- .. ...\n01 --- .. ... | --- .. ...\n"
+        "pattern 1\n00 G-3 .. F90 | SD- .. ...\n01 --- .. F03 | --- .. ...\n02 --- .. ... | --- .. ...\n";
+    Song s;
+    check(parseSong(text, s, err) && s.pats.size() == 2 && s.rows(0) == 2 && s.rows(1) == 3 && s.order == std::vector<int>({0, 1, 0}),
+          "patterns of their own length and an order list (" + err + ")");
+    Song back;
+    check(parseSong(songText(s), back, err) && songText(back) == songText(s), "saved and loaded back the same");
+    const RowFx f0 = rowEffects(s, 1, 0), f1 = rowEffects(s, 1, 1);
+    check(f0.tempo == 0x90 && f0.speed < 0 && f1.speed == 3 && f1.tempo < 0, "F90 sets tempo 144, F03 sets speed 3");
+    check(rowMs(144, 3) == 60000.0 / 144 / 8 && rowMs(120, 6) == 125, "speed 3 at 144 bpm is an eighth of a beat a row; speed 6 at 120 is 125 ms");
+    Song bad;
+    check(!parseSong("channels fm:bass\norder 0 2\npattern 0\n00 C-4\n", bad, err) && err.find("pattern 2") != std::string::npos,
+          "an order naming a missing pattern is refused");
+    check(!parseSong("channels fm:bass\npattern 1\n00 C-4\n", bad, err) && err.find("line 2") == 0, "patterns are numbered from 0 in order");
+    TrackCell c;
+    check(!parseCell(TrackChannel{ChanKind::Fm, 0}, "C-4 .. F00", c, err), "F00 is refused");
+}
+
+static void testJam() {
+    std::printf("[jam]\n");
+    const std::vector<std::string> ph = {"C-4", "D-4", "E-4", "F-4"};
+    check(jamRule(ph, "answer") == std::vector<std::string>({"C-5", "B-4", "A-4", "G-4"}), "answer: the phrase backwards, a fifth up");
+    check(jamRule(ph, "echo") == std::vector<std::string>({"C-5", "D-5", "E-5", "F-5"}), "echo: an octave up");
+    check(jamRule(ph, "invert") == std::vector<std::string>({"C-4", "A#3", "G#3", "G-3"}), "invert: mirrored round the first note");
+    check(jamParseReply("G-4 . E-4 C-4\n") == std::vector<std::string>({"G-4", ".", "E-4", "C-4"}), "a model's line of notes is taken");
+    check(jamParseReply("Sure! here you go:\nc4 eb4 g4\n") == std::vector<std::string>({"C-4", "D#4", "G-4"}), "the first line that is all notes");
+    check(jamParseReply("ACT: close_window id=w1\n").empty() && jamParseReply("60 62 64").empty() && jamParseReply("").empty(),
+          "anything else gives nothing (the rule plays instead)");
 }
 
 int main(int argc, char** argv) {
@@ -348,6 +388,8 @@ int main(int argc, char** argv) {
     if (only.empty() || only == "ears") testEars();
     if (only.empty() || only == "score") testScore();
     if (only.empty() || only == "tracker") testTracker();
+    if (only.empty() || only == "jam") testJam();
+    if (only.empty() || only == "patterns") testPatterns();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
