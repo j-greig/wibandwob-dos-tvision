@@ -9,6 +9,7 @@
 #include "desk_mosh.h"
 #include "resident_life.h"
 #include "resident_hands.h"
+#include "resident_teach.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 // The machine's sound (app/sound/sound_host.cpp). Weak, so tests that link the
@@ -229,6 +230,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"person_events", "The person's gestures since=G (typed, key, click, double-click, drag, scroll, command, menu, menu closed, opened, moved, resized, retitled, closed), in order; kinds= a comma list; never a resident's own acts. Read-only", false},
         {"person_wait", "Like person_events, but the socket holds the reply until a gesture after since=G arrives or ms= (default 10000, at most 60000) pass; then timeout is true", false},
         {"resident_reflexes", "Residents inside the app: the reflex script that answers the person's gestures, what it bound and its last results; load=<file> and clear=1 are rules (the console with the key turned; WWDOS_RESIDENTS=<file> at start)", false},
+        {"help", "What a command does and whether you may run it: name=<command> gives its description, whether it is a rule and, when you may not, why; no name lists every command and the rules", false},
+        {"resident_selftest", "The calling resident tries what a person can do through its own hands (open an editor, type and read back, choose a menu item and answer the dialog, drag, a refused rule, a mistyped command, person_events, close): start=1 begins; no args reports each step", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -313,6 +316,7 @@ std::string exec_registry_command(
     const std::map<std::string, std::string>& kv) {
     (void)api_take_last_registered_window_id(app);   // forget a window registered before this command
     std::string r = exec_registry_command_inner(app, name, kv);
+    if (r == "err unknown command") return resident::unknownCommand(name);
     if (r == "ok") {
         std::string id = api_take_last_registered_window_id(app);
         if (!id.empty()) return "{\"ok\":true,\"id\":\"" + id + "\"}";
@@ -829,6 +833,8 @@ static std::string exec_registry_command_inner(
     }
     if (deskmosh::isCommand(name)) return deskmosh::command(name, kv);
     if (name == "describe") return resident::cmdDescribe(kv);
+    if (name == "help") return resident::cmdHelp(kv);
+    if (name == "resident_selftest") return resident::cmdSelftest(kv);
     if (name == "resident_reflexes") return resident::cmdReflexes(kv);
     if (name == "person_events" || name == "person_wait") return resident::cmdPersonEvents(kv);
     if (name == "acts") return resident::cmdActs(kv);

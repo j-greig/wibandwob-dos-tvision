@@ -45,6 +45,7 @@
 #include "resident_life.h"
 #include "describe.h"
 #include "resident_hands.h"
+#include "resident_teach.h"
 #include "feed_view.h"
 #include "core/json_utils.h"
 #include "gradient.h"
@@ -3205,6 +3206,7 @@ void TWwdosApp::idle()
     scrambleEngine.poll();
     // Residents inside the app answer the person's gestures (resident_hands.cpp).
     resident::tickReflexes();
+    resident::tickSelftest();
     TFeedView::tickAll();   // feeds follow the act log
 
     // DISABLED: Update animated kaomoji in menu bar (causing crashes + freezes)
