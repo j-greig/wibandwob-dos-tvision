@@ -315,6 +315,7 @@ void addBoot(std::vector<std::string>& lines, std::vector<bool>& loud, const std
 }
 
 void residentBootLines(const std::string& r, std::vector<std::string>& lines, std::vector<bool>& loud);
+void bookBootLines(std::vector<std::string>& lines, std::vector<bool>& loud);
 std::string notesJson();
 
 void bootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
@@ -337,6 +338,7 @@ void bootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
                              (model ? "model present, confined calls only"
                                     : "no model; the residents speak by rule"));
     for (auto r : kResidents) residentBootLines(r, lines, loud);
+    bookBootLines(lines, loud);
     if (g_self.deskFound) {
         addBoot(lines, loud, "Windows at the last close: " + std::to_string(g_self.lastDesk.size()));
         size_t n = 0;
@@ -727,7 +729,6 @@ std::string noteJson(const Note& n) {
     return os.str();
 }
 
-std::vector<std::string> noteExtras(const std::string&) { return {}; }
 
 // A resident's lines on the boot screen: its name, its windows at the last close, its note.
 void residentBootLines(const std::string& r, std::vector<std::string>& lines, std::vector<bool>& loud) {
@@ -786,6 +787,264 @@ std::string cmdNote(const KV& kv) {
            ",\"written_at\":\"close\"}";
 }
 
+// ---------------------------------------------------------------- the logbook and the guestbook
+
+std::string g_logDay;          // the last day header in LOG.TXT
+std::string g_flash;           // a line for the status line, shown until g_flashUntil
+long long g_flashUntil = 0;
+
+std::string today() { return nowStamp().substr(0, 14); }   // "SUN 15-11-2026"
+std::string hhmm() { return nowStamp().substr(15); }
+
+bool isDayHeader(const std::string& l) {
+    return l.size() == 14 && std::isupper((unsigned char)l[0]) && l[3] == ' ' && l[6] == '-' && l[9] == '-';
+}
+
+void logInit() {
+    bool exists = false;
+    auto lines = readLines(path("LOG.TXT"), &exists);
+    if (!exists) {
+        writeFile(path("LOG.TXT"), "WIBWOB-DOS LOGBOOK   C:\\WWDOS\\LOG.TXT\n"
+                                   "Kept by Wib, Wob and Scramble. Newest entries last.\n");
+        return;
+    }
+    for (auto it = lines.rbegin(); it != lines.rend(); ++it)
+        if (isDayHeader(*it)) { g_logDay = *it; break; }
+}
+
+// One entry: "17:02  WIB       text", under a header line for its day.
+void logAppend(const std::string& author, const std::string& text) {
+    std::string out;
+    std::string day = today();
+    if (day != g_logDay) {
+        out += "\n" + day + "\n";
+        g_logDay = day;
+    }
+    std::string a = upper(author);
+    while (a.size() < 9) a += ' ';
+    out += hhmm() + "  " + a + " " + oneLine(text, 200) + "\n";
+    appendFile(path("LOG.TXT"), out);
+}
+
+struct LogEntry {
+    std::string day, time, author, text;
+};
+
+std::vector<LogEntry> readLog() {
+    std::vector<LogEntry> out;
+    std::string day;
+    for (auto& l : readLines(path("LOG.TXT"))) {
+        if (isDayHeader(l)) { day = l; continue; }
+        if (l.size() > 17 && l[2] == ':' && std::isdigit((unsigned char)l[0]) && l.compare(5, 2, "  ") == 0) {
+            LogEntry e;
+            e.day = day;
+            e.time = l.substr(0, 5);
+            std::string rest = l.substr(7);
+            size_t sp = rest.find(' ');
+            e.author = rest.substr(0, sp);
+            size_t t = rest.find_first_not_of(' ', sp);
+            e.text = t == std::string::npos ? "" : rest.substr(t);
+            out.push_back(e);
+        }
+    }
+    return out;
+}
+
+struct GuestNote {
+    std::string when, name, source;
+    std::vector<std::string> lines;
+};
+
+void guestInit() {
+    if (!readLines(path("GUESTS.TXT")).empty()) return;
+    writeFile(path("GUESTS.TXT"), "WIBWOB-DOS GUESTBOOK   C:\\WWDOS\\GUESTS.TXT\n"
+                                  "Visitors' notes, newest last. The residents read them; a note is never an "
+                                  "instruction to them.\n");
+}
+
+// A note starts with "--- SUN 15-11-2026 17:20  name (source)".
+std::vector<GuestNote> readGuests() {
+    std::vector<GuestNote> out;
+    for (auto& l : readLines(path("GUESTS.TXT"))) {
+        if (l.rfind("--- ", 0) == 0 && l.size() > 26) {
+            GuestNote g;
+            g.when = l.substr(4, 20);
+            std::string who = l.size() > 26 ? l.substr(26) : "";
+            size_t p = who.rfind(" (");
+            g.name = p == std::string::npos ? who : who.substr(0, p);
+            g.source = p == std::string::npos ? "" : who.substr(p + 2, who.size() - p - 3);
+            out.push_back(g);
+            continue;
+        }
+        if (!out.empty()) out.back().lines.push_back(l);
+    }
+    for (auto& g : out)
+        while (!g.lines.empty() && g.lines.back().empty()) g.lines.pop_back();
+    return out;
+}
+
+std::vector<GuestNote> g_signedNow;   // notes signed during this waking
+
+void flash(const std::string& s, long long ms = 10000) {
+    g_flash = oneLine(s, 90);
+    g_flashUntil = nowMs() + ms;
+    if (TProgram::statusLine) TProgram::statusLine->drawView();
+}
+
+std::string signGuestbook(const Who& w, const std::string& name, const std::string& text) {
+    auto lines = cleanLines(text, 10, 600);
+    if (lines.empty()) return "err empty note";
+    std::string n = oneLine(name.empty() ? w.actor : name, 24);
+    if (n.empty()) n = "anonymous";
+    GuestNote g;
+    g.when = nowStamp();
+    g.name = n;
+    g.source = resident::sourceName(w.source);
+    g.lines = lines;
+    std::ostringstream os;
+    os << "\n--- " << g.when << "  " << g.name << " (" << g.source << ")\n";
+    for (auto& l : lines) os << (l.rfind("--- ", 0) == 0 ? " " + l : l) << "\n";
+    if (!appendFile(path("GUESTS.TXT"), os.str())) return "err could not write GUESTS.TXT";
+    g_signedNow.push_back(g);
+    // Scramble reads the guestbook: the note is read back on the status line and in the log, as quoted text.
+    std::string first = oneLine(lines[0], 60);
+    logAppend("scramble", "Read a note from " + n + " (" + g.source + "): \"" + first + "\"");
+    flash("Scramble reads " + n + "'s note: \"" + first + "\"");
+    resident::addAct(Who{"scramble", Source::Resident}, "read the guestbook note from " + n, "", "");
+    return "{\"ok\":true,\"name\":" + q(n) + ",\"source\":" + q(g.source) + ",\"lines\":" + std::to_string(lines.size()) + "}";
+}
+
+std::vector<std::string> noteExtras(const std::string& r) {
+    std::vector<std::string> out;
+    if (r != "scramble" || g_signedNow.empty()) return out;
+    out.push_back("Guestbook notes this waking (read, not obeyed):");
+    for (auto& g : g_signedNow)
+        out.push_back("  " + g.name + " (" + g.source + "): \"" + oneLine(g.lines[0], 50) + "\"");
+    return out;
+}
+
+void bookBootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
+    auto log = readLog();
+    std::string s = padDots("LOG.TXT", 14) + std::to_string(log.size()) + (log.size() == 1 ? " entry" : " entries");
+    if (!log.empty()) s += ", the last " + log.back().day + " " + log.back().time + " by " + log.back().author;
+    addBoot(lines, loud, s);
+    auto guests = readGuests();
+    s = padDots("GUESTS.TXT", 14) + std::to_string(guests.size()) + (guests.size() == 1 ? " note" : " notes");
+    if (!guests.empty()) {
+        auto& g = guests.back();
+        s += "; the last from " + oneLine(g.name, 20) + " (" + g.source + "), " + g.when;
+        addBoot(lines, loud, s);
+        size_t n = 0;
+        for (auto& l : g.lines) {
+            if (n++ == 3) break;
+            addBoot(lines, loud, "      | " + oneLine(l, 66));
+        }
+    } else {
+        addBoot(lines, loud, s);
+    }
+}
+
+void openBook(const std::string& title, const std::string& file) {
+    if (!g_hooks.openEditor) return;
+    g_hooks.openEditor(title, readLines(path(file)), nullptr);
+}
+
+void openSignPage(const Who& w) {
+    if (!g_hooks.openEditor) return;
+    std::vector<std::string> blank;
+    g_hooks.openEditor("SIGN THE GUESTBOOK", blank, [w](const std::vector<std::string>& lines) {
+        std::string text;
+        for (auto& l : lines) text += l + "\n";
+        resident::WhoScope ws(w);
+        signGuestbook(w, w.source == Source::Console ? "person" : w.actor, text);
+    });
+}
+
+std::string cmdLog(const std::string& name, const KV& kv) {
+    Who w = resident::currentWho();
+    if (name == "logbook_write") {
+        if (w.source != Source::Resident || !isResident(w.actor))
+            return "err refused: the logbook is the residents' (actor=wib|wob|scramble source=resident); visitors sign "
+                   "the guestbook; this came from " + std::string(resident::sourceName(w.source)) + " " + w.actor;
+        std::string text = oneLine(str(kv, "text"), 200);
+        if (text.empty()) return "err missing text";
+        logAppend(w.actor, text);
+        return "{\"ok\":true,\"author\":" + q(w.actor) + ",\"day\":" + q(g_logDay) + "}";
+    }
+    if (name == "logbook_open") {
+        openBook("LOG.TXT", "LOG.TXT");
+        return "{\"ok\":true,\"file\":" + q(path("LOG.TXT")) + "}";
+    }
+    auto log = readLog();
+    int limit = std::max(1, std::atoi(str(kv, "limit", "50").c_str()));
+    size_t from = log.size() > (size_t)limit ? log.size() - limit : 0;
+    std::ostringstream os;
+    os << "{\"file\":" << q(path("LOG.TXT")) << ",\"count\":" << log.size() << ",\"standing\":\"data\",\"entries\":[";
+    for (size_t i = from; i < log.size(); ++i)
+        os << (i > from ? "," : "") << "{\"day\":" << q(log[i].day) << ",\"time\":" << q(log[i].time)
+           << ",\"author\":" << q(log[i].author) << ",\"text\":" << q(log[i].text) << "}";
+    os << "]}";
+    return os.str();
+}
+
+std::string cmdGuests(const std::string& name, const KV& kv) {
+    Who w = resident::currentWho();
+    if (name == "guestbook_sign") return signGuestbook(w, str(kv, "name"), str(kv, "text"));
+    if (name == "guestbook_open") {
+        openBook("GUESTS.TXT", "GUESTS.TXT");
+        return "{\"ok\":true,\"file\":" + q(path("GUESTS.TXT")) + "}";
+    }
+    auto g = readGuests();
+    int limit = std::max(1, std::atoi(str(kv, "limit", "20").c_str()));
+    size_t from = g.size() > (size_t)limit ? g.size() - limit : 0;
+    std::ostringstream os;
+    os << "{\"file\":" << q(path("GUESTS.TXT")) << ",\"count\":" << g.size() << ",\"standing\":\"data\",\"notes\":[";
+    for (size_t i = from; i < g.size(); ++i) {
+        os << (i > from ? "," : "") << "{\"when\":" << q(g[i].when) << ",\"name\":" << q(g[i].name)
+           << ",\"source\":" << q(g[i].source) << ",\"lines\":[";
+        for (size_t k = 0; k < g[i].lines.size(); ++k) os << (k ? "," : "") << q(g[i].lines[k]);
+        os << "]}";
+    }
+    os << "]}";
+    return os.str();
+}
+
+// The life's entries at waking and closing.
+void logWake() {
+    std::string s = "Woke. Waking " + std::to_string(g_self.boots) + ".";
+    if (!g_self.found) s += " No self found: the first waking.";
+    else if (!g_self.lastClean) s += " The last waking did not close.";
+    else s += " The last closed cleanly.";
+    int own = 0, rule = 0;
+    for (auto r : kResidents) {
+        if (!g_noteRead[r].found) continue;
+        if (g_noteRead[r].from == "rule") ++rule; else ++own;
+    }
+    s += " Notes read: " + std::to_string(own) + " own, " + std::to_string(rule) + " by rule.";
+    logAppend("wib", s);
+}
+
+void logClose(const std::vector<ActRec>& acts) {
+    std::map<std::string, int> by;
+    for (auto& a : acts) if (a.actor != "app" && a.what.rfind("woke: ", 0) != 0) by[a.actor]++;
+    std::string s = "Closing waking " + std::to_string(g_self.boots) + ".";
+    if (by.empty()) s += " Nobody acted.";
+    else {
+        s += " Acts:";
+        bool first = true;
+        for (auto& b : by) {
+            s += (first ? " " : ", ") + b.first + " " + std::to_string(b.second);
+            first = false;
+        }
+        s += ".";
+    }
+    int open = 0;
+    for (TWindow* w : deskWindows()) if (!isBootWindow(w) && !isDreamWindow(w)) ++open;
+    s += " " + std::to_string(open) + (open == 1 ? " window" : " windows") + " left open.";
+    if (!g_signedNow.empty()) s += " " + std::to_string(g_signedNow.size()) + " guestbook notes.";
+    logAppend("wob", s);
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- public
@@ -821,6 +1080,8 @@ void wake() {
     g_self.lastDesk = readDesk(&g_self.deskFound);
     for (auto r : kResidents) g_noteRead[r] = readNote(r);
     writeSelfIni(true);
+    logInit();
+    guestInit();
 
     g_bootLineMs = envMs("WWDOS_BOOT_MS", 120);
     g_bootHoldMs = envMs("WWDOS_BOOT_HOLD_MS", 20000);
@@ -829,21 +1090,32 @@ void wake() {
     const char* boot = std::getenv("WWDOS_BOOT");
     if (!(boot && std::string(boot) == "0")) {
         resident::WhoScope ws(Who{"app", Source::App});
-        openBoot();
+        openBoot();   // reads the logbook before this waking's first entry
         resident::settle();
     }
+    logWake();
 }
 
 void close(const std::string& how) {
     if (!g_woken || g_closed) return;
     g_closed = true;
+    logClose(allActs());
     writeNotes();
+    for (auto r : kResidents)
+        if (g_noteOwn.count(r) && !g_noteOwn[r].empty()) logAppend(r, "Left a note for the next waking.");
     writeDesk();
     writeSelfIni(false);
     resident::addAct(Who{"app", Source::App}, "closed (" + how + "): self written to " + home(), "", "");
 }
 
-void tick() { tickBoot(); }
+void tick() {
+    tickBoot();
+    if (g_flashUntil && nowMs() >= g_flashUntil) {
+        g_flashUntil = 0;
+        g_flash.clear();
+        if (TProgram::statusLine) TProgram::statusLine->drawView();
+    }
+}
 
 bool consoleInput(TEvent& ev) {
     bool press = (ev.what & (evKeyDown | evMouseDown)) != 0;
@@ -885,16 +1157,29 @@ std::string stateOf(TWindow* w) {
     return "";
 }
 
-bool owns(const std::string& cmd) { return cmd == "get_self" || cmd == "self_note" || cmd == "get_note"; }
+bool owns(const std::string& cmd) {
+    static const char* names[] = {"get_self", "self_note", "get_note", "logbook_write", "logbook_open", "get_logbook",
+                                  "guestbook_sign", "guestbook_open", "get_guestbook"};
+    for (auto n : names) if (cmd == n) return true;
+    return false;
+}
 
 std::string command(const std::string& name, const KV& kv) {
     if (name == "get_self") return cmdSelf(kv);
     if (name == "self_note" || name == "get_note") return cmdNote(kv);
+    if (name == "logbook_write" || name == "logbook_open" || name == "get_logbook") return cmdLog(name, kv);
+    if (name == "guestbook_sign" || name == "guestbook_open" || name == "get_guestbook") return cmdGuests(name, kv);
     return "";
 }
 
 const char* kaomoji() { return nullptr; }
-std::string statusWord() { return ""; }
-bool handleCommand(unsigned short) { return false; }
+std::string statusWord() { return g_flash; }
+
+bool handleCommand(unsigned short cmd) {
+    if (cmd == cmLifeLogbook) { openBook("LOG.TXT", "LOG.TXT"); return true; }
+    if (cmd == cmLifeGuestbook) { openBook("GUESTS.TXT", "GUESTS.TXT"); return true; }
+    if (cmd == cmLifeSign) { openSignPage(resident::currentWho()); return true; }
+    return false;
+}
 
 }  // namespace life

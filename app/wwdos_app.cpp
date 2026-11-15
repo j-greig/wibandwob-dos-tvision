@@ -563,9 +563,25 @@ public:
         TStatusLine::draw();
         drawLlmIndicator();
         drawApiIndicator();
+        drawLife();
     }
 
 private:
+    // The residents' state and what they are reading, left of the LLM indicator (resident_life.cpp).
+    void drawLife()
+    {
+        std::string s = life::statusWord();
+        if (s.empty()) return;
+        int len = (int)strwidth(s.c_str());
+        int xPos = size.x - len - 22;
+        if (xPos < 1) return;
+        TDrawBuffer b;
+        TAttrPair c = getColor(0x0301);
+        b.moveChar(0, ' ', c, len + 2);
+        b.moveStr(1, s.c_str(), c);
+        writeBuf(xPos - 1, 0, len + 2, 1, b);
+    }
+
     void drawLlmIndicator()
     {
         const AuthConfig& auth = AuthConfig::instance();
@@ -1109,6 +1125,34 @@ TWwdosApp::TWwdosApp() :
         registerWindow(w);
     };
     lifeHooks.modelPresent = []() { return AuthConfig::instance().mode() != AuthMode::NoAuth; };
+    lifeHooks.openEditor = [this](const std::string& title, const std::vector<std::string>& lines,
+                                  std::function<void(const std::vector<std::string>&)> onClose) -> TWindow* {
+        // A text editor holding a file's lines; onClose gets what it holds when it closes.
+        struct TLifeEditorWindow : public TTextEditorWindow {
+            std::function<void(const std::vector<std::string>&)> onClose;
+            TLifeEditorWindow(const TRect& r, const char* t) : TWindowInit(&TWindow::initFrame), TTextEditorWindow(r, t) {}
+            void close() override {
+                if (onClose && getEditorView()) {
+                    auto f = onClose;
+                    onClose = nullptr;
+                    f(getEditorView()->getLines());
+                }
+                TTextEditorWindow::close();
+            }
+        };
+        TRect r = deskTop->getExtent();
+        r.grow(-6, -3);
+        if (r.b.x - r.a.x > 84) r.b.x = r.a.x + 84;
+        auto* w = new TLifeEditorWindow(r, title.c_str());
+        w->setup();
+        w->onClose = onClose;
+        std::string text;
+        for (size_t i = 0; i < lines.size(); ++i) text += lines[i] + (i + 1 < lines.size() ? "\n" : "");
+        if (!text.empty() && w->getEditorView()) w->getEditorView()->sendText(text, "replace");
+        deskTop->insert(w);
+        registerWindow(w);
+        return w;
+    };
     life::setHooks(lifeHooks);
 
     // Start IPC server for local API control (best-effort; ignore failures)
@@ -1166,6 +1210,11 @@ void TWwdosApp::handleEvent(TEvent& event)
 {
     // The Residents menu: the console key and the residents' rules (resident_acts.cpp).
     if (event.what == evCommand && resident::handleCommand(event.message.command)) {
+        clearEvent(event);
+        return;
+    }
+    // Its logbook and guestbook (resident_life.cpp).
+    if (event.what == evCommand && life::handleCommand(event.message.command)) {
         clearEvent(event);
         return;
     }
@@ -2781,6 +2830,10 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("Console ~k~ey", resident::cmResidentKey, kbNoKey, hcNoContext, "off") +
                     *new TMenuItem("Reading ~m~arks", resident::cmResidentMarks, kbNoKey, hcNoContext, "on") +
                     *new TMenuItem("Visible ~h~and", resident::cmResidentHand, kbNoKey, hcNoContext, "on") +
+                    newLine() +
+                    *new TMenuItem("~L~ogbook (LOG.TXT)", life::cmLifeLogbook, kbNoKey) +
+                    *new TMenuItem("Guest~b~ook (GUESTS.TXT)", life::cmLifeGuestbook, kbNoKey) +
+                    *new TMenuItem("Sign the ~g~uestbook", life::cmLifeSign, kbNoKey) +
                     newLine() +
                     *new TMenuItem("~A~bout the residents", resident::cmResidentAbout, kbNoKey)
             ) +
