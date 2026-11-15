@@ -134,8 +134,8 @@ std::string ScrambleHaikuClient::askViaCli(const std::string& question) const
     cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence"
         // No tools and no MCP servers: this call only returns text. Left with the person's own settings,
         // the model can run commands on their machine.
-        " --tools \"\" --strict-mcp-config";
-    cmd << " --append-system-prompt \"";
+        " --tools \"\" --strict-mcp-config --setting-sources \"\"";
+    cmd << " --system-prompt \"";   // her own prompt only: no Claude Code prompt, no user instructions
     for (char c : sysPrompt) {
         if (c == '"' || c == '\\' || c == '$' || c == '`') cmd << '\\';
         cmd << c;
@@ -338,8 +338,8 @@ std::string ScrambleHaikuClient::buildCliCommand(const std::string& question) co
     cmd << "cd /tmp && " << claudeCliPath << " -p --model haiku --output-format text --no-session-persistence"
         // No tools and no MCP servers: this call only returns text. Left with the person's own settings,
         // the model can run commands on their machine.
-        " --tools \"\" --strict-mcp-config";
-    cmd << " --append-system-prompt \"";
+        " --tools \"\" --strict-mcp-config --setting-sources \"\"";
+    cmd << " --system-prompt \"";   // her own prompt only: no Claude Code prompt, no user instructions
     for (char c : sysPrompt) {
         if (c == '"' || c == '\\' || c == '$' || c == '`') cmd << '\\';
         cmd << c;
