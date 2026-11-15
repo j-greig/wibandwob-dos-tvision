@@ -35,11 +35,11 @@ def no_model_env():
     return {"PATH": path, "ANTHROPIC_API_KEY": ""}
 
 
-def desk(**env):
+def desk(name=None, **env):
     base = {"WWDOS_HOME": HOME, "WWDOS_BOOT": "1", "WWDOS_BOOT_MS": "10", "WWDOS_BOOT_HOLD_MS": "0",
             "WWDOS_SLEEP_MS": "0", **no_model_env()}
     base.update({k: str(v) for k, v in env.items()})
-    return Desk(NAME, env=base)
+    return Desk(name or NAME, env=base)
 
 
 def fresh_home():
@@ -726,7 +726,7 @@ def group_own():
 
     print("own: the sleep clock gives time of its own, and a visitor's key ends it")
     fresh_home()
-    d = desk(WWDOS_BOOT="0", WWDOS_SLEEP_MS="1200", WWDOS_OWN_AFTER_MS="400", WWDOS_OWN_STEP_MS="300",
+    d = desk(NAME + "b", WWDOS_BOOT="0", WWDOS_SLEEP_MS="1200", WWDOS_OWN_AFTER_MS="400", WWDOS_OWN_STEP_MS="300",
              WWDOS_OWN_TURNS="20", WWDOS_DREAM_MS="60000", WWDOS_TIDY_MS="60000").start()
     try:
         o = wait(lambda: (d.j("get_life").get("own") or {}).get("on") and d.j("get_life").get("own"), timeout=6)
@@ -742,7 +742,7 @@ def group_own():
     fresh_home()
     if os.path.exists(MIND_LOG):
         os.remove(MIND_LOG)
-    d = desk(WWDOS_BOOT="0", WWDOS_MIND_CMD=FAKE, FAKE_MIND_LOG=MIND_LOG, WWDOS_OWN_STEP_MS="200").start()
+    d = desk(NAME + "c", WWDOS_BOOT="0", WWDOS_MIND_CMD=FAKE, FAKE_MIND_LOG=MIND_LOG, WWDOS_OWN_STEP_MS="200").start()
     try:
         r = d.j("resident_own_time", resident="wob", minutes=5, turns=4, actor="op", source="visitor")
         R.check(r.get("ok") is True and r["own"]["resident"] == "wob", "a socket caller gives wob time of its own")
