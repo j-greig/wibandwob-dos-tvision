@@ -14,7 +14,7 @@
 
 // Must match constants in wwdos_app.cpp
 static const ushort cmDeskPresetBase = 260;
-static const ushort cmDeskGallery = 270;
+static const ushort cmDeskGallery = 271;   // 260..270 are the presets (ega_solid is 270)
 
 TWibWobBackground::TWibWobBackground(const TRect& bounds, char aPattern, uchar aFg, uchar aBg) noexcept
     : TBackground(bounds, aPattern),

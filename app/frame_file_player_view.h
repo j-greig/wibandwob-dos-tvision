@@ -81,7 +81,10 @@ private:
     std::string fileData;
     std::vector<Span> frames;
     size_t frameIndex {0};
+    double clockStart_ {0};   // ww_anim_clock() when the player was made
+    size_t clockIndex() const;
     TTimerId timerId {0};
+    unsigned stepSeen_ {0};   // last ww_anim_step this view advanced on (viewer pause/step)
     unsigned periodMs {300};
     bool loadOk {false};
     std::string errorMsg;
@@ -120,8 +123,12 @@ public:
     const std::string &getFilePath() const { return filePath_; }
     size_t getContentLines() const { return lines.size(); }
     size_t getContentWidth() const;
+    // Draw text across the whole width: no scroll-bar column on the right (the bar is hidden). Stage windows use it,
+    // so a one-frame drawing shows its last column (app/stage/stage.cpp, StageWindow).
+    void useWholeWidth();
 
 private:
+    bool wholeWidth_ {false};
     std::string filePath_;  // stored for workspace serialisation
     std::vector<std::string> lines;
     int topLine {0};

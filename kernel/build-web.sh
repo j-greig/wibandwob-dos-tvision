@@ -18,4 +18,8 @@ for t in hello wwdos; do
     python3 kernel/tools/bundle.py "build-web/$t.js" "dist-web/$t.html"
     python3 kernel/tools/bundle.py "build-web/$t.js" "dist-web/$t-webgl.html" --shell kernel/pages/shell-webgl.html
 done
+# The film player has its own page: the WebGL renderer plus the stage's clock, sound, gate and scrubber.
+if [ -f build-web/film.js ]; then
+    python3 kernel/tools/bundle.py build-web/film.js dist-web/film.html --shell kernel/pages/shell-film.html --atlas kernel/pages/atlas-film.js
+fi
 ls -l dist-web/*.html
