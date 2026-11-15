@@ -249,7 +249,7 @@ const ushort cmASCIICam     = 157;
 // Tools menu commands (future)
 const ushort cmAnsiEditor = 125;
 const ushort cmPaintTools = 126;
-const ushort cmFeed = 9960;              // Tools > Feed: the act log, live (feed_view.cpp)
+const ushort cmFeed = 9965;              // Tools > Feed: the act log, live (feed_view.cpp)
 const ushort cmAnimationStudio = 127;
 const ushort cmQuantumPrinter = 128;
 const ushort cmWibWobChat = 131;
