@@ -132,6 +132,15 @@ namespace {
     }
 }
 
+// Viewer pause and single step (WibWob-DOS browser pages: F9 pause, F8 step).
+// Paused players skip their ticks; bumping ww_anim_step lets every player advance one frame.
+bool ww_anim_paused = false;
+unsigned ww_anim_step = 0;
+// A clock for drawings, in seconds (the stage sets it: Stage::animTime). With a clock, the frame a player shows is
+// a function of the time since it was made, so a seek, a replay and an export show the frame that playing shows.
+// With none (the full app, a page with no stage), a player counts its own timer events as before.
+double (*ww_anim_clock)() = nullptr;
+
 FrameFilePlayerView::FrameFilePlayerView(const TRect &bounds, const std::string &path, unsigned periodMs)
     : TView(bounds), filePath_(path), periodMs(periodMs) {
     growMode = gfGrowHiX | gfGrowHiY;
@@ -139,6 +148,14 @@ FrameFilePlayerView::FrameFilePlayerView(const TRect &bounds, const std::string 
     // See TProgram::idle() and TTimerQueue in the library.
     eventMask |= evBroadcast;
     loadAndIndex(path);
+    if (ww_anim_clock) clockStart_ = ww_anim_clock();
+}
+
+size_t FrameFilePlayerView::clockIndex() const {
+    if (frames.empty() || periodMs == 0) return 0;
+    double dt = ww_anim_clock() - clockStart_;
+    if (dt <= 0) return 0;
+    return (size_t) (dt * 1000.0 / periodMs + 1e-6) % frames.size();
 }
 
 FrameFilePlayerView::~FrameFilePlayerView() {
@@ -225,6 +242,7 @@ void FrameFilePlayerView::loadAndIndex(const std::string &path) {
     const std::string delim = "----";
     const size_t npos = std::string::npos;
     size_t curStart = npos;
+    const size_t firstStart = pos;   // after the FPS header: the first frame begins here
 
     while (pos < n) {
         size_t lineStart = pos;
@@ -237,7 +255,10 @@ void FrameFilePlayerView::loadAndIndex(const std::string &path) {
 
         if (isDelim) {
             if (curStart == npos) {
-                // Frame begins after this delimiter
+                // What stands before the first delimiter is the first frame. (Until 2026-11-15 it was dropped: a
+                // drawing of frames A, B, C played B, C, and one of two frames did not move.)
+                if (lineStart > firstStart)
+                    frames.push_back(Span{firstStart, lineStart});
                 curStart = nextLineStart(fileData, lineStart);
             } else {
                 // Close previous frame before this delimiter line
@@ -267,6 +288,7 @@ void FrameFilePlayerView::loadAndIndex(const std::string &path) {
 }
 
 void FrameFilePlayerView::draw() {
+    if (ww_anim_clock) frameIndex = clockIndex();   // any redraw shows the frame the clock asks for
     // Window colour (API) or the EGA theme's blue window, else the configured background.
     TColorAttr themed;
     const bool useThemed = ww::contentAttr(this, 15, themed,
@@ -340,6 +362,16 @@ void FrameFilePlayerView::handleEvent(TEvent &ev) {
     if (ev.what == evBroadcast && ev.message.command == cmTimerExpired) {
         // Only act on our own timer; 'infoPtr' carries the TTimerId that fired.
         if (timerId != 0 && ev.message.infoPtr == timerId) {
+            if (ww_anim_clock) {                 // the clock holds still while paused, and steps with the stage
+                size_t idx = clockIndex();
+                if (idx != frameIndex) { frameIndex = idx; drawView(); }
+                clearEvent(ev);
+                return;
+            }
+            if (ww_anim_paused) {
+                if (ww_anim_step == stepSeen_) { clearEvent(ev); return; }
+                stepSeen_ = ww_anim_step;
+            }
             advanceFrame();
             drawView();
             clearEvent(ev);
@@ -351,7 +383,7 @@ void FrameFilePlayerView::setState(ushort aState, Boolean enable) {
     TView::setState(aState, enable);
     if ((aState & sfExposed) != 0) {
         if (enable) {
-            frameIndex = 0;
+            frameIndex = ww_anim_clock ? clockIndex() : 0;
             // Start periodic animation strictly from the UI/event loop.
             // No threads; timer callbacks arrive as cmTimerExpired broadcasts.
             startTimer();
