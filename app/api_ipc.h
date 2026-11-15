@@ -61,6 +61,7 @@ private:
         uint64_t since = 0;
         int limit = 200;
         std::string kinds;
+        std::string room;        // room_wait: the participant waiting ("" for person_wait)
         std::chrono::steady_clock::time_point deadline;
     };
     std::vector<Waiter> waiters_;

@@ -47,6 +47,7 @@
 #include "resident_hands.h"
 #include "resident_teach.h"
 #include "resident_listen.h"
+#include "resident_room.h"
 #include "feed_view.h"
 #include "core/json_utils.h"
 #include "gradient.h"
@@ -3249,6 +3250,7 @@ void TWwdosApp::idle()
     resident::tickReflexes();
     resident::tickSelftest();
     resident::tickListen();
+    resident::tickRoom();
     TFeedView::tickAll();   // feeds follow the act log
 
     // DISABLED: Update animated kaomoji in menu bar (causing crashes + freezes)

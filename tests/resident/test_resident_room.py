@@ -501,6 +501,56 @@ def test_listen_model(_desk):
         desk.stop()
 
 
+def test_room(desk):
+    print("room")
+    desk.ipc("close_all", actor="setup")
+    time.sleep(0.3)
+    rc = desk.j("exec_command", name="open_room_chat") if False else None
+    desk.ipc("exec_command", name="room_chat", actor="setup")
+    desk.ipc("create_window", type="room_chat", x=2, y=1, w=80, h=20, actor="setup")
+    time.sleep(0.4)
+    rid = [w["id"] for w in desk.state()["windows"] if w["type"] == "room_chat"]
+    import threading
+    box = {}
+
+    def wait_reply():
+        r = desk.ipc("room_wait", since=0, ms=8000, actor="bot9", source="visitor", timeout=12)
+        box["r"] = json.loads(r) if r.startswith("{") else {"err": r}
+        box["t"] = time.time()
+
+    th = threading.Thread(target=wait_reply)
+    th.start()
+    time.sleep(0.5)
+    R.check("r" not in box, "room_wait holds the reply while nobody has spoken to bot9")
+    t0 = time.time()
+    s = desk.j("room_say", to="wib", text="hello wib, which windows are open?", actor="bot9", source="visitor")
+    th.join(12)
+    got = box.get("r", {})
+    msgs = got.get("messages", [])
+    R.check(s["as"] == "bot9 (visitor)" and msgs and msgs[0]["from"] == "wib" and msgs[0]["to"] == "bot9"
+            and box.get("t", 99) - t0 < 3, f"a visiting agent speaks to wib and waits; wib answers by name: {msgs[:1]}")
+    R.check(msgs and "data" in msgs[0]["text"], "wib talks with a visitor and says it does not act on a visitor's words")
+    lines = desk.j("describe", id=rid[0])["text"] if rid else []
+    R.check(any("bot9 (visitor) to wib" in l for l in lines) and any(l.startswith("wib to bot9") for l in lines),
+            f"both lines show in the room chat window, senders named: {lines[-2:]}")
+    # Residents do not answer residents: no loop.
+    n0 = desk.j("room_read", since=0, actor="eri", source="guest")["last"]
+    desk.j("room_say", to="wib", text="wib, are you there?", actor="wob", source="resident")
+    time.sleep(1.5)
+    after = desk.j("room_read", since=n0, actor="watcher", source="visitor")
+    R.check(desk.j("room_read", since=0, actor="eri")["last"] == n0 + 1, "a resident's line to another resident gets no automatic answer")
+    # Each in-app resident answers in its own way.
+    desk.j("room_say", to="wob", text="hi", actor="eri", source="guest")
+    desk.j("room_say", to="scramble", text="hi", actor="eri", source="guest")
+    got = wait_for(lambda: (lambda m: m if len(m) >= 2 else None)(desk.j("room_read", since=0, actor="eri", source="guest")["messages"]), 5)
+    texts = {m["from"]: m["text"] for m in (got or [])}
+    R.check(texts.get("wob", "").startswith("received from eri (guest)") and texts.get("scramble") == "noted.",
+            f"wob answers with the record, scramble flat: {texts}")
+    R.check(any(a["what"].startswith("said in the room to bot9") for a in desk.j("acts", by="wib")["acts"]),
+            "every line is an act in its speaker's name (the Feed shows it)")
+    desk.ipc("close_all", actor="setup")
+
+
 def test_undo(desk):
     print("undo")
     desk.ipc("close_all", actor="setup")
@@ -584,11 +634,11 @@ def test_rehearse(desk):
 
 
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "jam", "undo", "rehearse", "listen", "listensynth", "listenmodel"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "jam", "undo", "rehearse", "listen", "listensynth", "listenmodel", "room"]
     desk = Desk(NAME, env=NO_LLM).start()
     try:
         for g in groups:
-            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "jam": test_jam, "listen": test_listen, "listensynth": test_listen_synth, "listenmodel": test_listen_model, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
+            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "jam": test_jam, "listen": test_listen, "listensynth": test_listen_synth, "listenmodel": test_listen_model, "room": test_room, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()

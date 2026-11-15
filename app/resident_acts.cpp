@@ -720,7 +720,7 @@ namespace {
 bool readOnly(const std::string& name, const KV& kv) {
     static const char* names[] = {"get_state", "get_canvas_size", "get_capabilities", "get_window_types", "window_text",
                                   "acts", "residents_about", "standing", "desktop_get", "terminal_read",
-                                  "get_chat_history", "subscribe_events", "ping", "describe", "person_events", "person_wait", "resident_reflexes", "help", "resident_selftest", "resident_mode", "resident_listen", "figlet_list_fonts",
+                                  "get_chat_history", "subscribe_events", "ping", "describe", "person_events", "person_wait", "resident_reflexes", "help", "resident_selftest", "resident_mode", "resident_listen", "room_say", "room_read", "room_wait", "figlet_list_fonts",
                                   "list_figlet_fonts", "preview_figlet", "gallery_list", "paint_export", "batch",
                                   "exec_command", "resident_status", "resident_front", "resident_key",
                                   "resident_mouse", "resident_press", "resident_menu"};
