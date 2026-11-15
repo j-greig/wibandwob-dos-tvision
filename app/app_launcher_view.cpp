@@ -490,3 +490,20 @@ TWindow* createAppLauncherWindow(const TRect& bounds)
 {
     return new TAppLauncherWindow(bounds);
 }
+
+std::string TAppLauncherWindow::describeState() const {
+    if (!grid) return "app launcher";
+    const AppEntry* f = grid->focusedApp();
+    return "app launcher showing " + std::to_string(grid->filtered.size()) + " of " + std::to_string(grid->allApps.size()) +
+           " apps" + (grid->currentFilter.empty() ? std::string("") : " in " + grid->currentFilter) +
+           (f ? "; " + f->name + " is highlighted" : std::string(""));
+}
+bool TAppLauncherWindow::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    if (!grid) return false;
+    for (int i : grid->filtered) {
+        const AppEntry& a = grid->allApps[i];
+        out.push_back(a.name + " (" + a.category + "): " + a.description);
+    }
+    return true;
+}

@@ -319,3 +319,8 @@ TWindow* createGameOfLifeWindow(const TRect &bounds)
     w->setup();
     return w;
 }
+
+std::string TGameOfLifeView::describeState() const {
+    return "Game of Life at generation " + std::to_string(generation) + ": " + std::to_string(livingCells.size()) +
+           " cells alive on a " + std::to_string(gridWidth) + "x" + std::to_string(gridHeight) + " grid, " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

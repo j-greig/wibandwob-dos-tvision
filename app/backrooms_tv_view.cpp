@@ -1256,3 +1256,12 @@ void syncModulePrimers() {
         }
     }
 }
+
+std::string TBackroomsTvView::describeState() const {
+    return std::string("backrooms TV, ") + (paused_ ? "paused" : "playing") + ", " + std::to_string(lines_.size()) +
+           " lines received, auto-scroll " + ww::onOff(autoScroll_);
+}
+bool TBackroomsTvView::describeText(std::vector<std::string>& out) const {
+    out.assign(lines_.begin(), lines_.end());
+    return true;
+}

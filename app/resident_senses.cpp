@@ -15,6 +15,11 @@
 #include "resident_senses.h"
 #include "resident_overlay.h"
 #include "desk_mosh.h"
+#include "describe.h"
+
+#include <cstdlib>
+#include <cxxabi.h>
+#include <typeinfo>
 
 #include <algorithm>
 #include <chrono>
@@ -241,7 +246,7 @@ std::string sentenceOf(TWindow* w) {
         std::string s = hooks().stateOf(w);
         if (!s.empty()) return s;
     }
-    if (dynamic_cast<TDialog*>(w)) return "a dialog; resident_front lists its controls";
+    if (dynamic_cast<TDialog*>(w)) { std::vector<std::string> t; return ww::dialogState(w, t); }
     auto lines = bufferLines(w, true);
     int marks = 0;
     for (auto& l : lines) for (char c : l) if (c != ' ') ++marks;
@@ -253,6 +258,57 @@ std::string seenWord(int seen, int total) {
     if (seen <= 0) return "none";
     if (seen >= total) return "all";
     return "part";
+}
+
+
+// The C++ class of a window's describer (or of the window when it has none).
+std::string classOf(const void* p, const std::type_info& ti) {
+    (void)p;
+    int st = 0;
+    char* d = abi::__cxa_demangle(ti.name(), nullptr, nullptr, &st);
+    std::string s = (st == 0 && d) ? d : ti.name();
+    std::free(d);
+    return s;
+}
+
+// One window by the describe contract: state and text from its model; cells only when it has no text model.
+std::string describeOne(TWindow* w, bool withText, int limit) {
+    TDeskTop* d = TProgram::deskTop;
+    std::vector<std::string> text;
+    std::string state, source = "model", cls;
+    bool contract = true;
+    bool modelText = false;
+    if (ww::describeWindow(w, state, text, modelText, cls)) {
+        if (!modelText) source = "cells";
+    } else if (dynamic_cast<TDialog*>(w)) {
+        state = ww::dialogState(w, text);
+        cls = "dialog";
+        source = "controls";
+    } else {
+        contract = false;
+        cls = classOf(w, typeid(*w));
+        state = sentenceOf(w);
+        source = "cells";
+    }
+    if (source == "cells" && withText && bufferOf(w)) text = bufferLines(w, true);
+    int seen, total;
+    coverage(w, seen, total);
+    TRect r = w->getBounds();
+    std::ostringstream os;
+    os << "{\"id\":" << q(idOfW(w)) << ",\"type\":" << q(typeOfW(w)) << ",\"class\":" << q(cls)
+       << ",\"title\":" << q(titleOf(w)) << ",\"owner\":" << q(ownerOf(w)) << ",\"x\":" << r.a.x << ",\"y\":" << r.a.y
+       << ",\"w\":" << w->size.x << ",\"h\":" << w->size.y
+       << ",\"focused\":" << ((d && d->current == w) ? "true" : "false") << ",\"seen\":" << q(seenWord(seen, total))
+       << ",\"contract\":" << (contract ? "true" : "false") << ",\"state\":" << q(state)
+       << ",\"standing\":\"data\",\"text_from\":" << q(source);
+    if (withText) {
+        os << ",\"count\":" << text.size() << ",\"text\":[";
+        int n = 0;
+        for (size_t i = 0; i < text.size() && n < limit; ++i, ++n) os << (n ? "," : "") << q(text[i]);
+        os << "]";
+    }
+    os << "}";
+    return os.str();
 }
 
 // ---------------------------------------------------------------- marks
@@ -568,6 +624,24 @@ std::string cmdStudy(const KV& kv) {
     }
     os << "]}";
     if (w) markReading(readerOf(kv), w);
+    return os.str();
+}
+
+std::string cmdDescribe(const KV& kv) {
+    std::string id = str(kv, "id");
+    int limit = std::max(0, std::min(num(kv, "limit", 2000), 20000));
+    if (!id.empty()) {
+        TWindow* w = windowById(id);
+        if (!w) return "err window not found: " + id;
+        return describeOne(w, str(kv, "text") != "0", limit);
+    }
+    bool withText = str(kv, "text") == "1";
+    std::ostringstream os;
+    os << "{\"windows\":[";
+    bool first = true;
+    for (TWindow* w : appWindows()) { os << (first ? "" : ",") << describeOne(w, withText, limit); first = false; }
+    for (TWindow* w : deskWindows()) { os << (first ? "" : ",") << describeOne(w, withText, limit); first = false; }
+    os << "]}";
     return os.str();
 }
 

@@ -15,7 +15,10 @@ public:
     TColorAttr attr;
     explicit TOverlayCell(const TRect& r) : TView(r) {
         options = 0;
-        eventMask = evMouseDown | evMouseUp | evMouseWheel;
+        // Clicks only. Turbo Vision gives a wheel event to every view in a group (it is not a
+        // positional event), so a wheel event passed back to the owner came straight back here
+        // and recursed until the stack ran out.
+        eventMask = evMouseDown | evMouseUp;
         growMode = 0;
     }
     void draw() override {
@@ -24,9 +27,14 @@ public:
         writeLine(0, 0, size.x, 1, b);
     }
     void handleEvent(TEvent& e) override {
-        if (e.what & (evMouseDown | evMouseUp | evMouseWheel)) {
+        // A click on the cell goes to the view underneath: hide, then offer it to the owner
+        // once more (the hidden cell no longer holds the mouse). Never re-entered.
+        static bool passing = false;
+        if ((e.what & (evMouseDown | evMouseUp)) && !passing && (state & sfVisible)) {
             hide();
+            passing = true;
             if (owner) owner->handleEvent(e);
+            passing = false;
             return;
         }
         TView::handleEvent(e);

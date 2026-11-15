@@ -20,6 +20,7 @@ std::string cmdRead(const KV& kv);      // look_read
 std::string cmdStudy(const KV& kv);     // look_study
 std::string cmdChanges(const KV& kv);   // look_changes
 std::string cmdMark(const KV& kv);      // look_mark
+std::string cmdDescribe(const KV& kv);  // describe: every window says what it is (describe.h)
 
 // Called on every pass of the event loop (from afterBase): moves marks with their
 // windows, takes marks and hands down when their time is up.
@@ -62,8 +63,9 @@ void noteOrigin(const TEvent& ev, bool fromPut);
 void notePut(const TEvent& ev);
 
 // One ordered log of acts by everyone (acts command).
+// type: the window's type when the window is gone (a close).
 void addAct(const Who& w, const std::string& what, const std::string& window, const std::string& result,
-            uint64_t rseq = 0);
+            uint64_t rseq = 0, const std::string& type = "");
 void updateAct(uint64_t rseq, const std::string& result);
 // Who opened a window ("" when not known).
 std::string ownerName(TView* v);
@@ -80,6 +82,27 @@ void handFollow(const std::string& actor, int x, int y);
 void tickActs();
 
 std::string cmdActs(const KV& kv);    // acts
+
+// ---------------------------------------------------------------- the person's gestures
+
+// Every act by the console (the person) is also a gesture: an ordered stream, numbered g, that a
+// resident reads with person_events since=G, waits on with person_wait (the socket holds the
+// reply until a gesture comes or ms pass), or receives pushed on subscribe_events as "gesture".
+// A continued act (typing, a drag, a scroll, a run of moves) comes again with update=true.
+std::string cmdPersonEvents(const KV& kv);   // person_events (and person_wait's immediate answer)
+
+// The act log for in-app readers (the Feed window): the last count acts, oldest first.
+struct ActRecord {
+    uint64_t n;
+    long long ms;
+    std::string actor, source, what, window, result;
+};
+void lastActs(size_t count, std::vector<ActRecord>& out);
+uint64_t actsRevision();     // changes whenever the log does
+long long actsClockMs();     // the log's clock now (ms since the app started)
+uint64_t gestureLast();
+std::string gestureJson(uint64_t g);
+std::string gesturesSince(uint64_t since, int limit, const std::string& kinds, int& count);
 std::string cmdHand(const KV& kv);    // resident_hand
 std::string cmdOwner(const KV& kv);   // window_owner
 

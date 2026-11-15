@@ -13,6 +13,7 @@
 #define Uses_THardwareInfo
 #include <tvision/tv.h>
 
+#include "describe.h"
 #include "ega_theme.h"
 #include "resident_senses.h"
 
@@ -219,7 +220,7 @@ std::vector<TMoshShard*> g_held;         // shards a person grabbed: left where 
 
 TFrame* noFrame(TRect) { return nullptr; }
 
-class TMoshShard : public TWindow {
+class TMoshShard : public TWindow, public ww::Describable {
 public:
     TMoshShard(const TRect& r, bool framed, const std::string& title, int slot)
         : TWindowInit(framed ? &TWindow::initFrame : &noFrame), TWindow(r, title, wnNoNumber), slot_(slot), framed_(framed) {
@@ -243,6 +244,11 @@ public:
     // Shards may be one cell; TWindow's own limits (16x6) would stretch them on every move.
     void sizeLimits(TPoint& min, TPoint& max) override { min.x = min.y = 1; max.x = max.y = 32000; }
     void setCells(Cells&& c) { view_->cells = std::move(c); view_->drawView(); }
+    std::string describeState() const override {
+        return std::string("a desk mosh shard: ") + std::to_string(size.x) + "x" + std::to_string(size.y) +
+               " cells copied from the desktop" + (held() ? ", held where a person put it" : ", moved by the beat");
+    }
+    bool held() const { return std::find(g_held.begin(), g_held.end(), this) != g_held.end(); }
     void handleEvent(TEvent& ev) override;
 private:
     int slot_;

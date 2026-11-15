@@ -1036,3 +1036,16 @@ void TBrowserWindow::refreshCopyPayload(const std::string& rawJson) {
 TWindow* createBrowserWindow(const TRect& bounds) {
     return new TBrowserWindow(bounds);
 }
+
+std::string TBrowserWindow::describeState() const {
+    static const char* states[] = {"idle", "fetching", "showing", "failed"};
+    std::string s = std::string("browser ") + states[fetchState];
+    if (!currentUrl.empty()) s += " " + currentUrl;
+    if (!pageTitle.empty()) s += " (\"" + ww::clipText(pageTitle, 40) + "\")";
+    if (fetchState == Error && !errorMessage.empty()) s += ": " + ww::clipText(errorMessage, 60);
+    return s;
+}
+bool TBrowserWindow::describeText(std::vector<std::string>& out) const {
+    out = contentView ? ww::splitText(contentView->getPlainText()) : std::vector<std::string>();
+    return true;
+}

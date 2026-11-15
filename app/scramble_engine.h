@@ -142,6 +142,7 @@ private:
 
     // Apply Scramble voice filter: enforce lowercase, append kaomoji if missing.
     std::string voiceFilter(const std::string& text) const;
+    std::string voiceFilterDrawn(const std::string& text) const;
 
     // Pick a random kaomoji.
     std::string randomKaomoji() const;

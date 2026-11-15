@@ -1,0 +1,14 @@
+# Residents inside the app answer the person's gestures through their own hands. No model runs.
+# Start: WWDOS_RESIDENTS=residents/demo.reflex build-resident/app/wwdos   (or scripts/resident-world-demo.sh)
+# Format (docs/resident-world.md): start as <actor> [-> <name>]: <command>
+#                                  on <gesture kind> [type=<window type>] as <actor>: <command>
+# Placeholders: {window} {type} {what} {text} {kind}, and any name bound by a start line.
+
+start as wib -> notes: create_window type=text_editor x=2 y=22 w=56 h=14 title=residents
+start as wob -> feed: open_feed x=60 y=22 w=78 h=14
+
+on opened as wib: resident_key id={notes} text="wib: you opened a {type}. hello, {type}.\n"
+on opened as wob: look_read id={window} reader=wob
+on closed as wob: resident_key id={notes} text="wob: the {type} is closed. noted.\n"
+on typed type=text_editor as scramble: resident_key id={notes} text="scramble: \"{text}\". adequate.\n"
+on menu as wib: resident_key id={notes} text="wib: {what}?\n"

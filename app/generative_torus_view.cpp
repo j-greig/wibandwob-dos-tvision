@@ -162,3 +162,8 @@ private:
 };
 
 TWindow* createGenerativeTorusWindow(const TRect &bounds){ auto *w=new TGenerativeTorusWindow(bounds); w->setup(40); return w; }
+
+std::string TGenerativeTorusView::describeState() const {
+    return "spinning torus, palette " + std::to_string(paletteIndex) + ", rotation " + std::to_string((int)(aRot * 57.3f) % 360) +
+           " and " + std::to_string((int)(bRot * 57.3f) % 360) + " degrees, frame " + std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

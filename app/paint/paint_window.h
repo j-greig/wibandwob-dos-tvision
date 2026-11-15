@@ -19,6 +19,7 @@
 #define Uses_TSubMenu
 #define Uses_TMenuItem
 #define Uses_TKeys
+#include "../describe.h"
 #include <tvision/tv.h>
 
 #include "paint_canvas.h"
@@ -27,8 +28,10 @@
 class TPaintCanvasView;
 class TMenuBar;
 
-class TPaintWindow : public TWindow {
+class TPaintWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TPaintWindow(const TRect &bounds);
 
     virtual void handleEvent(TEvent &event) override;

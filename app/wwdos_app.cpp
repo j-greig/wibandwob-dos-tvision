@@ -42,6 +42,9 @@
 #include "test_pattern.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "describe.h"
+#include "resident_hands.h"
+#include "feed_view.h"
 #include "core/json_utils.h"
 #include "gradient.h"
 #include "ui/ui_helpers.h"
@@ -109,6 +112,7 @@
 #include "snake_view.h"
 // TR-808 drum machine
 #include "tr808_view.h"
+#include "sound/sound_host.h"
 // WibWob Rogue dungeon crawler
 #include "rogue_view.h"
 // Deep Signal space scanner game
@@ -135,6 +139,8 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 #include <cmath>
 #include <sys/stat.h>
 #include <cstdio>
+#include <csignal>
+#include <cctype>
 #include <fstream>
 #include <vector>
 #include <cstring>
@@ -235,6 +241,7 @@ const ushort cmASCIICam     = 157;
 // Tools menu commands (future)
 const ushort cmAnsiEditor = 125;
 const ushort cmPaintTools = 126;
+const ushort cmFeed = 9960;              // Tools > Feed: the act log, live (feed_view.cpp)
 const ushort cmAnimationStudio = 127;
 const ushort cmQuantumPrinter = 128;
 const ushort cmWibWobChat = 131;
@@ -267,6 +274,7 @@ const ushort cmScrambleReply = 233;  // Async Scramble LLM response ready
 const ushort cmAsciiGallery = 234;   // ASCII Art Gallery browser
 const ushort cmBackroomsTv = 284;    // Backrooms TV live art window
 const ushort cmTr808 = 290;          // TR-808 drum machine
+const ushort cmSynth = 296;          // the machine's synth (app/sound)
 
 // Glitch menu commands
 const ushort cmToggleGlitchMode = 140;
@@ -672,12 +680,15 @@ public:
 /*---------------------------------------------------------*/
 /* TTestPatternWindow - Window containing test pattern    */
 /*---------------------------------------------------------*/
-class TTestPatternWindow : public TWindow
+class TTestPatternWindow : public TWindow, public ww::Describable
 {
 private:
     TTestPatternView* patternView;
     
 public:
+    std::string describeState() const override {
+        return "still test pattern of colour bars, " + std::to_string(size.x - 2) + "x" + std::to_string(size.y - 2);
+    }
     TTestPatternWindow(const TRect& bounds, const char* aTitle) :
         TWindow(bounds, "", wnNoNumber),
         TWindowInit(&TTestPatternWindow::initFrame)
@@ -705,9 +716,13 @@ public:
 /*---------------------------------------------------------*/
 /* TGradientWindow - Window containing gradient           */
 /*---------------------------------------------------------*/
-class TGradientWindow : public TWindow
+class TGradientWindow : public TWindow, public ww::Describable
 {
+    const char* kind_ = "horizontal";
 public:
+    std::string describeState() const override {
+        return std::string("still ") + kind_ + " colour gradient, " + std::to_string(size.x - 2) + "x" + std::to_string(size.y - 2);
+    }
     enum GradientType {
         gtHorizontal,
         gtVertical,
@@ -727,6 +742,8 @@ public:
         
         // Insert the appropriate gradient view
         TGradientView* gradientView = nullptr;
+        static const char* kinds[] = {"horizontal", "vertical", "radial", "diagonal"};
+        kind_ = kinds[type];
         switch (type)
         {
             case gtHorizontal:
@@ -997,6 +1014,7 @@ private:
     friend void api_spawn_quadra(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_snake(TWwdosApp&, const TRect* bounds);
     friend void api_spawn_tr808(TWwdosApp&, const TRect* bounds, const std::map<std::string, std::string>& kv);
+    friend void api_spawn_feed(TWwdosApp&, const TRect* bounds, const std::string& by);
     friend std::string api_tr808_action(TWwdosApp&, const std::map<std::string, std::string>& kv);
     friend void tr808_event_sink(TWindow* w, const char* type, const std::string& body);
     friend TTR808Window* find_tr808(TWwdosApp& app, const std::string& id);
@@ -1056,6 +1074,8 @@ std::string TWwdosApp::runtimeApiKey;
 static const char* windowTypeName(TWindow* w);
 static bool residentTextOf(TWindow* w, std::vector<std::string>& out);
 static std::string residentStateOf(TWindow* w);
+static bool frameWindowMatches(TWindow* w);
+static std::string frameWindowState(TWindow* w);
 
 // Accessor for runtime API key (used by wibwob_view.cpp)
 std::string getAppRuntimeApiKey() {
@@ -1101,7 +1121,28 @@ TWwdosApp::TWwdosApp() :
     residentHooks.typeOf = [](TWindow* w) { return std::string(windowTypeName(w)); };
     residentHooks.textOf = [](TWindow* w, std::vector<std::string>& out) { return residentTextOf(w, out); };
     residentHooks.stateOf = [](TWindow* w) { return residentStateOf(w); };
+    residentHooks.exec = [this](const std::string& name, const resident::KV& kv) {
+        // The socket's own dispatcher, in process: every command a socket caller can send, with the
+        // same authorship (actor=, source=) and the same act log.
+        std::string line = "cmd:" + name;
+        for (const auto& p : kv) {
+            line += " " + p.first + "=";
+            for (unsigned char c : p.second) {
+                if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') line += (char)c;
+                else { char b[4]; std::snprintf(b, sizeof b, "%%%02X", c); line += b; }
+            }
+        }
+        std::string r = ipcServer ? ipcServer->runLine(line) : exec_registry_command(*this, name, kv);
+        while (!r.empty() && (r.back() == '\n' || r.back() == '\r')) r.pop_back();
+        return r;
+    };
     resident::setHooks(residentHooks);
+    ww::addExternalDescriber({"TFrameAnimationWindow", frameWindowMatches, frameWindowState, nullptr});
+    // Residents that live in the app: a reflex script chosen by whoever starts the app.
+    if (const char* rs = std::getenv("WWDOS_RESIDENTS")) {
+        std::string err;
+        if (*rs && !resident::loadReflexes(rs, err)) fprintf(stderr, "[residents] %s\n", err.c_str());
+    }
 
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
@@ -1112,6 +1153,8 @@ TWwdosApp::TWwdosApp() :
     if (inst && inst[0] != '\0')
         sockPath = std::string("/tmp/wibwob_") + inst + ".sock";
     fprintf(stderr, "[wibwob] IPC socket: %s\n", sockPath.c_str());
+    // The chat's bridge (app/llm/sdk_bridge) reaches the desktop through this socket.
+    setenv("WWDOS_SOCKET", sockPath.c_str(), 1);
 
     if (!ipcServer->start(sockPath)) {
         fprintf(stderr, "[wibwob] ERROR: IPC server failed to start on %s\n", sockPath.c_str());
@@ -1122,6 +1165,14 @@ TWwdosApp::TWwdosApp() :
     }
     tr808_app = this;
     tr808SetEventSink(&tr808_event_sink);
+    {
+        sound::Host sh;
+        sh.insert = [this](TWindow* w) { deskTop->insert(w); return registerWindow(w); };
+        sh.find = [this](const std::string& id) { return findWindowById(id); };
+        sh.idOf = [this](TWindow* w) { auto it = winToId.find(w); return it == winToId.end() ? std::string() : it->second; };
+        sh.tr808 = [this](const sound::KV& kv) { return api_tr808_action(*this, kv); };
+        sound::setHost(sh);
+    }
 
     // Auto-restore layout from env var (room deployment).
     const char* layoutPath = std::getenv("WIBWOB_LAYOUT_PATH");
@@ -1153,6 +1204,11 @@ TWwdosApp::TWwdosApp() :
 
 void TWwdosApp::handleEvent(TEvent& event)
 {
+    if (event.what == evCommand && event.message.command == cmFeed) {
+        api_spawn_feed(*this, nullptr, "");
+        clearEvent(event);
+        return;
+    }
     // The Residents menu: the console key and the residents' rules (resident_acts.cpp).
     if (event.what == evCommand && (resident::handleCommand(event.message.command) || deskmosh::handleCommand(event.message.command))) {
         clearEvent(event);
@@ -1415,6 +1471,11 @@ void TWwdosApp::handleEvent(TEvent& event)
             }
             case cmTr808: {
                 api_spawn_tr808(*this, nullptr, {});
+                clearEvent(event);
+                break;
+            }
+            case cmSynth: {
+                sound::command("open_synth", {});
                 clearEvent(event);
                 break;
             }
@@ -2722,6 +2783,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("~B~ackrooms TV", cmBackroomsTv, kbNoKey) +
             *new TMenuItem("TR-~8~08 Drum Machine", cmTr808, kbNoKey) +
             *new TMenuItem("Desk ~M~osh on/off", deskmosh::cmMoshToggle, kbAltM, hcNoContext, "Alt-M") +
+            *new TMenuItem("Synth (PC Speaker, FM)", cmSynth, kbNoKey) +
             newLine() +
             *new TMenuItem("~A~pplications", cmAppLauncher, kbNoKey) +
             *new TMenuItem("ASCII ~G~allery", cmAsciiGallery, kbNoKey) +
@@ -2758,6 +2820,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
         *new TSubMenu("~T~ools", kbAltT) +
             *new TMenuItem("~W~ib&Wob Chat", cmWibWobChat, kbF12) +
             *new TMenuItem("~R~oom Chat", cmRoomChat, kbNoKey) +
+            *new TMenuItem("~F~eed (who did what)", cmFeed, kbNoKey) +
             // REMOVED E009: Test A/B/C (dev-only, type fallback to test_pattern)
             // REMOVED E009: Glitch Effects submenu (entire submenu disabled)
             // REMOVED E009: ANSI Editor, Animation Studio (placeholders)
@@ -3005,6 +3068,9 @@ void TWwdosApp::idle()
     if (ipcServer) ipcServer->poll();
     // Poll Scramble async LLM calls (non-blocking)
     scrambleEngine.poll();
+    // Residents inside the app answer the person's gestures (resident_hands.cpp).
+    resident::tickReflexes();
+    TFeedView::tickAll();   // feeds follow the act log
 
     // DISABLED: Update animated kaomoji in menu bar (causing crashes + freezes)
     // if (menuBar) {
@@ -3020,6 +3086,9 @@ void TWwdosApp::idle()
 
 int main()
 {
+    // A write to a pipe or socket whose reader has gone (the chat's Node bridge after it exits, a
+    // client that hung up) must fail with EPIPE, not end the app without a word: SIGPIPE's default.
+    signal(SIGPIPE, SIG_IGN);
     // Detect auth mode once before any LLM consumer initialises.
     AuthConfig::instance().detect();
     // WWDOS_THEME=ega starts in the Borland EGA colours (default: monochrome).
@@ -3273,100 +3342,52 @@ static const char* windowTypeName(TWindow* w) {
     return specs.empty() ? "test_pattern" : specs.front().type;
 }
 
-static std::vector<std::string> splitLines(const std::string& s) {
-    std::vector<std::string> out;
-    size_t p = 0;
-    while (p <= s.size()) {
-        size_t nl = s.find('\n', p);
-        if (nl == std::string::npos) nl = s.size();
-        std::string l = s.substr(p, nl - p);
-        while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
-        out.push_back(l);
-        p = nl + 1;
-    }
-    while (!out.empty() && out.back().empty()) out.pop_back();
-    return out;
-}
-
-// The text a window's model holds, for look_read: editor lines, terminal output,
-// chat messages, paint canvas. Other types are read from their cells.
+// The text a window's model holds and its one sentence of state, for look_read and
+// look_glance: both come from the window's describer (describe.h).
 static bool residentTextOf(TWindow* w, std::vector<std::string>& out) {
-    out.clear();
-    if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
-        if (!tw->getEditorView()) return false;
-        out = tw->getEditorView()->getLines();
-        return true;
-    }
-    if (auto* term = dynamic_cast<TWibWobTerminalWindow*>(w)) {
-        out = splitLines(term->getOutputText());
-        return true;
-    }
-    if (auto* chat = dynamic_cast<TWibWobWindow*>(w)) {
-        auto* mv = chat->getMessageView();
-        if (!mv) return false;
-        for (const auto& m : mv->getMessages()) {
-            auto lines = splitLines(m.content);
-            std::string who = m.sender.empty() ? "Wib&Wob" : m.sender;
-            if (lines.empty()) lines.push_back("");
-            out.push_back(who + ": " + lines[0]);
-            for (size_t i = 1; i < lines.size(); ++i) out.push_back("  " + lines[i]);
-        }
-        return true;
-    }
-    if (auto* pw = dynamic_cast<TPaintWindow*>(w)) {
-        if (!pw->getCanvas()) return false;
-        out = splitLines(pw->getCanvas()->exportText());
-        return true;
-    }
-    return false;
+    std::string state, cls;
+    bool model = false;
+    return ww::describeWindow(w, state, out, model, cls) && model;
 }
 
 static std::string residentStateOf(TWindow* w) {
-    std::vector<std::string> lines;
-    if (auto* tw = dynamic_cast<TTextEditorWindow*>(w)) {
-        if (!tw->getEditorView()) return "";
-        const auto& l = tw->getEditorView()->getLines();
-        size_t chars = 0;
-        for (auto& s : l) chars += s.size();
-        std::string top;
-        for (auto& s : l) if (!s.empty()) { top = s.size() > 40 ? s.substr(0, 37) + "..." : s; break; }
-        return "text editor holding " + std::to_string(l.size()) + " lines, " + std::to_string(chars) +
-               " characters" + (top.empty() ? "" : "; first line: \"" + top + "\"");
+    std::string state, cls;
+    std::vector<std::string> text;
+    bool model = false;
+    return ww::describeWindow(w, state, text, model, cls) ? state : "";
+}
+
+// Frame-player windows: their classes are shared byte for byte with the film engine, so their
+// describer lives here (describe.h, ExternalDescriber), from the views' public getters.
+static bool frameWindowMatches(TWindow* w) { return dynamic_cast<TFrameAnimationWindow*>(w) != nullptr; }
+static std::string frameWindowState(TWindow* w) {
+    struct Found { FrameFilePlayerView* fp = nullptr; TTextFileView* tf = nullptr; } found;
+    w->forEach([](TView* v, void* p) {
+        auto* out = static_cast<Found*>(p);
+        if (auto* a = dynamic_cast<FrameFilePlayerView*>(v)) out->fp = a;
+        if (auto* b = dynamic_cast<TTextFileView*>(v)) out->tf = b;
+    }, &found);
+    FrameFilePlayerView* fp = found.fp;
+    TTextFileView* tf = found.tf;
+    if (fp) {
+        if (!fp->ok()) return "frame player that failed to load " + fp->getFilePath() + ": " + fp->error();
+        return "frame player animating " + fp->getFilePath() + ", " + std::to_string(fp->getFrameCount()) +
+               " frames, one every " + std::to_string(fp->getPeriodMs()) + " ms";
     }
-    if (auto* term = dynamic_cast<TWibWobTerminalWindow*>(w)) {
-        const char* t = term->getTitle(0);
-        lines = splitLines(term->getOutputText());
-        return std::string("terminal") + (t && *t ? std::string(" \"") + t + "\"" : "") + " showing " +
-               std::to_string(lines.size()) + " lines of output";
+    if (tf) {
+        if (!tf->ok()) return "text file view that failed to load " + tf->getFilePath() + ": " + tf->error();
+        return "text file " + tf->getFilePath() + ", " + std::to_string(tf->getContentLines()) + " lines";
     }
-    if (auto* chat = dynamic_cast<TWibWobWindow*>(w)) {
-        auto* mv = chat->getMessageView();
-        if (!mv) return "";
-        const auto& m = mv->getMessages();
-        if (m.empty()) return "chat with no messages yet";
-        std::string last = m.back().sender.empty() ? "Wib&Wob" : m.back().sender;
-        return "chat with " + std::to_string(m.size()) + " messages; the last from " + last;
-    }
-    if (auto* pw = dynamic_cast<TPaintWindow*>(w)) {
-        auto* c = pw->getCanvas();
-        if (!c) return "";
-        lines = splitLines(c->exportText());
-        int ink = 0;
-        for (auto& s : lines) for (char ch : s) if (ch != ' ') ++ink;
-        return "paint canvas " + std::to_string(c->getCols()) + "x" + std::to_string(c->getRows()) + " with " +
-               std::to_string(ink) + " cells inked";
-    }
-    return "";
+    return "frame window with nothing loaded";
 }
 
 // Text of a window that holds text (the text editor), for checking what input produced.
 std::string api_window_text(TWwdosApp& app, const std::string& id) {
     TWindow* w = app.findWindowById(id);
     if (!w) return "err window not found";
-    auto* tw = dynamic_cast<TTextEditorWindow*>(w);
-    if (!tw || !tw->getEditorView()) return "err no text reader for this window type";
-    std::string out = "{\"id\":\"" + id + "\",\"type\":\"text_editor\",\"lines\":[";
-    const auto& lines = tw->getEditorView()->getLines();
+    std::vector<std::string> lines;
+    if (!residentTextOf(w, lines)) return "err no text in this window's model (its cells are its text: look_read)";
+    std::string out = std::string("{\"id\":\"") + id + "\",\"type\":\"" + windowTypeName(w) + "\",\"lines\":[";
     for (size_t i = 0; i < lines.size(); ++i) out += (i ? ",\"" : "\"") + json_escape(lines[i]) + "\"";
     out += "]}";
     return out;
@@ -5222,6 +5243,13 @@ void tr808_event_sink(TWindow* w, const char* type, const std::string& body) {
     auto it = app->winToId.find(w);
     if (it != app->winToId.end()) id = it->second;
     app->ipcServer->publish_event(type, "{\"id\":\"" + id + "\"," + body + "}");
+}
+
+void api_spawn_feed(TWwdosApp& app, const TRect* bounds, const std::string& by) {
+    TRect r = bounds ? *bounds : api_centered_bounds(app, 100, 18);
+    TWindow* w = createFeedWindow(r, by);
+    app.deskTop->insert(w);
+    app.registerWindow(w);
 }
 
 void api_spawn_tr808(TWwdosApp& app, const TRect* bounds, const std::map<std::string, std::string>& kv) {

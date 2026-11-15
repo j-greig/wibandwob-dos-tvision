@@ -17,6 +17,7 @@
 #define Uses_TFrame
 #define Uses_TScrollBar
 #define Uses_TScroller
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -71,8 +72,10 @@ private:
 /*  TBrowserWindow - Composes URL bar, content, status     */
 /*  Handles keybindings and async fetch lifecycle          */
 /*---------------------------------------------------------*/
-class TBrowserWindow : public TWindow {
+class TBrowserWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TBrowserWindow(const TRect& bounds);
     virtual ~TBrowserWindow();
 

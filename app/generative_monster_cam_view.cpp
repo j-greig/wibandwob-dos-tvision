@@ -324,3 +324,10 @@ public:
 private: static TFrame* initFrame(TRect r){ return new TNoTitleFrame(r);} };
 
 TWindow* createGenerativeMonsterCamWindow(const TRect &bounds){ auto *w=new TGenerativeMonsterCamWindow(bounds); w->setup(80); return w; }
+
+std::string TGenerativeMonsterCamView::describeState() const {
+    std::string s = "monster cam at frame " + std::to_string(frame) + "; camera " + connectionStatus + ", " +
+                    std::to_string(framesRx) + " camera frames received; ";
+    s += hasFace ? "a face at " + std::to_string(faceX) + "," + std::to_string(faceY) : std::string("no face seen");
+    return s;
+}

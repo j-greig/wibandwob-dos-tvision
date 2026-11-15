@@ -218,3 +218,8 @@ TAnsiMiniWindow::TAnsiMiniWindow(const TRect &bounds, const char *title, const s
     insert(view);
     view->loadFile(path);
 }
+
+std::string TAnsiMiniView::describeState() const {
+    return "ANSI art document " + std::to_string(docWidth) + "x" + std::to_string(docHeight) + ", scrolled to line " +
+           std::to_string(delta.y + 1);
+}

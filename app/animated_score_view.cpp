@@ -538,3 +538,7 @@ static ushort runBgPaletteDialog(int &index)
     TObject::destroy(d);
     return code;
 }
+
+std::string TAnimatedScoreView::describeState() const {
+    return "animated score at phase " + std::to_string(phase) + ", background colour " + std::to_string(bgIndex) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

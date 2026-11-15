@@ -15,10 +15,12 @@
 #define Uses_TDrawBuffer
 #define Uses_TEvent
 #define Uses_TColorAttr
+#include "describe.h"
 #include <tvision/tv.h>
 
-class TGenerativeMonsterVerseView : public TView {
+class TGenerativeMonsterVerseView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     enum Mode { mdFlow=0, mdSwirl=1, mdWeave=2 };
 
     explicit TGenerativeMonsterVerseView(const TRect &bounds, unsigned periodMs = 60);

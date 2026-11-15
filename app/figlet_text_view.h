@@ -11,6 +11,7 @@
 #define Uses_TMenuItem
 #define Uses_TMenuBox
 #define Uses_TKeys
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include "notitle_frame.h"
@@ -32,9 +33,10 @@ static const ushort cmFigletCatFontBase = 400;  // 400..599 = font index
 /* re-renders on resize. Right-click for font picker.      */
 /*---------------------------------------------------------*/
 
-class TFigletTextView : public TView
-{
+class TFigletTextView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TFigletTextView(const TRect& bounds, const std::string& text,
                     const std::string& font = "standard");
     virtual ~TFigletTextView() {}

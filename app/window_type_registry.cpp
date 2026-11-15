@@ -38,6 +38,11 @@
 #include "backrooms_tv_view.h"
 #include "figlet_text_view.h"
 #include "tr808_view.h"
+#include "sound/sound_host.h"
+#include "sound/synth_view.h"
+#include "sound/score_view.h"
+#include "ascii_image_view.h"
+#include "feed_view.h"
 
 // tvision for TRect
 #define Uses_TRect
@@ -322,7 +327,23 @@ static bool match_backrooms_tv(TWindow* w) { return has_child_view<TBackroomsTvV
 static bool match_app_launcher(TWindow* w){ return dynamic_cast<TAppLauncherWindow*>(w) != nullptr; }
 static bool match_gallery(TWindow* w)     { return dynamic_cast<TGalleryWindow*>(w) != nullptr; }
 static bool match_figlet_text(TWindow* w) { return dynamic_cast<TFigletTextWindow*>(w) != nullptr; }
+extern void api_spawn_feed(TWwdosApp&, const TRect*, const std::string&);
+static const char* spawn_feed(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
+    TRect r; auto b = kv.find("by"); api_spawn_feed(app, opt_bounds(kv, r), b == kv.end() ? "" : b->second); return nullptr;
+}
+static bool match_feed(TWindow* w) { return dynamic_cast<TFeedWindow*>(w) != nullptr; }
+static bool match_ascii_image(TWindow* w) { return isAsciiImageWindow(w); }
 static bool match_tr808(TWindow* w)       { return dynamic_cast<TTR808Window*>(w) != nullptr; }
+static const char* spawn_synth(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    sound::command("open_synth", kv); return nullptr; }
+static bool match_synth(TWindow* w)       { return dynamic_cast<TSynthWindow*>(w) != nullptr; }
+// kv: score=<name> or text=<score>, start=1
+static const char* spawn_event_score(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    std::string r = sound::command("open_event_score", kv);
+    static std::string err;
+    if (r.rfind("err", 0) == 0) { err = r; return err.c_str(); }
+    return nullptr; }
+static bool match_event_score(TWindow* w) { return dynamic_cast<TScoreWindow*>(w) != nullptr; }
 
 // ── Registry table ────────────────────────────────────────────────────────────
 // Add new window types here — nowhere else.
@@ -367,6 +388,10 @@ static const WindowTypeSpec k_specs[] = {
     { "gallery",           spawn_gallery,          match_gallery            },
     { "figlet_text",       spawn_figlet_text,      match_figlet_text        },
     { "tr808",             spawn_tr808,            match_tr808              },
+    { "synth",             spawn_synth,            match_synth              },
+    { "event_score",       spawn_event_score,      match_event_score        },
+    { "ascii_image",       nullptr,                match_ascii_image        },
+    { "feed",              spawn_feed,             match_feed               },
 };
 
 // ── Lookup implementations ────────────────────────────────────────────────────

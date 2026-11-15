@@ -46,8 +46,8 @@ bool isCommand(const std::string& name);
 std::string command(const std::string& name, const KV& kv);
 
 // Menu commands (View > Desk Mosh, Alt-M).
-const unsigned short cmMoshToggle = 9960;
-const unsigned short cmMoshPanic = 9961;
+const unsigned short cmMoshToggle = 9975;
+const unsigned short cmMoshPanic = 9976;
 // True when cmd was one of the mosh's; its author is resident::currentWho().
 bool handleCommand(unsigned short cmd);
 

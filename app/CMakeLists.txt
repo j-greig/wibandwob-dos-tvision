@@ -16,6 +16,8 @@ set(TV_COMMON_SOURCES
     resident_senses.cpp
     resident_acts.cpp
     desk_mosh.cpp
+    describe.cpp
+    resident_hands.cpp
     wibwob_background.cpp
     window_type_registry.cpp
     theme_manager.cpp
@@ -50,6 +52,12 @@ add_executable(wwdos
     tr808_engine.cpp
     tr808_audio.cpp
     tr808_view.cpp
+    sound/synth.cpp
+    sound/sound_host.cpp
+    sound/synth_view.cpp
+    sound/ears.cpp
+    sound/score.cpp
+    sound/score_view.cpp
     rogue_view.cpp
     deep_signal_view.cpp
     app_launcher_view.cpp
@@ -87,10 +95,13 @@ add_executable(wwdos
     figlet_utils.cpp
     figlet_text_view.cpp
     backrooms_tv_view.cpp
+    feed_view.cpp
 )
 target_include_directories(wwdos PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # The TR-808 finds modules/tr808/samples in the source tree when run from elsewhere.
 set_source_files_properties(tr808_audio.cpp PROPERTIES COMPILE_DEFINITIONS "WWDOS_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+# Scores are found in scores/ of the source tree when run from elsewhere.
+set_source_files_properties(sound/sound_host.cpp PROPERTIES COMPILE_DEFINITIONS "WWDOS_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
 target_link_libraries(wwdos PRIVATE tvision tvterm-core)
 
 # On Linux, api_ipc.cpp uses OpenSSL for HMAC (macOS uses CommonCrypto)
@@ -176,6 +187,10 @@ target_include_directories(ascii_dump PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 add_executable(tr808_engine_test tr808_engine_test.cpp tr808_engine.cpp)
 add_test(NAME tr808_engine COMMAND tr808_engine_test)
 
+# sound_test (the machine's synth, ears and scores rendered to buffers; no tvision)
+add_executable(sound_test sound/sound_test.cpp sound/synth.cpp sound/ears.cpp sound/score.cpp)
+add_test(NAME sound COMMAND sound_test)
+
 # command_registry_test (native ctest coverage for registry capability payload)
 add_executable(command_registry_test EXCLUDE_FROM_ALL
     command_registry_test.cpp
@@ -185,6 +200,8 @@ add_executable(command_registry_test EXCLUDE_FROM_ALL
     resident_acts.cpp
     desk_mosh.cpp
     ega_theme.cpp
+    describe.cpp
+    resident_hands.cpp
 )
 target_link_libraries(command_registry_test PRIVATE tvision)
 
@@ -200,6 +217,8 @@ add_executable(scramble_engine_test EXCLUDE_FROM_ALL
     resident_acts.cpp
     desk_mosh.cpp
     ega_theme.cpp
+    describe.cpp
+    resident_hands.cpp
     llm/base/auth_config.cpp
 )
 target_link_libraries(scramble_engine_test PRIVATE tvision)

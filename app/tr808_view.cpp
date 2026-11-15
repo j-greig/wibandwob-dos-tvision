@@ -7,6 +7,8 @@
 #include <tvision/tv.h>
 
 #include "tr808_audio.h"
+#include "sound/ears.h"
+#include "sound/sound_host.h"
 
 #include <algorithm>
 #include <chrono>
@@ -150,6 +152,22 @@ void TTR808View::fire(const StepEvent& ev) {
         double vol = 0.9 * (ev.accent ? 1.0 + eng_.accentLevel() / 240.0 : 1.0)
                    * (lvl / 80.0) * (eng_.master() / 100.0);
         if (vol > 0.0) playVoice(voiceDef(v).id, vol);
+        if (vol > 0.0) {
+            // The ears hear the hit as the engine played it, sound on or off.
+            sound::Heard h;
+            h.startMs = sound::clockMs();
+            h.endMs = h.startMs + sound::drumRingMs(voiceDef(v).id);
+            h.source = "tr808";
+            TWindow* win = dynamic_cast<TWindow*>(owner);
+            h.window = (win && sound::host().idOf) ? sound::host().idOf(win) : "";
+            h.voice = voiceDef(v).id;
+            h.step = ev.step;
+            h.level = vol;
+            h.accent = ev.accent;
+            h.tempo = eng_.tempo();
+            h.who = startedBy_;
+            sound::ears().hear(h);
+        }
     }
     // Only steps with hits (a voice or an accent) are published.
     if (ev.voices.empty() && !ev.accent) return;
@@ -182,6 +200,7 @@ void TTR808View::onTimer() {
 
 void TTR808View::play() {
     if (eng_.playing()) return;
+    startedBy_ = sound::currentActor();
     StepEvent ev = eng_.start(nowMs());
     publish("tr808_transport", transportBody("play"));
     fire(ev);
@@ -695,4 +714,10 @@ TWindow* createTR808Window(const TRect& bounds, const std::map<std::string, std:
     if (has(kv, "preset")) v->engine().loadPreset(get(kv, "preset"));
     if (has(kv, "tempo")) v->engine().setTempo(toInt(get(kv, "tempo"), 120), 0);
     return w;
+}
+
+std::string TTR808View::describeState() const {
+    return std::string("TR-808 drum machine, ") + (eng_.playing() ? "playing at step " + std::to_string(eng_.step() + 1) : std::string("stopped")) +
+           ", tempo " + std::to_string(eng_.tempo()) + " BPM, preset " + std::to_string(presetIdx_) + ", cursor on step " +
+           std::to_string(cursor_ + 1);
 }

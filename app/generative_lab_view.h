@@ -9,6 +9,7 @@
 #define Uses_TRect
 #define Uses_TEvent
 #define Uses_TKeys
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -80,8 +81,10 @@ private:
 
 // ── View ─────────────────────────────────────────────────
 
-class TGenerativeLabView : public TScroller {
+class TGenerativeLabView : public TScroller, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TGenerativeLabView(const TRect& bounds, TScrollBar* vsb);
     virtual ~TGenerativeLabView();
 
