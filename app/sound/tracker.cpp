@@ -20,6 +20,7 @@ int drumIndex(const std::string& s0) {
 }
 
 std::string chanName(const TrackChannel& c) {
+    if (c.kind == ChanKind::Voice) return "voice:" + c.singer;
     if (c.kind == ChanKind::Speaker) return "speaker";
     if (c.kind == ChanKind::Drums) return "drums";
     return "fm:" + fmPatches()[c.patch].name;
@@ -31,6 +32,8 @@ bool parseChan(const std::string& s0, TrackChannel& out) {
     if (s == "speaker" || s == "pcspk" || s == "s") { out = {ChanKind::Speaker, 0}; return true; }
     if (s == "drums" || s == "tr808" || s == "d") { out = {ChanKind::Drums, 0}; return true; }
     if (s == "fm" || s == "f") { out = {ChanKind::Fm, 0}; return true; }
+    if (s == "voice" || s == "voice:wib" || s == "v") { out = {ChanKind::Voice, 0, "wib"}; return true; }
+    if (s == "voice:wob") { out = {ChanKind::Voice, 0, "wob"}; return true; }
     if (s.rfind("fm:", 0) == 0 || s.rfind("f:", 0) == 0) {
         const int p = patchIndex(s.substr(s.find(':') + 1));
         if (p < 0) return false;
@@ -61,6 +64,11 @@ std::string cellText(const TrackChannel& c, const TrackCell& cell) {
     else std::snprintf(in, sizeof(in), "%02X", cell.instr & 0xFF);
     if (!cell.fx) std::snprintf(fx, sizeof(fx), "...");
     else std::snprintf(fx, sizeof(fx), "%c%02X", cell.fx, cell.fxv & 0xFF);
+    if (c.kind == ChanKind::Voice) {   // the word, padded to six
+        std::string w = cell.word.empty() ? ".." : cell.word;
+        if (w.size() < 6) w.resize(6, ' ');
+        return n + " " + w + " " + fx;
+    }
     return n + " " + in + " " + fx;
 }
 
@@ -80,7 +88,13 @@ bool parseCell(const TrackChannel& c, const std::string& text, TrackCell& out, s
         cell.note = parseNote(n);
         if (cell.note < 0) { err = "not a note: " + n; return false; }
     }
-    if (t.size() > 1 && t[1] != ".." && t[1] != ".") {
+    if (c.kind == ChanKind::Voice && t.size() > 1 && t[1] != ".." && t[1] != ".") {
+        // a word or syllable: letters, ' and -
+        bool ok = t[1].size() <= 12;
+        for (char ch : t[1]) if (!std::isalpha((unsigned char)ch) && ch != '\'' && ch != '-') ok = false;
+        if (!ok) { err = "a sung word is letters, ' and -, at most 12: " + t[1]; return false; }
+        cell.word = t[1];
+    } else if (t.size() > 1 && t[1] != ".." && t[1] != ".") {
         if (t[1].size() > 2 || hexv(t[1][0]) < 0 || (t[1].size() == 2 && hexv(t[1][1]) < 0)) { err = "instrument is two hex digits: " + t[1]; return false; }
         cell.instr = std::strtol(t[1].c_str(), nullptr, 16);
         if (c.kind == ChanKind::Fm && (cell.instr < 1 || cell.instr > (int)fmPatches().size())) {
@@ -278,6 +292,20 @@ std::vector<RowSound> rowSounds(const Song& s, int pat, int row, double rm) {
             int k = 1;
             while (k < 16 && row + k < s.rows(pat) && s.cell(pat, row + k, (int)c).note == -1) ++k;
             gate = k * rm * 0.95;
+        }
+        if (ch.kind == ChanKind::Voice) {
+            if (cell.word.empty()) continue;   // a note with no word is not sung
+            RowSound r;
+            r.chan = (int)c;
+            r.sing = true;
+            r.word = cell.word;
+            r.singer = ch.singer;
+            r.note.midi = cell.note;
+            r.note.vel = cell.fx == 'V' ? std::max(1, std::min(127, cell.fxv)) : 100;
+            r.note.durMs = gate;
+            r.cell = text;
+            out.push_back(r);
+            continue;
         }
         Note n;
         n.voice = ch.kind == ChanKind::Speaker ? Voice::PcSpeaker : Voice::Fm;

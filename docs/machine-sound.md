@@ -228,6 +228,33 @@ MIDI in and out through CoreMIDI (`app/sound/midi.cpp`), timestamped on the one 
     exec_command name=midi action=clock on=0|1          # clock, start and stop out
     exec_command name=open_midi                         # the window: what arrives and leaves, clock runs folded
 
+## Voices
+
+The residents' own voices are an instrument (`app/sound/voice.cpp`). Wib sings as the macOS voice Sandy (English
+(UK)), Wob as Grandpa (English (UK)), lifted by 1.45 to match Sandy's loudness (the house figure in
+`wibandwob-heartbeat/output/wob-periodic-table/voices.py`). When a house voice is absent the next English voice
+sings (Wib: Flo, Kate, Serena, Daniel; Wob: Reed, Daniel, Eddy, Oliver) and `voice action=state` says so with
+`fallback: true`.
+
+A word is rendered once per singer with `say` to a 22050 Hz WAV (`$TMPDIR/wwdos-voice/`), trimmed of silence and
+kept. To sing it on a note, the word's own pitch is measured (the median of voiced frames, by autocorrelation) and the
+word is resampled by the ratio to the note's pitch; it is cut to the gate with a 10 ms fade and mixed on the stream at
+its time on the one clock. Resampling moves the timing with the pitch: a word sung higher is shorter. Measured with the
+real voices: Sandy's "hello" on A-3 comes out at 215 Hz (220 wanted), Grandpa's on A-2 at 104 Hz (110).
+
+    exec_command name=synth action=sing words="ma ri a" notes="C-4 E-4 G-4" step=300 [dur=] who=wib|wob
+    exec_command name=voice action=state      # who sings as which voice, fallback, the say program, renders
+    exec_command name=voice action=render who=wob word=hello note=A-2 [dur=]   # renders, plays nothing: samples, Hz
+
+A tracker channel `voice:wib` or `voice:wob` takes a word in place of the instrument: `C-4 hel    ...` (the word
+padded to six). In the window, letters typed in that field build the word. Every sung word is rendered before the
+song's first row, so `say` never runs while it plays.
+
+The ears report a sung word with `source: "voice"`, the word, the note and who sang (`hear of=voice`), and the
+summary says `wib sang "ma ri a"`. `WWDOS_SAY` names a stand-in for `say` (the tests use
+`tests/resident/fake_say.py`, a tone at each voice's pitch). Words are letters, apostrophes, hyphens and spaces, at
+most 24 characters, passed to `say` as one argument with no shell.
+
 ## Residents jam
 
 A resident answers the person's last phrase on the synth (`app/sound/jam.cpp`). It reads the person's gestures with
@@ -376,15 +403,16 @@ hears as wib or wob with no change; `tui_list_commands` lists `synth`, `open_syn
 speaker's divisor and pitch measured by zero crossings, one speaker voice, FM level, release and silence, patches,
 nine channels, envelope, WAV), hold (4: a held note sounds until it is let go, rings through its release, then silence; a key let go before its note starts gives a short note), mixer (7: the same samples in blocks of 1, 64 and 4096 and in the offline render, a
 later call's speaker note replacing the one sounding, ten calls holding nine FM channels, a drum hit on its exact
-sample, late counting, capture), patterns (8: the first format, patterns and order, the text round trip, F tempo and speed, refused orders and numbering, F00), jam (6: the three rules, a model's line of notes taken, anything else refused), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
+sample, late counting, capture), voice (3, and 2 more with the real say: pitch of a tone, silence, word checks; Sandy's and Grandpa's hello sung on A-3 and A-2), patterns (8: the first format, patterns and order, the text round trip, F tempo and speed, refused orders and numbering, F00), jam (6: the three rules, a model's line of notes taken, anything else refused), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
 report, window filter, the keep limit), score (14: parsing, kinds, timing, and seven refused scores).
 
-`python3 tests/resident/test_machine_sound.py [patterns] [jam] [midi] [tracker] [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
+`python3 tests/resident/test_machine_sound.py [voice] [patterns] [jam] [midi] [tracker] [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
 (`tmux -L soundtest`, `WWDOS_SOUND_OUT=null`, `WWDOS_MIDI=null`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
 the binary.
 
 | group | what it shows |
 |---|---|
+| voice | (stand-in say) wib sings as Sandy and wob as Grandpa; wob's hello spoken at 115 Hz is sung on A-2 at 110.0; another note re-uses the render; wib's "ma ri a" is heard word by word with its notes and singer, 200 ms apart on the clock, mixed as three sounds; a tracker voice channel's rows come back from the ears, sung by wob; say ran once per word and singer; a word with `;` is refused; the person types a word into a voice cell; with no Grandpa installed wob sings as Reed and says it is a stand-in |
 | patterns | the first file format loads as one pattern; a song of patterns 0, 1, 0 plays in order and the ears give back its ten rows; rows are 62.5 ms at 240 bpm until `F78` sets 120 bpm, then 125 ms; muting the drums leaves only the bass, soloing them only the drums; a 2x2 block copies and pastes into pattern 1, a drum column on a note channel changes nothing; the person's `>`, Ctrl+E and Ctrl+T edit pattern 1, mute and solo; the text holds the order and both patterns |
 | jam | wib answers the person's C D E F with C-5 B-4 A-4 G-4 by rule, in their rhythm (160 ms), the ears and the log name wib, wib's own notes start no answer, the next phrase gets its own answer; in the hands desktop a stand-in model chooses wob's answer (`G-4 . E-4 C-4`) through a call with no tools, no MCP and no settings and the phrase as data, and a reply that is not notes (`ACT: close_all`) falls back to the rule and closes nothing |
 | midi | a note on plays C-4 as the person's and holds an FM channel; the note off ends it after as long as it was held (measured 412 ms for a 400 ms hold) and frees the channel; velocity 0 is a note off; the log has the person's note; the TR-808 sends start first, stop last, clock ticks 20.833 ms apart (24 a beat at 120 bpm) and each bass drum as note 36 on channel 10 at the time the ears say it sounds; the tracker sends C-4 on channel 1 and its note off 62.5 ms later, its drum on 10 and 6 ticks a row; the MIDI window says what arrived and left |
@@ -403,6 +431,8 @@ On origin/main (before these commits) every group fails at its first sound comma
 - **The lead is fixed at 46 ms.** Every sound asked for now plays 46 ms later. It keeps keyboard playing even and
   never late, but a player hears the delay; a smaller AudioQueue buffer would cut it at the risk of drop-outs, which
   are not counted.
+- **Under a detached tmux server `say` writes an empty file.** Started outside the login (GUI) session, `say` exits 0 with only a header; the app reports "say wrote no speech". The desktop run from a terminal app sings; the tests use a stand-in.
+- **Sung words are resampled, not time-stretched,** so pitch and length move together, and the pitch lands within a few per cent (speech has no single pitch).
 - **No key releases from the computer keyboard.** A terminal sends key presses only, so a typed note lasts the gate length; a MIDI keyboard gives real releases.
 - **MIDI out goes to the virtual source only.** A DAW or another app listening to `WibWob-DOS` gets it; a hardware synth needs that routed (Audio MIDI Setup). Input ignores everything but notes (no controllers, no pitch bend), and no MIDI clock is followed.
 - **Mac only for sound.** The stream plays through an AudioQueue; elsewhere it runs `null`. The browser build is not

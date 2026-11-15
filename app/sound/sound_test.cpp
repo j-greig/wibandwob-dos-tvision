@@ -6,6 +6,7 @@
 #include "score.h"
 #include "tracker.h"
 #include "jam.h"
+#include "voice.h"
 #include "synth.h"
 
 #include <cmath>
@@ -368,6 +369,29 @@ static void testPatterns() {
     check(!parseCell(TrackChannel{ChanKind::Fm, 0}, "C-4 .. F00", c, err), "F00 is refused");
 }
 
+static void testVoice() {
+    std::printf("[voice]\n");
+    std::vector<int16_t> tone(kRate / 2);
+    for (size_t i = 0; i < tone.size(); ++i) tone[i] = (int16_t)(10000 * std::sin(2 * 3.14159265358979 * 200.0 * i / kRate));
+    const double f = voice::pitchOf(tone);
+    check(std::fabs(f - 200.0) < 3.0, "the pitch of a 200 Hz tone measures 200 Hz (" + std::to_string(f) + ")");
+    std::vector<int16_t> quiet(kRate / 2, 3);
+    check(voice::pitchOf(quiet) == 0.0, "silence has no pitch");
+    check(voice::validWord("hello") && voice::validWord("don't") && !voice::validWord("rm -rf /") && !voice::validWord("a;b") &&
+          !voice::validWord(""), "words are letters, ' - and spaces only");
+    // With the real 'say' (WWDOS_SOUND_TEST_SAY=1, run from a GUI session): Sandy sings hello on A-3.
+    if (std::getenv("WWDOS_SOUND_TEST_SAY")) {
+        std::string err;
+        Pcm p = voice::sung("wib", "hello", 57, 2000, &err);
+        const double hz = p ? voice::pitchOf(*p) : 0;
+        check(p && std::fabs(hz - 220.0) < 12.0, "real say: Sandy's hello sung on A-3 measures " + std::to_string(hz) + " Hz " + err);
+        Pcm q = voice::sung("wob", "hello", 45, 2000, &err);
+        const double hq = q ? voice::pitchOf(*q) : 0;
+        check(q && std::fabs(hq - 110.0) < 8.0, "real say: Grandpa's hello sung on A-2 measures " + std::to_string(hq) + " Hz " + err);
+        std::printf("  voices: wib %s, wob %s\n", voice::singer("wib").voice.c_str(), voice::singer("wob").voice.c_str());
+    }
+}
+
 static void testJam() {
     std::printf("[jam]\n");
     const std::vector<std::string> ph = {"C-4", "D-4", "E-4", "F-4"};
@@ -390,6 +414,7 @@ int main(int argc, char** argv) {
     if (only.empty() || only == "tracker") testTracker();
     if (only.empty() || only == "jam") testJam();
     if (only.empty() || only == "patterns") testPatterns();
+    if (only.empty() || only == "voice") testVoice();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
