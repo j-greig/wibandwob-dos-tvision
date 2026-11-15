@@ -93,6 +93,24 @@ on one clock and cannot drift apart.
 | `coreaudio` (default on macOS) | the stream plays on the Mac's audio out; if the AudioQueue cannot open, it runs `null` and `sound action=state` says why |
 | `null` | the stream runs at real time and plays nowhere (tests): the clock, mixing and capture all work |
 | `off` | no stream: the clock is steady time, the synth plays one WAV per phrase through `afplay` and the TR-808 its samples through `afplay`, as before |
+| (browser build) | `webaudio`: the same mixer, pumped from the main loop |
+
+### In the browser
+
+The desktop page built by `kernel/build-web.sh` (`dist-web/wwdos.html`, `wwdos-webgl.html`) plays the same mixer through
+WebAudio (`app/sound/stream.cpp`, the `__EMSCRIPTEN__` parts; the film engine under `app/film` and `app/stage` is
+not touched). The page installs its audio when the desktop starts, but browsers allow sound only after a gesture: the
+audio context (22050 Hz) starts on the first key or click, and blocks rendered before that are dropped. The main loop
+(the app's idle, through `sound::poll`) renders 512-sample blocks to stay 2048 samples (93 ms) ahead of steady time
+and hands each to WebAudio, which plays it at its place on the context's clock; a new sound goes 3072 samples (139 ms)
+ahead of the clock, past what is already queued. The TR-808's recordings are embedded in the page. MIDI (`null`),
+voices (no `say`), the model calls and the jam's model have no route in the browser; the synth, the TR-808, the
+tracker, scores and the ears work. `sound action=state` reports `out: "webaudio"` and `browser_audio` (the context
+running).
+
+`uv run tests/web/sound.py [dist-web/wwdos.html]` (headless Chrome through Playwright): the page makes no audio context
+before a gesture; the first key starts one at 22050 Hz; the mixer's blocks arrive at real time (21899 samples a second
+measured); View > TR-808 and Space start the drum machine and its hits reach WebAudio.
 
 `WWDOS_SYNTH_AUDIO=0` and the TR-808's `WWDOS_TR808_AUDIO=0` still keep each instrument out of the mix; the ears hear
 it either way, at the same times.
@@ -468,8 +486,9 @@ On origin/main (before these commits) every group fails at its first sound comma
 - **Sung words are resampled, not time-stretched,** so pitch and length move together, and the pitch lands within a few per cent (speech has no single pitch).
 - **No key releases from the computer keyboard.** A terminal sends key presses only, so a typed note lasts the gate length; a MIDI keyboard gives real releases.
 - **MIDI out goes to the virtual source only.** A DAW or another app listening to `WibWob-DOS` gets it; a hardware synth needs that routed (Audio MIDI Setup). Clock in sets the tempo but not the phase: the app's bar starts where it was started, not on the source's bar line, and MIDI song position is ignored. Controllers outside CC1, 7, 11, 72 and 74 are ignored.
-- **Mac only for sound.** The stream plays through an AudioQueue; elsewhere it runs `null`. The browser build is not
-  wired and stays silent.
+- **Mac and the browser.** The stream plays through an AudioQueue on macOS and WebAudio in the browser build; elsewhere it
+  runs `null`. In the browser the lead is 139 ms, the main loop must keep running to keep sound coming (a hidden tab
+  slows it), and a sum of loud drum hits clips at full scale.
 - **The ears hear the schedule, the capture hears the mix.** `hear` reports notes and hits as scheduled; only
   `sound action=capture` looks at the samples, and its onset finder misses quiet hits right after loud ones (the
   test asks for most steps, not all). A TR-808 level is its playback volume, not a loudness.

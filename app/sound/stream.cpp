@@ -14,8 +14,11 @@
 #include <sstream>
 #include <thread>
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
 #include <AudioToolbox/AudioToolbox.h>
+#endif
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
 #endif
 
 namespace sound {
@@ -26,14 +29,14 @@ std::string jsonEscape(const std::string& s);
 
 static const int kBlock = 256;           // samples per buffer (11.6 ms)
 static const int kBuffers = 3;           // AudioQueue buffers in flight
-static const int64_t kLead = 1024;       // samples between "now" and where a new sound starts (46 ms)
+static int64_t kLead = 1024;             // samples between "now" and where a new sound starts (46 ms; 139 ms in a browser)
 
 Mixer& mixer() {
     static Mixer* m = new Mixer((size_t)kRate * 10);   // never destroyed: the audio thread may outlive main
     return *m;
 }
 
-static std::atomic<int> g_kind{0};       // 0 off, 1 null, 2 coreaudio
+static std::atomic<int> g_kind{0};       // 0 off, 1 null, 2 coreaudio, 3 webaudio
 static std::string g_note;               // why coreaudio was not used
 static double g_offsetMs = 0;            // clockMs() when the stream started
 static std::atomic<int64_t> g_blockEnd{0};
@@ -51,7 +54,7 @@ static void rendered() {
     g_blockSteady.store(steadyMs());
 }
 
-const char* streamOut() { return g_kind == 2 ? "coreaudio" : g_kind == 1 ? "null" : "off"; }
+const char* streamOut() { return g_kind == 3 ? "webaudio" : g_kind == 2 ? "coreaudio" : g_kind == 1 ? "null" : "off"; }
 bool streamRunning() { return g_kind != 0; }
 double leadMs() { return streamRunning() ? sampleToMs(kLead) : 0.0; }
 
@@ -70,7 +73,73 @@ int64_t sampleForClock(double clockMsAt) {
     return msToSample(clockMsAt - g_offsetMs) + kLead;
 }
 
-#ifdef __APPLE__
+#ifdef __EMSCRIPTEN__
+// The browser: the main loop renders blocks ahead of time and hands them to WebAudio, which plays
+// each at its place on the audio context's clock. The context starts on the page's first key or
+// click (browsers allow sound only after a gesture); blocks before that are dropped.
+EM_JS(void, ww_audio_install, (), {
+    if (Module.wwAudio) return;
+    var A = Module.wwAudio = { ctx: null, base: null, pushed: 0, peak: 0 };
+    var start = function () {
+        if (!A.ctx) {
+            var C = window.AudioContext || window.webkitAudioContext;
+            if (!C) return;
+            try { A.ctx = new C({ sampleRate: 22050 }); } catch (e) { A.ctx = new C(); }
+        }
+        if (A.ctx.state !== 'running') A.ctx.resume();
+    };
+    window.addEventListener('keydown', start, true);
+    window.addEventListener('pointerdown', start, true);
+    window.addEventListener('mousedown', start, true);
+});
+EM_JS(void, ww_audio_push, (const int16_t* p, int n, double startSample), {
+    var A = Module.wwAudio;
+    if (!A || !A.ctx || A.ctx.state !== 'running') return;
+    var rate = 22050;
+    var buf = A.ctx.createBuffer(1, n, rate);
+    var ch = buf.getChannelData(0);
+    var src16 = HEAP16.subarray(p >> 1, (p >> 1) + n);
+    var pk = 0;
+    for (var i = 0; i < n; i++) { ch[i] = src16[i] / 32768; var a = ch[i] < 0 ? -ch[i] : ch[i]; if (a > pk) pk = a; }
+    if (pk > A.peak) A.peak = pk;
+    var t = A.base === null ? null : A.base + startSample / rate;
+    if (t === null || t < A.ctx.currentTime || t > A.ctx.currentTime + 1.0) {   // first block, or fell out of step: line up again
+        A.base = A.ctx.currentTime + 0.05 - startSample / rate;
+        t = A.base + startSample / rate;
+    }
+    var s = A.ctx.createBufferSource();
+    s.buffer = buf;
+    s.connect(A.ctx.destination);
+    s.start(t);
+    A.pushed++;
+});
+EM_JS(int, ww_audio_running, (), {
+    return (Module.wwAudio && Module.wwAudio.ctx && Module.wwAudio.ctx.state === 'running') ? 1 : 0;
+});
+
+static double g_webT0 = 0;
+static const int64_t kWebAhead = 2048;   // samples rendered ahead of now (93 ms)
+
+// From poll(): render what the next kWebAhead samples need and send it to the page.
+void webPump() {
+    if (g_kind != 3) return;
+    static std::vector<int16_t> buf(512);
+    const int64_t target = msToSample(steadyMs() - g_webT0) + kWebAhead;
+    int guard = 0;
+    while (mixer().clock() < target && ++guard < 64) {
+        const int64_t at = mixer().clock();
+        mixer().render(buf.data(), buf.size());
+        rendered();
+        ww_audio_push(buf.data(), (int)buf.size(), (double)at);
+    }
+}
+bool webAudioRunning() { return ww_audio_running() != 0; }
+#else
+void webPump() {}
+bool webAudioRunning() { return false; }
+#endif
+
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
 static AudioQueueRef g_queue = nullptr;
 
 static void aqCallback(void*, AudioQueueRef q, AudioQueueBufferRef b) {
@@ -124,6 +193,18 @@ void startStream() {
     std::call_once(once, [] {
         std::string want = "coreaudio";
         if (const char* e = std::getenv("WWDOS_SOUND_OUT")) if (*e) want = e;
+#ifdef __EMSCRIPTEN__
+        // In a browser the stream is WebAudio, pumped from the main loop (no threads here).
+        if (want == "off") return;
+        g_offsetMs = clockMs();
+        g_webT0 = steadyMs();
+        kLead = 3072;          // the page renders 2048 samples ahead, so a new sound goes past them
+        g_queued = kWebAhead;  // the clock is the sample being heard, not the last one rendered
+        rendered();
+        ww_audio_install();
+        g_kind = 3;
+        return;
+#endif
 #ifndef __APPLE__
         if (want == "coreaudio") want = "null";
 #endif
@@ -198,6 +279,7 @@ std::string streamCommand(const std::string& action, double captureMs) {
           << ",\"lead_ms\":" << leadMs() << ",\"clock_ms\":" << (long long)clockMs()
           << ",\"samples\":" << st.clock << ",\"notes\":" << st.notes << ",\"hits\":" << st.hits << ",\"late\":" << st.late
           << ",\"fm_busy\":" << st.fmBusy << ",\"speaker\":" << (st.speaker ? "true" : "false") << ",\"ringing\":" << st.samples
+          << ",\"browser_audio\":" << (webAudioRunning() ? "true" : "false")
           << ",\"note\":\"" << jsonEscape(g_note) << "\"}";
         return o.str();
     }

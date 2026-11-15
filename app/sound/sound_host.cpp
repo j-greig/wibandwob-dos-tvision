@@ -272,6 +272,7 @@ static void controller(int cc, int v, const std::string& from) {
 }
 
 void poll() {
+    webPump();   // the browser build: blocks for WebAudio (stream.cpp); nothing elsewhere
     jamTick();
     auto msgs = midi::takeIn();
     if (msgs.empty()) return;

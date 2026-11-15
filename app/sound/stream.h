@@ -26,6 +26,9 @@ double leadMs();
 int64_t sampleForClock(double clockMsAt);
 // A TR-808 voice's recording (bd.wav ... ch.wav, 22050 Hz mono), loaded once.
 Pcm drumSample(const std::string& id);
+// The browser build: render ahead and hand blocks to WebAudio (from poll()); no-op elsewhere.
+void webPump();
+bool webAudioRunning();
 // exec_command name=sound action=state|capture.
 std::string streamCommand(const std::string& action, double captureMs);
 
