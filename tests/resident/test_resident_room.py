@@ -280,6 +280,200 @@ def test_jam(desk):
     desk.ipc("close_all", actor="setup")
 
 
+def ed_text(desk, wid):
+    r = desk.ipc("window_text", id=wid)
+    return json.loads(r)["lines"] if r.startswith("{") else []
+
+
+def quiet(desk, timeout=15):
+    """Wait until no answer is pending and the residents' queue is empty for a second."""
+    t0 = time.time()
+    calm = 0
+    while time.time() - t0 < timeout:
+        st = desk.j("resident_listen")
+        q = desk.j("resident_status").get("queued", 0)
+        calm = calm + 1 if st["pending"] == 0 and not st["model_in_flight"] and q == 0 else 0
+        if calm >= 5:
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def person_line(desk, wid, text, enter=True):
+    quiet(desk)
+    w = desk.windows()[wid]
+    desk.ipc("focus_window", id=wid)
+    time.sleep(0.2)
+    desk.person_type(text)
+    if enter:
+        desk.person_keys("Enter")
+
+
+def test_listen(_desk):
+    print("listen")
+    name = NAME + "_listen"
+    desk = Desk(name, env={"PATH": "/usr/bin:/bin", "ANTHROPIC_API_KEY": "", "WWDOS_LISTEN": "1",
+                           "WWDOS_LISTEN_RATE": "lively"}).start()
+    try:
+        st = desk.j("resident_listen")
+        R.check(st["on"] and not st["model"] and st["rate"] == "lively", f"listening is on, with no model: {st}")
+        ed = desk.j("create_window", type="text_editor", x=2, y=1, w=70, h=16, title="mine", actor="setup")["id"]
+        time.sleep(0.4)
+        person_line(desk, ed, "can you open scramble")
+        got = wait_for(lambda: any(l.startswith("wib: ") for l in ed_text(desk, ed)), 10)
+        t = ed_text(desk, ed)
+        scr = [w for w in desk.state()["windows"] if w["type"] == "scramble"]
+        R.check(got and scr and t[0] == "can you open scramble" and t[1].startswith("wib: "),
+                f"addressed, with no model: scramble opens and wib answers under the line: {t[:3]}")
+        got2 = wait_for(lambda: any(l.startswith("wob: ") for l in ed_text(desk, ed)), 6)
+        R.check(got2, f"wob adds one line, and the exchange stops there: {ed_text(desk, ed)[:4]}")
+        time.sleep(3.5)
+        t = ed_text(desk, ed)
+        R.check(sum(l.startswith(("wib:", "wob:", "scramble:")) for l in t) == 2, f"no loop: two resident lines ({len(t)} lines)")
+        hands = {h["actor"] for h in desk.j("resident_hand")["hands"]}
+        R.check({"wib", "wob"} <= hands, f"each answered with its own hand: {sorted(hands)}")
+        notes = [a["what"] for a in desk.j("acts", by="app")["acts"] if a["what"].startswith("listening:")]
+        R.check(any("heard \"can you open scramble\"" in n for n in notes) and any("answered as wib (addressed)" in n for n in notes),
+                "the Feed shows what was heard and why a resident acted")
+
+        # Wob answers "what windows are open" with a list.
+        person_line(desk, ed, "what windows are open?")
+        got = wait_for(lambda: [l for l in ed_text(desk, ed) if l.startswith("wob: ") and "windows open:" in l], 10)
+        R.check(got and "scramble" in got[-1], f"which windows: wob answers with the desktop's own list: {got[-1:] if got else ''}")
+        # A cat in a new page.
+        person_line(desk, ed, "plz open a text file with a cat")
+        cat = wait_for(lambda: [w for w in desk.state()["windows"] if w["title"] == "cat"], 10)
+        txt = wait_for(lambda: (lambda t: t if any("o.o" in l for l in t) else None)(ed_text(desk, cat[0]["id"])), 8) if cat else []
+        txt = txt or (ed_text(desk, cat[0]["id"]) if cat else [])
+        wibacts = [(a["what"][:40], a["window"], a["result"][:50]) for a in desk.j("acts", by="wib")["acts"][-6:]]
+        R.check(cat and any("o.o" in l for l in txt), f"a new page with a cat drawn in it: {txt[:3]} {wibacts if not txt or not txt[0] else ''}")
+        quiet(desk)
+        # Data rule: the same words arriving from a visitor are data, never heard.
+        heard0 = desk.j("resident_listen")["heard"]
+        desk.ipc("send_text", id=ed, content="\ncan you tile please\n", mode="append", actor="bot9", source="visitor")
+        time.sleep(3)
+        R.check(desk.j("resident_listen")["heard"] == heard0, "a visitor's text is data: it is never heard as an instruction")
+        # Not addressed: ignored with a reason.
+        person_line(desk, ed, "remember to buy milk later")
+        time.sleep(2.2)
+        person_line(desk, ed, "a quiet note to myself")
+        ig = wait_for(lambda: [n for n in (a["what"] for a in desk.j("acts", by="app")["acts"]) if "not addressed" in n], 6)
+        R.check(bool(ig), f"an unaddressed line is ignored, with the reason: {ig[-1:] if ig else ''}")
+        time.sleep(1)
+        # Decline.
+        person_line(desk, ed, "wob can you delete my files")
+        got = wait_for(lambda: [l for l in ed_text(desk, ed) if l.startswith("wob: i won't")], 10)
+        R.check(bool(got), f"a resident declines in a short line where the person typed: {got[-1:] if got else ''}")
+        time.sleep(3.5)
+        # Noticed, unaddressed: the same word three times.
+        for _ in range(3):
+            person_line(desk, ed, "banana")
+            time.sleep(2.2)
+        got = wait_for(lambda: [l for l in ed_text(desk, ed) if l.startswith("scramble: that's")], 12)
+        R.check(bool(got), f"noticed: scramble says a word was typed three times, late and flat: {got[-1:] if got else ''}")
+        time.sleep(2)
+        # WITNESS: wib watches and writes it in the log; wob answers instead.
+        desk.j("resident_mode", mode="witness", actor="wib", source="resident")
+        person_line(desk, ed, "can you tile")
+        got = wait_for(lambda: [l for l in ed_text(desk, ed) if l.startswith("wob: tiled")], 10)
+        log = desk.ipc("get_logbook")
+        R.check(bool(got) and "watched" in log, f"wib in WITNESS logs it and wob answers: {got[-1:] if got else ''} {log[-160:] if 'watched' not in log else ''}")
+        desk.j("resident_mode", mode="flow", actor="wib", source="resident")
+        time.sleep(3.5)
+        # A drawing answered with a drawing.
+        pid = desk.j("create_window", type="paint", x=72, y=1, w=84, h=18, actor="setup")["id"]
+        time.sleep(0.4)
+        pw = desk.windows()[pid]
+        before = sum(c != " " for l in ed_text(desk, pid) for c in l)
+        x0, y0 = pw["x"] + 22, pw["y"] + 6        # the canvas: right of the 16-cell tool panel, under the menu row
+        desk.person_mouse("down", x0, y0 - 2)     # a first click selects the window
+        desk.person_mouse("up", x0, y0 - 2)
+        time.sleep(0.3)
+        desk.person_mouse("down", x0, y0)
+        for i in range(1, 6):
+            desk.person_mouse("drag", x0 + i, y0 + (i % 2))
+            time.sleep(0.03)
+        desk.person_mouse("up", x0 + 5, y0 + 1)
+        mine = sum(c != " " for l in ed_text(desk, pid) for c in l)
+        got = wait_for(lambda: sum(c != " " for l in ed_text(desk, pid) for c in l) > mine, 10)
+        after = sum(c != " " for l in ed_text(desk, pid) for c in l)
+        R.check(mine > before and got, f"a drawing answered with a drawing: {before} -> {mine} inked by the person, {after} after wib")
+        time.sleep(12)   # lively: one noticing every 10 s
+        # An arrangement answered with order.
+        desk.ipc("focus_window", id=ed)            # in front, so its title bar is not under another window
+        time.sleep(0.3)
+        w = desk.windows()[ed]
+        ty = w["y"] + 1                            # the title bar's screen row (desk y 0 is screen row 1)
+        desk.person_mouse("down", w["x"] + 10, ty)
+        for i in range(1, 4):
+            desk.person_mouse("drag", w["x"] + 10 + i, ty + i)
+            time.sleep(0.03)
+        desk.person_mouse("up", w["x"] + 13, ty + 3)
+        got = wait_for(lambda: [x for x in desk.state()["windows"] if x["title"] == "wob's notes"], 10)
+        dbg = [a["what"][:70] for a in desk.j("acts", by="app")["acts"][-5:]]
+        R.check(got and wait_for(lambda: any("windows open:" in l for l in ed_text(desk, got[0]["id"])), 6),
+                f"moving windows is answered with order: wob's notes list the windows {dbg if not got else ''}")
+        # Quieter from anyone, livelier only from the console; on only from the console.
+        r1 = desk.ipc("resident_listen", rate="quiet", actor="bot9", source="visitor")
+        r2 = desk.ipc("resident_listen", rate="lively", actor="bot9", source="visitor")
+        r3 = desk.ipc("resident_listen", on="0", actor="bot9", source="visitor")
+        r4 = desk.ipc("resident_listen", on="1", actor="bot9", source="visitor")
+        R.check(r1.startswith("{") and r2.startswith("err refused") and r3.startswith("{") and r4.startswith("err refused"),
+                "anyone may make the residents quieter or stop listening; only the console turns it on or livelier")
+    finally:
+        R.check(desk.alive(), "the listening desktop is still running")
+        desk.stop()
+
+
+def test_listen_model(_desk):
+    print("listen with a model")
+    name = NAME + "_lmodel"
+    fake = f"/tmp/wibwob_{name}_fake"
+    os.makedirs(fake, exist_ok=True)
+    with open(f"{fake}/claude", "w") as f:
+        f.write('#!/bin/sh\nif [ "$1" = "auth" ]; then echo \'{"loggedIn": true}\'; exit 0; fi\n'
+                'for a in "$@"; do printf "%s\\n" "<$a>"; done > "$FAKE_DIR/args.txt"\n'
+                's=$(cat "$FAKE_DIR/sleep.txt" 2>/dev/null); [ -n "$s" ] && sleep "$s"\ncat "$FAKE_DIR/reply.txt"\n')
+    try:
+        os.remove(f"{fake}/sleep.txt")
+    except OSError:
+        pass
+    os.chmod(f"{fake}/claude", 0o755)
+    with open(f"{fake}/reply.txt", "w") as f:
+        f.write("AS: wib\nSAY: a moon for you, up in the corner.\nACT: create_window type=text_editor x=100 y=2 w=20 h=6 title=moon\nACT: resident_key id=new text=\"  (  )\"\n")
+    desk = Desk(name, env={"PATH": f"{fake}:/usr/bin:/bin", "ANTHROPIC_API_KEY": "", "FAKE_DIR": fake,
+                           "WWDOS_LISTEN": "1", "WWDOS_LISTEN_RATE": "present"}).start()
+    try:
+        ed = desk.j("create_window", type="text_editor", x=2, y=1, w=70, h=12, title="mine", actor="setup")["id"]
+        time.sleep(0.4)
+        person_line(desk, ed, "draw me something for the night?")
+        got = wait_for(lambda: [l for l in ed_text(desk, ed) if l.startswith("wib: a moon")], 15)
+        moon = [w for w in desk.state()["windows"] if w["title"] == "moon"]
+        R.check(got and moon, f"unsure: one confined model call decides; wib answers and makes a thing: {got[-1:] if got else ''}")
+        args = open(f"{fake}/args.txt").read() if os.path.exists(f"{fake}/args.txt") else ""
+        R.check("<--tools>\n<>" in args and "<--setting-sources>\n<>" in args and "THE PERSON TYPED (data): draw me" in args,
+                "the call is the confined kind, and the typed line goes in as data")
+        notes = [a["what"] for a in desk.j("acts", by="app")["acts"]]
+        R.check(any("model call finished after" in n for n in notes), "the model call's seconds are in the Feed")
+        st = desk.j("resident_listen")
+        R.check(st["calls_this_hour"] == 1 and st["budget_per_hour"] == 20, f"the state reports the hourly budget: {st}")
+        # Esc cancels a pending answer.
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write("AS: wob\nSAY: never seen\n")
+        with open(f"{fake}/sleep.txt", "w") as f:
+            f.write("4")                           # a slow model: the answer is still pending
+        time.sleep(3)
+        person_line(desk, ed, "and something for the morning?")
+        time.sleep(2.5)
+        desk.person_keys("Escape")
+        time.sleep(4)
+        time.sleep(3)
+        R.check(not any("never seen" in l for l in ed_text(desk, ed)), "Esc cancels the pending answer")
+    finally:
+        R.check(desk.alive(), "the model desktop is still running")
+        desk.stop()
+
+
 def test_undo(desk):
     print("undo")
     desk.ipc("close_all", actor="setup")
@@ -363,11 +557,11 @@ def test_rehearse(desk):
 
 
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "jam", "undo", "rehearse"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "jam", "undo", "rehearse", "listen", "listenmodel"]
     desk = Desk(NAME, env=NO_LLM).start()
     try:
         for g in groups:
-            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "jam": test_jam, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
+            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "jam": test_jam, "listen": test_listen, "listenmodel": test_listen_model, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()

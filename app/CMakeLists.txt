@@ -21,6 +21,7 @@ set(TV_COMMON_SOURCES
     describe.cpp
     resident_hands.cpp
     resident_teach.cpp
+    resident_listen.cpp
     wibwob_background.cpp
     window_type_registry.cpp
     theme_manager.cpp
@@ -224,6 +225,7 @@ add_executable(command_registry_test EXCLUDE_FROM_ALL
     describe.cpp
     resident_hands.cpp
     resident_teach.cpp
+    resident_listen.cpp
 )
 target_link_libraries(command_registry_test PRIVATE tvision)
 
@@ -244,6 +246,7 @@ add_executable(scramble_engine_test EXCLUDE_FROM_ALL
     describe.cpp
     resident_hands.cpp
     resident_teach.cpp
+    resident_listen.cpp
     llm/base/auth_config.cpp
 )
 target_link_libraries(scramble_engine_test PRIVATE tvision)

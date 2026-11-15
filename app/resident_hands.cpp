@@ -307,7 +307,9 @@ bool pawCommandAllowed(const std::string& name) {
                                "terminal_pause", "terminal_resume", "terminal_toggle", "terminal_state", "terminal_release",
                                "cast_control", "cast_state",     // the terminal transport (terminal_transport.cpp)
                                "mosh", "mosh_on", "mosh_off", "mosh_panic", "mosh_way", "mosh_amount",
-                               "mosh_score", "mosh_status"};     // the desk mosh (desk_mosh.cpp)
+                               "mosh_score", "mosh_status",      // the desk mosh (desk_mosh.cpp)
+                               "open_scramble", "tile", "cascade", "paint_text", "paint_line", "paint_rect", "paint_cell",
+                               "logbook_write"};                 // listening's answers (resident_listen.cpp)
     for (const char* n : ok) if (name == n) return true;
     return false;
 }
