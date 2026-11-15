@@ -721,6 +721,7 @@ TWindow* createTerminalWindow(const TRect &bounds)
 
 #endif // __EMSCRIPTEN__
 
+#ifndef __EMSCRIPTEN__   // the browser's stand-in window describes itself (tvterm_view.h)
 std::string TWibWobTerminalWindow::describeState() const {
     const char* t = const_cast<TWibWobTerminalWindow*>(this)->getTitle(0);
     auto lines = ww::splitText(getOutputText());
@@ -747,3 +748,4 @@ bool TWibWobTerminalWindow::describeText(std::vector<std::string>& out) const {
     out = ww::splitText(getOutputText());
     return true;
 }
+#endif
