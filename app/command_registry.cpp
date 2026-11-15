@@ -11,6 +11,7 @@
 #include "resident_hands.h"
 #include "resident_teach.h"
 #include "resident_listen.h"
+#include "resident_room.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 // The machine's sound (app/sound/sound_host.cpp). Weak, so tests that link the
@@ -260,6 +261,9 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"resident_rehearse", "A rehearsal desk: a nested desktop in a window you own, at its own socket, to try things before acting in public; close=1 ends it; optional x y w h", false},
         {"resident_mode", "The Laws of Jam as modes: mode=flow|follow|oppose|witness sets your own (the person at the console sets anyone's with who=); WITNESS may look and talk, not act; FOLLOW acts only after someone else has acted since its last act; no args lists each resident's mode and face", false},
         {"resident_listen", "Listening: the residents follow the person's typing, drawing and arranging with no chat open and answer in kind (on=1 only from the console, Tools > Residents > Listening; on=0 from anyone; rate=quiet|present|lively, livelier only from the console); no args reports its state and hourly model budget", false},
+        {"room_say", "Say a line in the room under your own name (residents by name, others with their source): text= [to=<participant>]; shows in the room chat window when one is open", false},
+        {"room_read", "The room's lines for you since=N (to everyone, to you), in order", false},
+        {"room_wait", "Like room_read, but the socket holds the reply until a line for you arrives or ms= pass (at most 60000)", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -887,6 +891,8 @@ static std::string exec_registry_command_inner(
     if (name == "resident_undo") return resident::cmdUndo(kv);
     if (name == "resident_mode") return resident::cmdMode(kv);
     if (name == "resident_listen") return resident::cmdListen(kv);
+    if (name == "room_say") return resident::cmdRoomSay(kv);
+    if (name == "room_read" || name == "room_wait") return resident::cmdRoomRead(kv);
     if (name == "resident_rehearse") return resident::cmdRehearse(kv);
     if (name == "resident_selftest") return resident::cmdSelftest(kv);
     if (name == "resident_reflexes") return resident::cmdReflexes(kv);
