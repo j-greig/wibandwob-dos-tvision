@@ -9,7 +9,7 @@ Usage:
     python3 tests/resident/test_resident_room.py            # all groups
     python3 tests/resident/test_resident_room.py chat       # chosen groups
 Groups: chat (typing while a reply streams), feed (waits, hands, mosh steps in the Feed), child (a child
-process that died is a system line).
+process that died is a system line), teach (errors that teach, help, the resident's self-test).
 """
 
 import json
@@ -178,12 +178,46 @@ def test_child(_desk):
         desk.stop()
 
 
+def test_teach(desk):
+    print("teach")
+    desk.ipc("close_all", actor="setup")
+    time.sleep(0.3)
+    r = desk.ipc("opn_window")
+    R.check("did you mean:" in r and "_window" in r.split("did you mean:")[1], f"a mistyped command suggests names: {r[:110]!r}")
+    r = desk.ipc("exec_command", name="describ")
+    R.check("did you mean: describe" in r, f"through exec_command too: {r[:80]!r}")
+    r = desk.ipc("create_window", type="text editor")
+    R.check("did you mean: text_editor" in r, f"a misnamed window type suggests the type: {r[:90]!r}")
+    h = desk.j("help", name="resident_hand", actor="wib", source="resident")
+    R.check(h["you_may"] is False and "console key" in h["why_not"] and "resident wib" in h["why_not"],
+            f"help says why a rule is not this caller's: {h.get('why_not', '')[:120]!r}")
+    h = desk.j("help", name="look_glance", actor="wib", source="resident")
+    R.check(h["you_may"] is True and h["kind"] == "registry", "and that an ordinary command is")
+    h = desk.j("help", name="create_window")
+    R.check(h["kind"] == "socket" and "type=" in h["description"], "help covers the socket's own commands")
+    all_ = desk.j("help")
+    R.check("create_window" in all_["socket"] and "describe" in all_["registry"] and all_["rules"], "help lists every command and the rules")
+    r = desk.ipc("help", name="describ")
+    R.check("did you mean: describe" in r, "help on a mistyped name suggests too")
+
+    # The resident's self-test, run by wob on itself.
+    s = desk.j("resident_selftest", start=1, actor="wob", source="resident")
+    rep = wait_for(lambda: (lambda x: x if not x["running"] else None)(desk.j("resident_selftest")), 40, 0.4)
+    rep = rep or desk.j("resident_selftest")
+    bad = [c for c in rep["checks"] if not c["ok"]]
+    R.check(rep["actor"] == "wob" and len(rep["checks"]) >= 9 and not bad,
+            f"wob's self-test: {rep['passed']} of {len(rep['checks'])} passed (failed: {bad[:2]})")
+    acts = [a["what"] for a in desk.j("acts", by="wob")["acts"]]
+    R.check(any(a.startswith("self-test: ") and "passed" in a for a in acts), "its result is an act in wob's name (the Feed shows it)")
+    R.check(not any(w["title"] == "self-test" for w in desk.state()["windows"]), "it leaves no window behind")
+
+
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach"]
     desk = Desk(NAME, env=NO_LLM).start()
     try:
         for g in groups:
-            {"chat": test_chat, "feed": test_feed, "child": test_child}[g](desk)
+            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
