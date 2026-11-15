@@ -132,7 +132,7 @@ void Mixer::render(int16_t* out, size_t n) {
         if (mix > 1.0) mix = 1.0;
         if (mix < -1.0) mix = -1.0;
         const int16_t v = (int16_t)std::lrint(mix * 32767.0);
-        if (out) out[i] = v;
+        if (out) out[i] = muted_.load() ? 0 : v;
         if (!ring_.empty()) {
             ring_[ringPos_] = v;
             ringPos_ = (ringPos_ + 1) % ring_.size();

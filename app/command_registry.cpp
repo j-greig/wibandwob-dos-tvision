@@ -288,6 +288,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"door_list", "Who is in by the door: names, desks, acts and minutes left, what they said", false},
         {"door_show", "Show a visitor the door: name= (the person or a resident)", true},
         {"door_invite", "Invite a visitor into another window: name=, id= (the person or a resident)", true},
+        {"panel", "The operator's panel: no args reports (paused, muted, mosh, safe mode, house desk, house rules, visitors); its switches are worked at the console only (Tools > Residents > Operator's panel, Alt+Q)", false},
         {"film_open", "Play a waking back from ACTS.TXT as a film of the desktop inside a window of its own (it opens no windows and sends no commands): waking= (default the last), speed=", false},
         {"film_seek", "Scrub a film window: id=, ms= the film time, play=0|1, speed=", false},
         {"film_frame", "A film's picture at ms= (waking=, w= h=), as film_export draws it, and the times of its acts", false},
