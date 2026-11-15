@@ -58,6 +58,7 @@ private:
     size_t presetIdx_ = 0;
     TTimerId timer_ = nullptr;
     std::string startedBy_ = "app";   // who started the pattern (the ears name it)
+    std::string startPreset_;         // the preset play() loaded into an empty pattern ("" when none)
 };
 
 class TTR808Window : public TWindow {
