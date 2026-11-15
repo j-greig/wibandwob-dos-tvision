@@ -8,16 +8,17 @@ it after. Binary: WWDOS_BIN or build-resident/app/wwdos.
 Usage:
     python3 tests/resident/test_machine_sound.py            # all groups
     python3 tests/resident/test_machine_sound.py synth      # chosen groups
-Groups: synth, ears, score.
+Groups: synth, ears, score, hands (its own desktop with a stand-in claude CLI).
 """
 
 import json
 import os
+import subprocess
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(__file__))
-from resident_lib import Desk, Results  # noqa: E402
+from resident_lib import REPO, Desk, Results  # noqa: E402
 
 R = Results()
 QUIET = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "ANTHROPIC_API_KEY": "", "WWDOS_SYNTH_AUDIO": "0"}
@@ -307,7 +308,81 @@ def test_score(desk):
             "its parts are the person and wib")
 
 
-GROUPS = {"synth": test_synth, "ears": test_ears, "score": test_score}
+# ---------------------------------------------------------------------------- hands
+
+FAKE_CLAUDE = r"""#!/bin/sh
+# A stand-in for the claude CLI: says it is logged in, logs each call, answers with a canned reply.
+if [ "$1" = "auth" ]; then echo '{"loggedIn": true, "email": "test@example.invalid", "authMethod": "test"}'; exit 0; fi
+for a in "$@"; do printf '%s\n' "<$a>"; done > "$FAKE_DIR/args.txt"
+cat "$FAKE_DIR/reply.txt"
+"""
+
+
+def test_hands(_desk):
+    print("\n[hands] Scramble's paws and the chat's tools reach the synth and the ears")
+    name = os.environ.get("SOUND_TEST_NAME", "soundtest") + "_hands"
+    fake = f"/tmp/wibwob_{name}_fake"
+    os.makedirs(fake, exist_ok=True)
+    with open(f"{fake}/claude", "w") as f:
+        f.write(FAKE_CLAUDE)
+    os.chmod(f"{fake}/claude", 0o755)
+    with open(f"{fake}/reply.txt", "w") as f:
+        f.write("nothing yet\n")
+    env = {**QUIET, "PATH": f"{fake}:/usr/bin:/bin:/usr/sbin:/sbin", "FAKE_DIR": fake}
+    desk = Desk(name, env=env).start()
+    try:
+        time.sleep(0.8)
+        syn = x(desk, "open_synth", x=2, y=1, w=68, h=18, actor="setup")["id"]
+        caps = desk.ipc("get_capabilities")
+        R.check('"synth"' in caps and '"hear"' in caps and '"open_synth"' in caps,
+                "the chat's tui_list_commands (get_capabilities) lists synth, open_synth and hear")
+        desk.ipc("open_scramble", actor="setup")
+        time.sleep(0.5)
+        with open(f"{fake}/reply.txt", "w") as f:
+            f.write('a little tune. (=^..^=)\n'
+                    'ACT: synth action=notes notes="E-5 . C-5 G-4" step=90 patch=chip\n'
+                    'ACT: hear seconds=2\n')
+        desk.ipc("scramble_say", text="play me something", actor="eri", source="guest")
+        t0 = time.time()
+        st = {}
+        while time.time() - t0 < 8:
+            st = x(desk, "synth", id=syn, action="state")
+            if any(r["who"] == "scramble" for r in st["recent"]):
+                break
+            time.sleep(0.2)
+        mine = [r["note"] for r in st.get("recent", []) if r["who"] == "scramble"]
+        R.check(mine == ["G-4", "C-5", "E-5"] and st["recent"][0]["patch"] == "chip",
+                f"Scramble's ACT line plays the synth as scramble ({mine})")
+        args = open(f"{fake}/args.txt").read() if os.path.exists(f"{fake}/args.txt") else ""
+        R.check("synth action=notes" in args and "hear seconds=" in args, "her prompt names synth and hear among her paws")
+        R.check("<--tools>\n<>" in args, "her model call still has no tools")
+        sacts = desk.j("acts", by="scramble")["acts"]
+        R.check(any(a["what"].startswith("synth action=notes") and a["result"] == "ok" for a in sacts),
+                "the log has scramble playing the synth")
+        time.sleep(0.5)   # the phrase's last note starts 270 ms after its first
+        h = x(desk, "hear", seconds=3, of="synth")
+        R.check([e["note"] for e in h["heard"]] == ["E-5", "C-5", "G-4"] and all(e["who"] == "scramble" for e in h["heard"]),
+                f"the ears hear Scramble's tune as hers ({[(e['note'], e['who']) for e in h['heard']]})")
+
+        # The chat's tool client (app_socket.js, what tui_menu_command runs) plays and hears as wob.
+        sock_env = {**os.environ, "WWDOS_SOCKET": desk.sock}
+        js = os.path.join(REPO, "app/llm/sdk_bridge/app_socket.js")
+        p = subprocess.run(["node", js, "wob", "synth", f"id={syn}", "action=notes", "notes=C-3 G-3", "step=80"],
+                           capture_output=True, text=True, env=sock_env)
+        R.check(p.returncode == 0 and '"played"' in p.stdout, f"the chat's tool plays the synth as wob ({p.stdout.strip()[:60]!r})")
+        time.sleep(0.3)
+        p = subprocess.run(["node", js, "wob", "hear", "seconds=1", "of=synth"], capture_output=True, text=True, env=sock_env)
+        heard = json.loads(p.stdout) if p.stdout.strip().startswith("{") else {}
+        R.check(p.returncode == 0 and [e["note"] for e in heard.get("heard", [])][-2:] == ["C-3", "G-3"]
+                and heard["heard"][-1]["who"] == "wob", f"the chat's tool hears wob's notes ({p.stdout.strip()[:200]!r})")
+        R.check(any(a["actor"] == "wob" and a["what"].startswith("synth action=notes") for a in desk.j("acts", by="wob")["acts"]),
+                "the log has wob playing through the chat's tool")
+    finally:
+        R.check(desk.alive(), "the hands desktop is still running")
+        desk.stop()
+
+
+GROUPS = {"synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands}
 
 
 def main():

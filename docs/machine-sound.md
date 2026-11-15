@@ -192,6 +192,14 @@ A resident performs a score with the commands it already has: `event_score actio
 phrase to answer, `hear` for what sounds, `synth action=notes` (or its own keys to the synth window) to play.
 Nothing in the score runs the resident; it decides when and what to play.
 
+## Scramble and the chat
+
+Scramble's paws (`pawCommandAllowed` in `app/resident_hands.cpp`) include `open_synth`, `synth` and `hear`, and
+her prompt names them: an `ACT: synth action=notes notes="E-5 . C-5 G-4" patch=chip` line in her reply plays as
+`scramble`, and `ACT: hear seconds=2` reads the ears. Her model call still carries no tools. The Wib&Wob chat
+reaches every registry command through `tui_menu_command` (`app/llm/sdk_bridge/mcp_tools.js`), so it plays and
+hears as wib or wob with no change; `tui_list_commands` lists `synth`, `open_synth` and `hear`.
+
 ## Tests
 
 `app/sound/sound_test` (ctest `sound`) renders to buffers and needs no desktop: synth (17: note names, the PC
@@ -199,7 +207,7 @@ speaker's divisor and pitch measured by zero crossings, one speaker voice, FM le
 nine channels, envelope, WAV), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
 report, window filter, the keep limit), score (14: parsing, kinds, timing, and seven refused scores).
 
-`python3 tests/resident/test_machine_sound.py [synth] [ears] [score]` starts its own silent desktop
+`python3 tests/resident/test_machine_sound.py [synth] [ears] [score] [hands]` starts its own silent desktop
 (`tmux -L soundtest`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
 the binary.
 
@@ -207,6 +215,7 @@ the binary.
 |---|---|
 | synth | wib opens the synth (owner wib, a glance sentence); wib's phrase by command, the person's C D E from z x c, Tab to the PC speaker and `]` to octave 5, and wob's key through `resident_key` each play and name their player; nothing reaches the speakers when silent (sent 0); the acts log has all three; `render` of the PC speaker's A-4 is 22050 samples with 439 upward zero crossings, the same twice, and plays nothing |
 | ears | silence first; right after wib's phrase starts, C-4 by wib is sounding; wob then hears C-4 E-4 G-4, 200 ms apart, as played, with a summary and 16 rows; with the TR-808 started by wob, every hit heard is a step the engine's pattern has on, names wob and 120 bpm; `window=` filters; hear is not logged; the synth window shows the meter |
+| hands | on a desktop of its own with a stand-in claude CLI: the capabilities list synth, open_synth and hear; Scramble's ACT line plays a tune on the synth as scramble, her prompt names the commands and her call still has no tools, the log and the ears name her; the chat's socket client (`app_socket.js`) plays and hears as wob |
 | score | wib starts a score at 480 bpm; the person plays C D E F in their section; in wib's answer section the score hands wib those four notes; wib answers; the rest is kept; the score finishes on the clock; each section's notes are attributed (person 4, wib 4), the drum machine played under the person and stopped when the score said; the log has the sections, the `do` lines and the finish by `score`; a `do shell` line, a command line and a path outside `scores/` are refused and no window opens; the worked example opens with 8 sections |
 
 On origin/main (before these commits) every group fails at its first sound command (`err unknown command`, or the animated Score window's plain `ok` for `open_score`, which is why the event score commands are named `open_event_score` and `event_score`).
