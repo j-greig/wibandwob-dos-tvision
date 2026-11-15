@@ -238,6 +238,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"resident_selftest", "The calling resident tries what a person can do through its own hands (open an editor, type and read back, choose a menu item and answer the dialog, drag, a refused rule, a mistyped command, person_events, close): start=1 begins; no args reports each step", false},
         {"resident_undo", "Undo your own last change as a resident (an open, a move or resize, a retitle, a run of typing in an editor); refused when someone else changed that window since; list=1 shows your changes", false},
         {"resident_rehearse", "A rehearsal desk: a nested desktop in a window you own, at its own socket, to try things before acting in public; close=1 ends it; optional x y w h", false},
+        {"resident_mode", "The Laws of Jam as modes: mode=flow|follow|oppose|witness sets your own (the person at the console sets anyone's with who=); WITNESS may look and talk, not act; FOLLOW acts only after someone else has acted since its last act; no args lists each resident's mode and face", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -842,6 +843,7 @@ static std::string exec_registry_command_inner(
     if (name == "describe") return resident::cmdDescribe(kv);
     if (name == "help") return resident::cmdHelp(kv);
     if (name == "resident_undo") return resident::cmdUndo(kv);
+    if (name == "resident_mode") return resident::cmdMode(kv);
     if (name == "resident_rehearse") return resident::cmdRehearse(kv);
     if (name == "resident_selftest") return resident::cmdSelftest(kv);
     if (name == "resident_reflexes") return resident::cmdReflexes(kv);
