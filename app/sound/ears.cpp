@@ -152,12 +152,19 @@ std::string Ears::summary(double now, double ms, const std::string& source) cons
     std::map<std::string, int> whoSynth, drumCount;
     std::string drumWho;
     int tempo = 0, hits = 0;
+    std::map<std::string, std::string> sungBy;   // who -> the words they sang
     for (const auto& h : hs) {
         if (h.source == "synth") { notes.push_back(h.midi); whoSynth[h.who]++; }
+        else if (h.source == "voice") sungBy[h.who] += (sungBy[h.who].empty() ? "" : " ") + h.word;
         else { drumCount[h.voice]++; ++hits; tempo = h.tempo; drumWho = h.who; }
     }
     bool any = false;
+    for (const auto& s : sungBy) {
+        o << (any ? "; " : "") << s.first << " sang \"" << s.second << "\"";
+        any = true;
+    }
     if (!notes.empty()) {
+        if (any) o << "; ";
         any = true;
         const auto mm = std::minmax_element(notes.begin(), notes.end());
         o << "synth " << notes.size() << " note" << (notes.size() == 1 ? "" : "s") << " ("
@@ -217,16 +224,19 @@ std::string Ears::report(double now, double seconds, const std::string& source, 
         o << (i > skip ? "," : "") << "{\"ago_ms\":" << (long)(now - h.startMs) << ",\"at_ms\":" << num(h.startMs, 3)
           << ",\"source\":\"" << h.source
           << "\",\"window\":\"" << esc(h.window) << "\",\"voice\":\"" << esc(h.voice) << "\"";
-        if (h.source == "synth")
+        if (h.source == "voice")
+            o << ",\"word\":\"" << esc(h.word) << "\",\"note\":\"" << noteName(h.midi) << "\",\"midi\":" << h.midi
+              << ",\"dur_ms\":" << (long)h.durMs;
+        else if (h.source == "synth")
             o << ",\"note\":\"" << noteName(h.midi) << "\",\"midi\":" << h.midi << ",\"patch\":\"" << esc(h.patch)
               << "\",\"dur_ms\":" << (long)h.durMs;
         else
             o << ",\"step\":" << h.step << ",\"accent\":" << (h.accent ? "true" : "false") << ",\"tempo\":" << h.tempo;
         o << ",\"level\":" << num(h.level) << ",\"who\":\"" << esc(h.who) << "\"}";
     }
-    int synthN = 0, drumN = 0;
-    for (const auto& h : hs) (h.source == "synth" ? synthN : drumN)++;
-    o << "],\"dropped\":" << skip << ",\"counts\":{\"synth\":" << synthN << ",\"tr808\":" << drumN << "}";
+    int synthN = 0, drumN = 0, voiceN = 0;
+    for (const auto& h : hs) (h.source == "synth" ? synthN : h.source == "voice" ? voiceN : drumN)++;
+    o << "],\"dropped\":" << skip << ",\"counts\":{\"synth\":" << synthN << ",\"tr808\":" << drumN << ",\"voice\":" << voiceN << "}";
     o << ",\"summary\":\"" << esc(e->summary(now, ms, source)) << "\"";
     o << ",\"meter\":\"" << e->meter(now, ms, rowMs, source) << "\",\"rows\":[";
     const auto rs = e->rows(now, ms, rowMs, source);

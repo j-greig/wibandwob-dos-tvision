@@ -12,11 +12,12 @@
 
 namespace sound {
 
-enum class ChanKind { Fm, Speaker, Drums };
+enum class ChanKind { Fm, Speaker, Drums, Voice };
 
 struct TrackChannel {
     ChanKind kind = ChanKind::Fm;
-    int patch = 0;   // FM: the default patch (index into fmPatches())
+    int patch = 0;           // FM: the default patch (index into fmPatches())
+    std::string singer;      // Voice: wib or wob
 };
 
 // note: -1 empty ("---"), -2 note off ("==="), else a MIDI note, or for a drum channel a
@@ -24,12 +25,14 @@ struct TrackChannel {
 // fx: 0 none ("..."), else 'A' (arpeggio, two semitone offsets), 'V' (velocity 00-7F),
 // 'G' (gate in sixteenths of a row: G10 is one row), 'F' (as ProTracker: F01-F1F speed, ticks of
 // a 24-tick beat per row, so F06 is 4 rows a beat; F20-FF tempo in beats per minute).
+// A voice channel's cell has a word in place of the instrument: "C-4 hel    ...".
 struct TrackCell {
     int note = -1;
     int instr = -1;
     char fx = 0;
     int fxv = 0;
-    bool empty() const { return note == -1 && instr == -1 && fx == 0; }
+    std::string word;
+    bool empty() const { return note == -1 && instr == -1 && fx == 0 && word.empty(); }
 };
 
 struct TrackPattern {
@@ -83,6 +86,8 @@ struct RowSound {
     Note note;           // synth note (voice, midi, vel, dur, patch)
     int drum_voice = -1; // drum voice index
     double gain = 1.0;   // drum level 0-1
+    bool sing = false;   // a voice cell: word sung by singer on note.midi for note.durMs
+    std::string word, singer;
     double atMs = 0;
     std::string cell;    // the cell's text
 };
