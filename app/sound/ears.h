@@ -29,6 +29,8 @@ struct Heard {
     int channel = -1;
     int channels = 0;
     std::string cell;
+    double rowAtMs = 0;      // when the cell's row started sounding
+    int row = -1;            // the row's number in its pattern
     // For the synth's level over time: its envelope.
     bool hasEnvelope = false;
     Patch envPatch;
@@ -56,10 +58,8 @@ public:
     // Tracker rows of the last `ms`, one per rowMs: "-0.750  C-4 E-4      | BD CH".
     std::vector<std::string> rows(double now, double ms, double rowMs, const std::string& source = "") const;
     // A tracker's rows as the ears heard them, in the tracker's own form ("03 C-2 01 ... | BD- 7F ..."):
-    // rows start at originMs + k * rowMs; the rows that started in [now - ms, now) are given; the
-    // row number is k modulo songRows.
-    std::vector<std::string> cellRows(double now, double ms, double rowMs, double originMs, const std::string& window,
-                                      int songRows) const;
+    // every row of window that started sounding in [now - ms, now), in order.
+    std::vector<std::string> cellRows(double now, double ms, const std::string& window) const;
     // One plain sentence of what was heard and what sounds now.
     std::string summary(double now, double ms, const std::string& source = "") const;
     // The whole answer of the hear command, as JSON. window filters by window id.
