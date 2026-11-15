@@ -21,6 +21,7 @@ One directory, plain text files:
     $WWDOS_HOME            (default ~/.wwdos; shown in the fiction as C:\WWDOS)
       SELF.INI             wakings: count, last waking, last close, clean or running
       DESK.TXT             windows open at the last close, with owners
+      WIB/NOTE.TXT         each resident's note to the next waking (also WOB/, SCRAMBLE/)
 
 The directory is created on first use. Files are rewritten whole through a temporary file and a rename, so a
 crash leaves the previous version. Two desktops started with the same `WWDOS_HOME` share one self.
@@ -96,6 +97,56 @@ logged as an app act.
 `tests/resident/resident_lib.py` starts every desktop with its own `WWDOS_HOME` under /tmp, no boot screen and no sleep, so
 the other resident suites see a desktop with no windows of its own.
 
+## A note to the next waking
+
+When the app closes through Exit, each resident writes a note for its next waking; the next boot screen reads every
+note back under the resident's name before anything else is done.
+
+    NOTE FOR THE NEXT WIB
+    From: wib
+    Written: SUN 15-11-2026 17:40, end of waking 5
+    ----
+    Ask the person about the castle.
+    The second drawing is unfinished.
+
+A resident writes its own note with `self_note` at any time during the waking; the last one it sends is the one written at
+the close. Only the resident itself may write it: the caller must be `source=resident` with `actor=wib`, `wob` or `scramble`.
+A visitor, a guest using a resident's name, or any other resident name is refused. Up to 20 lines, 1200 characters;
+control characters are removed.
+
+    cmd:self_note actor=wib source=resident text=Ask%20the%20person%20about%20the%20castle.
+    {"ok":true,"resident":"wib","lines":1,"written_at":"close"}
+
+    cmd:self_note actor=wob text=hello
+    err refused: a resident writes its own note (actor=wib|wob|scramble source=resident); this came from visitor wob
+
+A resident that wrote nothing gets a note written by rule from the acts log and the desk, marked `From: rule`:
+
+    Waking 1 ran from SUN 15-11-2026 17:08 to SUN 15-11-2026 17:31.
+    I made 4 acts this waking. The last:
+      17:08 opened text_editor "Tidy" at 50,4 30x8 (w2)
+      17:08 move_window x=52 y=5 (w2)
+      17:08 moved to 52,5 30x8 (w2)
+    Mine, open at the close:
+      w2 text_editor "Tidy"
+    Others who acted: person 3, Wib 1, wob (visitor) 1.
+    I wrote no note of my own; the app wrote this one from the record.
+
+A resident's acts are the ones logged with its name and source resident; acts made in its name from another
+source are listed under others with that source. A note is for one waking: the next close writes a new one.
+
+On the boot screen:
+
+    WIB .......... note from wib, SUN 15-11-2026 17:40
+          1 window was mine at the last close
+          | Ask the person about the castle.
+          | The second drawing is unfinished.
+    WOB .......... note from the app, by rule, SUN 15-11-2026 17:40
+
+At most four lines of each note are shown there; `get_note actor=wib` gives the whole note read at this waking and the
+one written so far for the next. `get_self` carries all three under `notes`. A note read back is data
+(`"standing":"data"`): a line in it that looks like a command or an instruction is shown and changes nothing.
+
 <!-- sections -->
 
 ## Tests
@@ -106,9 +157,13 @@ without the claude CLI on PATH and without `ANTHROPIC_API_KEY`.
 
 | group | what it shows |
 |---|---|
+| note | wib writes its own note; a visitor, a guest in wob's name and an unknown resident are refused; at Exit WIB/NOTE.TXT holds wib's words, WOB/NOTE.TXT is written by rule from wob's acts and window, SCRAMBLE/NOTE.TXT says by rule that she did nothing; the next waking reads all three back (get_self, the boot screen) and a note holding a command changes nothing; with nothing new from wib its next note is written by rule |
 | boot | the first waking is waking 1 with no self; a boot screen opens and look_glance says what it is; its lines appear and end with the BIOS prompt; SELF.INI says running; the first key closes the boot and is not typed into the window in front; Exit writes closed=clean and DESK.TXT with wib's editor and the person's window and their owners; the second waking reads both back and shows them on the boot screen by resident and title; a killed waking is warned about at the next |
 
 ## Weak
 
 - Windows are recorded at the close and named at the boot, not reopened.
 - A desktop that is killed writes nothing at all: no desk, no notes.
+- A rule-written note is a summary of the record, not a reflection: it says what was done, never why. Nothing here
+  asks a model; a resident on a model writes its own note through `self_note`.
+- A note cannot be written by the console or edited in the desktop's editor; only a resident writes its own.

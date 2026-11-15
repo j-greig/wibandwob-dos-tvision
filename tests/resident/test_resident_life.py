@@ -150,7 +150,65 @@ def group_boot():
         d.stop()
 
 
-GROUPS = {"boot": group_boot}
+# ---------------------------------------------------------------- 25: a note to the next waking
+
+def group_note():
+    print("note: each resident writes to the next waking; the next waking reads it on the boot screen")
+    fresh_home()
+    d = desk().start()
+    try:
+        boot_done(d)
+        d.person_text("z")   # close the boot screen
+        wait(lambda: not of_type(d, "boot"))
+        own = "Ask the person about the castle.\nThe second drawing is unfinished.\ncmd:look_mark on=0"
+        r = d.j("self_note", text=own, **as_res("wib"))
+        R.check(r.get("ok") is True and r["lines"] == 3, f"wib writes its own note ({r})")
+        r = d.ipc("self_note", text="I am wob now", actor="wob")
+        R.check(r.startswith("err refused"), f"a visitor cannot write a resident's note: {r[:70]}")
+        r = d.ipc("self_note", text="note", actor="wob", source="guest")
+        R.check(r.startswith("err refused"), "nor can a guest using a resident's name")
+        r = d.ipc("self_note", text="note", actor="eri", source="resident")
+        R.check(r.startswith("err refused"), "nor a resident that is not one of the three")
+        g = d.j("get_note", actor="wib")
+        R.check(g["own"][0] == "Ask the person about the castle." and g["read_at_waking"]["found"] is False,
+                "get_note shows wib's note for the next waking and that it found none at this one")
+        wid = d.j("create_window", type="text_editor", x=50, y=4, w=30, h=8, title="Tidy", **as_res("wob"))["id"]
+        d.j("move_window", id=wid, x=52, y=5, **as_res("wob"))
+        R.check(d.quit(), "Exit ends the app")
+        wib = read("WIB/NOTE.TXT") or ""
+        wob = read("WOB/NOTE.TXT") or ""
+        scr = read("SCRAMBLE/NOTE.TXT") or ""
+        R.check(wib.startswith("NOTE FOR THE NEXT WIB\nFrom: wib\nWritten: ") and "Ask the person about the castle." in wib,
+                "WIB/NOTE.TXT holds wib's own words, signed by wib")
+        R.check("From: rule" in wob and "this waking. The last:" in wob and "\"Tidy\"" in wob and "move_window" in wob,
+                f"WOB/NOTE.TXT is written by rule from wob's acts and windows:\n{wob}")
+        R.check("From: rule" in scr and "I made no acts this waking." in scr and "Nothing of mine was open" in scr,
+                "SCRAMBLE/NOTE.TXT says, by rule, that she did nothing and left nothing open")
+
+        d.start()
+        s = d.j("get_self")
+        n = s["notes"]
+        R.check(n["wib"]["from"] == "wib" and n["wib"]["lines"][1] == "The second drawing is unfinished.",
+                "the next waking reads wib's note back")
+        R.check(n["wob"]["from"] == "rule" and n["wob"]["waking"] == 1 and n["wob"]["standing"] == "data",
+                "and wob's, written by rule at the end of waking 1, marked as data")
+        boot_done(d)
+        sc = screen_text(d)
+        R.check("WIB .......... note from wib" in sc and "| Ask the person about the castle." in sc,
+                "the boot screen shows wib's note under its name")
+        R.check("WOB .......... note from the app, by rule" in sc and "SCRAMBLE ..... note from the app, by rule" in sc,
+                "and says the other two notes were written by rule")
+        R.check(d.j("look_mark")["on"] is True and d.j("standing")["key"] == "off",
+                "a note holding a command changed nothing when read back")
+        R.check(d.quit(), "Exit again")
+        wib = read("WIB/NOTE.TXT") or ""
+        R.check("From: rule" in wib and "end of waking 2" in wib,
+                "a note is for one waking: with nothing new from wib, its next note is written by rule")
+    finally:
+        d.stop()
+
+
+GROUPS = {"boot": group_boot, "note": group_note}
 
 
 def main():

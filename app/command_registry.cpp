@@ -204,6 +204,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"window_owner", "Who opened a window (id=); owner= sets it (a rule: the console with the key turned only)", false},
         {"standing", "Who you are to the residents (source and standing), the console key, the standing table and the rule commands", false},
         {"residents_about", "What the residents are, what is logged and what is kept", false},
+        {"self_note", "A resident's note to the next waking: text= (up to 20 lines), from the resident itself (actor=wib|wob|scramble source=resident); written at the close, read back on the next boot screen. Without one the app writes the note by rule", true},
+        {"get_note", "The note a resident (actor=) read at this waking, and the one it has written for the next", false},
         {"get_self", "The residents' self on disk: home directory, this waking's number, the last waking and whether it closed cleanly, the windows at the last close with owners, the boot screen", false},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},

@@ -25,6 +25,8 @@
 #include <map>
 #include <sstream>
 #include <sys/stat.h>
+#include <cctype>
+#include <cstring>
 
 namespace life {
 namespace {
@@ -312,6 +314,9 @@ void addBoot(std::vector<std::string>& lines, std::vector<bool>& loud, const std
     loud.push_back(isLoud);
 }
 
+void residentBootLines(const std::string& r, std::vector<std::string>& lines, std::vector<bool>& loud);
+std::string notesJson();
+
 void bootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
     addBoot(lines, loud, "WIBWOB-DOS BIOS  Version 1.0   (C) Wib&Wob");
     addBoot(lines, loud, "Memory test: 640K OK");
@@ -331,14 +336,7 @@ void bootLines(std::vector<std::string>& lines, std::vector<bool>& loud) {
     addBoot(lines, loud, padDots("DEVICE=VOICE.SYS", 22) +
                              (model ? "model present, confined calls only"
                                     : "no model; the residents speak by rule"));
-    for (auto r : kResidents) {
-        int mine = 0;
-        for (auto& d : g_self.lastDesk) if (d.owner == r) ++mine;
-        std::string s = padDots(upper(r), 14);
-        s += mine ? std::to_string(mine) + (mine == 1 ? " window was mine" : " windows were mine") + " at the last close"
-                  : "no windows of mine at the last close";
-        addBoot(lines, loud, s);
-    }
+    for (auto r : kResidents) residentBootLines(r, lines, loud);
     if (g_self.deskFound) {
         addBoot(lines, loud, "Windows at the last close: " + std::to_string(g_self.lastDesk.size()));
         size_t n = 0;
@@ -436,8 +434,356 @@ std::string cmdSelf(const KV&) {
        << ",\"found\":" << (g_self.found ? "true" : "false") << ",\"last_wake\":" << q(g_self.lastWake)
        << ",\"last_close\":" << q(g_self.lastClose)
        << ",\"last_closed_cleanly\":" << (g_self.found ? (g_self.lastClean ? "true" : "false") : "null")
-       << ",\"desk_at_last_close\":" << deskJson(g_self.lastDesk) << ",\"boot\":" << bootJson() << "}";
+       << ",\"desk_at_last_close\":" << deskJson(g_self.lastDesk) << ",\"notes\":" << notesJson() << ",\"boot\":" << bootJson() << "}";
     return os.str();
+}
+
+
+// ---------------------------------------------------------------- reading the acts log
+
+// A small JSON reader for the app's own replies (acts, look_glance): objects, arrays,
+// strings, numbers, true, false, null.
+struct JVal {
+    enum Kind { Null, Bool, Num, Str, Arr, Obj } kind = Null;
+    double num = 0;
+    bool b = false;
+    std::string s;
+    std::vector<JVal> arr;
+    std::vector<std::pair<std::string, JVal>> obj;
+    const JVal* get(const std::string& k) const {
+        for (auto& p : obj) if (p.first == k) return &p.second;
+        return nullptr;
+    }
+    std::string str(const std::string& k) const {
+        const JVal* v = get(k);
+        return v && v->kind == Str ? v->s : "";
+    }
+};
+
+struct JParse {
+    const std::string& t;
+    size_t i = 0;
+    explicit JParse(const std::string& s) : t(s) {}
+    void ws() { while (i < t.size() && std::isspace((unsigned char)t[i])) ++i; }
+    bool lit(const char* w) {
+        size_t n = std::strlen(w);
+        if (t.compare(i, n, w) != 0) return false;
+        i += n;
+        return true;
+    }
+    static void utf8(std::string& o, unsigned cp) {
+        if (cp < 0x80) o += (char)cp;
+        else if (cp < 0x800) { o += (char)(0xC0 | (cp >> 6)); o += (char)(0x80 | (cp & 0x3F)); }
+        else { o += (char)(0xE0 | (cp >> 12)); o += (char)(0x80 | ((cp >> 6) & 0x3F)); o += (char)(0x80 | (cp & 0x3F)); }
+    }
+    bool string(std::string& o) {
+        if (i >= t.size() || t[i] != '"') return false;
+        ++i;
+        while (i < t.size() && t[i] != '"') {
+            char c = t[i++];
+            if (c != '\\') { o += c; continue; }
+            if (i >= t.size()) return false;
+            char e = t[i++];
+            switch (e) {
+                case 'n': o += '\n'; break;
+                case 't': o += '\t'; break;
+                case 'r': o += '\r'; break;
+                case 'b': o += '\b'; break;
+                case 'f': o += '\f'; break;
+                case 'u': {
+                    if (i + 4 > t.size()) return false;
+                    utf8(o, (unsigned)std::strtoul(t.substr(i, 4).c_str(), nullptr, 16));
+                    i += 4;
+                    break;
+                }
+                default: o += e;
+            }
+        }
+        if (i >= t.size()) return false;
+        ++i;
+        return true;
+    }
+    bool value(JVal& v, int depth = 0) {
+        if (depth > 32) return false;
+        ws();
+        if (i >= t.size()) return false;
+        char c = t[i];
+        if (c == '{') {
+            v.kind = JVal::Obj;
+            ++i;
+            ws();
+            if (i < t.size() && t[i] == '}') { ++i; return true; }
+            while (true) {
+                ws();
+                std::string k;
+                if (!string(k)) return false;
+                ws();
+                if (i >= t.size() || t[i] != ':') return false;
+                ++i;
+                JVal x;
+                if (!value(x, depth + 1)) return false;
+                v.obj.emplace_back(k, std::move(x));
+                ws();
+                if (i < t.size() && t[i] == ',') { ++i; continue; }
+                if (i < t.size() && t[i] == '}') { ++i; return true; }
+                return false;
+            }
+        }
+        if (c == '[') {
+            v.kind = JVal::Arr;
+            ++i;
+            ws();
+            if (i < t.size() && t[i] == ']') { ++i; return true; }
+            while (true) {
+                JVal x;
+                if (!value(x, depth + 1)) return false;
+                v.arr.push_back(std::move(x));
+                ws();
+                if (i < t.size() && t[i] == ',') { ++i; continue; }
+                if (i < t.size() && t[i] == ']') { ++i; return true; }
+                return false;
+            }
+        }
+        if (c == '"') { v.kind = JVal::Str; return string(v.s); }
+        if (lit("true")) { v.kind = JVal::Bool; v.b = true; return true; }
+        if (lit("false")) { v.kind = JVal::Bool; return true; }
+        if (lit("null")) return true;
+        char* end = nullptr;
+        v.num = std::strtod(t.c_str() + i, &end);
+        if (end == t.c_str() + i) return false;
+        v.kind = JVal::Num;
+        i = end - t.c_str();
+        return true;
+    }
+};
+
+struct ActRec {
+    long long ms = 0;
+    std::string actor, source, what, window;
+};
+
+std::vector<ActRec> allActs() {
+    std::vector<ActRec> out;
+    JVal root;
+    std::string js = resident::cmdActs(KV{{"limit", "4000"}});
+    JParse p(js);
+    if (!p.value(root)) return out;
+    const JVal* acts = root.get("acts");
+    if (!acts) return out;
+    for (auto& a : acts->arr) {
+        ActRec r;
+        const JVal* ms = a.get("ms");
+        r.ms = ms ? (long long)ms->num : 0;
+        r.actor = a.str("actor");
+        r.source = a.str("source");
+        r.what = a.str("what");
+        r.window = a.str("window");
+        out.push_back(r);
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------- notes to the next waking
+
+struct Note {
+    bool found = false;
+    std::string from;      // the resident that wrote it, or "rule"
+    std::string written;   // date and time
+    int waking = 0;        // the waking that wrote it
+    std::vector<std::string> lines;
+};
+
+std::map<std::string, Note> g_noteRead;                     // read at this waking
+std::map<std::string, std::vector<std::string>> g_noteOwn;  // written by the resident this waking
+
+std::string notePath(const std::string& r) { return path(upper(r) + "/NOTE.TXT"); }
+
+Note readNote(const std::string& r) {
+    Note n;
+    bool exists = false;
+    auto lines = readLines(notePath(r), &exists);
+    if (!exists) return n;
+    n.found = true;
+    bool body = false;
+    for (auto& l : lines) {
+        if (body) { n.lines.push_back(l); continue; }
+        if (l == "----") { body = true; continue; }
+        if (l.rfind("From: ", 0) == 0) n.from = l.substr(6);
+        else if (l.rfind("Written: ", 0) == 0) {
+            std::string w = l.substr(9);
+            size_t c = w.find(", end of waking ");
+            n.written = w.substr(0, c);
+            if (c != std::string::npos) n.waking = std::atoi(w.c_str() + c + 16);
+        }
+    }
+    while (!n.lines.empty() && n.lines.back().empty()) n.lines.pop_back();
+    return n;
+}
+
+std::vector<std::string> cleanLines(const std::string& text, size_t maxLines, size_t maxChars) {
+    std::vector<std::string> out;
+    size_t total = 0, p = 0;
+    while (p <= text.size() && out.size() < maxLines && total < maxChars) {
+        size_t nl = text.find('\n', p);
+        if (nl == std::string::npos) nl = text.size();
+        std::string l = oneLine(text.substr(p, nl - p), std::min<size_t>(200, maxChars - total));
+        if (l == "----") l = "- - -";   // the line that ends a note's header stays unique
+        total += l.size();
+        out.push_back(l);
+        p = nl + 1;
+    }
+    while (!out.empty() && out.back().empty()) out.pop_back();
+    return out;
+}
+
+std::string clock(long long ms) {
+    // Wall time of an act: now minus its age.
+    std::time_t t = std::time(nullptr) - (std::time_t)((nowMs() - ms) / 1000);
+    std::tm tm{};
+    localtime_r(&t, &tm);
+    char buf[8];
+    std::snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
+    return buf;
+}
+
+// Extra lines a rule-written note carries from other parts of the life (the guestbook).
+std::vector<std::string> noteExtras(const std::string& r);
+
+// What the next waking should know, written by rule from this waking's acts and desk.
+std::vector<std::string> ruleNote(const std::string& r, const std::vector<ActRec>& acts) {
+    std::vector<std::string> out;
+    std::vector<const ActRec*> mine;
+    std::map<std::string, int> others;
+    for (auto& a : acts) {
+        if (a.what.rfind("woke: ", 0) == 0) continue;
+        if (a.actor == r && a.source == "resident") mine.push_back(&a);
+        else if (a.actor != "app") others[a.source == "resident" || a.source == "console" ? a.actor : a.actor + " (" + a.source + ")"]++;
+    }
+    out.push_back("Waking " + std::to_string(g_self.boots) + " ran from " + g_self.wakeStamp + " to " + nowStamp() + ".");
+    if (mine.empty()) {
+        out.push_back("I made no acts this waking.");
+    } else {
+        out.push_back("I made " + std::to_string(mine.size()) + (mine.size() == 1 ? " act" : " acts") + " this waking. The last:");
+        size_t from = mine.size() > 3 ? mine.size() - 3 : 0;
+        for (size_t i = from; i < mine.size(); ++i)
+            out.push_back("  " + clock(mine[i]->ms) + " " + oneLine(mine[i]->what, 70) +
+                          (mine[i]->window.empty() ? "" : " (" + mine[i]->window + ")"));
+    }
+    std::vector<std::string> open;
+    for (TWindow* w : deskWindows()) {
+        if (isBootWindow(w) || isDreamWindow(w)) continue;
+        if (resident::ownerName(w) != r) continue;
+        open.push_back(resident::hooks().idOf(w) + " " + resident::hooks().typeOf(w) + " \"" + oneLine(titleOf(w), 30) + "\"");
+    }
+    if (open.empty()) out.push_back("Nothing of mine was open at the close.");
+    else {
+        out.push_back("Mine, open at the close:");
+        for (auto& o : open) out.push_back("  " + o);
+    }
+    if (others.empty()) out.push_back("Nobody else acted.");
+    else {
+        std::string s = "Others who acted:";
+        bool first = true;
+        for (auto& o : others) {
+            s += (first ? " " : ", ") + displayName(o.first) + " " + std::to_string(o.second);
+            first = false;
+        }
+        out.push_back(s + ".");
+    }
+    for (auto& l : noteExtras(r)) out.push_back(l);
+    out.push_back("I wrote no note of my own; the app wrote this one from the record.");
+    return out;
+}
+
+void writeNotes() {
+    auto acts = allActs();
+    for (auto r : kResidents) {
+        std::string res = r;
+        bool own = g_noteOwn.count(res) && !g_noteOwn[res].empty();
+        std::vector<std::string> body = own ? g_noteOwn[res] : ruleNote(res, acts);
+        std::ostringstream os;
+        os << "NOTE FOR THE NEXT " << upper(res) << "\n"
+           << "From: " << (own ? res : "rule") << "\n"
+           << "Written: " << nowStamp() << ", end of waking " << g_self.boots << "\n"
+           << "----\n";
+        for (auto& l : body) os << l << "\n";
+        mkdirs(home() + "/" + upper(res));
+        writeFile(notePath(res), os.str());
+        resident::addAct(Who{res, Source::Resident},
+                         std::string("wrote a note to the next waking") + (own ? "" : " (by rule)"), "", "");
+    }
+}
+
+std::string noteJson(const Note& n) {
+    std::ostringstream os;
+    os << "{\"found\":" << (n.found ? "true" : "false");
+    if (n.found) {
+        os << ",\"from\":" << q(n.from) << ",\"written\":" << q(n.written) << ",\"waking\":" << n.waking
+           << ",\"standing\":\"data\",\"lines\":[";
+        for (size_t i = 0; i < n.lines.size(); ++i) os << (i ? "," : "") << q(n.lines[i]);
+        os << "]";
+    }
+    os << "}";
+    return os.str();
+}
+
+std::vector<std::string> noteExtras(const std::string&) { return {}; }
+
+// A resident's lines on the boot screen: its name, its windows at the last close, its note.
+void residentBootLines(const std::string& r, std::vector<std::string>& lines, std::vector<bool>& loud) {
+    int mine = 0;
+    for (auto& d : g_self.lastDesk) if (d.owner == r) ++mine;
+    const Note& n = g_noteRead[r];
+    std::string s = padDots(upper(r), 14);
+    if (!n.found) s += "no note";
+    else s += "note from " + (n.from == "rule" ? std::string("the app, by rule") : n.from) + ", " + n.written;
+    addBoot(lines, loud, s);
+    if (mine)
+        addBoot(lines, loud, "      " + std::to_string(mine) + (mine == 1 ? " window was mine" : " windows were mine") +
+                                 " at the last close");
+    size_t shown = 0;
+    for (auto& l : n.lines) {
+        if (shown == 4) {
+            addBoot(lines, loud, "      ... " + std::to_string(n.lines.size() - 4) + " more lines (get_note actor=" + r + ")");
+            break;
+        }
+        if (l.empty()) continue;
+        addBoot(lines, loud, "      | " + oneLine(l, 66));
+        ++shown;
+    }
+}
+
+std::string notesJson() {
+    std::ostringstream os;
+    os << "{";
+    bool first = true;
+    for (auto r : kResidents) {
+        os << (first ? "" : ",") << q(r) << ":" << noteJson(g_noteRead[r]);
+        first = false;
+    }
+    os << "}";
+    return os.str();
+}
+
+std::string cmdNote(const KV& kv) {
+    Who w = resident::currentWho();
+    bool hasText = kv.count("text") > 0;
+    std::string who = str(kv, "actor", w.actor);
+    if (!hasText) {
+        if (!isResident(who)) return "err name a resident: actor=wib|wob|scramble";
+        std::ostringstream os;
+        os << "{\"resident\":" << q(who) << ",\"read_at_waking\":" << noteJson(g_noteRead[who]) << ",\"own\":[";
+        auto& own = g_noteOwn[who];
+        for (size_t i = 0; i < own.size(); ++i) os << (i ? "," : "") << q(own[i]);
+        os << "]}";
+        return os.str();
+    }
+    if (w.source != Source::Resident || !isResident(w.actor))
+        return "err refused: a resident writes its own note (actor=wib|wob|scramble source=resident); this came from " +
+               std::string(resident::sourceName(w.source)) + " " + w.actor;
+    g_noteOwn[w.actor] = cleanLines(str(kv, "text"), 20, 1200);
+    return "{\"ok\":true,\"resident\":" + q(w.actor) + ",\"lines\":" + std::to_string(g_noteOwn[w.actor].size()) +
+           ",\"written_at\":\"close\"}";
 }
 
 }  // namespace
@@ -473,6 +819,7 @@ void wake() {
     if (!g_self.lastClean) g_self.lastClose.clear();
     g_self.wakeStamp = nowStamp();
     g_self.lastDesk = readDesk(&g_self.deskFound);
+    for (auto r : kResidents) g_noteRead[r] = readNote(r);
     writeSelfIni(true);
 
     g_bootLineMs = envMs("WWDOS_BOOT_MS", 120);
@@ -490,6 +837,7 @@ void wake() {
 void close(const std::string& how) {
     if (!g_woken || g_closed) return;
     g_closed = true;
+    writeNotes();
     writeDesk();
     writeSelfIni(false);
     resident::addAct(Who{"app", Source::App}, "closed (" + how + "): self written to " + home(), "", "");
@@ -537,10 +885,11 @@ std::string stateOf(TWindow* w) {
     return "";
 }
 
-bool owns(const std::string& cmd) { return cmd == "get_self"; }
+bool owns(const std::string& cmd) { return cmd == "get_self" || cmd == "self_note" || cmd == "get_note"; }
 
 std::string command(const std::string& name, const KV& kv) {
     if (name == "get_self") return cmdSelf(kv);
+    if (name == "self_note" || name == "get_note") return cmdNote(kv);
     return "";
 }
 
