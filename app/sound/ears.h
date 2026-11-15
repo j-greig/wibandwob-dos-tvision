@@ -25,6 +25,7 @@ struct Heard {
     int tempo = 0;           // tr808 tempo
     std::string who;         // who played it (the synth) or started the pattern (the TR-808)
     // A tracker's sound: its channel, how many channels the song has, and the cell's text.
+    bool held = false;       // a MIDI key still down (its end is not known yet)
     int channel = -1;
     int channels = 0;
     std::string cell;
@@ -39,6 +40,8 @@ public:
     explicit Ears(size_t keep = 4096) : keep_(keep) {}
     void hear(const Heard& h);
     void clear() { log_.clear(); }
+    // A held synth note (MIDI input) let go at atMs: its gate and end are set from it.
+    void release(const std::string& window, int midi, double atMs);
     size_t size() const { return log_.size(); }
     double lastStartMs() const { return log_.empty() ? -1e300 : log_.back().startMs; }
 

@@ -30,6 +30,8 @@ const Host& host();
 // True for the names command() answers: open_synth, synth, hear, open_event_score, event_score, sound.
 bool handles(const std::string& name);
 std::string command(const std::string& name, const KV& kv);
+// Plays MIDI input that has arrived (from the app's idle loop; the MIDI thread wakes it).
+void poll();
 
 // Milliseconds on a steady clock since the first call (the app's start, in practice).
 double clockMs();

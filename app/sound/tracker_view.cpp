@@ -9,6 +9,7 @@
 #include "sound_host.h"
 #include "stream.h"
 #include "tr808_audio.h"
+#include "midi.h"
 
 #include <algorithm>
 #include <cctype>
@@ -58,11 +59,13 @@ void TTrackerView::play(int fromRow) {
     // Row fromRow plays now; startMs_ is where row 0 of this pass would have been.
     startMs_ = clockMs() - fromRow * rowMs(song_);
     nextRow_ = fromRow;
+    if (midi::clockOut()) midi::send({0xFA}, clockMs(), "tracker");
     timer_ = setTimer(5, 5);
     tick();
 }
 
 void TTrackerView::stop() {
+    if (playing_ && midi::clockOut()) midi::send({0xFC}, clockMs(), "tracker");
     playing_ = false;
     playRow_ = -1;
     if (timer_) { killTimer(timer_); timer_ = nullptr; }
@@ -72,6 +75,22 @@ void TTrackerView::stop() {
 void TTrackerView::playRow(int row, double atMs) {
     const std::string wid = windowId();
     const int chans = (int)song_.chans.size();
+    // MIDI out: the row's clock ticks (24 a beat) and its notes: channel n+1 for tracker channel n, drums on 10.
+    if (midi::clockOut()) {
+        const int ticks = std::max(1, 24 / std::max(1, song_.rpb));
+        for (int k = 0; k < ticks; ++k) midi::send({0xF8}, atMs + k * rowMs(song_) / ticks, "tracker");
+    }
+    for (const RowSound& r : rowSounds(song_, row)) {
+        if (r.drum) {
+            const uint8_t key = (uint8_t)midi::gmDrum(r.drum_voice);
+            midi::send({0x99, key, (uint8_t)std::max(1, (int)std::lround(r.gain * 127))}, atMs + r.atMs, "tracker");
+            midi::send({0x89, key, 0}, atMs + r.atMs + 50, "tracker");
+        } else {
+            const uint8_t ch = (uint8_t)std::min(15, r.chan == 9 ? 10 : r.chan);
+            midi::send({(uint8_t)(0x90 | ch), (uint8_t)r.note.midi, (uint8_t)r.note.vel}, atMs + r.atMs, "tracker");
+            midi::send({(uint8_t)(0x80 | ch), (uint8_t)r.note.midi, 0}, atMs + r.atMs + r.note.durMs, "tracker");
+        }
+    }
     for (const RowSound& r : rowSounds(song_, row)) {
         Heard h;
         h.window = wid;

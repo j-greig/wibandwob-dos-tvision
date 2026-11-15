@@ -10,6 +10,7 @@
 #include "sound/ears.h"
 #include "sound/sound_host.h"
 #include "sound/stream.h"
+#include "sound/midi.h"
 
 #include <algorithm>
 #include <chrono>
@@ -173,6 +174,20 @@ void TTR808View::fire(const StepEvent& ev) {
             sound::ears().hear(h);
         }
     }
+    // MIDI out: the step's clock ticks (24 a beat) and its hits as General MIDI drums on channel 10.
+    if (sound::midi::clockOut()) {
+        const double tick = 60000.0 / eng_.tempo() / 24.0;
+        const int ticks = std::max(1, (int)std::lround(eng_.baseStepMs() / tick));
+        for (int k = 0; k < ticks; ++k) sound::midi::send({0xF8}, ev.atMs + k * tick, "tr808");
+        midiLastMs_ = ev.atMs + ticks * tick;   // stop goes out after the ticks already sent
+    }
+    for (int v : ev.voices) {
+        const int lvl = eng_.getParam(v, "level");
+        const int vel = std::max(1, std::min(127, (int)std::lround(lvl * 1.27 * (ev.accent ? 1.0 : 0.8))));
+        const uint8_t key = (uint8_t)sound::midi::gmDrum(v);
+        sound::midi::send({0x99, key, (uint8_t)vel}, ev.atMs, "tr808");
+        sound::midi::send({0x89, key, 0}, ev.atMs + 50, "tr808");
+    }
     // Only steps with hits (a voice or an accent) are published.
     if (ev.voices.empty() && !ev.accent) return;
     std::ostringstream o;
@@ -218,6 +233,7 @@ void TTR808View::play(double atMs) {
     // atMs: start on that time of the clock (a score's bar line), if it has not gone by more than a step.
     const double now = nowMs();
     StepEvent ev = eng_.start(atMs >= 0 && atMs <= now && now - atMs < eng_.baseStepMs() ? atMs : now);
+    if (sound::midi::clockOut()) sound::midi::send({0xFA}, ev.atMs, "tr808");
     publish("tr808_transport", transportBody("play"));
     fire(ev);
     schedule();
@@ -227,6 +243,7 @@ void TTR808View::play(double atMs) {
 void TTR808View::stop() {
     if (!eng_.playing()) return;
     eng_.stop();
+    if (sound::midi::clockOut()) sound::midi::send({0xFC}, std::max(nowMs(), midiLastMs_), "tr808");
     schedule();
     publish("tr808_transport", transportBody("stop"));
     drawView();
