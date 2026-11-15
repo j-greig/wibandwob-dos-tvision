@@ -539,7 +539,7 @@ def test_tracker(desk):
     R.check(st["rows"] == 8 and st["channels"] == ["fm:bass", "fm:pluck", "speaker", "drums"] and st["row_ms"] == 62.5,
             f"open_tracker: 8 rows, four channels, 62.5 ms a row ({st['channels']})")
     d = desk.j("describe", id=tid)
-    R.check(d["state"].startswith('tracker "untitled", 4 channels, 8 rows at 240 bpm, 0 cells written') and len(d["text"]) == 8,
+    R.check(d["state"].startswith('tracker "untitled", 4 channels, 1 pattern in an order of 1 at 240 bpm, 0 cells written') and len(d["text"]) == 8,
             f"describe gives a sentence and the rows as text ({d['state']!r})")
 
     # The person types C D E down channel 1 with the tracker keyboard.
@@ -670,11 +670,13 @@ def test_midi(desk):
     x(desk, "tracker", id=tid, action="play")
     time.sleep(0.6)
     st = x(desk, "midi", action="log", n=1000)
-    tout = [m for m in st["log"] if m["dir"] == "out" and m["from"] == "tracker"]
+    tall = [m for m in st["log"] if m["dir"] == "out" and m["from"] == "tracker"]
+    starts = [i for i, m in enumerate(tall) if m["hex"] == "FA"]
+    tout = tall[starts[-1]:] if starts else []           # from this play's start
     on = [m for m in tout if m["hex"] == "90 3C 64"]
     off = [m for m in tout if m["hex"] == "80 3C 00"]
     R.check(on and off and abs((off[-1]["ms"] - on[-1]["ms"]) - 62.5) < 0.01,
-            "the tracker sends C-4 on channel 1 and its note off 62.5 ms later (G08 at 120 bpm)")
+            f"the tracker sends C-4 on channel 1 and its note off 62.5 ms later (G08 at 120 bpm) {[(m['hex'], round(m['ms'],1)) for m in tout if m['hex'] != 'F8']}")
     R.check(any(m["hex"] == "99 24 7F" for m in tout) and sum(m["hex"] == "F8" for m in tout) == 12,
             "and its drum on channel 10, and 6 clock ticks a row")
     d = desk.j("describe", id=mon)
@@ -724,7 +726,87 @@ def test_jam(desk):
     x(desk, "jam", action="stop")
 
 
-GROUPS = {"jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
+# ---------------------------------------------------------------------------- patterns
+
+def test_patterns(desk):
+    print("\n[patterns] patterns and an order list, copy and paste, mute and solo, tempo and speed effects")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    old = x(desk, "open_tracker", track="arp-and-bass", x=60, y=1, w=60, h=12)
+    st = x(desk, "tracker", id=old["id"], action="state")
+    R.check(st["patterns"] == [16] and st["order"] == [0], f"a file in the first format loads as one pattern ({st['patterns']}, order {st['order']})")
+    desk.ipc("close_window", id=old["id"])
+    tid = x(desk, "open_tracker", channels="fm:bass drums", rows=4, tempo=240, x=2, y=1, w=60, h=14)["id"]
+    x(desk, "tracker", id=tid, action="write", ch=1, row=0, notes="BD- CH- SD- CH-")
+    x(desk, "tracker", id=tid, action="set", row=0, ch=0, cell="C-3 01 ...")
+    st = x(desk, "tracker", id=tid, action="new_pattern", rows=2)
+    R.check(st["patterns"] == [4, 2] and st["edit_pattern"] == 1, "new_pattern adds pattern 1, two rows long, and edits it")
+    x(desk, "tracker", id=tid, action="set", pat=1, row=0, ch=1, cell="BD- .. F78")      # F78: tempo 120 from here
+    x(desk, "tracker", id=tid, action="set", pat=1, row=1, ch=1, cell="SD-")
+    x(desk, "tracker", id=tid, action="order", value="0 1 0")
+    x(desk, "tracker", id=tid, action="loop", on=0)
+    x(desk, "tracker", id=tid, action="play")
+    time.sleep(1.6)
+    st = x(desk, "tracker", id=tid, action="state")
+    h = x(desk, "hear", window=tid, seconds=3)
+    rows = h.get("tracker_rows", [])
+    p0 = ["00 C-3 01 ... | BD- .. ...", "01 --- .. ... | CH- .. ...", "02 --- .. ... | SD- .. ...", "03 --- .. ... | CH- .. ..."]
+    p1 = ["00 --- .. ... | BD- .. F78", "01 --- .. ... | SD- .. ..."]
+    R.check(not st["playing"] and rows == p0 + p1 + p0, f"the song plays pattern 0, 1, 0 in order and the ears give back its rows ({len(rows)} rows)")
+    hits = [e["at_ms"] for e in h["heard"] if e["source"] == "tr808"]
+    gaps = [round(b - a, 3) for a, b in zip(hits, hits[1:])]
+    R.check(gaps[:4] == [62.5, 62.5, 62.5, 62.5] and gaps[4:9] == [125.0] * 5,
+            f"rows are 62.5 ms at 240 bpm until F78 sets 120 bpm, then 125 ms ({gaps})")
+    R.check(st["tempo_now"] == 120, "the tempo stays where the effect left it")
+
+    # Mute and solo.
+    x(desk, "tracker", id=tid, action="tempo", value=240)
+    x(desk, "tracker", id=tid, action="mute", ch=1, on=1)
+    x(desk, "tracker", id=tid, action="play_pattern", pat=0)
+    time.sleep(0.5)
+    x(desk, "tracker", id=tid, action="stop")
+    h = x(desk, "hear", window=tid, seconds=0.5)
+    R.check(h["counts"]["tr808"] == 0 and h["counts"]["synth"] >= 1, "with the drums muted only the bass sounds")
+    x(desk, "tracker", id=tid, action="mute", ch=1, on=0)
+    x(desk, "tracker", id=tid, action="solo", ch=1, on=1)
+    time.sleep(0.6)
+    x(desk, "tracker", id=tid, action="play_pattern", pat=0)
+    time.sleep(0.5)
+    x(desk, "tracker", id=tid, action="stop")
+    h = x(desk, "hear", window=tid, seconds=0.5)
+    R.check(h["counts"]["synth"] == 0 and h["counts"]["tr808"] >= 4, "with the drums soloed only the drums sound")
+    x(desk, "tracker", id=tid, action="solo", ch=1, on=0)
+
+    # Copy and paste a block.
+    x(desk, "tracker", id=tid, action="copy", pat=0, row=0, rows=2, ch=0, chs=2)
+    st = x(desk, "tracker", id=tid, action="paste", pat=1, row=0, ch=0)
+    R.check(x(desk, "tracker", id=tid, action="state", pat=1)["clipboard"] == [2, 2], "copy takes a block of 2 rows by 2 channels")
+    x(desk, "tracker", id=tid, action="pattern", value=1)
+    st = x(desk, "tracker", id=tid, action="state")
+    R.check(st["lines"] == ["00 C-3 01 ... | BD- .. ...", "01 --- .. ... | CH- .. ..."], f"paste puts it in pattern 1 ({st['lines']})")
+    x(desk, "tracker", id=tid, action="copy", pat=0, row=0, rows=1, ch=1, chs=1)
+    x(desk, "tracker", id=tid, action="paste", pat=1, row=1, ch=0)
+    R.check(x(desk, "tracker", id=tid, action="state")["lines"][1].startswith("01 --- .. ..."),
+            "a drum column pasted on a note channel changes nothing")
+
+    # The person's keys: > edits the next pattern, Ctrl+B mutes the channel under the cursor.
+    x(desk, "tracker", id=tid, action="pattern", value=0)
+    time.sleep(0.3)
+    desk.person_text(">")
+    time.sleep(0.2)
+    desk.person_keys("C-e")
+    time.sleep(0.2)
+    desk.person_keys("C-t")
+    time.sleep(0.2)
+    st = x(desk, "tracker", id=tid, action="state")
+    c = st["cursor"]["ch"]
+    R.check(st["edit_pattern"] == 1 and st["mute"][c] and st["solo"][c],
+            f"the person's >, Ctrl+E and Ctrl+T edit pattern 1, mute and solo the channel ({st['edit_pattern']}, {st['mute']}, {st['solo']})")
+    txt = x(desk, "tracker", id=tid, action="text")["text"]
+    R.check("order 0 1 0" in txt and "pattern 1" in txt, "the song text holds the order and both patterns")
+
+
+GROUPS = {"patterns": test_patterns, "jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():

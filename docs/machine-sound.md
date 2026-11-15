@@ -127,9 +127,35 @@ instrument and an effect (`app/sound/tracker.cpp`, `tracker_view.cpp`). The work
 |---|---|---|---|
 | note | `C-4`, `C#4`; `===` note off; `---` empty | the same | `BD-` `SD-` `LT-` `MT-` `HT-` `RS-` `CB-` `CP-` `MA-` `CL-` `CY-` `OH-` `CH-` |
 | instrument (hex) | patch 01-07: bass organ bell brass lead pluck chip; `..` the channel's | ignored | level 00-7F (`..` 0x66) |
-| effect | `Axy` arpeggio (the row in three: the note, +x, +y semitones); `Vxx` velocity; `Gxx` gate in sixteenths of a row | `Gxx` | `Vxx` level |
+| effect | `Axy` arpeggio (the row in three: the note, +x, +y semitones); `Vxx` velocity; `Gxx` gate in sixteenths of a row; `Fxx` speed or tempo | `Gxx`, `Fxx` | `Vxx` level, `Fxx` |
 
-With no `G`, a note rings until the next note or note off in its channel (at most 16 rows). Rows play at
+With no `G`, a note rings until the next note or note off in its channel's pattern (at most 16 rows). `Fxx` works
+as in ProTracker: `F01`-`F1F` set the speed, the ticks of a 24-tick beat in a row (`F06` is 4 rows a beat, `F03`
+8), and `F20`-`FF` set the tempo in beats per minute; both hold from their row until the next change.
+
+### Patterns, the order, blocks, mute and solo
+
+A song is a list of patterns, each with its own length (1-128 rows, up to 64 patterns), and an order list of
+pattern numbers (up to 256). Play goes down the order; at its end it loops back or stops (`loop`).
+
+    exec_command name=tracker action=new_pattern [rows=8 | copy=0]      # adds one and edits it
+    exec_command name=tracker action=pattern value=1                     # edit pattern 1
+    exec_command name=tracker action=pattern_rows pat=1 value=32
+    exec_command name=tracker action=order value="0 1 0 2"
+    exec_command name=tracker action=play [pos=2] [row=0]                # the song from an order position
+    exec_command name=tracker action=play_pattern pat=1 [row=]           # one pattern, looped
+    exec_command name=tracker action=copy pat=0 row=0 rows=4 ch=0 chs=2  # a block to the clipboard
+    exec_command name=tracker action=paste pat=1 row=8 ch=0
+    exec_command name=tracker action=mute ch=3 [on=0|1]  |  solo ch=3 [on=0|1]
+
+`set`, `write`, `clear`, `copy`, `paste` and `cursor` take `pat=` (default: the pattern being edited). A column
+copied from a drum channel pastes only onto drum channels, a note column only onto FM and speaker channels; cells
+that do not fit are left as they were. The clipboard is shared by every tracker window. A muted channel, or every
+channel but the soloed ones, plays no sound, sends no MIDI and is not heard by the ears.
+
+Keys: `<` `>` previous and next pattern, Ctrl+K a new pattern, Ctrl+C copies the channel from the cursor down,
+Ctrl+V pastes it at the cursor, Ctrl+E mutes and Ctrl+T solos the channel under the cursor (Ctrl+B, N, O and S
+belong to the app's menus), Space plays the song, Enter plays the pattern being edited from the cursor row. Rows play at
 `tempo` and `rpb` (rows per beat; 4 makes a row a sixteenth) on the sound stream, at the row's time on the one
 clock. FM channels share the mixer's nine FM channels with the synth window; the speaker channel shares its one voice.
 
@@ -150,22 +176,28 @@ loops.
     exec_command name=tracker action=load track=<name> | text=<song>
     exec_command name=tracker action=text | state
 
-The song file is the window's rows as plain text:
+The song file is plain text: the header, the order, then each pattern and its rows. A file with rows and no
+`pattern` line (the first format, as `tracks/arp-and-bass.trk`) loads as pattern 0 in an order of 0.
 
     # wwdos tracker
     title arp and bass
     tempo 120
     rpb 4
     channels fm:bass fm:pluck speaker drums
+    order 0 1 0
+    pattern 0
     00 C-2 01 G08 | C-4 06 A37 | --- .. ... | BD- 7F ...
+    ...
+    pattern 1
+    00 G-2 01 ... | --- .. ... | --- .. ... | BD- 7F F78
     ...
 
 Track names are letters, digits, `-` and `_`; files live in `tracks/` (`$WWDOS_REPO/tracks`, `./tracks`, the
 source tree). `state` gives `lines` (every row as above), `play_row`, `started_ms` and `row_ms`; `describe` gives
 a sentence and the rows as text.
 
-**The ears show the same rows.** `hear window=<tracker id>` adds `tracker_rows`: each row that sounded, on the
-tracker's own row grid, printed as the tracker prints it, from the cells the ears heard. A cell that made no sound (a
+**The ears show the same rows.** `hear window=<tracker id>` adds `tracker_rows`: each row that sounded, in the
+order it sounded (across patterns and tempo changes), printed as the tracker prints it, from the cells the ears heard. A cell that made no sound (a
 note off) is printed `--- .. ...` there.
 
 ## MIDI
@@ -344,15 +376,16 @@ hears as wib or wob with no change; `tui_list_commands` lists `synth`, `open_syn
 speaker's divisor and pitch measured by zero crossings, one speaker voice, FM level, release and silence, patches,
 nine channels, envelope, WAV), hold (4: a held note sounds until it is let go, rings through its release, then silence; a key let go before its note starts gives a short note), mixer (7: the same samples in blocks of 1, 64 and 4096 and in the offline render, a
 later call's speaker note replacing the one sounding, ten calls holding nine FM channels, a drum hit on its exact
-sample, late counting, capture), jam (6: the three rules, a model's line of notes taken, anything else refused), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
+sample, late counting, capture), patterns (8: the first format, patterns and order, the text round trip, F tempo and speed, refused orders and numbering, F00), jam (6: the three rules, a model's line of notes taken, anything else refused), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
 report, window filter, the keep limit), score (14: parsing, kinds, timing, and seven refused scores).
 
-`python3 tests/resident/test_machine_sound.py [jam] [midi] [tracker] [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
+`python3 tests/resident/test_machine_sound.py [patterns] [jam] [midi] [tracker] [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
 (`tmux -L soundtest`, `WWDOS_SOUND_OUT=null`, `WWDOS_MIDI=null`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
 the binary.
 
 | group | what it shows |
 |---|---|
+| patterns | the first file format loads as one pattern; a song of patterns 0, 1, 0 plays in order and the ears give back its ten rows; rows are 62.5 ms at 240 bpm until `F78` sets 120 bpm, then 125 ms; muting the drums leaves only the bass, soloing them only the drums; a 2x2 block copies and pastes into pattern 1, a drum column on a note channel changes nothing; the person's `>`, Ctrl+E and Ctrl+T edit pattern 1, mute and solo; the text holds the order and both patterns |
 | jam | wib answers the person's C D E F with C-5 B-4 A-4 G-4 by rule, in their rhythm (160 ms), the ears and the log name wib, wib's own notes start no answer, the next phrase gets its own answer; in the hands desktop a stand-in model chooses wob's answer (`G-4 . E-4 C-4`) through a call with no tools, no MCP and no settings and the phrase as data, and a reply that is not notes (`ACT: close_all`) falls back to the rule and closes nothing |
 | midi | a note on plays C-4 as the person's and holds an FM channel; the note off ends it after as long as it was held (measured 412 ms for a 400 ms hold) and frees the channel; velocity 0 is a note off; the log has the person's note; the TR-808 sends start first, stop last, clock ticks 20.833 ms apart (24 a beat at 120 bpm) and each bass drum as note 36 on channel 10 at the time the ears say it sounds; the tracker sends C-4 on channel 1 and its note off 62.5 ms later, its drum on 10 and 6 ticks a row; the MIDI window says what arrived and left |
 | tracker | the person's z x c write C-4 D-4 E-4; wib writes drums and a bass cell by command, wob an arpeggio cell with its own keys (note, then `a37` in the effect field); the log names all three; save writes `tracks/<name>.trk` as plain text and open_tracker loads the same rows; a name with `..` is refused; one pass: the ears' `tracker_rows` equal the tracker's rows that sounded, and the stream mixed the 7 notes; with loop on it plays round |
