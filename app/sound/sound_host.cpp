@@ -197,6 +197,9 @@ static std::string openSynth(const KV& kv) {
     return "{\"ok\":true,\"id\":\"" + id + "\"}";
 }
 
+static bool (*g_midiTap)(const std::vector<uint8_t>&) = nullptr;
+void setMidiTap(bool (*fn)(const std::vector<uint8_t>&)) { g_midiTap = fn; }
+
 Controls& controls() {
     static Controls c;
     return c;
@@ -273,6 +276,7 @@ void poll() {
     auto msgs = midi::takeIn();
     if (msgs.empty()) return;
     for (const auto& m : msgs) {
+        if (g_midiTap && g_midiTap(m.bytes)) continue;   // the desk mosh played it
         if (m.bytes.empty()) continue;
         const uint8_t st = m.bytes[0];
         if (st == 0xF8) {

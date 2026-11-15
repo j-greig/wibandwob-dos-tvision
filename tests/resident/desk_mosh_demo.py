@@ -2,7 +2,7 @@
 """Desk mosh demonstration: a desktop with an editor, a primer and the TR-808 playing,
 moshing through the five ways on the drum steps, recorded as text snapshots.
 
-    python3 tests/resident/desk_mosh_demo.py [--out DIR] [--seconds 20] [--fps 5] [--keep]
+    python3 tests/resident/desk_mosh_demo.py [--out DIR] [--seconds 20] [--fps 5] [--keep] [--cast FILE.cast]
 
 Starts its own desktop (tmux -L moshdemo, EGA theme, 160x50, no sound), turns the mosh on
 (way all: wrap, tear, mosh, bleed, raw, two bars each), types into the editor now and then
@@ -36,6 +36,7 @@ def main():
     ap.add_argument("--fps", type=float, default=5)
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--amount", default="85")
+    ap.add_argument("--cast", default="", help="also record the performance (DIR/demo.mosh) and its shown frames as this asciinema cast")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     d = Desk("moshdemo", cols=160, rows=50, env={"WWDOS_THEME": "ega"}).start()
@@ -50,7 +51,11 @@ def main():
     before = cap(d)
     d.ipc("exec_command", name="mosh_amount", value=a.amount)
     d.ipc("exec_command", name="mosh_way", way="all")
-    d.ipc("exec_command", name="mosh_on", actor="demo", source="resident")
+    if a.cast:
+        d.ipc("exec_command", name="mosh_record", value="on", path=os.path.join(a.out, "demo.mosh"), cast=a.cast,
+              actor="demo", source="resident")
+    else:
+        d.ipc("exec_command", name="mosh_on", actor="demo", source="resident")
     lines = ["the windows tear\r", "and drift\r", "and bleed\r", "still typing\r"]
     n = int(a.seconds * a.fps)
     t0 = time.time()
@@ -61,6 +66,8 @@ def main():
         time.sleep(max(0, t0 + (k + 1) / a.fps - time.time()))
     st = d.ipc("exec_command", name="mosh_status")
     print(st)
+    if a.cast:
+        d.ipc("exec_command", name="mosh_record", value="off", actor="demo", source="resident")
     d.ipc("exec_command", name="mosh_off", actor="demo", source="resident")
     time.sleep(0.6)
     print("editor text:", d.text(ed)[:6])

@@ -30,8 +30,9 @@ bool isShard(const TView* v);
 
 // Called from TWwdosApp::idle(): runs the steps that are due and draws them.
 void tick();
-// Called from TWwdosApp::getEvent() after the base: Esc twice within 0.8 s stops the mosh.
-void noteEvent(const TEvent& ev);
+// Called from TWwdosApp::getEvent() after the base: Esc twice within 0.8 s stops the mosh;
+// while it runs, Shift+F1..F10 play it (the event is used up). Keys: docs/desk-mosh.md.
+void noteEvent(TEvent& ev);
 // The optional screen layer (mosh_screen): TWwdosApp::getEvent calls screenBefore() just
 // before the base getEvent (which flushes the screen) and screenAfter() when it returns.
 void screenBefore();
@@ -41,7 +42,8 @@ void screenAfter();
 void noteTr808(const char* type, const std::string& body);
 
 // Registry commands: mosh, mosh_on, mosh_off, mosh_panic, mosh_way, mosh_amount,
-// mosh_tempo, mosh_seed, mosh_scope, mosh_count, mosh_step, mosh_screen, mosh_status.
+// mosh_tempo, mosh_seed, mosh_scope, mosh_count, mosh_step, mosh_screen, mosh_score, mosh_hit,
+// mosh_freeze, mosh_record, mosh_play, mosh_status.
 bool isCommand(const std::string& name);
 std::string command(const std::string& name, const KV& kv);
 
