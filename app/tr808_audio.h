@@ -23,4 +23,11 @@ void playVoice(const char* voiceId, double volume);
 // True when afplay and at least bd.wav exist.
 bool audioAvailable();
 
+// True when afplay exists (the synth renders its own files and needs no samples).
+bool playerAvailable();
+
+// Queue any WAV file on the same player the drum voices use (the synth's rendered
+// notes). Ignores the TR-808's audio switch; the caller has its own.
+void playFile(const std::string& path, double volume);
+
 }  // namespace tr808

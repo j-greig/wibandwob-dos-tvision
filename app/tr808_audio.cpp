@@ -140,6 +140,13 @@ Player& player() {
 
 }  // namespace
 
+bool playerAvailable() { return ::access(kAfplay, X_OK) == 0; }
+
+void playFile(const std::string& path, double volume) {
+    if (!isFile(path)) return;
+    player().push({path, volume});
+}
+
 void playVoice(const char* voiceId, double volume) {
     if (!audioEnabled() || !voiceId) return;
     std::string path = samplesDir() + "/" + voiceId + ".wav";

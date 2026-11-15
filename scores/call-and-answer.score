@@ -1,0 +1,28 @@
+# Call and answer: an event score for one person and one resident, on the synth and
+# the TR-808. About a minute at 120 bpm.
+#
+# The machine keeps time, shows each instruction and listens. Only "do" lines make it
+# act, from a short fixed list. The instructions are open: the players decide what
+# "answer" means. A resident reads the instruction now, the next one and the phrase to
+# answer with exec_command name=event_score action=state, and what sounded with name=hear.
+
+title Call and answer
+tempo 120
+part person the person at the console
+part wib a resident
+
+1 all     listen: the drum machine counts you in
+do tr808 preset electro
+do tr808 tempo 120
+do tr808 play
+do synth patch bass
+4 person  play a phrase on the synth, four to eight notes
+4 wib     answer the last phrase
+2 all     rest two bars
+4 wib     play a phrase of your own, lower
+4 person  answer the last phrase
+do synth voice pcspk
+4 all     play together on the PC speaker until someone repeats a note
+do synth voice fm
+2 all     rest, and let the drums finish
+do tr808 stop

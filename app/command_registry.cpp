@@ -10,6 +10,10 @@
 #include "resident_hands.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
+// The machine's sound (app/sound/sound_host.cpp). Weak, so tests that link the
+// registry without the sound files still link; there it is null.
+std::string sound_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
+                                   bool* handled) __attribute__((weak));
 
 #include <cstdint>
 #include <sys/stat.h>
@@ -173,6 +177,11 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_feed", "Open the Feed: the act log live, one line per act with a tag for who acted (PER WIB WOB SCR VIS GST API SYS); by=person|wib|wob|scramble|visitor|system filters; x y w h", false},
         {"open_tr808", "Open the TR-808 drum machine (optional preset, play=1, audio=0|1, tempo, x, y, w, h)", false},
         {"tr808", "Drive the TR-808 (action=play|stop|toggle|tempo bpm|select instrument|toggle_step step instrument?|set_step instrument step active|set_param instrument param value|load_preset preset|clear all?|instrument?|set_pattern bank number variation|swing value|scale value|accent value|master value|last_step value|mute instrument|solo instrument|audio on|random density|copy|paste|cursor step|text text|state; optional id). Steps are 0-15. Publishes tr808_step events on steps with hits", false},
+        {"open_synth", "Open the synth: a PC speaker square voice and an FM voice (optional voice=pcspk|fm, patch, octave, gate, audio=0|1, x, y, w, h)", false},
+        {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
+        {"hear", "The ears: what the synth and the TR-808 sound now and sounded in the last seconds= (default 4): voices, notes, steps, levels, who, a meter and tracker rows; of=all|synth|tr808, row_ms=, window=. Changes nothing", false},
+        {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
+        {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},
@@ -299,6 +308,11 @@ static std::string exec_registry_command_inner(
     TWwdosApp& app,
     const std::string& name,
     const std::map<std::string, std::string>& kv) {
+    if (sound_registry_command) {
+        bool handled = false;
+        std::string r = sound_registry_command(name, kv, &handled);
+        if (handled) return r;
+    }
     if (name == "cascade") {
         api_cascade(app);
         return "ok";
