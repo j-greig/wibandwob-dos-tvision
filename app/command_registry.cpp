@@ -188,6 +188,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"sound", "The sound stream: action=state (output coreaudio|null|off, rate, lead_ms, the clock, notes, hits, late, FM channels busy) or action=capture ms= (the last ms of the mix: level and onset times on the clock). Changes nothing", false},
         {"open_tracker", "Open the tracker (rows down, channels across): track=<n> reads tracks/<n>.trk, text= a song, or a new one with channels='fm:bass fm:lead speaker drums', rows=, tempo=; play=1; optional x, y, w, h", false},
         {"tracker", "Write and play the tracker (action=set row ch cell='C-4 01 A37'|write ch row notes='C-2 . E-2 ===' step instr fx|clear row ch|all=1|play row|stop|loop on|tempo value|rows value|cursor row ch field octave|text|load track=|text=|save track=|state; optional id). Effects: Axy arpeggio, Vxx velocity, Gxx gate in sixteenths of a row", false},
+        {"open_midi", "Open the MIDI window: what arrives and what leaves (optional x, y, w, h)", false},
+        {"midi", "MIDI (action=state|log n=|in data='90 3C 64' (as if it arrived: plays the synth)|out data=|clock on=0|1). The TR-808 and the tracker send clock and notes out; input plays the synth with real key releases", false},
         {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
         {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
@@ -243,6 +245,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"resident_selftest", "The calling resident tries what a person can do through its own hands (open an editor, type and read back, choose a menu item and answer the dialog, drag, a refused rule, a mistyped command, person_events, close): start=1 begins; no args reports each step", false},
         {"resident_undo", "Undo your own last change as a resident (an open, a move or resize, a retitle, a run of typing in an editor); refused when someone else changed that window since; list=1 shows your changes", false},
         {"resident_rehearse", "A rehearsal desk: a nested desktop in a window you own, at its own socket, to try things before acting in public; close=1 ends it; optional x y w h", false},
+        {"resident_mode", "The Laws of Jam as modes: mode=flow|follow|oppose|witness sets your own (the person at the console sets anyone's with who=); WITNESS may look and talk, not act; FOLLOW acts only after someone else has acted since its last act; no args lists each resident's mode and face", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -260,6 +263,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"get_life", "Whether the residents are awake or asleep, how long the person has been away, the dream and what was tidied, the kaomoji and status line shown", false},
         {"residents_sleep", "Put the residents to sleep now (they also sleep after WWDOS_SLEEP_MS without the person's input)", true},
         {"residents_wake", "Wake the residents (the person's first key or click at the console also wakes them)", true},
+        {"resident_own_time", "Time of a resident's own: resident= wib|wob|scramble (default the next in turn), minutes= (60), turns= (6): every WWDOS_OWN_STEP_MS it thinks, draws, writes in the log or does nothing; stop=1 ends it; no args reports", true},
+        {"residents_will", "Write the residents' will: one dated plain-text file (WILLS/WILL-YYYY-MM-DD-HHMM.TXT in the self's directory) holding the self, the notes, the desk with each window's text, the drawings, the logbook, the guestbook and the last 500 acts", true},
         {"acts_history", "Acts of earlier wakings read back from ACTS.TXT and its rotations, newest first: skip=, limit= (at most 2000)", false},
         {"get_self", "The residents' self on disk: home directory, this waking's number, the last waking and whether it closed cleanly, the windows at the last close with owners, the boot screen", false},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
@@ -851,6 +856,7 @@ static std::string exec_registry_command_inner(
     if (name == "describe") return resident::cmdDescribe(kv);
     if (name == "help") return resident::cmdHelp(kv);
     if (name == "resident_undo") return resident::cmdUndo(kv);
+    if (name == "resident_mode") return resident::cmdMode(kv);
     if (name == "resident_rehearse") return resident::cmdRehearse(kv);
     if (name == "resident_selftest") return resident::cmdSelftest(kv);
     if (name == "resident_reflexes") return resident::cmdReflexes(kv);

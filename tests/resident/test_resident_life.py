@@ -35,11 +35,11 @@ def no_model_env():
     return {"PATH": path, "ANTHROPIC_API_KEY": ""}
 
 
-def desk(**env):
+def desk(name=None, **env):
     base = {"WWDOS_HOME": HOME, "WWDOS_BOOT": "1", "WWDOS_BOOT_MS": "10", "WWDOS_BOOT_HOLD_MS": "0",
             "WWDOS_SLEEP_MS": "0", **no_model_env()}
     base.update({k: str(v) for k, v in env.items()})
-    return Desk(NAME, env=base)
+    return Desk(name or NAME, env=base)
 
 
 def fresh_home():
@@ -637,7 +637,129 @@ def group_fixes():
         d.stop()
 
 
-GROUPS = {"fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- the will
+
+def group_will():
+    print("will: one dated file a person can keep, by command and from the menu")
+    fresh_home()
+    d = desk(WWDOS_RESTORE="1").start()
+    try:
+        boot_done(d)
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Plans", **as_res("wib"))["id"]
+        d.ipc("send_text", id=ed, content="the castle needs a moon", **as_res("wib"))
+        p = d.j("create_window", type="paint", x=60, y=2, w=50, h=18, title="Sketch", **as_res("wob"))["id"]
+        d.ipc("paint_text", id=p, x=2, y=2, text="WOB", fg=15, bg=0, **as_res("wob"))
+        d.j("guestbook_sign", name="eri", text="lovely cat", actor="eri", source="guest")
+        d.j("self_note", text="Ask about the moon.", **as_res("wib"))
+        R.check(d.quit(), "a first waking closes")
+        d.start()
+        boot_done(d)
+        d.person_text("z")
+        wait(lambda: not of_type(d, "boot"))
+        r = d.j("residents_will", actor="eri", source="guest")
+        R.check(r.get("ok") is True and "/WILLS/WILL-" in r["file"] and r["file"].endswith(".TXT"),
+                f"residents_will writes one dated file in WILLS/: {r.get('file')}")
+        w = open(r["file"], encoding="utf-8").read() if r.get("ok") else ""
+        R.check(w.startswith("LAST WILL OF WIB, WOB AND SCRAMBLE") and "at the asking of eri (guest)" in w,
+                "it says whose will it is and who asked for it")
+        R.check(all(f"== {i}." in w for i in range(1, 8)) and w.rstrip().endswith("== END =="), "seven sections and an end")
+        R.check("boots=2" in w and "Ask about the moon." in w, "the self and wib's own note are in it")
+        R.check('"Plans"' in w and "  | the castle needs a moon" in w, "the desk now, with the editor's text")
+        R.check("--- DESK/" in w and "WOB" in w.split("== 4.")[1].split("== 5.")[0], "the drawing kept at the last close")
+        R.check("lovely cat" in w and "eri (guest)" in w and "Woke. Waking 2." in w, "the guestbook and the logbook")
+        R.check('opened text_editor "Plans"' in w.split("== 7.")[1], "and the acts, from disk, across both wakings")
+        R.check(any(e["text"].startswith("Wrote a will: WILLS/WILL-") for e in d.j("get_logbook")["entries"]),
+                "the logbook records the will")
+        d.person_keys("M-t")
+        time.sleep(0.3)
+        d.person_keys("s")
+        time.sleep(0.3)
+        d.person_keys("w")
+        opened = wait(lambda: [x for x in glance(d) if x["title"].startswith("WILL-")])
+        R.check(bool(opened), "Tools > Residents > Write the will writes another and opens it in the editor")
+        wills = sorted(os.listdir(os.path.join(HOME, "WILLS")))
+        R.check(len(wills) == 2 and len(set(wills)) == 2, f"each will is its own file: {wills}")
+        R.check(any(a["what"].startswith("wrote the residents' will") and a["actor"] == "person" for a in d.j("acts")["acts"]),
+                "the menu's will is the person's act")
+    finally:
+        d.stop()
+
+
+# ---------------------------------------------------------------- time of its own
+
+def group_own():
+    print("own: a resident is given time with no request in it; what it did is in the log and the Feed")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0", WWDOS_OWN_STEP_MS="200", WWDOS_OWN_TURNS="4").start()
+    try:
+        d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Alpha", **as_res("wib"))
+        R.check(d.j("resident_own_time")["own"]["on"] is False, "no resident has time of its own at start")
+        console_menu(d, "t")
+        own = wait(lambda: of_type(d, "own_time"))
+        R.check(bool(own) and own[0]["owner"] == "wib" and own[0]["title"] == "WIB'S OWN TIME",
+                "Tools > Residents > Time of their own gives Wib a window of its own")
+        R.check(wait(lambda: d.j("get_life")["own"]["on"] is False and d.j("get_life")["own"]["turns"] == 4, timeout=8),
+                "it takes its four turns and stops: the budget of turns is spent")
+        o = d.j("get_life")["own"]
+        R.check((o["thought"], o["drew"], o["logged"], o["nothing"]) == (1, 1, 1, 1),
+                f"by rule it thought, drew, wrote in the log and did nothing once each: {o}")
+        st = of_type(d, "own_time")[0]["state"]
+        R.check(st.startswith("time of Wib's own: 4 turns taken, ended (the budget of turns is spent)"), f"look_glance says what it is: {st!r}")
+        lines = d.j("look_read", id=own[0]["id"])["lines"]
+        R.check(any(l.startswith("drew:") for l in lines) and any('thought: about "Alpha"' in l for l in lines),
+                "the window shows the drawing and the thought, made from the desk")
+        log = [e for e in d.j("get_logbook")["entries"] if e["author"] == "WIB"]
+        texts = [e["text"] for e in log]
+        R.check(any(x.startswith("Given time of my own by person (console)") for x in texts)
+                and any(x.startswith("Time of my own: ") for x in texts)
+                and any(x.startswith("Time of my own ended (the budget of turns is spent): 1 thoughts, 1 drawings, 1 log lines, 1 times nothing.") for x in texts),
+                "the logbook has the start, its own line and the end with what it did")
+        feed = d.j("create_window", type="feed", x=60, y=2, w=90, h=30)["id"]
+        time.sleep(0.4)
+        fl = d.j("look_read", id=feed)["lines"]
+        R.check(sum(1 for l in fl if "own time:" in l) >= 6, "the Feed shows each turn as wib's act")
+        R.check(d.ipc("resident_own_time", resident="eri").startswith("err"), "only Wib, Wob or Scramble get time of their own")
+    finally:
+        d.stop()
+
+    print("own: the sleep clock gives time of its own, and a visitor's key ends it")
+    fresh_home()
+    d = desk(NAME + "b", WWDOS_BOOT="0", WWDOS_SLEEP_MS="1200", WWDOS_OWN_AFTER_MS="400", WWDOS_OWN_STEP_MS="300",
+             WWDOS_OWN_TURNS="20", WWDOS_DREAM_MS="60000", WWDOS_TIDY_MS="60000").start()
+    try:
+        o = wait(lambda: (d.j("get_life").get("own") or {}).get("on") and d.j("get_life").get("own"), timeout=6)
+        R.check(bool(o) and o["from_sleep"] is True and o["resident"] == "wib", f"asleep, the sleep clock gives wib time of its own ({o})")
+        time.sleep(0.8)
+        d.person_text("q")
+        R.check(wait(lambda: d.j("get_life")["own"]["ended"] == "a visitor woke us"), "a visitor's key ends it")
+        R.check(d.j("get_life")["own"]["turns"] >= 1, "after at least one turn")
+    finally:
+        d.stop()
+
+    print("own: with a mind, the resident chooses its turns through the confined call")
+    fresh_home()
+    if os.path.exists(MIND_LOG):
+        os.remove(MIND_LOG)
+    d = desk(NAME + "c", WWDOS_BOOT="0", WWDOS_MIND_CMD=FAKE, FAKE_MIND_LOG=MIND_LOG, WWDOS_OWN_STEP_MS="200").start()
+    try:
+        r = d.j("resident_own_time", resident="wob", minutes=5, turns=4, actor="op", source="visitor")
+        R.check(r.get("ok") is True and r["own"]["resident"] == "wob", "a socket caller gives wob time of its own")
+        R.check(wait(lambda: d.j("get_life")["own"]["on"] is False, timeout=10), "wob takes its turns")
+        o = d.j("get_life")["own"]
+        R.check((o["thought"], o["drew"], o["logged"], o["nothing"]) == (1, 1, 1, 1), f"the mind chose each kind once: {o}")
+        wob = [a["what"] for a in d.j("acts", by="wob")["acts"] if a["what"].startswith("own time:")]
+        R.check(any(w.endswith("(mind)") for w in wob) and any("drew 3 lines (mind)" in w for w in wob), f"the acts say the mind chose: {wob}")
+        R.check(any(e["author"] == "WOB" and e["text"] == "a line I wrote in my own time" for e in d.j("get_logbook")["entries"]),
+                "its LOG line is in the logbook")
+        calls = [c for c in mind_calls() if "time of your own" in c["argv"][-1]]
+        R.check(len(calls) == 4 and all(confined(c["argv"]) for c in calls), f"four calls, each confined ({len(calls)})")
+    finally:
+        d.stop()
+
+
+GROUPS = {"own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():

@@ -43,6 +43,7 @@
 #include "sound/synth_view.h"
 #include "sound/score_view.h"
 #include "sound/tracker_view.h"
+#include "sound/midi_view.h"
 #include "ascii_image_view.h"
 #include "feed_view.h"
 
@@ -353,6 +354,9 @@ static const char* spawn_tracker(TWwdosApp&, const std::map<std::string,std::str
     if (r.rfind("err", 0) == 0) { err = r; return err.c_str(); }
     return nullptr; }
 static bool match_tracker(TWindow* w) { return dynamic_cast<TTrackerWindow*>(w) != nullptr; }
+static const char* spawn_midi(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    sound::command("open_midi", kv); return nullptr; }
+static bool match_midi(TWindow* w) { return dynamic_cast<TMidiWindow*>(w) != nullptr; }
 
 // ── Registry table ────────────────────────────────────────────────────────────
 // Add new window types here — nowhere else.
@@ -365,6 +369,7 @@ static const WindowTypeSpec k_specs[] = {
     { "text_editor",       spawn_text_editor,       match_text_editor       },
     { "boot",              nullptr,                 life::isBootWindow      },  // the residents' boot screen
     { "dream",             nullptr,                 life::isDreamWindow     },  // a resident's dream while asleep
+    { "own_time",          nullptr,                 life::isOwnWindow       },  // a resident's time of its own
     { "browser",           spawn_browser,           match_browser           },
     { "verse",             spawn_verse,             match_verse             },
     { "mycelium",          spawn_mycelium,          match_mycelium          },
@@ -402,6 +407,7 @@ static const WindowTypeSpec k_specs[] = {
     { "synth",             spawn_synth,            match_synth              },
     { "event_score",       spawn_event_score,      match_event_score        },
     { "tracker",           spawn_tracker,          match_tracker            },
+    { "midi",              spawn_midi,             match_midi               },
     { "ascii_image",       nullptr,                match_ascii_image        },
     { "feed",              spawn_feed,             match_feed               },
 };

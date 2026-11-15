@@ -64,6 +64,8 @@ add_executable(wwdos
     sound/score_view.cpp
     sound/tracker.cpp
     sound/tracker_view.cpp
+    sound/midi.cpp
+    sound/midi_view.cpp
     rogue_view.cpp
     deep_signal_view.cpp
     app_launcher_view.cpp
@@ -112,7 +114,7 @@ set_source_files_properties(sound/sound_host.cpp PROPERTIES COMPILE_DEFINITIONS 
 target_link_libraries(wwdos PRIVATE tvision tvterm-core)
 # The machine's sound stream (app/sound/stream.cpp) plays through an AudioQueue.
 if(APPLE)
-    target_link_libraries(wwdos PRIVATE "-framework AudioToolbox" "-framework CoreFoundation")
+    target_link_libraries(wwdos PRIVATE "-framework AudioToolbox" "-framework CoreFoundation" "-framework CoreMIDI")
 endif()
 
 # On Linux, api_ipc.cpp uses OpenSSL for HMAC (macOS uses CommonCrypto)

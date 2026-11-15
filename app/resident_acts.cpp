@@ -502,8 +502,12 @@ void noteOrigin(const TEvent& ev, bool fromPut) {
     g_eventWho = Who{"app", Source::App};
 }
 
+namespace { std::map<std::string, uint64_t> g_lastActBy; }   // actor -> its last act (Laws of Jam, FOLLOW)
+
 void addAct(const Who& w, const std::string& what, const std::string& window, const std::string& result, uint64_t rseq,
             const std::string& type) {
+    if (w.source != Source::App && what.rfind("mode:", 0) != 0 && result.rfind("refused", 0) != 0)
+        g_lastActBy[w.actor] = g_actN;
     g_acts.push_back(Act{g_actN++, nowMs(), w.actor, w.source, what, window, result, rseq});
     ++g_actRevision;
     emitGesture(g_acts.back(), false, type);
@@ -565,11 +569,91 @@ void settle() {
             addAct(w, "closed " + it->second.type + " \"" + it->second.title + "\"", it->second.id, "", 0, it->second.type);
             g_owner.erase(it->first);
             g_lastChanger.erase(it->first);
+            for (auto& st : g_undo) {   // a closed window's changes cannot be undone, and its address may be reused
+                auto& v = st.second;
+                v.erase(std::remove_if(v.begin(), v.end(), [&](const Undo& u) { return u.win == it->first; }), v.end());
+            }
             it = g_known.erase(it);
         } else {
             ++it;
         }
     }
+}
+
+// ---------------------------------------------------------------- Laws of Jam
+
+namespace {
+bool readOnly(const std::string& name, const KV& kv);   // below, with the IPC code
+std::map<std::string, std::string> g_mode;   // resident -> flow | follow | oppose | witness
+
+std::string faceOf(const std::string& mode) {
+    if (mode == "follow") return "つ○‿○༽つ";
+    if (mode == "oppose") return "つ■‿■༽つ";
+    if (mode == "witness") return "つ◎‿◎༽つ";
+    return "つ◕‿◕༽つ";
+}
+std::string upper(std::string s) { for (auto& c : s) c = (char)std::toupper((unsigned char)c); return s; }
+}  // namespace
+
+std::string modeOf(const std::string& actor) {
+    auto it = g_mode.find(actor);
+    return it == g_mode.end() ? "flow" : it->second;
+}
+
+std::string modesLine() {
+    std::string s;
+    for (auto& m : g_mode) s += (s.empty() ? "" : "  ") + m.first + " " + faceOf(m.second) + " " + upper(m.second);
+    return s;
+}
+
+std::string modeGate(const std::string& name, const KV& kv) {
+    Who w = currentWho();
+    if (w.source == Source::Console || w.source == Source::App) return "";
+    static const char* acting[] = {"resident_key", "resident_mouse", "resident_press", "resident_menu",
+                                   "resident_undo", "resident_rehearse"};   // logged item by item, but acts
+    bool acts = false;
+    for (const char* a : acting) if (name == a) acts = true;
+    if (name == "resident_mode" || (!acts && readOnly(name, kv))) return "";
+    std::string mode = modeOf(w.actor);
+    std::string why;
+    if (mode == "witness") {
+        why = w.actor + " is in WITNESS: it may look, read and talk, not act";
+    } else if (mode == "follow") {
+        uint64_t mine = g_lastActBy.count(w.actor) ? g_lastActBy[w.actor] : 0;
+        uint64_t other = 0;
+        for (auto& p : g_lastActBy) if (p.first != w.actor) other = std::max(other, p.second);
+        if (mine && other <= mine) why = w.actor + " is in FOLLOW: it acts only after someone else has acted since its last act";
+    }
+    if (why.empty()) return "";
+    addAct(w, "mode: " + upper(mode) + " held back " + name, str(kv, "id"), "refused: " + why);
+    return "err refused: " + why;
+}
+
+std::string cmdMode(const KV& kv) {
+    Who w = currentWho();
+    std::string target = str(kv, "who", w.source == Source::Console ? "" : w.actor);
+    if (has(kv, "mode")) {
+        std::string m = str(kv, "mode");
+        for (auto& c : m) c = (char)std::tolower((unsigned char)c);
+        if (m != "flow" && m != "follow" && m != "oppose" && m != "witness")
+            return "err unknown mode: " + m + " (flow, follow, oppose, witness)";
+        if (target.empty()) return "err who= names the resident";
+        if (w.source != Source::Console && target != w.actor)
+            return "err refused: a resident sets only its own mode (the person at the console sets anyone's); you are " +
+                   std::string(sourceName(w.source)) + " " + w.actor;
+        g_mode[target] = m;
+        addAct(w, "mode: " + target + " is now " + upper(m) + " " + faceOf(m), "", "");
+    }
+    std::ostringstream os;
+    os << "{\"residents\":[";
+    bool first = true;
+    for (auto& p : g_mode) {
+        os << (first ? "" : ",") << "{\"actor\":" << q(p.first) << ",\"mode\":" << q(p.second) << ",\"face\":" << q(faceOf(p.second)) << "}";
+        first = false;
+    }
+    os << "],\"modes\":{\"flow\":\"acts freely\",\"follow\":\"acts only after someone else has acted since its own last act\","
+          "\"oppose\":\"acts freely, shown as working against the grain\",\"witness\":\"looks, reads and talks; may not act\"}}";
+    return os.str();
 }
 
 // ---------------------------------------------------------------- undo: public
@@ -636,7 +720,7 @@ namespace {
 bool readOnly(const std::string& name, const KV& kv) {
     static const char* names[] = {"get_state", "get_canvas_size", "get_capabilities", "get_window_types", "window_text",
                                   "acts", "residents_about", "standing", "desktop_get", "terminal_read",
-                                  "get_chat_history", "subscribe_events", "ping", "describe", "person_events", "person_wait", "resident_reflexes", "help", "resident_selftest", "figlet_list_fonts",
+                                  "get_chat_history", "subscribe_events", "ping", "describe", "person_events", "person_wait", "resident_reflexes", "help", "resident_selftest", "resident_mode", "figlet_list_fonts",
                                   "list_figlet_fonts", "preview_figlet", "gallery_list", "paint_export", "batch",
                                   "exec_command", "resident_status", "resident_front", "resident_key",
                                   "resident_mouse", "resident_press", "resident_menu"};
@@ -648,6 +732,7 @@ bool readOnly(const std::string& name, const KV& kv) {
     if (name == "hear" || name == "sound") return true;   // the ears and the stream's state change nothing
     // The terminal transport logs its own acts with what changed (terminal_transport.cpp).
     if (name == "terminal_state" || name == "terminal_pause" || name == "terminal_resume" || name == "terminal_toggle") return true;
+    if (name == "midi") { std::string a = str(kv, "action"); return a.empty() || a == "state" || a == "log"; }
     if (name == "resident_manners") return !has(kv, "clear");
     return false;
 }
