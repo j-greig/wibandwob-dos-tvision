@@ -7,6 +7,7 @@
 #include "frame_file_player_view.h"
 #include "transparent_text_view.h"
 #include "text_editor_view.h"
+#include "resident_life.h"
 #include "browser_view.h"
 #include "generative_verse_view.h"
 #include "generative_mycelium_view.h"
@@ -354,6 +355,8 @@ static const WindowTypeSpec k_specs[] = {
     { "frame_player",      spawn_frame_player,      match_frame_player      },
     { "text_view",         spawn_text_view,         match_text_view         },
     { "text_editor",       spawn_text_editor,       match_text_editor       },
+    { "boot",              nullptr,                 life::isBootWindow      },  // the residents' boot screen
+    { "dream",             nullptr,                 life::isDreamWindow     },  // a resident's dream while asleep
     { "browser",           spawn_browser,           match_browser           },
     { "verse",             spawn_verse,             match_verse             },
     { "mycelium",          spawn_mycelium,          match_mycelium          },

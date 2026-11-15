@@ -16,6 +16,7 @@ set(TV_COMMON_SOURCES
     resident_senses.cpp
     resident_acts.cpp
     desk_mosh.cpp
+    resident_life.cpp
     describe.cpp
     resident_hands.cpp
     wibwob_background.cpp
@@ -200,6 +201,7 @@ add_executable(command_registry_test EXCLUDE_FROM_ALL
     resident_acts.cpp
     desk_mosh.cpp
     ega_theme.cpp
+    resident_life.cpp
     describe.cpp
     resident_hands.cpp
 )
@@ -217,6 +219,7 @@ add_executable(scramble_engine_test EXCLUDE_FROM_ALL
     resident_acts.cpp
     desk_mosh.cpp
     ega_theme.cpp
+    resident_life.cpp
     describe.cpp
     resident_hands.cpp
     llm/base/auth_config.cpp
