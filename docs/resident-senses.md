@@ -141,7 +141,8 @@ is reported `resident` or `person`, as resident input marks it. Windows open at 
   logged); and the consequences found by the desktop comparison: opened, moved, resized, retitled, closed (a run of
   moves of one window by one author is one act). Rule changes, the console key, instructions to residents and false
   claims to be the console are logged too.
-- The log holds the last 4000 acts in memory; `dropped` counts the ones that fell off. Nothing is written to disk.
+- The log holds the last 4000 acts in memory; `dropped` counts the ones that fell off. The log is not written to disk; at the close a summary
+  reaches the residents' notes and logbook (`docs/resident-life.md`).
 
 ### The visible hand
 
@@ -216,7 +217,7 @@ to the person.
     cmd:residents_about
 
     {"residents":"agents that live in this desktop; ...","logged":"every act, with who made it, ... the last 4000 acts,
-     in memory; read it with the acts command","kept":"nothing is written to disk: ...","data":"...",
+     in memory; read it with the acts command","kept":"at the close the self is written to WWDOS_HOME ...","data":"...",
      "key":"off","marks":true,"hand":true,"text":"Residents are agents that live in this desktop. ..."}
 
 ## Tests
@@ -236,7 +237,8 @@ On the resident-input build (f91c880) every group fails at its first look or sta
 
 ## Not done
 
-- **Memory across a restart.** The log, owners and readers' records live in memory; nothing is written to disk, so
+- **Memory across a restart.** The log and readers' records live in memory (owners of open windows reach DESK.TXT at
+  the close, `docs/resident-life.md`), so
   "what changed since I last looked" does not survive a sleep or a restart (the archive bit).
 - **Regions that report change, speech and a braille line.** A reader asks; nothing tells it a region changed.
 - **Receipts that carry the change.** A resident item's act says delivered or refused; the consequences follow as
