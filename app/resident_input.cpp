@@ -1108,7 +1108,7 @@ std::string describe(TView* v) {
     const char* kind = dynamic_cast<TDialog*>(v) ? "dialog" : w ? "window" : "view";
     os << "{\"kind\":\"" << kind << "\",\"id\":" << q(idOf(v))
        << ",\"title\":" << q(w && w->title ? w->title : "")
-       << ",\"owner\":" << q(g_owned.count(v) ? "resident" : "person")
+       << ",\"owner\":" << q(ownerOf(v))
        << ",\"modal\":" << ((v->state & sfModal) ? "true" : "false");
     if (!g) { os << "}"; return os.str(); }
     auto labels = labelsOf(g);
