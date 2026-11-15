@@ -42,6 +42,7 @@
 #include "sound/sound_host.h"
 #include "sound/synth_view.h"
 #include "sound/score_view.h"
+#include "sound/tracker_view.h"
 #include "ascii_image_view.h"
 #include "feed_view.h"
 
@@ -345,6 +346,13 @@ static const char* spawn_event_score(TWwdosApp&, const std::map<std::string,std:
     if (r.rfind("err", 0) == 0) { err = r; return err.c_str(); }
     return nullptr; }
 static bool match_event_score(TWindow* w) { return dynamic_cast<TScoreWindow*>(w) != nullptr; }
+// kv: track=<name> or text=<song>, channels=, rows=, tempo=, play=1
+static const char* spawn_tracker(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    std::string r = sound::command("open_tracker", kv);
+    static std::string err;
+    if (r.rfind("err", 0) == 0) { err = r; return err.c_str(); }
+    return nullptr; }
+static bool match_tracker(TWindow* w) { return dynamic_cast<TTrackerWindow*>(w) != nullptr; }
 
 // ── Registry table ────────────────────────────────────────────────────────────
 // Add new window types here — nowhere else.
@@ -393,6 +401,7 @@ static const WindowTypeSpec k_specs[] = {
     { "tr808",             spawn_tr808,            match_tr808              },
     { "synth",             spawn_synth,            match_synth              },
     { "event_score",       spawn_event_score,      match_event_score        },
+    { "tracker",           spawn_tracker,          match_tracker            },
     { "ascii_image",       nullptr,                match_ascii_image        },
     { "feed",              spawn_feed,             match_feed               },
 };

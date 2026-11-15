@@ -472,7 +472,115 @@ def test_stream(desk):
     R.check(x(desk, "tr808", id=drm, action="state")["transport"] == "stopped", "the drums stopped with the score")
 
 
-GROUPS = {"synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
+# ---------------------------------------------------------------------------- drums
+
+def test_drums(desk):
+    print("\n[drums] a drum machine started with an empty pattern is heard")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    drm = x(desk, "open_tr808", x=2, y=2, w=118, h=26)["id"]
+    st = x(desk, "tr808", id=drm, action="state")
+    R.check(all("x" not in i["steps"] for i in st["instruments"]) and st["start_preset"] == "",
+            "a new drum machine opens with an empty pattern")
+    x(desk, "tr808", id=drm, action="audio", on=1)    # the test desktop starts it off (WWDOS_TR808_AUDIO=0)
+    h0 = x(desk, "sound", action="state")["hits"]
+    st = x(desk, "tr808", id=drm, action="play", actor="wob")
+    R.check(st["start_preset"] == "classic-house" and any("x" in i["steps"] for i in st["instruments"]),
+            f"play on an empty pattern loads classic-house first ({st['start_preset']!r})")
+    time.sleep(1.2)
+    s = x(desk, "sound", action="state")
+    heard = x(desk, "hear", seconds=1, of="tr808", window=drm)["counts"]["tr808"]
+    R.check(s["hits"] - h0 > 0 and heard > 0, f"the stream counts the hits it mixed ({s['hits'] - h0}) and the ears hear them ({heard})")
+    x(desk, "tr808", id=drm, action="stop")
+    x(desk, "tr808", id=drm, action="clear", all=1)
+    x(desk, "tr808", id=drm, action="set_step", instrument="bd", step=0, active=1)
+    st = x(desk, "tr808", id=drm, action="play")
+    R.check([i["steps"] for i in st["instruments"] if i["id"] == "bd"][0] == "x..............." and
+            sum("x" in i["steps"] for i in st["instruments"]) == 1, "a pattern with any step on is played as it is")
+    x(desk, "tr808", id=drm, action="stop")
+    x(desk, "tr808", id=drm, action="audio", on=0)
+
+
+# ---------------------------------------------------------------------------- tracker
+
+def test_tracker(desk):
+    print("\n[tracker] rows written by the person, a resident's commands and its keys; played, saved, loaded, heard")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    o = x(desk, "open_tracker", channels="fm:bass fm:pluck speaker drums", rows=8, tempo=240, x=2, y=1, w=60, h=14,
+          actor="wib", source="resident")
+    tid = o["id"]
+    st = x(desk, "tracker", id=tid, action="state")
+    R.check(st["rows"] == 8 and st["channels"] == ["fm:bass", "fm:pluck", "speaker", "drums"] and st["row_ms"] == 62.5,
+            f"open_tracker: 8 rows, four channels, 62.5 ms a row ({st['channels']})")
+    d = desk.j("describe", id=tid)
+    R.check(d["state"].startswith('tracker "untitled", 4 channels, 8 rows at 240 bpm, 0 cells written') and len(d["text"]) == 8,
+            f"describe gives a sentence and the rows as text ({d['state']!r})")
+
+    # The person types C D E down channel 1 with the tracker keyboard.
+    time.sleep(1.6)
+    desk.person_type("zxc", gap=0.08)
+    time.sleep(0.3)
+    st = x(desk, "tracker", id=tid, action="state")
+    R.check([l.split(" | ")[0] for l in st["lines"][:3]] == ["00 C-4 .. ...", "01 D-4 .. ...", "02 E-4 .. ..."],
+            f"the person's z x c write C-4 D-4 E-4 down channel 1 ({[l.split(' | ')[0] for l in st['lines'][:3]]})")
+
+    # wib writes the drums and a bass note by command.
+    x(desk, "tracker", id=tid, action="write", ch=3, row=0, notes="BD- . SD- . BD- . SD- .", instr="7F", actor="wib", source="resident")
+    x(desk, "tracker", id=tid, action="set", row=4, ch=0, cell="G-3 01 G08", actor="wib", source="resident")
+    # wob writes with its own keys: an arpeggio on the pluck channel.
+    time.sleep(1.6)   # the window stays the person's for share_ms after their last key
+    x(desk, "tracker", id=tid, action="cursor", row=4, ch=1, field="note", octave=4, actor="wob", source="resident")
+    q(desk, "resident_key", id=tid, text="c", actor="wob")
+    x(desk, "tracker", id=tid, action="cursor", row=4, ch=1, field="fx", actor="wob", source="resident")
+    q(desk, "resident_key", id=tid, text="a37", actor="wob")
+    st = x(desk, "tracker", id=tid, action="state")
+    R.check(st["lines"][4] == "04 G-3 01 G08 | E-4 .. A37 | --- .. ... | BD- 7F ...",
+            f"row 4 holds wib's bass and drum and wob's keyed arpeggio: {st['lines'][4]!r}")
+    R.check(st["lines"][2].endswith("SD- 7F ..."), "wib's snare on row 2")
+    acts = desk.j("acts", limit=4000)["acts"]
+    R.check(any(a["actor"] == "wib" and "tracker action=write" in a["what"] for a in acts) and
+            any(a["actor"] == "wob" and a["window"] == tid and a["what"].startswith("key") for a in acts) and
+            any(a["actor"] == "person" and a["window"] == tid for a in acts),
+            "the log names the person, wib's commands and wob's keys")
+
+    # Save as plain text, load into a new tracker: the same rows.
+    sv = x(desk, "tracker", id=tid, action="save", track="t-soundtest")
+    path = os.path.join(REPO, "tracks", "t-soundtest.trk")
+    R.check(sv.get("saved") == "tracks/t-soundtest.trk" and os.path.exists(path), "save writes tracks/t-soundtest.trk")
+    text = open(path).read() if os.path.exists(path) else ""
+    R.check("channels fm:bass fm:pluck speaker drums" in text and "04 G-3 01 G08 | E-4 .. A37" in text, "the file is the rows as plain text")
+    t2 = x(desk, "open_tracker", track="t-soundtest", x=70, y=1, w=60, h=14)["id"]
+    R.check(x(desk, "tracker", id=t2, action="state")["lines"] == st["lines"], "open_tracker track= loads the same rows")
+    R.check(xraw(desk, "tracker", id=t2, action="save", track="../x").startswith("err track is"), "a track name cannot leave tracks/")
+    desk.ipc("close_window", id=t2)
+    if os.path.exists(path):
+        os.remove(path)
+
+    # Play one pass: the ears give back the rows that sounded, in the tracker's own form.
+    x(desk, "synth", action="open")
+    x(desk, "synth", action="audio", on=1)
+    n0 = x(desk, "sound", action="state")["notes"]
+    x(desk, "tracker", id=tid, action="loop", on=0)
+    x(desk, "tracker", id=tid, action="play", actor="wib")
+    time.sleep(1.0)
+    st = x(desk, "tracker", id=tid, action="state")
+    h = x(desk, "hear", window=tid, seconds=1.5)
+    sounding = [l for l in st["lines"] if any(c.strip()[:3] not in ("---", "===") for c in l[3:].split(" | "))]
+    R.check(not st["playing"] and h.get("tracker_rows") == sounding,
+            f"the ears' rows are the tracker's rows that sounded ({len(h.get('tracker_rows', []))} of {len(sounding)})")
+    R.check(x(desk, "sound", action="state")["notes"] - n0 == 3 + 1 + 3, "the stream mixed the pass's notes (C D E, G-3, the arpeggio's three)")
+    x(desk, "tracker", id=tid, action="loop", on=1)
+    x(desk, "tracker", id=tid, action="play")
+    time.sleep(1.3)
+    st = x(desk, "tracker", id=tid, action="state")
+    hits = x(desk, "hear", window=tid, seconds=1.2, of="tr808")["counts"]["tr808"]
+    R.check(st["playing"] and st["loop"] and hits >= 6, f"with loop on it plays round ({hits} drum hits in 1.2 s)")
+    x(desk, "tracker", id=tid, action="stop")
+    x(desk, "synth", action="audio", on=0)
+
+
+GROUPS = {"tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():

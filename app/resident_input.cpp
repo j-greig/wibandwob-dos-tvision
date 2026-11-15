@@ -378,6 +378,7 @@ void deliverAddressed(Item& it) {
     Frame f{'R', it.target, TheTopView, d ? d->current : nullptr, ++g_frameSerial, it.actor};
     std::vector<TView*> before;
     collectWindows(before);
+    if (it.kind == Kind::Event && (it.ev.what & evKeyDown)) noteTextBefore(it.actor, it.target);   // for resident_undo
     // Logged before the dispatch: a dialog the input opens runs inside it.
     noteDelivered(it, "delivered");
     g_frames.push_back(f);
@@ -463,15 +464,49 @@ void deliverRaw(Item& it, TEvent& ev) {
     noteDelivered(it, "delivered");
 }
 
+// Why the queue is held, for the act log (the Feed shows it): "" when it is not.
+std::string g_blockedBy;
+std::string g_waitReason;
+std::string g_waitActor, g_waitWindow;
+std::chrono::steady_clock::time_point g_waitStart{};
+
+void noteWait(const std::string& reason) {
+    if (reason == g_waitReason) return;
+    if (!g_waitReason.empty()) {
+        double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - g_waitStart).count();
+        char b[48];
+        std::snprintf(b, sizeof b, "%.1f s", s);
+        addAct(Who{g_waitActor, Source::Resident}, "stopped waiting after " + std::string(b) + " (" + g_waitReason + ")",
+               g_waitWindow, "");
+    }
+    g_waitReason = reason;
+    if (!reason.empty() && !g_queue.empty()) {
+        g_waitActor = g_queue.front().actor;
+        g_waitWindow = g_queue.front().targetId;
+        g_waitStart = std::chrono::steady_clock::now();
+        addAct(Who{g_waitActor, Source::Resident}, "waiting: " + reason, g_waitWindow, "");
+    }
+}
+
 // First item that can go now; items for a window keep their order.
 std::deque<Item>::iterator pickDeliverable() {
+    g_blockedBy.clear();
     for (auto it = g_queue.begin(); it != g_queue.end();) {
         if (it->target && !alive(it->target)) {
             noteRefused(*it, "window gone");
             it = g_queue.erase(it);
             continue;
         }
-        if (it->target && inFrames(it->target)) { ++it; continue; }   // busy under a dialog it opened
+        if (it->target && inFrames(it->target)) {   // busy under a dialog it opened
+            if (g_blockedBy.empty()) {
+                auto* dw = dynamic_cast<TWindow*>(TheTopView);
+                const char* t = dw ? dw->getTitle(0) : nullptr;
+                g_blockedBy = std::string("a dialog is in front of ") + (it->targetId.empty() ? "its window" : it->targetId) +
+                              (t && *t ? std::string(" (\"") + t + "\")" : "");
+            }
+            ++it;
+            continue;
+        }
         return it;
     }
     return g_queue.end();
@@ -571,6 +606,7 @@ bool takeEvent(TEvent& ev) {
         if (TheTopView && TheTopView != top.topAtEntry) g_owned.insert(TheTopView);
         if (!(g_waitOnButton && g_personButtons)) {
             auto it = pickDeliverable();
+            noteWait(it == g_queue.end() && !g_queue.empty() ? g_blockedBy : "");
             if (it != g_queue.end()) {
                 if (!handReadyFor(*it)) { TEventQueue::wakeUp(); return false; }
                 Item item = *it;
@@ -625,10 +661,14 @@ void afterBase(TEvent& ev) {
         return;
     }
     if (ev.what != evNothing) return;              // a put event passes through
-    if (g_waitOnButton && g_personButtons) return; // manners: wait for the person's button
+    if (g_waitOnButton && g_personButtons) {       // manners: wait for the person's button
+        noteWait(g_queue.empty() ? "" : "the person's mouse button is down");
+        return;
+    }
     if (residentLoop()) return;
     auto it = pickDeliverable();
-    if (it == g_queue.end()) return;
+    if (it == g_queue.end()) { noteWait(g_queue.empty() ? "" : g_blockedBy); return; }
+    noteWait("");
     if (!handReadyFor(*it)) return;
     Item item = *it;
     g_queue.erase(it);

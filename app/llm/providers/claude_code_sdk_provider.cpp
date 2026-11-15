@@ -18,6 +18,8 @@
 #include <iomanip>
 #include <unistd.h>
 #include <sys/wait.h>
+#include "../../resident_senses.h"
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <iostream>
@@ -180,6 +182,12 @@ struct ClaudeCodeSDKProvider::NodeBridge {
         return true;
     }
     
+    // True once when the bridge process has ended on its own; status is its wait status.
+    bool exited(int& status) {
+        if (!active || pid <= 0) return false;
+        return waitpid(pid, &status, WNOHANG) == pid;
+    }
+
     std::string readResponse() {
         if (!active || !output) return "";
         
@@ -498,6 +506,19 @@ void ClaudeCodeSDKProvider::cancel() {
 void ClaudeCodeSDKProvider::poll() {
     if (useFallback && fallbackProvider) {
         fallbackProvider->poll();
+    }
+    // A bridge process that died is a system line in the act log (the Feed), not a silent stall.
+    int st = 0;
+    if (nodeBridge && nodeBridge->exited(st)) {
+        std::string how = WIFEXITED(st) ? "exit " + std::to_string(WEXITSTATUS(st))
+                        : WIFSIGNALED(st) ? "signal " + std::to_string(WTERMSIG(st)) : "status " + std::to_string(st);
+        resident::addAct(resident::Who{"app", resident::Source::App}, "the chat's bridge process ended (" + how + ")", "",
+                         "child process died");
+        nodeBridge->pid = -1;
+        nodeBridge->shutdown();
+        streamingActive = false;
+        sessionStarted = false;
+        sessionStarting = false;
     }
 
     // Handle async session startup: read bridge responses until SESSION_STARTED.

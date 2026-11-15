@@ -209,9 +209,19 @@ void TTR808View::onTimer() {
     drawView();
 }
 
+// A started drum machine is heard: an empty pattern (no step on, no accent) takes this preset first.
+static const char* kStartPreset = "classic-house";
+
 void TTR808View::play(double atMs) {
     if (eng_.playing()) return;
     startedBy_ = sound::currentActor();
+    bool empty = true;
+    for (int v = 0; v < kVoices && empty; ++v) if (eng_.countSteps(v)) empty = false;
+    for (int s = 0; s < kSteps && empty; ++s) if (eng_.pattern().accent[s]) empty = false;
+    if (empty) {
+        eng_.loadPreset(kStartPreset);
+        startPreset_ = kStartPreset;
+    }
     // atMs: start on that time of the clock (a score's bar line), if it has not gone by more than a step.
     const double now = nowMs();
     StepEvent ev = eng_.start(atMs >= 0 && atMs <= now && now - atMs < eng_.baseStepMs() ? atMs : now);
@@ -529,6 +539,7 @@ std::string TTR808View::stateJson() const {
       << ",\"last_step\":" << eng_.pattern().lastStep
       << ",\"selected\":\"" << (eng_.selected() == kAccentSel ? "accent" : voiceDef(eng_.selected()).id) << "\""
       << ",\"cursor\":" << cursor_
+      << ",\"start_preset\":\"" << startPreset_ << "\""
       << ",\"audio\":" << (audioEnabled() ? "true" : "false")
       << ",\"audio_available\":" << (audioAvailable() ? "true" : "false")
       << ",\"presets\":[";

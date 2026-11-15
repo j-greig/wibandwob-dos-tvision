@@ -31,6 +31,19 @@ struct Hooks {
                            std::function<void(const std::vector<std::string>&)> onClose)> openEditor;
     // True when a model is reachable through the app's confined calls (shown at boot only).
     std::function<bool()> modelPresent;
+    // The claude CLI's path when the app reaches a model through it ("" otherwise). Notes and dreams
+    // call it with Scramble's confined flags: no tools, no MCP servers, no user settings, own prompt.
+    std::function<std::string()> modelCli;
+    // Writes what a window holds (editor text, paint canvas) under dir as base.<ext>; returns the
+    // file name written ("" when the window keeps nothing).
+    std::function<std::string(TWindow*, const std::string& dir, const std::string& base)> saveState;
+    // Opens a window of a type at a rectangle (desktop cells) with a title, filled from a file
+    // saveState wrote ("" for none). nullptr and err when it cannot.
+    std::function<TWindow*(const std::string& type, int x, int y, int w, int h, const std::string& title,
+                           const std::string& stateFile, std::string& err)> restoreWindow;
+    // What an editor openEditor made holds now; its onClose is dropped, so a later close does not
+    // run it again (the app quitting with a sign page open). False for other windows.
+    std::function<bool(TWindow*, std::vector<std::string>&)> takeEditor;
 };
 void setHooks(const Hooks& h);
 
@@ -57,6 +70,14 @@ std::string stateOf(TWindow* w);
 bool isBootWindow(TWindow* w);
 bool isDreamWindow(TWindow* w);
 
+// Acts of earlier wakings read back from ACTS.TXT and its rotations, newest first (the Feed window
+// scrolls into them). Returns how many earlier acts there are on disk.
+struct EarlierAct {
+    int waking;
+    std::string when, actor, source, window, what, result;
+};
+size_t earlierActs(size_t skip, size_t count, std::vector<EarlierAct>& out);
+
 // True for the commands this module answers (the socket routes them to the registry).
 bool owns(const std::string& cmd);
 // Answers one of its commands; "" when the name is not one of them.
@@ -68,9 +89,11 @@ const char* kaomoji();
 std::string statusWord();
 
 // Menu commands of Tools > Residents handled here.
-const unsigned short cmLifeLogbook = 9960;
-const unsigned short cmLifeGuestbook = 9961;
-const unsigned short cmLifeSign = 9962;
+// 9940-9949 are the life's (9950s are the residents' menu, 9960 the Feed, 9975-9976 the desk mosh).
+const unsigned short cmLifeLogbook = 9940;
+const unsigned short cmLifeGuestbook = 9941;
+const unsigned short cmLifeSign = 9942;
+const unsigned short cmLifeWill = 9943;
 bool handleCommand(unsigned short cmd);
 
 }  // namespace life

@@ -109,6 +109,65 @@ it either way, at the same times.
 jumps above four times the frames before), as times on the clock: the same times the ears give in `at_ms`.
 Neither changes anything or is logged.
 
+### A started drum machine is heard
+
+A new TR-808 opens with an empty pattern. `play` (the command, the window's key, a score's `do tr808 play`) on a
+pattern with no step and no accent on loads `classic-house` first, and the state says so in `start_preset`. A
+pattern with any step on plays as it is. The drum machine's sound is on unless `WWDOS_TR808_AUDIO=0`.
+
+## Tracker
+
+Music written in rows, in the form of the 1987 trackers: channels across, rows down, each cell a note, an
+instrument and an effect (`app/sound/tracker.cpp`, `tracker_view.cpp`). The worked example is
+`tracks/arp-and-bass.trk`.
+
+    00 C-2 01 G08 | C-4 06 A37 | --- .. ... | BD- 7F ...
+
+| field | FM channel | speaker channel | drums channel |
+|---|---|---|---|
+| note | `C-4`, `C#4`; `===` note off; `---` empty | the same | `BD-` `SD-` `LT-` `MT-` `HT-` `RS-` `CB-` `CP-` `MA-` `CL-` `CY-` `OH-` `CH-` |
+| instrument (hex) | patch 01-07: bass organ bell brass lead pluck chip; `..` the channel's | ignored | level 00-7F (`..` 0x66) |
+| effect | `Axy` arpeggio (the row in three: the note, +x, +y semitones); `Vxx` velocity; `Gxx` gate in sixteenths of a row | `Gxx` | `Vxx` level |
+
+With no `G`, a note rings until the next note or note off in its channel (at most 16 rows). Rows play at
+`tempo` and `rpb` (rows per beat; 4 makes a row a sixteenth) on the sound stream, at the row's time on the one
+clock. FM channels share the mixer's nine FM channels with the synth window; the speaker channel shares its one voice.
+
+The window (View or `open_tracker`): arrows move (Left and Right step through note, instrument and effect), Tab moves
+a channel, PgUp/PgDn a beat. In the note field the tracker keyboard writes a note (`z`..`m`, `q`..`i`; on the
+drums channel the same keys pick BD, SD, LT ... in order) and moves down a row; `1` writes a note off; `.`,
+Backspace or Delete clears. In the instrument field hex digits shift in; in the effect field `a`, `v` or `g`
+then hex digits. `[` `]` octave, Space plays from the top or stops, Enter plays from the cursor's row, Ctrl+L
+loops.
+
+    exec_command name=open_tracker [track=arp-and-bass | text=<song> | channels="fm:bass fm:lead speaker drums" rows=16 tempo=120] [play=1]
+    exec_command name=tracker action=set row=4 ch=1 cell="E-4 06 A37"
+    exec_command name=tracker action=write ch=3 row=0 notes="BD- . SD- ." step=2 instr=7F    # down a column
+    exec_command name=tracker action=cursor row=4 ch=1 field=note|instr|fx octave=4          # then resident_key types
+    exec_command name=tracker action=play [row=]  |  stop  |  loop on=0|1  |  tempo value=  |  rows value=
+    exec_command name=tracker action=clear row= ch=   |  clear all=1
+    exec_command name=tracker action=save track=<name>    # writes tracks/<name>.trk
+    exec_command name=tracker action=load track=<name> | text=<song>
+    exec_command name=tracker action=text | state
+
+The song file is the window's rows as plain text:
+
+    # wwdos tracker
+    title arp and bass
+    tempo 120
+    rpb 4
+    channels fm:bass fm:pluck speaker drums
+    00 C-2 01 G08 | C-4 06 A37 | --- .. ... | BD- 7F ...
+    ...
+
+Track names are letters, digits, `-` and `_`; files live in `tracks/` (`$WWDOS_REPO/tracks`, `./tracks`, the
+source tree). `state` gives `lines` (every row as above), `play_row`, `started_ms` and `row_ms`; `describe` gives
+a sentence and the rows as text.
+
+**The ears show the same rows.** `hear window=<tracker id>` adds `tracker_rows`: each row that sounded, on the
+tracker's own row grid, printed as the tracker prints it, from the cells the ears heard. A cell that made no sound (a
+note off) is printed `--- .. ...` there.
+
 ## Ears
 
 The synth and the TR-808 tell the ears every note and hit as the engine plays it: the window, the voice, the note
@@ -238,12 +297,14 @@ later call's speaker note replacing the one sounding, ten calls holding nine FM 
 sample, late counting, capture), ears (16: order, sounding now, windows of time, levels, rows, meter, summary,
 report, window filter, the keep limit), score (14: parsing, kinds, timing, and seven refused scores).
 
-`python3 tests/resident/test_machine_sound.py [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
+`python3 tests/resident/test_machine_sound.py [tracker] [drums] [synth] [ears] [score] [hands] [stream]` starts its own silent desktop
 (`tmux -L soundtest`, `WWDOS_SOUND_OUT=null`, `WWDOS_SYNTH_AUDIO=0`, `WWDOS_TR808_AUDIO=0`, no claude CLI on PATH). `WWDOS_BIN` picks
 the binary.
 
 | group | what it shows |
 |---|---|
+| tracker | the person's z x c write C-4 D-4 E-4; wib writes drums and a bass cell by command, wob an arpeggio cell with its own keys (note, then `a37` in the effect field); the log names all three; save writes `tracks/<name>.trk` as plain text and open_tracker loads the same rows; a name with `..` is refused; one pass: the ears' `tracker_rows` equal the tracker's rows that sounded, and the stream mixed the 7 notes; with loop on it plays round |
+| drums | a new TR-808 is empty; play loads classic-house, the stream counts the hits it mixed and the ears hear them; a pattern with one step on plays as it is |
 | synth | wib opens the synth (owner wib, a glance sentence); wib's phrase by command, the person's C D E from z x c, Tab to the PC speaker and `]` to octave 5, and wob's key through `resident_key` each play and name their player; nothing reaches the speakers when silent (sent 0); the acts log has all three; `render` of the PC speaker's A-4 is 22050 samples with 439 upward zero crossings, the same twice, and plays nothing |
 | ears | silence first; right after wib's phrase starts, C-4 by wib is sounding; wob then hears C-4 E-4 G-4, 200 ms apart, as played, with a summary and 16 rows; with the TR-808 started by wob, every hit heard is a step the engine's pattern has on, names wob and 120 bpm; `window=` filters; hear is not logged; the synth window shows the meter |
 | hands | on a desktop of its own with a stand-in claude CLI: the capabilities list synth, open_synth and hear; Scramble's ACT line plays a tune on the synth as scramble, her prompt names the commands and her call still has no tools, the log and the ears name her; the chat's socket client (`app_socket.js`) plays and hears as wob |

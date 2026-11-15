@@ -7,6 +7,7 @@
 
 #include "resident_senses.h"
 #include "wibwob_view.h"
+#include "describe.h"
 #include "wibwob_engine.h"
 #include "room_chat_view.h"  // cmApiKeyChanged
 #include "text_wrap.h"
@@ -114,6 +115,20 @@ void TWibWobMessageView::addMessage(const std::string& sender, const std::string
     rebuildWrappedLines();
     scrollToBottom();
     drawView();
+}
+
+int TWibWobMessageView::removeFrom(const std::string& sender, bool all) {
+    int n = 0;
+    for (size_t i = 0; i < messages.size();) {
+        if (messages[i].sender == sender && (all || n == 0)) {
+            messages.erase(messages.begin() + i);
+            ++n;
+            if (isReceivingStream && i < streamingMessageIndex) --streamingMessageIndex;   // keep the reply in progress
+            if (!all) break;
+        } else ++i;
+    }
+    if (n) { rebuildWrappedLines(); drawView(); }
+    return n;
 }
 
 void TWibWobMessageView::clear() {
@@ -571,7 +586,15 @@ TWibWobWindow::~TWibWobWindow() {
 void TWibWobWindow::handleEvent(TEvent& event) {
     TWindow::handleEvent(event);
 
-    // Handle ESC for cancel
+    // Esc: first clears the waiting lines; with none waiting, cancels the reply in progress.
+    if (event.what == evKeyDown && event.keyDown.keyCode == kbEsc && !queued_.empty()) {
+        size_t n = queued_.size();
+        queued_.clear();
+        messageView->removeFrom("waiting", true);
+        resident::addAct(resident::currentWho(), "cleared " + std::to_string(n) + " waiting chat lines", "", "");
+        inputView->setStatus(std::to_string(n) + " waiting lines cleared");
+        clearEvent(event);
+    }
     if (event.what == evKeyDown && event.keyDown.keyCode == kbEsc) {
         ensureEngineInitialized();
         if (engine && engine->isBusy()) {
@@ -587,14 +610,13 @@ void TWibWobWindow::handleEvent(TEvent& event) {
     if (event.what == evBroadcast && event.message.command == cmTimerExpired) {
         if (event.message.infoPtr == pollTimerId && engineInitialized && engine) {
             engine->poll();
-            // Drain queued self-prompt when engine is idle
-            if (!pendingAsk_.empty() && !engine->isBusy()) {
-                std::string msg = std::move(pendingAsk_);
-                pendingAsk_.clear();
-                speakNextUserMessage_ = true;
-                resident::WhoScope asker(pendingAskWho_);
-                processUserInput(msg);
+            if (standinActive_ && std::chrono::steady_clock::now() >= standinUntil_) {
+                standinActive_ = false;
+                messageView->appendToStreamingMessage(standinText_);
+                messageView->finishStreamingMessage();
+                inputView->setStatus("Ready");
             }
+            drainQueue();
         }
     }
 
@@ -619,8 +641,9 @@ void TWibWobWindow::handleEvent(TEvent& event) {
     if (event.what == evBroadcast && event.message.command == 0xF0F0) {
         auto* text = static_cast<std::string*>(event.message.infoPtr);
         if (text && !text->empty()) {
-            pendingAsk_ = *text;  // queue it, don't process immediately
-            pendingAskWho_ = resident::currentWho();   // the asker, for who is speaking
+            // Joins the queue with its asker; sent when the chat is idle (at once if it is idle now).
+            queued_.push_back(Queued{*text, resident::currentWho(), true});
+            if (busy()) { messageView->addMessage("waiting", *text); showQueueStatus(); }
             // Ensure engine + poll timer are running so the pending ask is drained
             // even in headless / API-only sessions where no human has typed yet.
             ensureEngineInitialized();
@@ -707,14 +730,49 @@ void TWibWobWindow::ensureEngineInitialized() {
     }
 }
 
+bool TWibWobWindow::busy() const { return standinActive_ || (engine && engine->isBusy()); }
+
+void TWibWobWindow::showQueueStatus() {
+    if (queued_.empty()) return;
+    inputView->setStatus(std::to_string(queued_.size()) + " waiting: \"" + ww::clipText(queued_.front().text, 30) +
+                         "\" (Esc clears)");
+}
+
+// The next waiting line, in order, once the reply in progress has ended.
+void TWibWobWindow::drainQueue() {
+    if (queued_.empty() || busy()) return;
+    Queued q = queued_.front();
+    queued_.pop_front();
+    messageView->removeFrom("waiting");
+    if (q.ask) speakNextUserMessage_ = true;
+    resident::WhoScope asker(q.who);
+    processUserInput(q.text);
+    showQueueStatus();
+}
+
 void TWibWobWindow::processUserInput(const std::string& input) {
     ensureEngineInitialized();
 
-    if (input.empty() || engine->isBusy()) {
+    if (input.empty()) return;
+    if (busy()) {
+        // A reply is streaming: keep the line, show it as waiting, send it when the reply ends.
+        queued_.push_back(Queued{input, resident::currentWho(), false});
+        messageView->addMessage("waiting", input);
+        showQueueStatus();
         return;
     }
     // Who is speaking: the model gets the author, source and standing in front of the text.
     const std::string stamped = resident::stampInstruction(input, "wibwob");
+
+    if (const char* sm = std::getenv("WWDOS_CHAT_STANDIN_MS")) {
+        messageView->addMessage("User", input);
+        messageView->startStreamingMessage("");
+        standinActive_ = true;
+        standinUntil_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(std::atoi(sm));
+        standinText_ = "stand-in reply to: " + input;
+        inputView->setStatus("Streaming...");
+        return;
+    }
 
     // A chat bridge that cannot run says so in one line, with the command that fixes it.
     if (auto* sdk = dynamic_cast<ClaudeCodeSDKProvider*>(engine->getCurrentProviderPtr())) {
@@ -806,8 +864,7 @@ void TWibWobWindow::processUserInput(const std::string& input) {
         "Reticulating ...", "Whizzing ...", "Puttering ..."
     };
     std::string statusMsg = statusOptions[rand() % (sizeof(statusOptions) / sizeof(statusOptions[0]))];
-    inputView->setStatus(statusMsg);
-    inputView->setInputEnabled(false);
+    inputView->setStatus(statusMsg);   // input stays open: lines typed now wait in the queue
 
     // Log provider info
     // If anthropic_api provider is active and has no key, prompt user
@@ -1283,11 +1340,12 @@ TWindow* createWibWobWindow(const TRect& bounds, const std::string& title) {
 std::string TWibWobWindow::describeState() const {
     if (!messageView) return "Wib&Wob chat";
     const auto& m = messageView->getMessages();
-    if (m.empty()) return std::string("Wib&Wob chat with no messages yet") + (pendingAsk_.empty() ? "" : "; a question waits");
+    const std::string waiting = queued_.empty() ? "" : "; " + std::to_string(queued_.size()) + " lines waiting";
+    if (m.empty()) return std::string("Wib&Wob chat with no messages yet") + waiting;
     std::string last = m.back().sender.empty() ? "Wib&Wob" : m.back().sender;
     std::string s = "Wib&Wob chat with " + std::to_string(m.size()) + " messages; the last from " + last;
     if (m.back().is_streaming) s += ", still arriving";
-    if (!pendingAsk_.empty()) s += "; a question waits";
+    s += waiting;
     return s;
 }
 bool TWibWobWindow::describeText(std::vector<std::string>& out) const {

@@ -2,6 +2,7 @@
 #include <tvision/tv.h>
 
 #include "resident_senses.h"
+#include "resident_teach.h"
 #include "api_ipc.h"
 #include "command_registry.h"
 #include "core/json_utils.h"
@@ -577,7 +578,7 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
         const std::string& type = kv["type"];
         const WindowTypeSpec* spec = find_window_type_by_name(type);
         if (!spec) {
-            resp = "err unknown type\n";
+            resp = resident::unknownWindowType(type) + "\n";
         } else if (!spec->spawn) {
             resp = "err unsupported type\n";
         } else {
@@ -959,7 +960,7 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
         // exec_command, the API server and MCP (command_registry.cpp).
         bool known = false;
         for (const auto& c : get_command_capabilities()) if (cmd == c.name) { known = true; break; }
-        resp = known ? exec_registry_command(*app_, cmd, kv) + "\n" : "err unknown cmd\n";
+        resp = known ? exec_registry_command(*app_, cmd, kv) + "\n" : resident::unknownCommand(cmd) + "\n";
     }
 
     resident::ipcEnd(cmd, kv, resp);
