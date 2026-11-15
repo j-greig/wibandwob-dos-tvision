@@ -51,6 +51,18 @@ private:
     std::vector<int> event_subscribers_;
     uint64_t next_event_seq_ = 1;
 
+    // person_wait connections held until a gesture arrives (resident_senses.h, gestures).
+    struct Waiter {
+        int fd = -1;
+        uint64_t since = 0;
+        int limit = 200;
+        std::string kinds;
+        std::chrono::steady_clock::time_point deadline;
+    };
+    std::vector<Waiter> waiters_;
+    uint64_t gesturePublished_ = 0;   // the last gesture pushed to subscribers
+    void serveGestures();
+
     // Connection tracking for status indicator
     std::chrono::steady_clock::time_point last_command_time_{};
     int total_commands_ = 0;

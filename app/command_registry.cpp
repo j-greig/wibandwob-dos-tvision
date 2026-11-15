@@ -198,6 +198,8 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"look_study", "A rectangle of cells (x, y, w, h in desktop cells; screen=1 for screen rows; id= for a window's own picture) with text, colour runs [x,n,fg,bg] and a ruler of column numbers. Changes nothing", false},
         {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
         {"describe", "What a window is: id= gives one window's sentence of state and its text from its own model (text_from model, cells or controls; limit= lines, text=0 for none); no id lists every window (text=1 adds text). Read-only", false},
+        {"person_events", "The person's gestures since=G (typed, key, click, double-click, drag, scroll, command, menu, menu closed, opened, moved, resized, retitled, closed), in order; kinds= a comma list; never a resident's own acts. Read-only", false},
+        {"person_wait", "Like person_events, but the socket holds the reply until a gesture after since=G arrives or ms= (default 10000, at most 60000) pass; then timeout is true", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -747,6 +749,7 @@ std::string exec_registry_command(
         if (name == "look_mark") return resident::cmdMark(kv);
     }
     if (name == "describe") return resident::cmdDescribe(kv);
+    if (name == "person_events" || name == "person_wait") return resident::cmdPersonEvents(kv);
     if (name == "acts") return resident::cmdActs(kv);
     if (name == "standing") return resident::cmdStanding(kv);
     if (name == "residents_about") return resident::cmdAbout(kv);

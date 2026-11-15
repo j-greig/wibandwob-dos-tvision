@@ -9,7 +9,7 @@ Usage:
     python3 tests/resident/test_resident_world.py              # all groups
     python3 tests/resident/test_resident_world.py describe     # chosen groups
 Groups: describe (the describe contract, the audit, every window type), wheel (the mouse wheel while a
-resident's hand or reading mark is on screen).
+resident's hand or reading mark is on screen), gestures (the person's acts as a stream a resident waits on).
 """
 
 import json
@@ -206,12 +206,148 @@ def test_wheel(desk):
     time.sleep(0.3)
 
 
+def wait_gesture(desk, since, ms=6000, kinds=None):
+    """person_wait in a thread; returns (thread, box) where box gets (reply, seconds) when it answers."""
+    import threading
+    box = {}
+
+    def run():
+        t0 = time.time()
+        kv = {"since": since, "ms": ms}
+        if kinds:
+            kv["kinds"] = kinds
+        r = desk.ipc("person_wait", timeout=ms / 1000 + 5, **kv)
+        box["t"] = time.time()
+        box["dt"] = box["t"] - t0
+        box["r"] = json.loads(r) if r.startswith("{") else {"error": r}
+
+    th = threading.Thread(target=run)
+    th.start()
+    return th, box
+
+
+def test_gestures(desk):
+    print("gestures")
+    desk.ipc("close_all", actor="setup")
+    time.sleep(0.5)
+    r = desk.ipc("person_events", since=0)
+    R.check(r.startswith("{"), f"person_events answers ({r[:50]!r})")
+    if not r.startswith("{"):
+        return
+    ed = desk.editor(4, 2, 40, 10, title="mine")
+    mine = desk.editor(60, 2, 40, 10, title="wibs")
+    desk.ipc("focus_window", id=ed)
+    time.sleep(0.4)
+    g0 = desk.j("person_events", since=0)["last"]
+
+    # A resident waits; the person types one key; the wait answers at once, with no polling.
+    th, box = wait_gesture(desk, g0)
+    time.sleep(0.8)
+    R.check("r" not in box, "person_wait holds the reply while the person does nothing")
+    t_key = time.time()
+    desk.person_text("h")
+    th.join(8)
+    got = box.get("r", {})
+    gs = got.get("gestures", [])
+    lag = box.get("t", 99) - t_key
+    R.check(gs and gs[0]["kind"] == "typed" and gs[0]["window"] == ed and gs[0]["type"] == "text_editor"
+            and gs[0]["text"] == "h" and lag < 0.5,
+            f"the wait answers {lag * 1000:.0f} ms after the person's key with the gesture: {gs[:1]}")
+    # More typing: the same act comes again as an update with the whole run.
+    desk.person_type("ello")
+    time.sleep(0.3)
+    ev = desk.j("person_events", since=gs[0]["g"] if gs else g0)["gestures"]
+    R.check(ev and ev[-1]["update"] and ev[-1]["text"] == "hello" and ev[-1]["act"] == gs[0]["act"],
+            f"typing on in the same window updates the gesture: {ev[-1:] if ev else ev}")
+
+    # The resident acts (types into its own window, opens and moves a window): the person's stream stays quiet.
+    g1 = desk.j("person_events", since=0)["last"]
+    th, box = wait_gesture(desk, g1, ms=2500)
+    r = desk.j("resident_key", id=mine, text="from wib", actor="wib")
+    desk.wait_seqs(r["first"], r["last"])
+    j = desk.j("resident_menu", choose="Window>Text Editor", actor="wib")
+    desk.wait_seqs(j["first"], j["last"])
+    time.sleep(0.3)
+    opened = [w for w in desk.state()["windows"] if w["id"] not in (ed, mine) and w["type"] == "text_editor"]
+    if opened:
+        desk.ipc("move_window", id=opened[0]["id"], x=30, y=12, actor="wib", source="resident")
+    th.join(6)
+    got = box.get("r", {})
+    acts = desk.j("acts", since=0, by="wib")["acts"]
+    R.check(got.get("timeout") is True and got.get("count") == 0 and len(acts) >= 10,
+            f"none of wib's {len(acts)} acts (keys, a menu command, an open, a move) reaches the person's stream")
+
+    # The person opens a menu, chooses an item (a new window), drags it and closes it.
+    g2 = desk.j("person_events", since=0)["last"]
+    desk.person_keys("M-w")
+    time.sleep(0.5)
+    mid = desk.j("person_events", since=g2)["gestures"]
+    desk.person_keys("Escape")
+    time.sleep(0.3)
+    desk.person_keys("C-n")
+    time.sleep(0.6)
+    pats = [w for w in desk.state()["windows"] if w["type"] == "test_pattern"]
+    pat = pats[0] if pats else None
+    if pat:
+        x0, y0 = pat["x"] + 8, pat["y"] + 1
+        desk.person_mouse("down", x0, y0)
+        for k in range(1, 6):
+            desk.person_mouse("drag", x0 + k, y0 + k)
+            time.sleep(0.03)
+        desk.person_mouse("up", x0 + 5, y0 + 5)
+        time.sleep(0.4)
+        desk.person_keys("M-w")                                   # Window > Close (the dragged window is current)
+        time.sleep(0.4)
+        desk.person_keys("e")
+        time.sleep(0.5)
+    ev = desk.j("person_events", since=g2)["gestures"]
+    kinds = [g["kind"] for g in ev]
+    R.check(any(g["kind"] == "menu" and g["what"].startswith("opened menu") for g in mid),
+            f"opening a menu is a gesture: {[g['what'] for g in mid]}")
+    R.check(pat and any(g["kind"] == "opened" and g["window"] == pat["id"] and g["type"] == "test_pattern" for g in ev),
+            "the window the person opened is a gesture with its type")
+    R.check(pat and any(g["kind"] in ("drag", "moved") and g["window"] == pat["id"] for g in ev),
+            "dragging it is a gesture")
+    R.check(pat and any(g["kind"] == "closed" and g["window"] == pat["id"] and g["type"] == "test_pattern" for g in ev),
+            f"closing it is a gesture that still names its type: {kinds}")
+    nums = [g["g"] for g in ev]
+    R.check(nums == sorted(nums) and len(set(nums)) == len(nums), f"gestures are numbered in order ({len(nums)})")
+    person_acts = {a["n"] for a in desk.j("acts", since=0, by="person")["acts"]}
+    R.check(all(g["act"] in person_acts for g in ev), "every gesture is an act of the person in the act log")
+
+    # Pushed: a subscriber receives the same gestures as "gesture" events.
+    import socket as so
+    s = so.socket(so.AF_UNIX, so.SOCK_STREAM)
+    s.settimeout(3)
+    s.connect(desk.sock)
+    s.sendall(b"cmd:subscribe_events\n")
+    buf = s.recv(4096)
+    desk.ipc("focus_window", id=ed)
+    time.sleep(0.3)
+    desk.person_text("!")
+    t0 = time.time()
+    pushed = []
+    while time.time() - t0 < 3 and not pushed:
+        try:
+            buf += s.recv(65536)
+        except so.timeout:
+            break
+        for line in buf.decode("utf-8", "replace").split("\n"):
+            if '"event":"gesture"' in line:
+                pushed.append(json.loads(line)["payload"])
+    s.close()
+    R.check(pushed and pushed[0]["window"] == ed and pushed[0]["actor"] == "person",
+            f"subscribe_events pushes the person's gesture: {pushed[:1]}")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+
+
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["describe", "wheel"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["describe", "wheel", "gestures"]
     desk = Desk(os.environ.get("WORLD_TEST_NAME", "worldtest"), env=NO_LLM).start()
     try:
         for g in groups:
-            {"describe": test_describe, "wheel": test_wheel}[g](desk)
+            {"describe": test_describe, "wheel": test_wheel, "gestures": test_gestures}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
