@@ -1045,6 +1045,279 @@ void logClose(const std::vector<ActRec>& acts) {
     logAppend("wob", s);
 }
 
+// ---------------------------------------------------------------- sleep, dreams and tidying
+
+class TDreamView : public TView {
+public:
+    TDreamView(const TRect& r) : TView(r) { growMode = gfGrowHiX | gfGrowHiY; }
+    std::vector<std::string> lines;
+    void draw() override {
+        TColorAttr c(TColorBIOS(11), TColorBIOS(1));
+        size_t top = lines.size() > (size_t)size.y ? lines.size() - size.y : 0;
+        for (int y = 0; y < size.y; ++y) {
+            TDrawBuffer b;
+            b.moveChar(0, ' ', c, size.x);
+            size_t i = top + y;
+            if (i < lines.size()) b.moveStr(1, lines[i].c_str(), c);
+            writeLine(0, y, size.x, 1, b);
+        }
+    }
+};
+
+class TDreamWindow : public TWindow {
+public:
+    TDreamWindow(const TRect& r) : TWindowInit(&TDreamWindow::initFrame), TWindow(r, "DREAM", wnNoNumber) {
+        TRect in = getExtent();
+        in.grow(-1, -1);
+        view = new TDreamView(in);
+        insert(view);
+    }
+    TDreamView* view;
+};
+
+bool g_asleep = false;
+long long g_lastPerson = 0;    // the person's last input at the console
+long long g_sleepAt = 0;
+int g_sleeps = 0;
+bool g_tidied = false;
+std::vector<std::string> g_tidyLog;
+TDreamWindow* g_dream = nullptr;
+long long g_dreamNext = 0;
+std::vector<std::string> g_dreamLines;   // every line dreamt this sleep
+long g_sleepMs = 300000, g_tidyMs = 3000, g_dreamMs = 8000, g_dreamLineMs = 2500;
+unsigned g_rng = 1;
+
+unsigned rnd() {
+    g_rng = g_rng * 1103515245u + 12345u;
+    return (g_rng >> 16) & 0x7fff;
+}
+
+bool dreamAlive() {
+    if (!g_dream) return false;
+    for (TWindow* w : deskWindows()) if (w == g_dream) return true;
+    g_dream = nullptr;
+    return false;
+}
+
+void redrawChrome() {
+    if (TProgram::menuBar) TProgram::menuBar->drawView();
+    if (TProgram::statusLine) TProgram::statusLine->drawView();
+}
+
+// A fragment for a dream: one line, double quotes made single, cut at a word.
+std::string frag(const std::string& s, size_t n) {
+    std::string t = oneLine(s, 400);
+    for (auto& c : t) if (c == '"') c = '\'';
+    if (t.size() <= n) return t;
+    size_t cut = t.rfind(' ', n);
+    if (cut == std::string::npos || cut < n / 2) cut = n;
+    return oneLine(t.substr(0, cut), n) + "...";
+}
+
+const size_t kDreamMax = 16;   // lines in one dream; then it holds still until the residents wake
+
+// One line of a dream, made from what is really on the desk and in the books.
+std::string dreamLine(size_t n);
+std::string dreamLineOnce(size_t n);
+std::string dreamLine(size_t n) {
+    std::string l;
+    for (int tries = 0; tries < 8; ++tries) {
+        l = dreamLineOnce(n);
+        bool recent = false;
+        for (size_t i = g_dreamLines.size() > 4 ? g_dreamLines.size() - 4 : 0; i < g_dreamLines.size(); ++i)
+            if (g_dreamLines[i] == l) recent = true;
+        if (!recent) break;
+    }
+    return l;
+}
+
+std::string dreamLineOnce(size_t n) {
+    std::vector<std::string> titles, acts, guests, logs, notes;
+    for (TWindow* w : deskWindows()) {
+        if (isBootWindow(w) || isDreamWindow(w)) continue;
+        std::string t = frag(titleOf(w), 24);
+        if (!t.empty()) titles.push_back(t);
+    }
+    auto all = allActs();
+    for (size_t i = all.size() > 40 ? all.size() - 40 : 0; i < all.size(); ++i) {
+        auto& a = all[i];
+        if (a.actor == "app" || a.what.rfind("woke", 0) == 0 || a.what.rfind("dreamt", 0) == 0) continue;
+        acts.push_back(displayName(a.actor) + "|" + frag(a.what, 30));
+    }
+    for (auto& g : readGuests()) if (!g.lines.empty()) guests.push_back(frag(g.name, 20) + "|" + frag(g.lines[0], 30));
+    auto lg = readLog();
+    for (size_t i = lg.size() > 10 ? lg.size() - 10 : 0; i < lg.size(); ++i) logs.push_back(frag(lg[i].text, 34));
+    for (auto r : kResidents)
+        for (auto& l : g_noteRead[r].lines) if (!l.empty()) notes.push_back(frag(l, 30));
+    auto pick = [](const std::vector<std::string>& v) { return v[rnd() % v.size()]; };
+    auto split = [](const std::string& s, std::string& a, std::string& b) {
+        size_t p = s.find('|');
+        a = s.substr(0, p);
+        b = p == std::string::npos ? "" : s.substr(p + 1);
+    };
+    for (int tries = 0; tries < 12; ++tries) {
+        unsigned k = n == 0 ? 0 : rnd() % 7;   // the first line is always about a window on the desk
+        std::string a, b;
+        switch (k) {
+            case 0:
+                if (titles.empty()) break;
+                return "a window called \"" + pick(titles) + "\" drifts out to sea";
+            case 1:
+                if (acts.empty()) break;
+                split(pick(acts), a, b);
+                return a + " did \"" + b + "\" and keeps doing it, slower";
+            case 2:
+                if (guests.empty()) break;
+                split(pick(guests), a, b);
+                return a + " wrote \"" + b + "\" and the castle reads it aloud";
+            case 3:
+                if (logs.empty()) break;
+                return "the logbook says \"" + pick(logs) + "\" in a voice nobody has";
+            case 4:
+                if (notes.empty()) break;
+                return "a note: \"" + pick(notes) + "\"; nobody remembers writing it";
+            case 5:
+                if (titles.empty()) break;
+                return "Scramble walks across \"" + pick(titles) + "\" and leaves pawprints in it";
+            case 6:
+                if (titles.size() < 2) return "one window, warm, and nobody looking at it";
+                return std::to_string(titles.size()) + " windows, all of them warm, all of them asleep";
+        }
+    }
+    return "an empty desk, and the sound of a fan";
+}
+
+void openDream() {
+    if (!TProgram::deskTop || dreamAlive()) return;
+    TRect d = TProgram::deskTop->getExtent();
+    int w = std::min(d.b.x - 2, 64), h = std::min(d.b.y - 2, 12);
+    if (w < 20 || h < 4) return;
+    int x = std::max(0, d.b.x - w - 2), y = std::max(0, d.b.y - h - 1);
+    resident::WhoScope ws(Who{"wib", Source::Resident});
+    auto* dw = new TDreamWindow(TRect(x, y, x + w, y + h));
+    g_dream = dw;
+    if (g_hooks.insertWindow) g_hooks.insertWindow(dw);
+    else TProgram::deskTop->insert(dw);
+    resident::settle();
+    resident::addAct(Who{"wib", Source::Resident}, "dreamt (by rule)", resident::hooks().idOf(dw), "");
+    g_dreamNext = nowMs();
+}
+
+void tickDream() {
+    if (!dreamAlive() || nowMs() < g_dreamNext || g_dreamLines.size() >= kDreamMax) return;
+    std::string l = dreamLine(g_dreamLines.size());
+    g_dreamLines.push_back(l);
+    auto& v = g_dream->view->lines;
+    v.push_back(l);
+    if (v.size() > 40) v.erase(v.begin());
+    g_dream->view->drawView();
+    g_dreamNext = nowMs() + std::max(50L, g_dreamLineMs);
+}
+
+// Wob puts windows that hang off the desk back inside it.
+void tidy() {
+    if (!TProgram::deskTop) return;
+    TRect ext = TProgram::deskTop->getExtent();
+    resident::WhoScope ws(Who{"wob", Source::Resident});
+    for (TWindow* w : deskWindows()) {
+        if (isBootWindow(w) || isDreamWindow(w)) continue;
+        TRect r = w->getBounds();
+        int ww = r.b.x - r.a.x, hh = r.b.y - r.a.y;
+        if (r.a.x >= 0 && r.a.y >= 0 && r.b.x <= ext.b.x && r.b.y <= ext.b.y) continue;
+        int nx = std::max(0, std::min(r.a.x, ext.b.x - ww));
+        int ny = std::max(0, std::min(r.a.y, ext.b.y - hh));
+        if (nx == r.a.x && ny == r.a.y) continue;
+        w->moveTo(nx, ny);
+        std::string id = resident::hooks().idOf(w);
+        g_tidyLog.push_back(id + " \"" + oneLine(titleOf(w), 24) + "\"");
+        resident::settle();
+        resident::addAct(Who{"wob", Source::Resident}, "tidied (by rule): put the window back inside the desk", id, "");
+    }
+    if (!g_tidyLog.empty()) {
+        std::string s = "Tidied while nobody was here:";
+        for (size_t i = 0; i < g_tidyLog.size(); ++i) s += (i ? ", " : " ") + g_tidyLog[i];
+        logAppend("wob", s + " back inside the desk.");
+    }
+}
+
+void fallAsleep(const std::string& why) {
+    if (g_asleep) return;
+    g_asleep = true;
+    g_sleepAt = nowMs();
+    ++g_sleeps;
+    g_rng = (unsigned)(g_self.boots * 7919 + g_sleeps * 104729);
+    g_tidied = false;
+    g_tidyLog.clear();
+    g_dreamLines.clear();
+    if (bootAlive()) closeBoot();
+    for (auto r : kResidents) resident::addAct(Who{r, Source::Resident}, "fell asleep (" + why + ")", "", "");
+    logAppend("scramble", why == "nobody here" ? "Nobody here. We sleep." : "Asked to sleep. We sleep.");
+    redrawChrome();
+}
+
+void wakeUp(const Who& by, const std::string& how) {
+    if (!g_asleep) return;
+    g_asleep = false;
+    g_lastPerson = nowMs();
+    long long slept = (nowMs() - g_sleepAt) / 1000;
+    if (dreamAlive()) {
+        resident::WhoScope ws(Who{"wib", Source::Resident});
+        TWindow* w = g_dream;
+        g_dream = nullptr;
+        w->close();
+        resident::settle();
+    }
+    resident::addAct(by, "woke the residents (" + how + ")", "", "");
+    if (!g_dreamLines.empty()) logAppend("wib", "Dreamt: " + g_dreamLines[0] + ".");
+    std::string who = by.source == Source::Console ? "A visitor" : by.actor + " (" + resident::sourceName(by.source) + ")";
+    logAppend("scramble", who + " woke us (" + how + ") after " + std::to_string(slept) + " s asleep.");
+    flash("Awake. " + who + " woke us.", 8000);
+    redrawChrome();
+}
+
+void tickSleep() {
+    if (g_sleepMs <= 0) return;
+    long long t = nowMs();
+    if (!g_asleep) {
+        if (t - g_lastPerson >= g_sleepMs) fallAsleep("nobody here");
+        return;
+    }
+    if (!g_tidied && t - g_sleepAt >= g_tidyMs) {
+        g_tidied = true;
+        tidy();
+    }
+    if (t - g_sleepAt >= g_dreamMs) {
+        if (!dreamAlive()) openDream();
+        tickDream();
+    }
+}
+
+std::string cmdLife(const std::string& name, const KV&) {
+    Who w = resident::currentWho();
+    if (name == "residents_sleep") {
+        if (g_asleep) return "{\"ok\":true,\"state\":\"asleep\",\"already\":true}";
+        fallAsleep("asked by " + w.actor);
+        return "{\"ok\":true,\"state\":\"asleep\"}";
+    }
+    if (name == "residents_wake") {
+        if (!g_asleep) return "{\"ok\":true,\"state\":\"awake\",\"already\":true}";
+        wakeUp(w, "asked");
+        return "{\"ok\":true,\"state\":\"awake\"}";
+    }
+    long long t = nowMs();
+    std::ostringstream os;
+    os << "{\"state\":" << q(g_asleep ? "asleep" : "awake") << ",\"sleep_ms\":" << g_sleepMs
+       << ",\"person_idle_ms\":" << (t - g_lastPerson) << ",\"asleep_ms\":" << (g_asleep ? t - g_sleepAt : 0)
+       << ",\"sleeps\":" << g_sleeps << ",\"dreaming\":" << (dreamAlive() ? "true" : "false")
+       << ",\"dream\":" << q(dreamAlive() ? resident::hooks().idOf(g_dream) : "") << ",\"dream_lines\":[";
+    for (size_t i = 0; i < g_dreamLines.size(); ++i) os << (i ? "," : "") << q(g_dreamLines[i]);
+    os << "],\"tidied\":[";
+    for (size_t i = 0; i < g_tidyLog.size(); ++i) os << (i ? "," : "") << q(g_tidyLog[i]);
+    const char* k = kaomoji();
+    os << "],\"kaomoji\":" << q(k ? k : "") << ",\"status\":" << q(statusWord()) << "}";
+    return os.str();
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- public
@@ -1094,6 +1367,11 @@ void wake() {
         resident::settle();
     }
     logWake();
+    g_sleepMs = envMs("WWDOS_SLEEP_MS", 300000);
+    g_tidyMs = envMs("WWDOS_TIDY_MS", 3000);
+    g_dreamMs = envMs("WWDOS_DREAM_MS", 8000);
+    g_dreamLineMs = envMs("WWDOS_DREAM_LINE_MS", 2500);
+    g_lastPerson = nowMs();
 }
 
 void close(const std::string& how) {
@@ -1110,6 +1388,7 @@ void close(const std::string& how) {
 
 void tick() {
     tickBoot();
+    tickSleep();
     if (g_flashUntil && nowMs() >= g_flashUntil) {
         g_flashUntil = 0;
         g_flash.clear();
@@ -1118,7 +1397,13 @@ void tick() {
 }
 
 bool consoleInput(TEvent& ev) {
-    bool press = (ev.what & (evKeyDown | evMouseDown)) != 0;
+    bool press = (ev.what & (evKeyDown | evMouseDown | evMouseWheel)) != 0;
+    if (ev.what & (evKeyDown | evMouseDown | evMouseWheel | evMouseMove)) g_lastPerson = nowMs();
+    if (press && g_asleep) {   // a visitor's first key or click wakes the residents and goes no further
+        wakeUp(resident::personWho(), (ev.what & evKeyDown) ? "a key" : "a click");
+        ev.what = evNothing;
+        return true;
+    }
     if (press && bootAlive()) {
         TBootView* v = g_boot->view;
         if (v->shown < v->lines.size()) {   // a key during the boot shows the rest at once
@@ -1136,9 +1421,13 @@ bool consoleInput(TEvent& ev) {
 }
 
 bool isBootWindow(TWindow* w) { return w && dynamic_cast<TBootWindow*>(w) != nullptr; }
-bool isDreamWindow(TWindow*) { return false; }
+bool isDreamWindow(TWindow* w) { return w && dynamic_cast<TDreamWindow*>(w) != nullptr; }
 
 bool textOf(TWindow* w, std::vector<std::string>& out) {
+    if (auto* d = dynamic_cast<TDreamWindow*>(w)) {
+        out = d->view->lines;
+        return true;
+    }
     if (auto* b = dynamic_cast<TBootWindow*>(w)) {
         out.assign(b->view->lines.begin(), b->view->lines.begin() + std::min(b->view->shown, b->view->lines.size()));
         return true;
@@ -1147,6 +1436,11 @@ bool textOf(TWindow* w, std::vector<std::string>& out) {
 }
 
 std::string stateOf(TWindow* w) {
+    if (auto* d = dynamic_cast<TDreamWindow*>(w)) {
+        auto& l = d->view->lines;
+        return "dream window: Wib's dream while the residents sleep, " + std::to_string(l.size()) + " lines" +
+               (l.empty() ? "" : "; the last: \"" + oneLine(l.back(), 50) + "\"");
+    }
     if (auto* b = dynamic_cast<TBootWindow*>(w)) {
         size_t n = std::min(b->view->shown, b->view->lines.size());
         std::string last = n ? b->view->lines[n - 1] : "";
@@ -1159,7 +1453,8 @@ std::string stateOf(TWindow* w) {
 
 bool owns(const std::string& cmd) {
     static const char* names[] = {"get_self", "self_note", "get_note", "logbook_write", "logbook_open", "get_logbook",
-                                  "guestbook_sign", "guestbook_open", "get_guestbook"};
+                                  "guestbook_sign", "guestbook_open", "get_guestbook", "get_life",
+                                  "residents_sleep", "residents_wake"};
     for (auto n : names) if (cmd == n) return true;
     return false;
 }
@@ -1169,11 +1464,26 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "self_note" || name == "get_note") return cmdNote(kv);
     if (name == "logbook_write" || name == "logbook_open" || name == "get_logbook") return cmdLog(name, kv);
     if (name == "guestbook_sign" || name == "guestbook_open" || name == "get_guestbook") return cmdGuests(name, kv);
+    if (name == "get_life" || name == "residents_sleep" || name == "residents_wake") return cmdLife(name, kv);
     return "";
 }
 
-const char* kaomoji() { return nullptr; }
-std::string statusWord() { return g_flash; }
+const char* kaomoji() {
+    if (!g_asleep) return nullptr;
+    return dreamAlive() ? "つ-‿-‿-༽つ ~~" : "つ-‿-‿-༽つ zZ";
+}
+
+std::string statusWord() {
+    if (!g_flash.empty()) return g_flash;
+    if (g_sleepMs <= 0 && !g_asleep) return "";
+    if (!g_asleep) return "AWAKE";
+    std::string s = "ASLEEP zZ  Wib ";
+    s += dreamAlive() ? "dreams" : "sleeps";
+    s += ", Wob ";
+    s += g_tidied ? (g_tidyLog.empty() ? "found nothing to tidy" : "tidied") : "sleeps";
+    s += ", Scramble is curled up. Press a key.";
+    return s;
+}
 
 bool handleCommand(unsigned short cmd) {
     if (cmd == cmLifeLogbook) { openBook("LOG.TXT", "LOG.TXT"); return true; }

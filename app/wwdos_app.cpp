@@ -464,8 +464,10 @@ public:
         }
 
         // Get kaomoji based on current mood and blink state
-        const char* kaomoji = kaomojiText.empty() ? getKaomojiForState() : kaomojiText.c_str();
-        int kaomojiWidth = kaomojiText.empty() ? 12 : std::max(12, (int)strwidth(kaomojiText.c_str()) + 1);
+        // A show's kaomojiText first, then the residents' sleep (resident_life.cpp), then the mood.
+        const char* lifeFace = kaomojiText.empty() ? life::kaomoji() : nullptr;
+        const char* kaomoji = !kaomojiText.empty() ? kaomojiText.c_str() : (lifeFace ? lifeFace : getKaomojiForState());
+        int kaomojiWidth = (kaomojiText.empty() && !lifeFace) ? 12 : std::max(12, (int)strwidth(kaomoji) + 1);
         int xPos = size.x - kaomojiWidth;
 
         if (xPos > 1) {

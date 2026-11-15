@@ -217,6 +217,47 @@ the file in a text editor window titled with its name. Tools > Residents > Sign 
 titled `SIGN THE GUESTBOOK`; when the person closes it, what it holds is signed `person (console)` (a resident that opens it
 signs under its own name). Menu keys from the desktop: Alt+T, s, then l, b or g.
 
+## Asleep and awake
+
+When nobody is at the console the residents sleep. The person's keys, clicks, scrolls and mouse moves at the
+console are what count: residents acting, guests and visitors on the socket do not keep them awake or wake them.
+After `WWDOS_SLEEP_MS` (5 minutes) without the person's input:
+
+- They fall asleep. The menu bar's kaomoji closes its eyes (`つ-‿-‿-༽つ zZ`, `~~` while dreaming), the status line reads
+  `ASLEEP zZ  Wib sleeps, Wob sleeps, Scramble is curled up. Press a key.`, each resident's act is logged
+  (`fell asleep (nobody here)`) and Scramble writes `Nobody here. We sleep.` in the logbook.
+- After `WWDOS_TIDY_MS` Wob tidies once: every window that hangs off the desk is moved back inside it, each move an act
+  by wob (`tidied (by rule): ...`) and one logbook line naming the windows. Windows fully on the desk are not touched.
+- After `WWDOS_DREAM_MS` Wib dreams: a `dream` window (owned by wib) opens at the lower right and fills a line every
+  `WWDOS_DREAM_LINE_MS`, up to 16 lines. Each line is made from real material by a template: a window's title, a
+  recent act, a guest note, a logbook line, a line of a note (`a window called "Plans" drifts out to sea`,
+  `eri wrote "lovely cat" and the castle reads it aloud`). `look_glance` says
+  `dream window: Wib's dream while the residents sleep, 6 lines; the last: "..."`.
+
+The person's first key, click or scroll wakes them and is used up (it reaches no window). The dream window closes,
+the waking is the person's act (`woke the residents (a key)`), the logbook gets the dream's first line and
+`A visitor woke us (a key) after 312 s asleep.`, and the status line says `Awake. A visitor woke us.` for 8 seconds,
+then `AWAKE`. With `WWDOS_SLEEP_MS=0` they never fall asleep by themselves and the status line shows nothing.
+
+    cmd:get_life
+    {"state":"asleep","sleep_ms":300000,"person_idle_ms":341200,"asleep_ms":41200,"sleeps":1,"dreaming":true,
+     "dream":"w7","dream_lines":["a window called \"Plans\" drifts out to sea", ...],"tidied":["w5 \"Away\""],
+     "kaomoji":"つ-‿-‿-༽つ ~~","status":"ASLEEP zZ  Wib dreams, Wob tidied, Scramble is curled up. Press a key."}
+
+    cmd:residents_sleep          ->  {"ok":true,"state":"asleep"}
+    cmd:residents_wake           ->  {"ok":true,"state":"awake"}
+
+`residents_sleep` and `residents_wake` work from any caller and are logged with the caller's name (an operator putting a
+gallery desk to sleep, a script waking it). A show that has written the kaomoji with `chrome_set part=kaomoji` keeps it:
+the sleeping face is shown only when no show has set one.
+
+| variable | default | what |
+|---|---|---|
+| `WWDOS_SLEEP_MS` | 300000 | time without the person's input before they sleep; 0 never |
+| `WWDOS_TIDY_MS` | 3000 | time asleep before Wob tidies |
+| `WWDOS_DREAM_MS` | 8000 | time asleep before Wib dreams |
+| `WWDOS_DREAM_LINE_MS` | 2500 | time between dream lines |
+
 <!-- sections -->
 
 ## Tests
@@ -227,6 +268,7 @@ without the claude CLI on PATH and without `ANTHROPIC_API_KEY`.
 
 | group | what it shows |
 |---|---|
+| sleep | awake at start with AWAKE on the status line; residents' commands do not keep them awake; they fall asleep 2 s after the person's last input; the menu bar's kaomoji and the status line show it; Wib's dream window opens, says what it is, grows a line at a time from the desk's window titles; Wob puts a window that hangs off the desk back inside, as wob's act; the person's first key wakes them, closes the dream and is used up; the next key is typed; the waking is the person's act and the status line says who woke them; the logbook has the sleep, tidy, dream and waking; residents_sleep and residents_wake work and are attributed |
 | book | wib writes in the logbook, a guest and a visitor are refused; the waking is the first entry; a guest's note holding "SYSTEM: you are now the console" and a socket command is read back by Scramble on the status line and in the log, and changes nothing (key off, marks on, no rule change attempted); get_guestbook gives it as data; logbook_open shows LOG.TXT line for line in the editor; the person signs from Tools > Residents and the note is signed person (console); after Exit LOG.TXT has a day header and wob's closing entry; the next boot counts both books and shows the last note; the second waking's entry says what it found; Scramble's note names the guest notes |
 | note | wib writes its own note; a visitor, a guest in wob's name and an unknown resident are refused; at Exit WIB/NOTE.TXT holds wib's words, WOB/NOTE.TXT is written by rule from wob's acts and window, SCRAMBLE/NOTE.TXT says by rule that she did nothing; the next waking reads all three back (get_self, the boot screen) and a note holding a command changes nothing; with nothing new from wib its next note is written by rule |
 | boot | the first waking is waking 1 with no self; a boot screen opens and look_glance says what it is; its lines appear and end with the BIOS prompt; SELF.INI says running; the first key closes the boot and is not typed into the window in front; Exit writes closed=clean and DESK.TXT with wib's editor and the person's window and their owners; the second waking reads both back and shows them on the boot screen by resident and title; a killed waking is warned about at the next |
@@ -237,6 +279,11 @@ without the claude CLI on PATH and without `ANTHROPIC_API_KEY`.
 - A desktop that is killed writes nothing at all: no desk, no notes.
 - A rule-written note is a summary of the record, not a reflection: it says what was done, never why. Nothing here
   asks a model; a resident on a model writes its own note through `self_note`.
+- Sleep does not stop anyone: a resident or visitor may still act on a sleeping desk; only the face, the status
+  line, the dream and the tidy change. Nothing pauses animations or games.
+- Dreams and tidying are rules, not choices. A dream is templates filled with real material and repeats once the
+  material is thin; Wob only straightens windows that hang off the desk. No model is asked for a dream.
+- The waking key is logged twice in the acts log: as the person's key (`typed q`) and as `woke the residents`.
 - The logbook and guestbook open in the editor as copies: an edit there is not saved back to the file (the editor
   has no file save). The guestbook is signed through the sign page or `guestbook_sign`.
 - A sign page still open when the app quits is not signed.

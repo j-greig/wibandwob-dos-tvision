@@ -181,7 +181,7 @@ def group_note():
         R.check(wib.startswith("NOTE FOR THE NEXT WIB\nFrom: wib\nWritten: ") and "Ask the person about the castle." in wib,
                 "WIB/NOTE.TXT holds wib's own words, signed by wib")
         R.check("From: rule" in wob and "this waking. The last:" in wob and "\"Tidy\"" in wob and "move_window" in wob,
-                f"WOB/NOTE.TXT is written by rule from wob's acts and windows:\n{wob}")
+                "WOB/NOTE.TXT is written by rule from wob's acts and windows")
         R.check("From: rule" in scr and "I made no acts this waking." in scr and "Nothing of mine was open" in scr,
                 "SCRAMBLE/NOTE.TXT says, by rule, that she did nothing and left nothing open")
 
@@ -297,7 +297,79 @@ def group_book():
         d.stop()
 
 
-GROUPS = {"boot": group_boot, "note": group_note, "book": group_book}
+# ---------------------------------------------------------------- 12: attract mode, awake and asleep
+
+def group_sleep():
+    print("sleep: with nobody there the residents sleep, tidy and dream; the first key wakes them")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0", WWDOS_SLEEP_MS="2000", WWDOS_TIDY_MS="300", WWDOS_DREAM_MS="600",
+             WWDOS_DREAM_LINE_MS="150").start()
+    try:
+        t0 = time.time()
+        R.check(d.j("get_life")["state"] == "awake", "the residents wake awake")
+        time.sleep(0.3)
+        R.check("AWAKE" in d.screen()[d.rows - 1], "the status line says AWAKE")
+        ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Notes", **as_res("wib"))["id"]
+        off = d.j("create_window", type="text_editor", x=10, y=20, w=40, h=10, title="Away", **as_res("wib"))["id"]
+        d.j("move_window", id=off, x=140, y=20, **as_res("wib"))
+        moved = d.windows()[off]
+        R.check(moved["x"] + moved["w"] > d.cols, f"wib's window hangs off the right of the desk (x={moved['x']})")
+        d.j("focus_window", id=ed, **as_res("wib"))
+        for _ in range(5):   # residents acting does not keep them awake: only the person does
+            d.j("look_glance", reader="wib")
+            time.sleep(0.2)
+        asleep = wait(lambda: d.j("get_life")["state"] == "asleep", timeout=6)
+        dt = time.time() - t0
+        R.check(bool(asleep) and dt >= 1.8, f"they fall asleep about 2 s after the person's last input ({dt:.1f} s)")
+        time.sleep(0.3)
+        rows = d.screen()
+        R.check("zZ" in rows[0] or "~~" in rows[0], f"the kaomoji in the menu bar sleeps: {rows[0].strip()[-20:]!r}")
+        R.check("ASLEEP zZ" in rows[d.rows - 1], f"the status line says they sleep: {rows[d.rows - 1].strip()[-60:]!r}")
+        dream = wait(lambda: of_type(d, "dream"), timeout=4)
+        R.check(bool(dream) and dream[0]["owner"] == "wib", "Wib dreams: a dream window opens, owned by wib")
+        R.check(dream and dream[0]["state"].startswith("dream window: Wib's dream"),
+                f"look_glance says what it is: {dream[0]['state'] if dream else None!r}")
+        time.sleep(0.8)
+        lines = d.j("look_read", id=dream[0]["id"])["lines"] if dream else []
+        R.check(len(lines) >= 3, f"the dream goes on, a line at a time ({len(lines)} lines)")
+        R.check(lines and ('"Notes"' in lines[0] or '"Away"' in lines[0]),
+                f"it is made of what is on the desk: {lines[:2]!r}")
+        a = d.windows()[off]
+        R.check(a["x"] + a["w"] <= d.cols, f"Wob tidied the window back inside the desk (x={a['x']})")
+        tid = [x for x in d.j("acts", by="wob")["acts"] if x["what"].startswith("tidied")]
+        R.check(tid and tid[0]["window"] == off and tid[0]["source"] == "resident", "the tidy is an act by wob")
+        R.check(d.j("get_life")["tidied"] and "Wob tidied" in d.screen()[d.rows - 1], "get_life and the status line say so")
+        before = d.j("acts")["next"]
+        d.person_text("q")
+        R.check(wait(lambda: d.j("get_life")["state"] == "awake"), "the person's first key wakes them")
+        R.check(wait(lambda: not of_type(d, "dream")), "the dream window goes")
+        R.check(d.text(ed) == [""], f"the waking key is used up, not typed ({d.text(ed)!r})")
+        woke = [x for x in d.j("acts", since=before)["acts"] if x["what"].startswith("woke the residents")]
+        R.check(woke and woke[0]["actor"] == "person" and woke[0]["source"] == "console", "the waking is the person's act")
+        time.sleep(0.2)
+        R.check("Awake. A visitor woke us." in d.screen()[d.rows - 1], "the status line says who woke them")
+        d.person_text("a")
+        time.sleep(0.3)
+        R.check(d.text(ed) == ["a"], f"the next key is typed as usual ({d.text(ed)!r})")
+        log = [e["text"] for e in d.j("get_logbook")["entries"]]
+        R.check(any(t.startswith("Nobody here. We sleep.") for t in log) and any("Tidied while nobody was here" in t for t in log)
+                and any(t.startswith("Dreamt: a window called") for t in log)
+                and any(t.startswith("A visitor woke us (a key)") for t in log),
+                "the logbook has the sleep, the tidy, the dream and the waking")
+        r = d.j("residents_sleep", actor="v1")
+        R.check(r["state"] == "asleep" and d.j("get_life")["state"] == "asleep", "residents_sleep puts them to sleep")
+        d.j("look_glance", actor="wib", source="resident")
+        R.check(d.j("get_life")["state"] == "asleep", "a resident's command does not wake them")
+        r = d.j("residents_wake", actor="v1")
+        R.check(r["state"] == "awake", "residents_wake wakes them")
+        R.check(any(x["what"].startswith("woke the residents (asked)") and x["actor"] == "v1"
+                    for x in d.j("acts")["acts"]), "and the waking is v1's act")
+        R.check(d.alive(), "the desktop is still running")
+    finally:
+        d.stop()
+
+
+GROUPS = {"boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():
