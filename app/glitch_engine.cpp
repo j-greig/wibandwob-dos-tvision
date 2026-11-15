@@ -154,8 +154,8 @@ void CorruptedDrawBuffer::bleedColor(int sourceIndex, int targetIndex) {
     
     // Blend or copy the color attributes
     TScreenCell newCell;
-    newCell._ch = targetCell._ch;
-    newCell.attr = sourceCell.attr;
+    newCell.character = targetCell.character;
+    newCell.attribute = sourceCell.attribute;
     data[targetIndex] = newCell;
 }
 

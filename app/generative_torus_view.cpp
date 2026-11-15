@@ -52,7 +52,7 @@ void TGenerativeTorusView::draw()
         for (int x=0;x<W;++x){
             TColorRGB bg(5,5,6); // very dark
             TColorRGB fg(180,180,190);
-            ::setCell(screen[(size_t)y*W + x], ' ', TColorAttr(fg,bg));
+            screen[(size_t)y*W + x] = TScreenCell(' ', TColorAttr(fg,bg));
         }
     }
 
@@ -112,7 +112,7 @@ void TGenerativeTorusView::draw()
                 TColorRGB fg(to8(c.r), to8(c.g), to8(c.b));
                 // Background darker for depth
                 TColorRGB bg( (uchar)8, (uchar)8, (uchar)10 );
-                ::setCell(screen[idx], ch, TColorAttr(fg,bg));
+                screen[idx] = TScreenCell(ch, TColorAttr(fg,bg));
             }
         }
     }

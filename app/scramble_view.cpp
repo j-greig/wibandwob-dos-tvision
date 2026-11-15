@@ -273,8 +273,8 @@ void TScrambleView::draw()
         bgAttr = bg->getColor(0x01);
         bgChar = bg->pattern;
     } else {
-        TColorDesired defaultFg = {};
-        TColorDesired defaultBg = {};
+        TColor defaultFg = {};
+        TColor defaultBg = {};
         bgAttr = TColorAttr(defaultFg, defaultBg);
     }
 

@@ -241,7 +241,7 @@ void TGameOfLifeView::draw() {
                 attr = TColorAttr(0x0F); // Bright white for living cells
             }
             
-            setCell(lineBuf[x], ch, attr);
+            lineBuf[x] = TScreenCell(ch, attr);
         }
         writeLine(0, y, W, 1, lineBuf.data());
     }

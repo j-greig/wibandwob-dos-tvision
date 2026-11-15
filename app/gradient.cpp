@@ -35,9 +35,9 @@ TColorRGB TGradientView::interpolate(TColorRGB start, TColorRGB end, float t)
     // Clamp t to [0, 1]
     t = std::max(0.0f, std::min(1.0f, t));
     
-    uint8_t r = static_cast<uint8_t>(start.r + (end.r - start.r) * t);
-    uint8_t g = static_cast<uint8_t>(start.g + (end.g - start.g) * t);
-    uint8_t b = static_cast<uint8_t>(start.b + (end.b - start.b) * t);
+    uint8_t r = static_cast<uint8_t>(start.getRed() + (end.getRed() - start.getRed()) * t);
+    uint8_t g = static_cast<uint8_t>(start.getGreen() + (end.getGreen() - start.getGreen()) * t);
+    uint8_t b = static_cast<uint8_t>(start.getBlue() + (end.getBlue() - start.getBlue()) * t);
     
     return TColorRGB(r, g, b);
 }

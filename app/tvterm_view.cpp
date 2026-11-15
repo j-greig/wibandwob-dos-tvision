@@ -140,7 +140,7 @@ std::string TWibWobTerminalWindow::getOutputText() const
             row.reserve(cols);
             for (int x = 0; x < cols; ++x) {
                 const TScreenCell &cell = state.surface.at(y, x);
-                const TCellChar   &ch   = cell._ch;
+                const TScreenCharacter   &ch   = cell.character;
                 if (!ch.isWideCharTrail()) {
                     TStringView sv = ch.getText();
                     row.append(sv.data(), sv.size());

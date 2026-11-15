@@ -38,8 +38,8 @@ void TMirrorView::handleEvent(TEvent& ev)
 
 static bool blankCell(const TScreenCell& c)
 {
-    TStringView t = c._ch.getText();
-    return c._ch.isWideCharTrail() || t.size() == 0 || (t.size() == 1 && (t[0] == ' ' || t[0] == 0));
+    TStringView t = c.character.getText();
+    return c.character.isWideCharTrail() || t.size() == 0 || (t.size() == 1 && (t[0] == ' ' || t[0] == 0));
 }
 
 void TMirrorView::blank()
@@ -56,8 +56,8 @@ void TMirrorView::draw()
     int W = size.x, H = size.y;
     std::vector<TScreenCell> row(W > 0 ? W : 1);
     TScreenCell blank;
-    blank._ch.moveChar(' ');
-    ::setAttr(blank, getColor(1));
+    blank.character.initWithChar(' ');
+    blank.attribute = getColor(1);
     const TScreenCell* scr = TScreen::screenBuffer;
     int sw = TScreen::screenWidth, sh = TScreen::screenHeight;
     if (source && desk->indexOf(source) == 0) source = nullptr;   // closed
@@ -73,7 +73,7 @@ void TMirrorView::draw()
             if (gx >= 0 && gy >= 0 && gx < sw && gy < sh) snap[y * SW + x] = scr[gy * sw + gx];
         }
     auto at = [&](int x, int y) -> const TScreenCell& { return snap[y * SW + x]; };
-    auto key = [](const TScreenCell& c) { uint32_t k = 0; memcpy(&k, &c._ch._text[0], 4); return k; };
+    auto key = [](const TScreenCell& c) { uint32_t k = 0; if (!c.character.isWideCharTrail()) { TStringView t = c.character.getText(); memcpy(&k, t.data(), std::min<size_t>(4, t.size())); } return k; };
     // block: the source's commonest character is its background fill; a block shows something else when it can
     uint32_t fill = 0;
     if (block) {
@@ -100,14 +100,14 @@ void TMirrorView::draw()
                         if (n > best) { best = n; sx = i; sy = j; }
                     }
             }
-            if (at(sx, sy)._ch.isWideCharTrail() && sx > 0) --sx;   // take the head of a wide character
+            if (at(sx, sy).character.isWideCharTrail() && sx > 0) --sx;   // take the head of a wide character
             const TScreenCell& c = at(sx, sy);
-            if (c._ch.isWide()) {
+            if (c.character.isWide()) {
                 // a wide character needs two output cells; with no room it becomes a space
                 if (x + 1 < W && sx + 1 < SW) { row[x] = c; row[x + 1] = at(sx + 1, sy); ++x; }
-                else { row[x] = blank; ::setAttr(row[x], ::getAttr(c)); }
-            } else if (c._ch.isWideCharTrail()) {
-                row[x] = blank; ::setAttr(row[x], ::getAttr(c));
+                else { row[x] = blank; row[x].attribute = c.attribute; }
+            } else if (c.character.isWideCharTrail()) {
+                row[x] = blank; row[x].attribute = c.attribute;
             } else
                 row[x] = c;
         }

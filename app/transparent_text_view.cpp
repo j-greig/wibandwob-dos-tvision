@@ -118,8 +118,8 @@ void TTransparentTextView::draw()
             textAttr = bg->getColor(0x01);
             fillChar = bg->pattern;
         } else {
-            TColorDesired defaultFg = {};
-            TColorDesired defaultBg = {};
+            TColor defaultFg = {};
+            TColor defaultBg = {};
             textAttr = TColorAttr(defaultFg, defaultBg);
         }
     }

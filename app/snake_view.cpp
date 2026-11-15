@@ -201,7 +201,7 @@ void TSnakeView::draw() {
     for (int y = 0; y < H; ++y) {
         // Clear entire line
         for (int x = 0; x < W; ++x)
-            setCell(lineBuf[x], ' ', BG_ATTR);
+            lineBuf[x] = TScreenCell(' ', BG_ATTR);
 
         // Board area
         if (y < bh) {
@@ -224,7 +224,7 @@ void TSnakeView::draw() {
                     ch = '.';
                 }
 
-                setCell(lineBuf[x], ch, attr);
+                lineBuf[x] = TScreenCell(ch, attr);
             }
 
             // Draw food (sparkle animation)
@@ -232,7 +232,7 @@ void TSnakeView::draw() {
                 bool sparkle = (foodAnim / 3) % 2 == 0;
                 char fc = sparkle ? '*' : 'o';
                 TColorAttr fa = sparkle ? FOOD_ATTR_A : FOOD_ATTR_B;
-                setCell(lineBuf[food.x], fc, fa);
+                lineBuf[food.x] = TScreenCell(fc, fa);
             }
 
             // Draw snake body (tail first so head overwrites)
@@ -249,7 +249,7 @@ void TSnakeView::draw() {
                             default:         hch = '@'; break;
                         }
                         TColorAttr ha = gameOver ? DEAD_ATTR : HEAD_ATTR;
-                        setCell(lineBuf[body[i].x], hch, ha);
+                        lineBuf[body[i].x] = TScreenCell(hch, ha);
                     } else {
                         // Body segment with gradient
                         TColorAttr ba = gameOver ? DEAD_ATTR : snakeColor(i, snakeLen);
@@ -266,7 +266,7 @@ void TSnakeView::draw() {
                         } else {
                             bc = '#';
                         }
-                        setCell(lineBuf[body[i].x], bc, ba);
+                        lineBuf[body[i].x] = TScreenCell(bc, ba);
                     }
                 }
             }
@@ -283,45 +283,45 @@ void TSnakeView::draw() {
             if (y == 1) {
                 const char* title = " S N A K E ";
                 for (int i = 0; title[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], title[i], TITLE_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(title[i], TITLE_ATTR);
             } else if (y == 3) {
                 char buf[32];
                 snprintf(buf, sizeof(buf), " Score: %d", score);
                 for (int i = 0; buf[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], buf[i], HUD_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(buf[i], HUD_ATTR);
             } else if (y == 4) {
                 char buf[32];
                 snprintf(buf, sizeof(buf), " Best:  %d", highScore);
                 for (int i = 0; buf[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], buf[i], HUD_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(buf[i], HUD_ATTR);
             } else if (y == 5) {
                 char buf[32];
                 snprintf(buf, sizeof(buf), " Length: %d", snakeLen);
                 for (int i = 0; buf[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], buf[i], HUD_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(buf[i], HUD_ATTR);
             } else if (y == 6) {
                 char buf[32];
                 snprintf(buf, sizeof(buf), " Eaten: %d", eaten);
                 for (int i = 0; buf[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], buf[i], HUD_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(buf[i], HUD_ATTR);
             } else if (y == 7) {
                 char buf[32];
                 unsigned spd = currentSpeed();
                 snprintf(buf, sizeof(buf), " Speed: %ums", spd);
                 for (int i = 0; buf[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], buf[i], HUD_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(buf[i], HUD_ATTR);
             } else if (y == 9) {
                 const char* help = " Arrows: Move";
                 for (int i = 0; help[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], help[i], WALL_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(help[i], WALL_ATTR);
             } else if (y == 10) {
                 const char* help = " P: Pause";
                 for (int i = 0; help[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], help[i], WALL_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(help[i], WALL_ATTR);
             } else if (y == 11) {
                 const char* help = " R: Restart";
                 for (int i = 0; help[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], help[i], WALL_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(help[i], WALL_ATTR);
             }
         }
 
@@ -331,7 +331,7 @@ void TSnakeView::draw() {
             int msgLen = 11;
             int mx = (bw - msgLen) / 2;
             for (int i = 0; i < msgLen && mx + i < bw; ++i)
-                setCell(lineBuf[mx + i], msg[i], DEAD_ATTR);
+                lineBuf[mx + i] = TScreenCell(msg[i], DEAD_ATTR);
         }
         if (gameOver && y == bh / 2 + 1) {
             char buf[32];
@@ -339,14 +339,14 @@ void TSnakeView::draw() {
             int msgLen = (int)strlen(buf);
             int mx = (bw - msgLen) / 2;
             for (int i = 0; i < msgLen && mx + i < bw; ++i)
-                setCell(lineBuf[mx + i], buf[i], DEAD_ATTR);
+                lineBuf[mx + i] = TScreenCell(buf[i], DEAD_ATTR);
         }
         if (gameOver && y == bh / 2 + 2) {
             const char* msg = " Press R ";
             int msgLen = 9;
             int mx = (bw - msgLen) / 2;
             for (int i = 0; i < msgLen && mx + i < bw; ++i)
-                setCell(lineBuf[mx + i], msg[i], DEAD_ATTR);
+                lineBuf[mx + i] = TScreenCell(msg[i], DEAD_ATTR);
         }
 
         // Paused overlay
@@ -356,7 +356,7 @@ void TSnakeView::draw() {
             int mx = (bw - msgLen) / 2;
             TColorAttr pa = TColorAttr(TColorRGB(0x00, 0x00, 0x80), TColorRGB(0xFF, 0xFF, 0xFF));
             for (int i = 0; i < msgLen && mx + i < bw; ++i)
-                setCell(lineBuf[mx + i], msg[i], pa);
+                lineBuf[mx + i] = TScreenCell(msg[i], pa);
         }
 
         writeLine(0, y, W, 1, lineBuf.data());

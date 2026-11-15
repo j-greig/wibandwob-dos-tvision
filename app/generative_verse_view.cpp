@@ -162,7 +162,7 @@ void TGenerativeVerseView::draw()
             float bgk = clampf(0.05f + 0.25f * (r*0.5f));
             TColorRGB bg(to8(bgk), to8(bgk*0.95f), to8(bgk*0.9f));
 
-            ::setCell(line[(size_t)x], ch, TColorAttr(fg, bg));
+            line[(size_t)x] = TScreenCell(ch, TColorAttr(fg, bg));
         }
         writeLine(0, y, W, 1, line.data());
     }

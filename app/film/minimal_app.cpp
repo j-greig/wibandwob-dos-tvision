@@ -158,14 +158,14 @@ public:
         const TColorAttr under = underAttr();
         const unsigned char pc = (unsigned char) getPattern();
         const double mix = pc == 0xB0 ? 0.25 : pc == 0xB1 ? 0.5 : pc == 0xB2 ? 0.75 : 0.0;
-        auto rgb = [](TColorDesired c, bool fg) {
+        auto rgb = [](TColor c, bool fg) {
             if (c.isRGB()) return c.asRGB();
             if (c.isBIOS()) return ww::egaRGB(c.asBIOS());
             return fg ? TColorRGB(0xAA, 0xAA, 0xAA) : TColorRGB(0, 0, 0);
         };
-        TColorRGB f = rgb(::getFore(under), true), g = rgb(::getBack(under), false);
+        TColorRGB f = rgb(under.getForeground(), true), g = rgb(under.getBackground(), false);
         auto ch = [&](int a, int b) { return (uint8_t) std::lround(a * mix + b * (1 - mix)); };
-        const TColorRGB paper(ch(f.r, g.r), ch(f.g, g.g), ch(f.b, g.b));
+        const TColorRGB paper(ch(f.getRed(), g.getRed()), ch(f.getGreen(), g.getGreen()), ch(f.getBlue(), g.getBlue()));
 
         struct L { const Ink* k; const std::vector<pic::Cell>* fr; const std::vector<std::string>* art; std::vector<TColorRGB> pal; int x0, y0, w, h; };
         std::vector<std::pair<std::pair<int, std::string>, const Ink*>> order;

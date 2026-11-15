@@ -51,7 +51,7 @@ static inline Vec3 rotateXYZ(const Vec3&v, float a, float b, float c){
 }
 
 static inline void plot(std::vector<TScreenCell>&buf,int W,int H,int x,int y,float depth,const TColorAttr &attr,std::vector<float>&zbuf){
-    if(x<0||x>=W||y<0||y>=H) return; size_t idx=(size_t)y*W+(size_t)x; if(depth>zbuf[idx]){ zbuf[idx]=depth; ::setCell(buf[idx], '\xDB', attr); }
+    if(x<0||x>=W||y<0||y>=H) return; size_t idx=(size_t)y*W+(size_t)x; if(depth>zbuf[idx]){ zbuf[idx]=depth; buf[idx] = TScreenCell('\xDB', attr); }
 }
 
 static inline void line3D(std::vector<TScreenCell>&buf,int W,int H, Vec3 a3, Vec3 b3, float K1, float K2, float yStretch, const TColorAttr &attr, std::vector<float>&zbuf){
@@ -73,7 +73,7 @@ void TGenerativeCubeView::draw(){
     int W=size.x,H=size.y; if(W<=0||H<=0) return; std::vector<TScreenCell> buf; buf.resize((size_t)W*(size_t)H);
     std::vector<float> zbuf; zbuf.assign((size_t)W*(size_t)H, -1e9f);
     // clear
-    TColorRGB bg(6,6,7), fg(180,180,190); for(int y=0;y<H;++y) for(int x=0;x<W;++x) ::setCell(buf[(size_t)y*W+x],' ',TColorAttr(fg,bg));
+    TColorRGB bg(6,6,7), fg(180,180,190); for(int y=0;y<H;++y) for(int x=0;x<W;++x) buf[(size_t)y*W+x] = TScreenCell(' ', TColorAttr(fg,bg));
 
     float yStretch=1.25f; float K2=5.0f; float K1=(float)W*K2*0.5f*scale;
 
