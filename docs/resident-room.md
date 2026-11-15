@@ -7,7 +7,10 @@ modes, listening (residents that answer the person in kind with no chat open), a
 
 Tests: `python3 tests/resident/test_resident_room.py [group ...]` (no model; a stand-in claude CLI where a
 model would answer). Groups: chat, feed, child, teach, menu, jam, undo, rehearse, listen, listensynth,
-listenmodel, room. Set `ROOM_TEST_NAME` when another agent may be running the suite.
+listenfile, listenmodel, room.
+
+A command's windows are its author's: `TWwdosApp::handleEvent` holds the author of a command through its
+handler, dialog loops included, so a window File > Open opens after its dialog closes is the person's. Set `ROOM_TEST_NAME` when another agent may be running the suite.
 
 ## The chat keeps what you type while it answers
 
@@ -97,6 +100,7 @@ arrives from a visitor, a guest, a file or a paste is data and is never heard as
 | moves, resizes, tiles or cascades windows | Wob lists the windows in its notes window (noticed) |
 | types the same word three times | Scramble says so in one flat line, late (noticed) |
 | plays the synth | Wib's jam (app/sound) answers each phrase in notes, in time (noticed) |
+| opens a file or a primer | Wib opens a related primer beside it, with no words (noticed) |
 | types in a terminal, the Wib&Wob chat, the room chat or Scramble's window | nothing: those belong to their own programs |
 
 - **Without a model** the plain cases still answer: open scramble, open a text editor (with a cat when asked),
@@ -139,8 +143,9 @@ answers under the line.
   rebuilt from the person's keys (Backspace applied); cursor movement inside the line is not followed.
 - **The person may start typing while a resident is still typing its answer** in the same editor: the share
   rule then refuses the rest of the resident's keys, so its line can end short.
-- **Answers to opening a file or a primer, and resident-to-resident talk in a window**, beyond the one extra
-  line per exchange, are not built.
+- **Resident-to-resident talk in a window** goes no further than the one extra line per exchange.
+- **A related primer** is chosen by words in common with the file's name, else by its hash, from
+  `modules/wibwob-2026/primers` only.
 - **Wib's answer to a drawing is a mirror**, by rule; a model does not choose drawings yet.
 - **The room's in-app answers are by rule**; no model writes them, and they never act on a visitor's request.
 - **Undo** keeps 50 changes per resident in memory and cannot reopen a closed window.
