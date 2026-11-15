@@ -939,7 +939,7 @@ def group_cast():
         d.start()
         x = d.j("film_export", w=60, h=20)
         raw = "".join(json.loads(l)[2] for l in open(x["file"], encoding="utf-8").read().splitlines()[1:])
-        R.check("\x1b[93m" in raw and "\x1b[96m" in raw and "\x1b[90m" in raw,
+        R.check("\x1b[93;" in raw and "\x1b[96;" in raw and "\x1b[90;" in raw,
                 "the cast carries colour: wib's window yellow, wob's cyan, the desk dark grey")
         p = d.j("open_cast", file=x["file"], paused=1)
         pid = p.get("id") or [w for w in glance(d) if w["type"] not in ("film",) and "cast" in w["title"]][0]["id"]
@@ -966,7 +966,50 @@ def group_cast():
         d.stop()
 
 
-GROUPS = {"cast": group_cast, "film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
+# ---------------------------------------------------------------- the film shows what windows held
+
+def group_held():
+    print("held: the film shows typing appear and a drawing grow, from SCENES.TXT, and resident hands")
+    fresh_home()
+    d = desk(WWDOS_BOOT="0", WWDOS_SCENE_MS="300").start()
+    try:
+        ed = d.j("create_window", type="text_editor", x=4, y=3, w=40, h=10, title="Plans", **as_res("wib"))["id"]
+        time.sleep(0.3)
+        d.person_type("abc")
+        time.sleep(1.5)
+        d.person_type("def")
+        p = d.j("create_window", type="paint", x=60, y=2, w=50, h=18, title="Sketch", **as_res("wob"))["id"]
+        time.sleep(0.4)
+        d.ipc("paint_text", id=p, x=1, y=1, text="W", fg=15, bg=0, **as_res("wob"))
+        time.sleep(1.5)
+        d.ipc("paint_text", id=p, x=2, y=1, text="O", fg=15, bg=0, **as_res("wob"))
+        time.sleep(1.5)
+        R.check(d.quit(), "a waking with typing in two runs and a drawing in two strokes")
+        sc = read("SCENES.TXT") or ""
+        R.check("\tabc" in sc or "abc\\n" in sc or "abc" in sc, "SCENES.TXT holds what the windows held over time")
+        d.start()
+        fr = d.j("film_frame", w=120, h=40, ms=0)
+        times = fr["times"]
+        length = fr["length"]
+        def text_at(ms):
+            return "\n".join(d.j("film_frame", w=120, h=40, ms=ms)["rows"])
+        frames = [text_at(ms) for ms in range(0, length + 1, 200)]
+        partial = [f for f in frames if "abc" in f and "abcdef" not in f]
+        R.check(bool(partial) and "abcdef" in frames[-1], "typing appears: a frame with abc before abcdef")
+        grow = [f for f in frames if "│ W " in f and "WO" not in f]
+        R.check("│ WO" in frames[-1] and bool(grow),
+                "the drawing grows: W first, then WO")
+        hand_frames = [d.j("film_frame", w=120, h=40, ms=ms)["hands"] for ms in times]
+        R.check(any(any(h["actor"] == "wob" for h in hs) for hs in hand_frames) and any(any(h["actor"] == "wib" for h in hs) for hs in hand_frames),
+                "resident hands stand on the windows wib and wob acted on")
+        x = d.j("film_export", w=120, h=40)
+        data = "".join(json.loads(l)[2] for l in open(x["file"], encoding="utf-8").read().splitlines()[1:])
+        R.check(";106m" in data and ";103m" in data, "the cast draws the hands on their colours (wob cyan, wib yellow)")
+    finally:
+        d.stop()
+
+
+GROUPS = {"held": group_held, "cast": group_cast, "film": group_film, "selftest": group_selftest, "tools": group_tools, "own": group_own, "will": group_will, "fixes": group_fixes, "mind": group_mind, "acts": group_acts, "restore": group_restore, "boot": group_boot, "note": group_note, "book": group_book, "sleep": group_sleep}
 
 
 def main():
