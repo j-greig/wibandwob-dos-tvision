@@ -21,7 +21,10 @@ DEFAULT_BIN = os.path.join(REPO, "build-resident", "app", "wwdos")
 class Desk:
     def __init__(self, name, binary=None, cols=160, rows=50, env=None):
         self.name = name
-        self.env = env or {}
+        # A private self on disk, no boot screen and no sleep unless a test asks for them, so a
+        # desktop starts with no windows of its own and never writes to ~/.wwdos.
+        self.home = f"/tmp/wibwob_{name}.home"
+        self.env = {"WWDOS_HOME": self.home, "WWDOS_BOOT": "0", "WWDOS_SLEEP_MS": "0", **(env or {})}
         self.binary = binary or os.environ.get("WWDOS_BIN", DEFAULT_BIN)
         self.cols, self.rows = cols, rows
         self.sock = f"/tmp/wibwob_{name}.sock"
@@ -44,6 +47,16 @@ class Desk:
                 pass
             time.sleep(0.1)
         raise RuntimeError(f"desktop {self.name} did not start ({self.binary})")
+
+    def quit(self, timeout=10.0):
+        """The person chooses Exit (Alt+X); returns True when the app has ended."""
+        self.person_keys("M-x")
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            if not self.alive():
+                return True
+            time.sleep(0.1)
+        return False
 
     def stop(self):
         subprocess.run(["tmux", "-L", self.name, "kill-server"],

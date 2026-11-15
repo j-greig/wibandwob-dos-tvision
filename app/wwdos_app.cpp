@@ -42,6 +42,7 @@
 #include "test_pattern.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "resident_life.h"
 #include "describe.h"
 #include "resident_hands.h"
 #include "feed_view.h"
@@ -143,6 +144,7 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 #include <fstream>
 #include <vector>
 #include <cstring>
+#include <csignal>
 #include <map>
 #include <deque>
 #include <dirent.h>
@@ -150,6 +152,11 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 // Local API IPC bridge (Unix domain socket)
 #include "api_ipc.h"
 #include "command_registry.h"
+
+// SIGTERM or SIGHUP (a shutdown, a closed terminal): the residents write their self to disk
+// from idle(), then the app quits. tvision's own SIGTERM handler chains to this one.
+static volatile sig_atomic_t g_quitSignal = 0;
+static void onQuitSignal(int signo) { g_quitSignal = signo; }
 #include "window_type_registry.h"
 
 // Find first existing primer directory across module paths.
@@ -471,8 +478,10 @@ public:
         }
 
         // Get kaomoji based on current mood and blink state
-        const char* kaomoji = kaomojiText.empty() ? getKaomojiForState() : kaomojiText.c_str();
-        int kaomojiWidth = kaomojiText.empty() ? 12 : std::max(12, (int)strwidth(kaomojiText.c_str()) + 1);
+        // A show's kaomojiText first, then the residents' sleep (resident_life.cpp), then the mood.
+        const char* lifeFace = kaomojiText.empty() ? life::kaomoji() : nullptr;
+        const char* kaomoji = !kaomojiText.empty() ? kaomojiText.c_str() : (lifeFace ? lifeFace : getKaomojiForState());
+        int kaomojiWidth = (kaomojiText.empty() && !lifeFace) ? 12 : std::max(12, (int)strwidth(kaomoji) + 1);
         int xPos = size.x - kaomojiWidth;
 
         if (xPos > 1) {
@@ -570,9 +579,25 @@ public:
         TStatusLine::draw();
         drawLlmIndicator();
         drawApiIndicator();
+        drawLife();
     }
 
 private:
+    // The residents' state and what they are reading, left of the LLM indicator (resident_life.cpp).
+    void drawLife()
+    {
+        std::string s = life::statusWord();
+        if (s.empty()) return;
+        int len = (int)strwidth(s.c_str());
+        int xPos = size.x - len - 22;
+        if (xPos < 1) return;
+        TDrawBuffer b;
+        TAttrPair c = getColor(0x0301);
+        b.moveChar(0, ' ', c, len + 2);
+        b.moveStr(1, s.c_str(), c);
+        writeBuf(xPos - 1, 0, len + 2, 1, b);
+    }
+
     void drawLlmIndicator()
     {
         const AuthConfig& auth = AuthConfig::instance();
@@ -1143,6 +1168,42 @@ TWwdosApp::TWwdosApp() :
         if (*rs && !resident::loadReflexes(rs, err)) fprintf(stderr, "[residents] %s\n", err.c_str());
     }
 
+    life::Hooks lifeHooks;
+    lifeHooks.insertWindow = [this](TWindow* w) {
+        deskTop->insert(w);
+        registerWindow(w);
+    };
+    lifeHooks.modelPresent = []() { return AuthConfig::instance().mode() != AuthMode::NoAuth; };
+    lifeHooks.openEditor = [this](const std::string& title, const std::vector<std::string>& lines,
+                                  std::function<void(const std::vector<std::string>&)> onClose) -> TWindow* {
+        // A text editor holding a file's lines; onClose gets what it holds when it closes.
+        struct TLifeEditorWindow : public TTextEditorWindow {
+            std::function<void(const std::vector<std::string>&)> onClose;
+            TLifeEditorWindow(const TRect& r, const char* t) : TWindowInit(&TWindow::initFrame), TTextEditorWindow(r, t) {}
+            void close() override {
+                if (onClose && getEditorView()) {
+                    auto f = onClose;
+                    onClose = nullptr;
+                    f(getEditorView()->getLines());
+                }
+                TTextEditorWindow::close();
+            }
+        };
+        TRect r = deskTop->getExtent();
+        r.grow(-6, -3);
+        if (r.b.x - r.a.x > 84) r.b.x = r.a.x + 84;
+        auto* w = new TLifeEditorWindow(r, title.c_str());
+        w->setup();
+        w->onClose = onClose;
+        std::string text;
+        for (size_t i = 0; i < lines.size(); ++i) text += lines[i] + (i + 1 < lines.size() ? "\n" : "");
+        if (!text.empty() && w->getEditorView()) w->getEditorView()->sendText(text, "replace");
+        deskTop->insert(w);
+        registerWindow(w);
+        return w;
+    };
+    life::setHooks(lifeHooks);
+
     // Start IPC server for local API control (best-effort; ignore failures)
     ipcServer = new ApiIpcServer(this);
 
@@ -1199,6 +1260,9 @@ TWwdosApp::TWwdosApp() :
             cycleScramble();
         }
     }
+
+    // The residents wake last, so the boot screen is in front (resident_life.cpp).
+    life::wake();
 }
 
 void TWwdosApp::handleEvent(TEvent& event)
@@ -1210,6 +1274,11 @@ void TWwdosApp::handleEvent(TEvent& event)
     }
     // The Residents menu: the console key and the residents' rules (resident_acts.cpp).
     if (event.what == evCommand && resident::handleCommand(event.message.command)) {
+        clearEvent(event);
+        return;
+    }
+    // Its logbook and guestbook (resident_life.cpp).
+    if (event.what == evCommand && life::handleCommand(event.message.command)) {
         clearEvent(event);
         return;
     }
@@ -2833,6 +2902,10 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("Reading ~m~arks", resident::cmResidentMarks, kbNoKey, hcNoContext, "on") +
                     *new TMenuItem("Visible ~h~and", resident::cmResidentHand, kbNoKey, hcNoContext, "on") +
                     newLine() +
+                    *new TMenuItem("~L~ogbook (LOG.TXT)", life::cmLifeLogbook, kbNoKey) +
+                    *new TMenuItem("Guest~b~ook (GUESTS.TXT)", life::cmLifeGuestbook, kbNoKey) +
+                    *new TMenuItem("Sign the ~g~uestbook", life::cmLifeSign, kbNoKey) +
+                    newLine() +
                     *new TMenuItem("~A~bout the residents", resident::cmResidentAbout, kbNoKey)
             ) +
         *new TSubMenu("~H~elp", kbAltH) +
@@ -2912,6 +2985,7 @@ void TWwdosApp::run()
 {
     // Call parent run to initialize everything first
     TApplication::run();
+    life::close("exit");   // the self goes back to disk while the desktop still exists
 }
 
 TRect TWwdosApp::calculateWindowBounds(const std::string& filePath)
@@ -3042,6 +3116,7 @@ void TWwdosApp::getEvent(TEvent& event)
     bool fromPut = pending.what != evNothing;
     TApplication::getEvent(event);
     resident::noteOrigin(event, fromPut);
+    if (!fromPut && (event.what & (evKeyDown | evMouse))) life::consoleInput(event);   // may use the event up
     resident::afterBase(event);
 }
 
@@ -3056,6 +3131,15 @@ void TWwdosApp::idle()
 {
     TApplication::idle();
     stepSweep();
+    life::tick();
+    if (g_quitSignal) {
+        life::close(g_quitSignal == SIGTERM ? "SIGTERM" : "SIGHUP");
+        g_quitSignal = 0;
+        TEvent quit = {};
+        quit.what = evCommand;
+        quit.message.command = cmQuit;
+        putEvent(quit);
+    }
 
     // Poll IPC server for incoming API commands
     if (ipcServer) ipcServer->poll();
@@ -3079,6 +3163,8 @@ void TWwdosApp::idle()
 
 int main()
 {
+    std::signal(SIGTERM, onQuitSignal);
+    std::signal(SIGHUP, onQuitSignal);
     // A write to a pipe or socket whose reader has gone (the chat's Node bridge after it exits, a
     // client that hung up) must fail with EPIPE, not end the app without a word: SIGPIPE's default.
     signal(SIGPIPE, SIG_IGN);

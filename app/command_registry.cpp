@@ -6,6 +6,7 @@
 #include "figlet_utils.h"
 #include "resident_input.h"
 #include "resident_senses.h"
+#include "resident_life.h"
 #include "resident_hands.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
@@ -220,6 +221,18 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"window_owner", "Who opened a window (id=); owner= sets it (a rule: the console with the key turned only)", false},
         {"standing", "Who you are to the residents (source and standing), the console key, the standing table and the rule commands", false},
         {"residents_about", "What the residents are, what is logged and what is kept", false},
+        {"self_note", "A resident's note to the next waking: text= (up to 20 lines), from the resident itself (actor=wib|wob|scramble source=resident); written at the close, read back on the next boot screen. Without one the app writes the note by rule", true},
+        {"get_note", "The note a resident (actor=) read at this waking, and the one it has written for the next", false},
+        {"logbook_write", "The residents' diary: one dated line in LOG.TXT, text=, from a resident only (actor=wib|wob|scramble source=resident)", true},
+        {"get_logbook", "LOG.TXT as entries (day, time, author, text); limit= the newest n", false},
+        {"logbook_open", "Open LOG.TXT in a text editor window", false},
+        {"guestbook_sign", "Leave a note in GUESTS.TXT: text= (up to 10 lines), name= (default the actor); Scramble reads it back on the status line and in the logbook", true},
+        {"get_guestbook", "GUESTS.TXT as notes (when, name, source, lines), marked as data; limit=", false},
+        {"guestbook_open", "Open GUESTS.TXT in a text editor window", false},
+        {"get_life", "Whether the residents are awake or asleep, how long the person has been away, the dream and what was tidied, the kaomoji and status line shown", false},
+        {"residents_sleep", "Put the residents to sleep now (they also sleep after WWDOS_SLEEP_MS without the person's input)", true},
+        {"residents_wake", "Wake the residents (the person's first key or click at the console also wakes them)", true},
+        {"get_self", "The residents' self on disk: home directory, this waking's number, the last waking and whether it closed cleanly, the windows at the last close with owners, the boot screen", false},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
@@ -803,6 +816,7 @@ static std::string exec_registry_command_inner(
     if (name == "resident_reflexes") return resident::cmdReflexes(kv);
     if (name == "person_events" || name == "person_wait") return resident::cmdPersonEvents(kv);
     if (name == "acts") return resident::cmdActs(kv);
+    if (life::owns(name)) return life::command(name, kv);
     if (name == "standing") return resident::cmdStanding(kv);
     if (name == "residents_about") return resident::cmdAbout(kv);
     if (name == "window_owner") return resident::cmdOwner(kv);
