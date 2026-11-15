@@ -8,6 +8,7 @@
 #include "ears.h"
 #include "sound_host.h"
 #include "stream.h"
+#include "voice.h"
 
 #include <algorithm>
 #include <cctype>
@@ -43,6 +44,12 @@ Note TSynthView::makeNote(int midi, double atMs, double durMs, int vel) const {
     n.vel = vel;
     n.durMs = durMs;
     n.patch = fmPatches()[patch_];
+    // What MIDI controllers have set (sound_host.h Controls).
+    const Controls& c = controls();
+    n.patch.index *= 1.0 + 2.0 * c.mod;
+    if (c.feedback >= 0) n.patch.feedback = c.feedback;
+    if (c.releaseMs >= 0) n.patch.releaseMs = c.releaseMs;
+    n.vel = std::max(1, (int)std::lround(vel * c.volume));
     return n;
 }
 
@@ -384,6 +391,56 @@ std::string TSynthView::apiAction(const std::string& action, const std::map<std:
         phrase(notes, err);
         if (!err.empty()) return err;
         playNotes(notes, currentActor());
+    } else if (action == "sing") {
+        // words="ma ri a" notes="C-4 E-4 G-4" step=ms dur=ms who=wib|wob: one word on each note.
+        std::string who = kvGet(kv, "who", currentActor());
+        if (who != "wib" && who != "wob") who = "wib";
+        const auto w = tokens(kvGet(kv, "words", kvGet(kv, "word")));
+        const auto n = tokens(kvGet(kv, "notes", kvGet(kv, "note", "C-4")));
+        if (w.empty()) return "err missing words";
+        if (w.size() > 64) return "err at most 64 words";
+        const int step = std::max(50, std::min(4000, toInt(kvGet(kv, "step"), 300)));
+        const int dur = std::max(50, std::min(8000, toInt(kvGet(kv, "dur"), (int)(step * 0.95))));
+        // Render every word first ('say' takes a while the first time), then place them on the clock.
+        std::vector<Pcm> pcms;
+        std::vector<int> midis;
+        for (size_t i = 0; i < w.size(); ++i) {
+            const int midi = parseNote(n[std::min(i, n.size() - 1)]);
+            if (midi < 0) return "err not a note: " + n[std::min(i, n.size() - 1)];
+            std::string err;
+            Pcm p = voice::sung(who, w[i], midi, dur, &err);
+            if (!p) return "err " + err;
+            pcms.push_back(p);
+            midis.push_back(midi);
+        }
+        const double asked = clockMs();
+        const double now = asked + leadMs();
+        TWindow* win = dynamic_cast<TWindow*>(owner);
+        const std::string wid = (win && host().idOf) ? host().idOf(win) : "";
+        const voice::Singer sg = voice::singer(who);
+        for (size_t i = 0; i < w.size(); ++i) {
+            const int midi = midis[i];
+            Pcm p = pcms[i];
+            if (synthAudioEnabled() && streamRunning())
+                mixer().scheduleSample(p, 0.9 * sg.gain, sampleForClock(asked) + msToSample(i * (double)step));
+            Heard h;
+            h.startMs = now + i * (double)step;
+            h.durMs = (double)p->size() * 1000.0 / kRate;
+            h.endMs = h.startMs + h.durMs;
+            h.source = "voice";
+            h.window = wid;
+            h.voice = who;
+            h.word = w[i];
+            h.midi = midi;
+            h.level = 0.9 * sg.gain;
+            h.who = who;
+            ears().hear(h);
+            Played pl{midi, voice_, "voice:" + who, 100, h.startMs, h.durMs, h.endMs, who + " \"" + w[i] + "\""};
+            recent_.push_back(pl);
+            while (recent_.size() > 32) recent_.pop_front();
+        }
+        played_ += (long)w.size();
+        if (!timer_) timer_ = setTimer(50, 50);
     } else if (action == "render") {
         std::vector<Note> notes;
         std::string err;

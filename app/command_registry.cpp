@@ -10,6 +10,7 @@
 #include "resident_life.h"
 #include "resident_hands.h"
 #include "resident_teach.h"
+#include "resident_listen.h"
 
 extern std::string api_window_text(TWwdosApp& app, const std::string& id);
 // The machine's sound (app/sound/sound_host.cpp). Weak, so tests that link the
@@ -183,7 +184,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_tr808", "Open the TR-808 drum machine (optional preset, play=1, audio=0|1, tempo, x, y, w, h)", false},
         {"tr808", "Drive the TR-808 (action=play|stop|toggle|tempo bpm|select instrument|toggle_step step instrument?|set_step instrument step active|set_param instrument param value|load_preset preset|clear all?|instrument?|set_pattern bank number variation|swing value|scale value|accent value|master value|last_step value|mute instrument|solo instrument|audio on|random density|copy|paste|cursor step|text text|state; optional id). Steps are 0-15. Publishes tr808_step events on steps with hits", false},
         {"open_synth", "Open the synth: a PC speaker square voice and an FM voice (optional voice=pcspk|fm, patch, octave, gate, audio=0|1, x, y, w, h)", false},
-        {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
+        {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|sing words='ma ri a' notes='C-4 E-4 G-4' who=wib|wob step dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
         {"hear", "The ears: what the synth and the TR-808 sound now and sounded in the last seconds= (default 4): voices, notes, steps, levels, who, a meter and tracker rows; of=all|synth|tr808, row_ms=, window=. Changes nothing", false},
         {"sound", "The sound stream: action=state (output coreaudio|null|off, rate, lead_ms, the clock, notes, hits, late, FM channels busy) or action=capture ms= (the last ms of the mix: level and onset times on the clock). Changes nothing", false},
         {"open_tracker", "Open the tracker (rows down, channels across): track=<n> reads tracks/<n>.trk, text= a song, or a new one with channels='fm:bass fm:lead speaker drums', rows=, tempo=; play=1; optional x, y, w, h", false},
@@ -191,6 +192,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_midi", "Open the MIDI window: what arrives and what leaves (optional x, y, w, h)", false},
         {"midi", "MIDI (action=state|log n=|in data='90 3C 64' (as if it arrived: plays the synth)|out data=|clock on=0|1). The TR-808 and the tracker send clock and notes out; input plays the synth with real key releases", false},
         {"jam", "Residents jam: action=start as=wib|wob|scramble mode=answer|echo|invert wait_ms= model=auto|off: the resident answers the person's last synth phrase when they stop for wait_ms (by rule, or a confined model call chooses the notes when one is present); stop; state lists the answers", false},
+        {"voice", "The residents' voices: action=state (which macOS voice sings for wib and wob, and whether it is a stand-in) or action=render who= word= note= dur= (renders without sounding: samples, the pitch it speaks at and is sung at). Sing with synth action=sing or a tracker voice channel", false},
         {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
         {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
@@ -257,6 +259,7 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"resident_undo", "Undo your own last change as a resident (an open, a move or resize, a retitle, a run of typing in an editor); refused when someone else changed that window since; list=1 shows your changes", false},
         {"resident_rehearse", "A rehearsal desk: a nested desktop in a window you own, at its own socket, to try things before acting in public; close=1 ends it; optional x y w h", false},
         {"resident_mode", "The Laws of Jam as modes: mode=flow|follow|oppose|witness sets your own (the person at the console sets anyone's with who=); WITNESS may look and talk, not act; FOLLOW acts only after someone else has acted since its last act; no args lists each resident's mode and face", false},
+        {"resident_listen", "Listening: the residents follow the person's typing, drawing and arranging with no chat open and answer in kind (on=1 only from the console, Tools > Residents > Listening; on=0 from anyone; rate=quiet|present|lively, livelier only from the console); no args reports its state and hourly model budget", false},
         {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
         {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
         {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
@@ -876,6 +879,7 @@ static std::string exec_registry_command_inner(
     if (name == "help") return resident::cmdHelp(kv);
     if (name == "resident_undo") return resident::cmdUndo(kv);
     if (name == "resident_mode") return resident::cmdMode(kv);
+    if (name == "resident_listen") return resident::cmdListen(kv);
     if (name == "resident_rehearse") return resident::cmdRehearse(kv);
     if (name == "resident_selftest") return resident::cmdSelftest(kv);
     if (name == "resident_reflexes") return resident::cmdReflexes(kv);

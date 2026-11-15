@@ -30,6 +30,7 @@ int sourcesConnected();
 void setWake(void (*fn)());      // called (from the MIDI thread) when input arrives
 
 void inject(const std::vector<uint8_t>& bytes, const std::string& from);   // as if it arrived now
+void injectAt(const std::vector<uint8_t>& bytes, const std::string& from, double clockMs);   // as if it arrived then
 std::vector<Msg> takeIn();       // input since the last call, in order
 // Sends at clockMs (plus the sound stream's lead, so it lines up with the audio).
 void send(const std::vector<uint8_t>& bytes, double clockMs, const std::string& from);

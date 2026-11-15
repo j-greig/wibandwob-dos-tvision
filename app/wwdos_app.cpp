@@ -46,6 +46,7 @@
 #include "describe.h"
 #include "resident_hands.h"
 #include "resident_teach.h"
+#include "resident_listen.h"
 #include "feed_view.h"
 #include "core/json_utils.h"
 #include "gradient.h"
@@ -1185,6 +1186,7 @@ TWwdosApp::TWwdosApp() :
     };
     resident::setHooks(residentHooks);
     ww::addExternalDescriber({"TFrameAnimationWindow", frameWindowMatches, frameWindowState, nullptr});
+    resident::listenStart();
     // Residents that live in the app: a reflex script chosen by whoever starts the app.
     if (const char* rs = std::getenv("WWDOS_RESIDENTS")) {
         std::string err;
@@ -1294,6 +1296,7 @@ TWwdosApp::TWwdosApp() :
         sh.find = [this](const std::string& id) { return findWindowById(id); };
         sh.idOf = [this](TWindow* w) { auto it = winToId.find(w); return it == winToId.end() ? std::string() : it->second; };
         sh.tr808 = [this](const sound::KV& kv) { return api_tr808_action(*this, kv); };
+        sh.exec = [this](const std::string& n, const sound::KV& kv) { return exec_registry_command(*this, n, kv); };
         sound::setHost(sh);
     }
 
@@ -1330,6 +1333,10 @@ TWwdosApp::TWwdosApp() :
 
 void TWwdosApp::handleEvent(TEvent& event)
 {
+    if (event.what == evCommand && resident::listenHandleCommand(event.message.command)) {
+        clearEvent(event);
+        return;
+    }
     if (event.what == evCommand && event.message.command == cmFeed) {
         api_spawn_feed(*this, nullptr, "");
         clearEvent(event);
@@ -2968,6 +2975,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("Console ~k~ey", resident::cmResidentKey, kbNoKey, hcNoContext, "off") +
                     *new TMenuItem("Reading ~m~arks", resident::cmResidentMarks, kbNoKey, hcNoContext, "on") +
                     *new TMenuItem("Visible ~h~and", resident::cmResidentHand, kbNoKey, hcNoContext, "on") +
+                    *new TMenuItem("~L~istening", resident::cmResidentListen, kbNoKey, hcNoContext, "off") +
                     newLine() +
                     *new TMenuItem("~L~ogbook (LOG.TXT)", life::cmLifeLogbook, kbNoKey) +
                     *new TMenuItem("Guest~b~ook (GUESTS.TXT)", life::cmLifeGuestbook, kbNoKey) +
@@ -3241,6 +3249,7 @@ void TWwdosApp::idle()
     // Residents inside the app answer the person's gestures (resident_hands.cpp).
     resident::tickReflexes();
     resident::tickSelftest();
+    resident::tickListen();
     TFeedView::tickAll();   // feeds follow the act log
 
     // DISABLED: Update animated kaomoji in menu bar (causing crashes + freezes)

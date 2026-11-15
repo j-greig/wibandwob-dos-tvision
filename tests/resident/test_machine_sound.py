@@ -22,7 +22,8 @@ from resident_lib import REPO, Desk, Results  # noqa: E402
 
 R = Results()
 QUIET = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "ANTHROPIC_API_KEY": "", "WWDOS_SYNTH_AUDIO": "0",
-         "WWDOS_SOUND_OUT": "null", "WWDOS_MIDI": "null"}   # the stream runs on the clock and plays nowhere
+         "WWDOS_SOUND_OUT": "null", "WWDOS_MIDI": "null",
+         "WWDOS_SAY": os.path.join(REPO, "tests", "resident", "fake_say.py")}   # a stand-in for macOS say   # the stream runs on the clock and plays nowhere
 
 
 def q(desk, cmd, **kv):
@@ -145,7 +146,7 @@ def test_ears(desk):
 
     n0 = last_act(desk)
     h = x(desk, "hear", seconds=2, actor="wib", source="resident")
-    R.check(h["standing"] == "data" and h["counts"] == {"synth": 0, "tr808": 0} and "silence" in h["summary"],
+    R.check(h["standing"] == "data" and h["counts"] == {"synth": 0, "tr808": 0, "voice": 0} and "silence" in h["summary"],
             f"before anything plays the ears hear silence ({h['summary']!r})")
 
     # wib plays a phrase; the ears hear it at once, the first note sounding.
@@ -806,12 +807,142 @@ def test_patterns(desk):
     R.check("order 0 1 0" in txt and "pattern 1" in txt, "the song text holds the order and both patterns")
 
 
-GROUPS = {"patterns": test_patterns, "jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
+# ---------------------------------------------------------------------------- voice
+
+def test_voice(desk):
+    print("\n[voice] the residents sing: words on notes, rendered once with a stand-in for say, heard with who sang")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    log = f"/tmp/wibwob_{desk.name}_say.log"
+    st = x(desk, "voice", action="state")
+    sing = {s["who"]: s for s in st["singers"]}
+    R.check(sing["wib"]["voice"] == "Sandy (English (UK))" and sing["wob"]["voice"] == "Grandpa (English (UK))"
+            and not sing["wib"]["fallback"] and not sing["wob"]["fallback"], "wib sings as Sandy, wob as Grandpa")
+    r1 = x(desk, "voice", action="render", who="wob", word="hello", note="A-2")
+    R.check(abs(r1["spoken_hz"] - 115) < 2 and abs(r1["hz"] - 110) < 2,
+            f"wob's hello (spoken at {r1['spoken_hz']:.1f} Hz) is sung on A-2 at {r1['hz']:.1f} Hz")
+    r2 = x(desk, "voice", action="render", who="wob", word="hello", note="E-3")
+    R.check(r2["renders"] == r1["renders"] and abs(r2["hz"] - 164.8) < 3, "the same word on another note is not rendered again")
+    syn = x(desk, "open_synth", x=2, y=1, w=68, h=18)["id"]
+    x(desk, "synth", id=syn, action="audio", on=1)
+    h0 = x(desk, "sound", action="state")["hits"]
+    x(desk, "synth", id=syn, action="sing", who="wib", words="ma ri a", notes="C-4 E-4 G-4", step=200, actor="wib", source="resident")
+    time.sleep(0.9)
+    h = x(desk, "hear", seconds=2, of="voice")
+    words = [(e["word"], e["note"], e["who"]) for e in h["heard"]]
+    R.check(words == [("ma", "C-4", "wib"), ("ri", "E-4", "wib"), ("a", "G-4", "wib")], f"the ears hear the words, their notes and who sang ({words})")
+    R.check('wib sang "ma ri a"' in h["summary"], f"summary: {h['summary']!r}")
+    R.check(x(desk, "sound", action="state")["hits"] - h0 == 3, "the stream mixed the three sung words")
+    gaps = [round(b["at_ms"] - a["at_ms"], 3) for a, b in zip(h["heard"], h["heard"][1:])]
+    R.check(gaps == [200.0, 200.0], f"on the one clock, 200 ms apart ({gaps})")
+    # A tracker voice channel.
+    song = "channels voice:wob drums\n00 C-3 la     ... | BD- .. ...\n01 G-3 li     ... | --- .. ...\n"
+    tid = x(desk, "open_tracker", text=song, x=2, y=20, w=60, h=10)["id"]
+    x(desk, "tracker", id=tid, action="loop", on=0)
+    x(desk, "tracker", id=tid, action="play")
+    time.sleep(0.8)
+    h = x(desk, "hear", window=tid, seconds=2)
+    R.check(h.get("tracker_rows") == ["00 C-3 la     ... | BD- .. ...", "01 G-3 li     ... | --- .. ..."],
+            f"the tracker's voice rows come back from the ears ({h.get('tracker_rows')})")
+    sung = [(e["word"], e["who"]) for e in h["heard"] if e["source"] == "voice"]
+    R.check(sung == [("la", "wob"), ("li", "wob")], f"sung by wob ({sung})")
+    lines = open(log).read().splitlines() if os.path.exists(log) else []
+    R.check(sorted(set(lines)) == sorted(lines) and len(lines) == 6, f"say ran once per word and singer ({len(lines)} renders: {lines})")
+    R.check(xraw(desk, "synth", id=syn, action="sing", words="rm;-rf", who="wib").startswith("err"), "a word that is not letters is refused")
+    x(desk, "tracker", id=tid, action="cursor", row=1, ch=0, field="instr")
+    desk.ipc("focus_window", id=tid)
+    time.sleep(0.3)
+    desk.person_type("lo", gap=0.1)
+    R.check(x(desk, "tracker", id=tid, action="state")["lines"][1].startswith("01 G-3 lilo"), "the person types letters into a voice cell's word")
+    x(desk, "synth", id=syn, action="audio", on=0)
+
+    # A desktop where Grandpa is missing: wob sings as the next English voice and says so.
+    alt = Desk(desk.name + "_alt", env={**QUIET, "FAKE_SAY_VOICES": "Sandy (English (UK)),Reed (English (UK))"}).start()
+    try:
+        st = alt.j("exec_command", name="voice", action="state")
+        wob = [s for s in st["singers"] if s["who"] == "wob"][0]
+        R.check(wob["voice"] == "Reed (English (UK))" and wob["fallback"], f"with no Grandpa, wob sings as Reed and says it is a stand-in ({wob})")
+    finally:
+        alt.stop()
+
+
+# ---------------------------------------------------------------------------- midi in: clock, controllers, bend
+
+def test_midiin(desk):
+    print("\n[midiin] MIDI clock sets the tempo, start and stop drive the players, controllers and pitch bend reach the synth")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    drm = x(desk, "open_tr808", x=2, y=20, w=118, h=26)["id"]
+    x(desk, "tr808", id=drm, action="load_preset", preset="electro")
+    tid = x(desk, "open_tracker", channels="fm:bass drums", rows=4, x=70, y=1, w=50, h=10)["id"]
+    x(desk, "tracker", id=tid, action="set", row=0, ch=1, cell="BD-")
+    syn = x(desk, "open_synth", x=2, y=1, w=68, h=18)["id"]
+    x(desk, "midi", action="in", data="F8", count=48, every_ms=20)          # 24 a beat, 20 ms apart: 125 bpm
+    st = x(desk, "midi", action="state")
+    R.check(st["clock_bpm"] == 125 and st["follow"], f"48 clock ticks 20 ms apart read as 125 bpm ({st['clock_bpm']})")
+    R.check(x(desk, "tr808", id=drm, action="state")["tempo"] == 125 and x(desk, "tracker", id=tid, action="state")["tempo"] == 125,
+            "the drum machine and the tracker take the clock's tempo")
+    x(desk, "midi", action="in", data="FA")
+    R.check(x(desk, "tr808", id=drm, action="state")["transport"] == "playing" and x(desk, "tracker", id=tid, action="state")["playing"],
+            "MIDI start starts the drum machine and the tracker")
+    time.sleep(0.4)
+    x(desk, "midi", action="in", data="FC")
+    R.check(x(desk, "tr808", id=drm, action="state")["transport"] == "stopped" and not x(desk, "tracker", id=tid, action="state")["playing"],
+            "MIDI stop stops them")
+    x(desk, "midi", action="follow", on=0)
+    x(desk, "midi", action="in", data="F8", count=48, every_ms=25)
+    R.check(x(desk, "tr808", id=drm, action="state")["tempo"] == 125, "with follow off the clock changes nothing")
+    x(desk, "midi", action="follow", on=1)
+
+    # Controllers.
+    x(desk, "midi", action="in", data="B0 01 7F")
+    x(desk, "midi", action="in", data="B0 4A 40")
+    x(desk, "midi", action="in", data="B0 07 40")
+    c = x(desk, "midi", action="state")["controls"]
+    R.check(c["mod"] == 1 and abs(c["feedback"] - 64 / 127) < 1e-3 and abs(c["volume"] - 64 / 127) < 1e-3,
+            f"mod wheel, CC74 and CC7 set the synth's index, feedback and volume ({c})")
+    x(desk, "midi", action="in", data="90 3C 7F")
+    time.sleep(0.1)
+    x(desk, "midi", action="in", data="80 3C 00")
+    e = [h for h in x(desk, "hear", seconds=1, of="synth")["heard"] if h["note"] == "C-4"]
+    R.check(e and abs(e[-1]["level"] - 0.5) < 0.03, f"a MIDI note at velocity 127 plays at half volume after CC7=64 ({e[-1]['level'] if e else None})")
+    x(desk, "midi", action="in", data="B0 07 7F")
+    x(desk, "midi", action="in", data="B0 01 00")
+    x(desk, "midi", action="in", data="B0 0B 7F")
+    m = x(desk, "mosh")
+    R.check(m.get("amount") == 100, f"CC11 sets the desk mosh amount through the command table ({m.get('amount')})")
+    acts = desk.j("acts", by="person")["acts"]
+    R.check(any("midi cc 11=127" in a["what"] and "desk mosh amount (ok)" in a["what"] for a in acts), "the log has the person's controller")
+
+    # Pitch bend: a held speaker A-4 rises two semitones.
+    x(desk, "synth", id=syn, action="audio", on=1)
+    x(desk, "synth", id=syn, action="voice", value="pcspk")
+    x(desk, "midi", action="in", data="90 45 64")
+    time.sleep(0.4)
+    hz0 = x(desk, "sound", action="capture", ms=300)["hz_last_200ms"]
+    x(desk, "midi", action="in", data="E0 7F 7F")
+    time.sleep(0.4)
+    hz1 = x(desk, "sound", action="capture", ms=300)["hz_last_200ms"]
+    x(desk, "midi", action="in", data="80 45 00")
+    x(desk, "midi", action="in", data="E0 00 40")
+    R.check(abs(hz0 - 440) <= 10 and abs(hz1 - 493.9) <= 12, f"pitch bend up takes the held A-4 from {hz0} Hz to {hz1} Hz (494 wanted)")
+    R.check(x(desk, "midi", action="state")["controls"]["bend"] == 0, "the bend wheel back at the centre is no bend")
+    x(desk, "synth", id=syn, action="audio", on=0)
+
+
+GROUPS = {"midiin": test_midiin, "voice": test_voice, "patterns": test_patterns, "jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():
     groups = [g.lower() for g in sys.argv[1:]] or list(GROUPS)
-    desk = Desk(os.environ.get("SOUND_TEST_NAME", "soundtest"), env=QUIET).start()
+    name = os.environ.get("SOUND_TEST_NAME", "soundtest")
+    QUIET["FAKE_SAY_LOG"] = f"/tmp/wibwob_{name}_say.log"
+    QUIET["TMPDIR"] = f"/tmp/wibwob_{name}_tmp"            # a fresh voice cache for each run
+    subprocess.run(["rm", "-rf", QUIET["TMPDIR"]])
+    os.makedirs(QUIET["TMPDIR"])
+    if os.path.exists(QUIET["FAKE_SAY_LOG"]):
+        os.remove(QUIET["FAKE_SAY_LOG"])
+    desk = Desk(name, env=QUIET).start()
     try:
         for g in groups:
             GROUPS[g](desk)
