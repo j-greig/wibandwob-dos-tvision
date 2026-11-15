@@ -15,7 +15,7 @@ class TWindow;
 
 namespace tools {
 
-// Writes the two worked tools (CLOCK.BAS by Wob, ETCH.BAS by Wib) when TOOLS/ lacks them.
+// Writes the worked tools (CLOCK.BAS by Wob, ETCH.BAS by Wib, PURR.BAS by Scramble) when TOOLS/ lacks them.
 void seed();
 bool isToolWindow(TWindow* w);
 bool isToolListWindow(TWindow* w);
@@ -25,6 +25,11 @@ bool owns(const std::string& cmd);
 std::string command(const std::string& name, const resident::KV& kv);
 // Runs every open tool's clock (called from the life's tick).
 void tick();
+// Writes every open tool's state (NAME.STATE), as at the app's close.
+void saveAll();
+// The tool a window runs ("" for other windows), and a tool opened again at a place (the restore).
+std::string nameOf(TWindow* w);
+TWindow* reopen(const std::string& name, int x, int y, int w, int h, std::string& err);
 
 }  // namespace tools
 
