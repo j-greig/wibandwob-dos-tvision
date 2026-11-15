@@ -446,6 +446,38 @@ def test_listen(_desk):
         desk.stop()
 
 
+def test_listen_file(_desk):
+    print("listen to a file opened")
+    name = NAME + "_lfile"
+    desk = Desk(name, env={"PATH": "/usr/bin:/bin", "ANTHROPIC_API_KEY": "", "WWDOS_LISTEN": "1",
+                           "WWDOS_LISTEN_RATE": "present"}).start()
+    try:
+        # A visitor opens a primer: not the person's gesture, so nothing happens.
+        desk.ipc("create_window", type="frame_player", path="modules/wibwob-2026/primers/being-flatboy.txt",
+                 x=2, y=1, w=40, h=14, actor="bot9", source="visitor")
+        time.sleep(2.5)
+        R.check(not [w for w in desk.state()["windows"] if w["title"].startswith("beside")],
+                "a window a visitor opens is not noticed (only the person's gestures are)")
+        desk.ipc("close_all", actor="setup")
+        time.sleep(0.4)
+        # The person opens a primer through File > Open (Ctrl+O), typing its path into the dialog.
+        desk.person_keys("C-o")
+        time.sleep(0.8)
+        from resident_lib import REPO
+        desk.person_type(os.path.join(REPO, "modules/wibwob-2026/primers/being-bartholomew-carapace-iii-beetle.txt"))
+        desk.person_keys("Enter")
+        got = wait_for(lambda: [w for w in desk.state()["windows"] if w["title"].startswith("beside")], 10)
+        owner = desk.j("window_owner", id=got[0]["id"])["owner"] if got else ""
+        state = desk.j("describe", id=got[0]["id"])["state"] if got else ""
+        R.check(got and owner == "wib" and "bartholomew" in state,
+                f"the person opens a primer; wib opens a related one beside it: {state[:90]!r}")
+        notes = [a["what"] for a in desk.j("acts", by="app")["acts"]]
+        R.check(any("noticed being-bartholomew-carapace-iii-beetle.txt opened" in n for n in notes), "the Feed says why")
+    finally:
+        R.check(desk.alive(), "the file desktop is still running")
+        desk.stop()
+
+
 def test_listen_synth(_desk):
     print("listen to the synth")
     name = NAME + "_lsynth"
@@ -655,11 +687,11 @@ def test_rehearse(desk):
 
 
 def main():
-    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "jam", "undo", "rehearse", "listen", "listensynth", "listenmodel", "room"]
+    groups = [g.lower() for g in sys.argv[1:]] or ["chat", "feed", "child", "teach", "menu", "jam", "undo", "rehearse", "listen", "listensynth", "listenfile", "listenmodel", "room"]
     desk = Desk(NAME, env=NO_LLM).start()
     try:
         for g in groups:
-            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "jam": test_jam, "listen": test_listen, "listensynth": test_listen_synth, "listenmodel": test_listen_model, "room": test_room, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
+            {"chat": test_chat, "feed": test_feed, "child": test_child, "teach": test_teach, "menu": test_menu_ids, "jam": test_jam, "listen": test_listen, "listensynth": test_listen_synth, "listenfile": test_listen_file, "listenmodel": test_listen_model, "room": test_room, "undo": test_undo, "rehearse": test_rehearse}[g](desk)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
