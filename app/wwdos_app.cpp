@@ -121,6 +121,7 @@
 #include "deep_signal_view.h"
 // Terminal emulator window (tvterm)
 #include "tvterm_view.h"
+#include "terminal_transport.h"
 // Desktop texture & gallery mode
 #include "wibwob_background.h"
 // EGA theme and per-window colours
@@ -1335,7 +1336,8 @@ void TWwdosApp::handleEvent(TEvent& event)
         return;
     }
     // The Residents menu: the console key and the residents' rules (resident_acts.cpp).
-    if (event.what == evCommand && (resident::handleCommand(event.message.command) || deskmosh::handleCommand(event.message.command))) {
+    if (event.what == evCommand && (resident::handleCommand(event.message.command) || deskmosh::handleCommand(event.message.command) ||
+                                    termtransport::handleCommand(event.message.command))) {
         clearEvent(event);
         return;
     }
@@ -2935,6 +2937,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("~T~ext Editor", cmTextEditor, kbNoKey) +
             *new TMenuItem("~B~rowser", cmBrowser, kbCtrlB) +
             *new TMenuItem("Te~r~minal", cmOpenTerminal, kbNoKey) +
+            *new TMenuItem("Pa~u~se or Play Terminal", termtransport::cmTermToggle, kbNoKey, hcNoContext, "Alt-P") +
             *new TMenuItem("~O~pen Text File (Transparent)...", cmOpenTransparentText, kbNoKey) +
             newLine() +
             *new TMenuItem("~C~ascade", cmCascade, kbNoKey) +
@@ -2969,6 +2972,8 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("Guest~b~ook (GUESTS.TXT)", life::cmLifeGuestbook, kbNoKey) +
                     *new TMenuItem("Sign the ~g~uestbook", life::cmLifeSign, kbNoKey) +
                     *new TMenuItem("Write the ~w~ill", life::cmLifeWill, kbNoKey) +
+                    *new TMenuItem("~T~ime of their own", life::cmLifeOwn, kbNoKey) +
+                    *new TMenuItem("Their ~p~rograms (TOOLS)", life::cmLifeTools, kbNoKey) +
                     newLine() +
                     *new TMenuItem("~A~bout the residents", resident::cmResidentAbout, kbNoKey)
             ) +
@@ -2984,6 +2989,14 @@ TStatusLine* TWwdosApp::initStatusLine(TRect r)
 {
     r.a.y = r.b.y - 1;
     return new TCustomStatusLine(r,
+        // A focused terminal window: Alt-P pauses and plays its program (terminal_transport.cpp).
+        *new TStatusDef(termtransport::hcTerminal, termtransport::hcTerminal) +
+            *new TStatusItem("~Alt-P~ Pause/Play", kbAltP, termtransport::cmTermToggle) +
+            *new TStatusItem("~Alt-X~ Exit", kbAltX, cmQuit) +
+            *new TStatusItem("~F6~ Next", kbF6, cmNext) +
+            *new TStatusItem("~Alt-F3~ Close", kbAltF3, cmClose) +
+            *new TStatusItem("~F8~ Scramble", kbF8, cmScrambleCat) +
+            *new TStatusItem(0, kbAltM, deskmosh::cmMoshToggle) +
         *new TStatusDef(0, 0xFFFF) +
             *new TStatusItem("~Alt-X~ Exit", kbAltX, cmQuit) +
             *new TStatusItem("~Ctrl-N~ New Window", kbCtrlN, cmNewWindow) +
@@ -2991,7 +3004,8 @@ TStatusLine* TWwdosApp::initStatusLine(TRect r)
             *new TStatusItem("~F6~ Next", kbF6, cmNext) +
             *new TStatusItem("~Alt-F3~ Close", kbAltF3, cmClose) +
             *new TStatusItem("~F8~ Scramble", kbF8, cmScrambleCat) +
-            *new TStatusItem(0, kbAltM, deskmosh::cmMoshToggle)
+            *new TStatusItem(0, kbAltM, deskmosh::cmMoshToggle) +
+            *new TStatusItem(0, kbAltP, termtransport::cmTermToggle)
     );
 }
 
