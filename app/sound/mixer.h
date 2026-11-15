@@ -44,6 +44,9 @@ public:
         int64_t clock = 0;
     };
     Stats stats() const;
+    // Pitch bend in semitones for every synth voice sounding (FM and speaker), from MIDI.
+    void setBend(double semitones) { bend_.store(semitones); }
+    double bend() const { return bend_.load(); }
     // The last n samples rendered (fewer when the ring holds fewer), and the clock at their end.
     std::vector<int16_t> capture(size_t n, int64_t& endSample) const;
 
@@ -56,8 +59,9 @@ private:
         Pcm pcm;
         double gain;
     };
-    struct Speaker { bool on = false; int64_t a = 0, b = 0; double hz = 0; uint64_t id = 0; };
-    struct Channel { bool on = false; Note n; int64_t a = 0, end = 0; double prev = 0, f = 0, vel = 0; uint64_t id = 0; };
+    // Phases accumulate sample by sample, so a pitch bend glides without a jump.
+    struct Speaker { bool on = false; int64_t a = 0, b = 0; double hz = 0, ph = 0; uint64_t id = 0; };
+    struct Channel { bool on = false; Note n; int64_t a = 0, end = 0; double prev = 0, f = 0, vel = 0, phC = 0, phM = 0; uint64_t id = 0; };
     struct Playing { Pcm pcm; double gain; int64_t a; };
 
     uint64_t insert(Pending p);
@@ -70,6 +74,7 @@ private:
     Channel ch_[kFmChannels];
     std::vector<Playing> smp_;
     std::atomic<int64_t> clock_{0};
+    std::atomic<double> bend_{0.0};
     long notes_ = 0, hits_ = 0, late_ = 0;
     std::vector<int16_t> ring_;
     size_t ringPos_ = 0, ringFill_ = 0;

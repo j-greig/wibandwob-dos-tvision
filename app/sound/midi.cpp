@@ -90,11 +90,13 @@ static void logMsg(const Msg& m) {
     while (g_log.size() > 1024) g_log.pop_front();
 }
 
-void inject(const std::vector<uint8_t>& bytes, const std::string& from) {
+void inject(const std::vector<uint8_t>& bytes, const std::string& from) { injectAt(bytes, from, clockMs()); }
+
+void injectAt(const std::vector<uint8_t>& bytes, const std::string& from, double atMs) {
     {
         std::lock_guard<std::mutex> lk(g_mu);
         Msg m;
-        m.ms = clockMs();
+        m.ms = atMs;
         m.out = false;
         m.bytes = bytes;
         m.from = from;
