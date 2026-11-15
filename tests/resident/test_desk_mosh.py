@@ -631,6 +631,17 @@ def group_live():
         st = m(d, "mosh_status")
         R.check(a and b and max(map(int, b)) > max(map(int, a)) and st["step"] == 1,
                 f"a film in a terminal window moshes as a live source: frames {a[:1]} -> {b[:1]} with no new step")
+        m(d, "mosh_off"); time.sleep(0.3)
+        d.ipc("open_cast", file="casts/bounce.cast", x="70", y="3", loop="1")
+        time.sleep(0.5)
+        m(d, "mosh_on")
+        steps(d, ["tick"])
+        o1 = m(d, "mosh_status")["opened"]
+        f1 = plain(cap(d))
+        time.sleep(1.0)
+        f2 = plain(cap(d))
+        st = m(d, "mosh_status")
+        R.check(st["step"] == 1 and f1 != f2, "a cast player window is a live source too: its ball moves in the shards between steps")
         m(d, "mosh_off")
     finally:
         d.stop()
@@ -717,6 +728,12 @@ def group_record():
                 f"the cast is asciicast v2, 160x50, {len(evs)} frames")
         R.check(all(e[1] == "o" for e in evs) and evs == sorted(evs, key=lambda e: e[0]) and "notes" in "".join(e[2] for e in evs),
                 "its frames are output events in time order, with the desktop's text")
+        cp = d.j("open_cast", file=cast, x="0", y="0")
+        time.sleep(0.5)
+        cs = d.j("cast_state", id=cp["id"])
+        R.check(cs.get("width") == 160 and cs.get("events") == len(evs), f"the app's own cast player opens it ({cs.get('width')}x{cs.get('height')}, {cs.get('events')} events)")
+        d.ipc("close_window", id=cp["id"])
+        time.sleep(0.3)
         m(d, "mosh_off"); time.sleep(0.3)
         R.check(cap(d) == before, "the desktop comes back after playback")
     finally:

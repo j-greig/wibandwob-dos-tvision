@@ -109,7 +109,7 @@ desktop's cells x `sizeof(TScreenCell)` (24 bytes) is 8.8 MB on a 160x48 desktop
 ## Live sources
 
 A terminal window (a film or a program playing in it, which `terminal_pause` and `terminal_resume` hold and
-play) is a live source: when its cells change between steps the shards are cut again from it without moving the
+play) and a cast player window (`open_cast`) are live sources: when its cells change between steps the shards are cut again from it without moving the
 beat (in wrap, tear, bleed and timelag; mosh and raw keep their own flow), at most every 60 ms. Every step
 already cuts shards from every window's own cells, so any window that draws while the mosh runs is followed.
 
@@ -157,7 +157,9 @@ MIDI are ignored while it plays. On the same desktop the frames come out byte fo
 `cast=FILE.cast` also writes the shown frames as an asciinema cast (asciicast v2): a header line with the screen's
 width and height, then one `[seconds, "o", text]` event per step that changed the screen, carrying the rows that
 changed with 24-bit or 16-colour SGR codes and UTF-8 text (Turbo Vision's code page 437 bytes are translated).
-`asciinema play FILE.cast` plays it in any terminal.
+It is the format of `terminal_record` (docs/terminal-transport.md): `open_cast file=FILE.cast` plays it back in the
+app's own cast player, and `asciinema play FILE.cast` in any terminal. It is large: about 370 KB a second at
+160x50, because a moshed screen changes most rows on every step.
 
 ## A mosh score
 

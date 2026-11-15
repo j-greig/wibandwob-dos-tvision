@@ -923,7 +923,7 @@ void castFrame() {
     }
     g_castLast.assign(TScreen::screenBuffer, TScreen::screenBuffer + (size_t)W * H);
     if (out.empty()) return;
-    std::fprintf(g_cast, "[%.3f, \"o\", \"%s\"]\n", (sound::clockMs() - g_castStart) / 1000.0, jsonText(out).c_str());
+    std::fprintf(g_cast, "[%.6f, \"o\", \"%s\"]\n", (sound::clockMs() - g_castStart) / 1000.0, jsonText(out).c_str());
     ++g_castFrames;
 }
 
@@ -1473,7 +1473,7 @@ bool parseHits(const std::string& s, Hit& h) {
 
 // ---------------------------------------------------------------- live sources
 
-// A terminal window (a film or a program playing in it) is a live source: when its cells
+// A terminal window (a film or a program playing in it) or a cast player is a live source: when its cells
 // change between steps the shards are cut again from it, without moving the beat.
 std::map<TWindow*, uint64_t> g_liveHash;
 Clock::time_point g_liveAt{};
@@ -1483,7 +1483,7 @@ bool liveChanged() {
     bool changed = false;
     for (TWindow* w : realWindows()) {
         std::string type = resident::hooks().typeOf ? resident::hooks().typeOf(w) : "";
-        if (type != "terminal" || !w->buffer) continue;
+        if ((type != "terminal" && type != "cast_player") || !w->buffer) continue;
         uint64_t h = 1469598103934665603ull;
         const unsigned char* p = reinterpret_cast<const unsigned char*>(w->buffer);
         size_t n = (size_t)w->size.x * w->size.y * sizeof(TScreenCell);
@@ -1572,7 +1572,7 @@ std::string recordStart(const std::string& path, const std::string& cast) {
         g_castStart = sound::clockMs();
         g_castFrames = 0;
         std::fprintf(g_cast, "{\"version\": 2, \"width\": %d, \"height\": %d, \"timestamp\": %ld, "
-                             "\"env\": {\"TERM\": \"xterm-256color\"}, \"title\": \"desk mosh\"}\n",
+                             "\"title\": \"desk mosh\", \"env\": {\"TERM\": \"xterm-256color\"}}\n",
                      g_castW, g_castH, (long)std::time(nullptr));
         castFrame();
     }
