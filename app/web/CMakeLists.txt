@@ -2,6 +2,7 @@
 # The source list follows the wwdos target in app/CMakeLists.txt. Differences:
 #   - tvterm_view.cpp compiles to nothing; tvterm_stub.cpp is a placeholder window (no PTY).
 #   - micropolis_stub.cpp replaces the Micropolis engine (not built for the browser).
+#   - cast_player_stub.cpp replaces the cast player (it needs tvterm's emulator).
 #   - no tvterm-core, libvterm or OpenSSL; api_ipc.cpp is compiled but the server never starts.
 set(APP ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(WWDOS_WEB_SOURCES
@@ -27,11 +28,20 @@ set(WWDOS_WEB_SOURCES
     paint/figlet_stamp_dialog.cpp
     micropolis_ascii_view.cpp micropolis_tool_palette.cpp
     tvterm_view.cpp figlet_utils.cpp figlet_text_view.cpp backrooms_tv_view.cpp
+    # the residents, the describe contract, the feed, desk mosh and terminal casts (as in app/CMakeLists.txt)
+    resident_senses.cpp resident_acts.cpp resident_hands.cpp resident_life.cpp resident_tool.cpp
+    resident_teach.cpp resident_listen.cpp describe.cpp feed_view.cpp desk_mosh.cpp
+    terminal_transport.cpp cast_record.cpp
+    # the machine's sound: in the browser the stream is WebAudio (sound/stream.cpp)
+    sound/synth.cpp sound/mixer.cpp sound/stream.cpp sound/sound_host.cpp sound/synth_view.cpp sound/ears.cpp
+    sound/score.cpp sound/score_view.cpp sound/tracker.cpp sound/tracker_view.cpp sound/midi.cpp sound/midi_view.cpp
+    sound/jam.cpp sound/jam_rule.cpp sound/voice.cpp
 )
 list(TRANSFORM WWDOS_WEB_SOURCES PREPEND ${APP}/)
 add_executable(wwdos
     ${WWDOS_WEB_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/tvterm_stub.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cast_player_stub.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/micropolis_stub.cpp)
 target_include_directories(wwdos PRIVATE ${APP})
 target_compile_definitions(wwdos PRIVATE WWDOS_WASM=1)
@@ -39,5 +49,7 @@ target_compile_options(wwdos PRIVATE -Wno-deprecated-declarations -fexceptions)
 target_link_libraries(wwdos PRIVATE tvision)
 # The primer library is embedded in the wasm data segment, so the page needs no fetch.
 target_link_options(wwdos PRIVATE ${WWDOS_WEB_LINK_FLAGS} -fexceptions
-    "SHELL:--embed-file ${APP}/../modules/wibwob-2026/primers@/modules/wibwob-2026/primers")
+    "SHELL:--embed-file ${APP}/../modules/wibwob-2026/primers@/modules/wibwob-2026/primers"
+    # the TR-808's recordings (13 short WAVs), mixed by the sound stream through WebAudio
+    "SHELL:--embed-file ${APP}/../modules/tr808/samples@/modules/tr808/samples")
 set_target_properties(wwdos PROPERTIES SUFFIX ".js" RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})

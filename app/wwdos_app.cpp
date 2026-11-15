@@ -1156,6 +1156,15 @@ TWwdosApp::TWwdosApp() :
     };
     for (const auto &bw : bootScene)
         openAnimationFilePath(bw.file, TRect(bw.x, bw.y, bw.x + bw.w, bw.y + bw.h), false, false, bw.title);
+    {   // the machine's sound plays in the browser too (WebAudio, started on the first key or click)
+        sound::Host sh;
+        sh.insert = [this](TWindow* w) { deskTop->insert(w); return registerWindow(w); };
+        sh.find = [this](const std::string& id) { return findWindowById(id); };
+        sh.idOf = [this](TWindow* w) { auto it = winToId.find(w); return it == winToId.end() ? std::string() : it->second; };
+        sh.tr808 = [this](const sound::KV& kv) { return api_tr808_action(*this, kv); };
+        sh.exec = [this](const std::string& n, const sound::KV& kv) { return exec_registry_command(*this, n, kv); };
+        sound::setHost(sh);
+    }
     return;
 #endif
 
