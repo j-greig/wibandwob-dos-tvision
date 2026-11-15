@@ -7,6 +7,7 @@
 #include "frame_file_player_view.h"
 #include "transparent_text_view.h"
 #include "text_editor_view.h"
+#include "resident_life.h"
 #include "browser_view.h"
 #include "generative_verse_view.h"
 #include "generative_mycelium_view.h"
@@ -38,6 +39,9 @@
 #include "backrooms_tv_view.h"
 #include "figlet_text_view.h"
 #include "tr808_view.h"
+#include "sound/sound_host.h"
+#include "sound/synth_view.h"
+#include "sound/score_view.h"
 #include "ascii_image_view.h"
 #include "feed_view.h"
 
@@ -331,6 +335,16 @@ static const char* spawn_feed(TWwdosApp& app, const std::map<std::string,std::st
 static bool match_feed(TWindow* w) { return dynamic_cast<TFeedWindow*>(w) != nullptr; }
 static bool match_ascii_image(TWindow* w) { return isAsciiImageWindow(w); }
 static bool match_tr808(TWindow* w)       { return dynamic_cast<TTR808Window*>(w) != nullptr; }
+static const char* spawn_synth(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    sound::command("open_synth", kv); return nullptr; }
+static bool match_synth(TWindow* w)       { return dynamic_cast<TSynthWindow*>(w) != nullptr; }
+// kv: score=<name> or text=<score>, start=1
+static const char* spawn_event_score(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    std::string r = sound::command("open_event_score", kv);
+    static std::string err;
+    if (r.rfind("err", 0) == 0) { err = r; return err.c_str(); }
+    return nullptr; }
+static bool match_event_score(TWindow* w) { return dynamic_cast<TScoreWindow*>(w) != nullptr; }
 
 // ── Registry table ────────────────────────────────────────────────────────────
 // Add new window types here — nowhere else.
@@ -341,6 +355,8 @@ static const WindowTypeSpec k_specs[] = {
     { "frame_player",      spawn_frame_player,      match_frame_player      },
     { "text_view",         spawn_text_view,         match_text_view         },
     { "text_editor",       spawn_text_editor,       match_text_editor       },
+    { "boot",              nullptr,                 life::isBootWindow      },  // the residents' boot screen
+    { "dream",             nullptr,                 life::isDreamWindow     },  // a resident's dream while asleep
     { "browser",           spawn_browser,           match_browser           },
     { "verse",             spawn_verse,             match_verse             },
     { "mycelium",          spawn_mycelium,          match_mycelium          },
@@ -375,6 +391,8 @@ static const WindowTypeSpec k_specs[] = {
     { "gallery",           spawn_gallery,          match_gallery            },
     { "figlet_text",       spawn_figlet_text,      match_figlet_text        },
     { "tr808",             spawn_tr808,            match_tr808              },
+    { "synth",             spawn_synth,            match_synth              },
+    { "event_score",       spawn_event_score,      match_event_score        },
     { "ascii_image",       nullptr,                match_ascii_image        },
     { "feed",              spawn_feed,             match_feed               },
 };
