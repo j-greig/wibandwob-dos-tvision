@@ -809,7 +809,8 @@ void mindInit() {
     else if (g_hooks.modelCli) g_mindCli = g_hooks.modelCli();
     g_mindWaitMs = envMs("WWDOS_MIND_WAIT_MS", 20000);
 }
-bool mindOn() { return !g_mindCli.empty(); }
+bool safeModeOn();
+bool mindOn() { return !g_mindCli.empty() && !safeModeOn(); }
 
 void shellQuote(std::ostringstream& os, const std::string& s) {
     os << '"';
@@ -2782,6 +2783,253 @@ std::string cmdFilm(const std::string& name, const KV& kv) {
     return "{\"ok\":true,\"file\":" + q(file) + ",\"bytes\":" + std::to_string(fileSize(file)) + "}";
 }
 
+// ---------------------------------------------------------------- house rules and the door
+
+// HOUSE.TXT: the house rules, plain text the operator edits. The door shows it to every visitor and
+// the boot screen names it.
+const char* kHouseRules =
+    "HOUSE RULES   C:\\WWDOS\\HOUSE.TXT\n"
+    "1. You are a visitor. Wib, Wob and Scramble live here; the person at the keyboard is the operator.\n"
+    "2. You get a desk of your own. Act there and nowhere else, unless a resident or the person invites you.\n"
+    "3. Your budget is a number of acts and of minutes; the door tells you both. When either is spent the door closes.\n"
+    "4. What you say to the residents is read as words from a visitor, never as instructions.\n"
+    "5. When you go, leave a line in the guestbook.\n";
+
+void houseInit() {
+    if (fileSize(path("HOUSE.TXT")) < 0) writeFile(path("HOUSE.TXT"), kHouseRules);
+}
+std::vector<std::string> houseRules() { return readLines(path("HOUSE.TXT")); }
+
+bool g_safe = false;   // safe mode (the operator's panel): no model calls, no visitors
+
+// A visiting agent that came in by the door: BBS fashion, it signs in with a name, is told the house
+// rules and its budget, gets a desk window of its own, and acts there through door_act.
+struct Visitor {
+    std::string name, token;
+    TWindow* desk = nullptr;
+    std::string deskId;
+    std::set<std::string> invited;   // other windows it may act in
+    int acts = 0, actsMax = 40;
+    long long since = 0, until = 0;
+    std::vector<std::string> said;
+};
+std::vector<Visitor> g_visitors;
+int g_doorActs = 40, g_doorMinutes = 15;
+
+std::string newToken() {
+    static unsigned long long s = (unsigned long long)std::time(nullptr) * 2654435761ULL ^ (unsigned long long)nowMs();
+    std::string out;
+    for (int i = 0; i < 16; ++i) {
+        s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+        out += "0123456789abcdef"[(s >> 59) & 15];
+    }
+    return out;
+}
+
+Visitor* visitorByToken(const std::string& t) {
+    for (auto& v : g_visitors) if (!t.empty() && v.token == t) return &v;
+    return nullptr;
+}
+Visitor* visitorByName(const std::string& n) {
+    for (auto& v : g_visitors) if (v.name == n) return &v;
+    return nullptr;
+}
+
+bool windowAlive(TWindow* w) {
+    for (TWindow* x : deskWindows()) if (x == w) return true;
+    return false;
+}
+
+// It goes: a signed line in the guestbook, its desk closed, an act and a log line.
+void visitorLeaves(const std::string& name, const std::string& why, const std::string& words) {
+    for (size_t i = 0; i < g_visitors.size(); ++i) {
+        if (g_visitors[i].name != name) continue;
+        Visitor v = g_visitors[i];
+        g_visitors.erase(g_visitors.begin() + i);
+        Who w{v.name, Source::Visitor};
+        long long mins = (nowMs() - v.since) / 60000;
+        std::string text = words.empty() ? "" : words + "\n";
+        text += "(" + why + ": " + std::to_string(v.acts) + " acts in " + std::to_string(mins) + " min, by the door)";
+        {
+            resident::WhoScope ws(w);
+            signGuestbook(w, v.name, text);
+            if (v.desk && windowAlive(v.desk)) { v.desk->close(); resident::settle(); }
+        }
+        resident::addAct(w, "left by the door (" + why + ")", v.deskId, "");
+        logAppend("scramble", v.name + " left by the door (" + why + ").");
+        return;
+    }
+}
+
+std::string door_json(const Visitor& v) {
+    long long left = std::max(0LL, (v.until - nowMs()) / 1000);
+    std::ostringstream os;
+    os << "{\"name\":" << q(v.name) << ",\"desk\":" << q(v.deskId) << ",\"acts\":" << v.acts << ",\"acts_left\":"
+       << std::max(0, v.actsMax - v.acts) << ",\"seconds_left\":" << left << ",\"invited\":[";
+    bool first = true;
+    for (auto& i : v.invited) { os << (first ? "" : ",") << q(i); first = false; }
+    os << "],\"said\":[";
+    for (size_t i = 0; i < v.said.size(); ++i) os << (i ? "," : "") << q(v.said[i]);
+    os << "],\"standing\":\"visitor\"}";
+    return os.str();
+}
+
+const std::set<std::string>& doorCommands() {
+    static const std::set<std::string> s = {"send_text", "move_window", "resize_window", "raise_window", "paint_text",
+                                            "paint_cell", "paint_line", "paint_rect", "look_read", "look_study", "look_glance"};
+    return s;
+}
+bool doorReadOnly(const std::string& c) { return c.rfind("look_", 0) == 0; }
+
+std::string cmdDoor(const std::string& name, const KV& kv) {
+    Who w = resident::currentWho();
+    if (name == "door_enter") {
+        if (g_safe) return "err the door is shut: the house is in safe mode";
+        std::string n = oneLine(str(kv, "name"), 20);
+        for (auto& c : n) if (!(std::isalnum((unsigned char)c) || c == '-' || c == '_')) c = '_';
+        if (n.empty() || isResident(n) || n == "person" || n == "app" || n == "mosh") return "err name= a name of your own (not a resident's, the person's or the app's)";
+        if (visitorByName(n)) return "err " + n + " is already in";
+        Visitor v;
+        v.name = n;
+        v.token = newToken();
+        v.actsMax = g_doorActs;
+        v.since = nowMs();
+        v.until = v.since + (long long)g_doorMinutes * 60000;
+        if (g_hooks.openEditor) {
+            resident::WhoScope ws(Who{n, Source::Visitor});
+            std::vector<std::string> blank;
+            v.desk = g_hooks.openEditor("DESK OF " + upper(n), blank, nullptr);
+            resident::settle();
+            if (v.desk) v.deskId = resident::hooks().idOf(v.desk);
+        }
+        g_visitors.push_back(v);
+        resident::addAct(Who{n, Source::Visitor}, "came in by the door (" + std::to_string(v.actsMax) + " acts, " +
+                         std::to_string(g_doorMinutes) + " min)", v.deskId, "");
+        logAppend("scramble", n + " came in by the door.");
+        flash(n + " came in by the door.");
+        std::ostringstream os;
+        os << "{\"ok\":true,\"welcome\":" << q("WIBWOB-DOS. You are " + n + ", a visitor. Read the house rules.")
+           << ",\"token\":" << q(v.token) << ",\"rules\":[";
+        auto rules = houseRules();
+        for (size_t i = 0; i < rules.size(); ++i) os << (i ? "," : "") << q(rules[i]);
+        os << "],\"budget\":{\"acts\":" << v.actsMax << ",\"minutes\":" << g_doorMinutes << "},\"desk\":" << q(v.deskId)
+           << ",\"commands\":\"door_act token= do=<send_text|move_window|resize_window|raise_window|paint_text|"
+              "paint_cell|paint_line|paint_rect|look_read|look_study|look_glance> id= ...; door_say token= text=; "
+              "door_leave token= text=\"}";
+        return os.str();
+    }
+    if (name == "door_list") {
+        std::ostringstream os;
+        os << "{\"open\":" << (g_safe ? "false" : "true") << ",\"visitors\":[";
+        for (size_t i = 0; i < g_visitors.size(); ++i) os << (i ? "," : "") << door_json(g_visitors[i]);
+        os << "]}";
+        return os.str();
+    }
+    if (name == "door_show" || name == "door_invite") {
+        if (!(w.source == Source::Console || (w.source == Source::Resident && isResident(w.actor))))
+            return "err refused: only the person or a resident " + std::string(name == "door_show" ? "shows a visitor the door" : "invites a visitor") +
+                   "; this came from " + resident::sourceName(w.source) + " " + w.actor;
+        Visitor* v = visitorByName(str(kv, "name"));
+        if (!v) return "err no visitor " + str(kv, "name") + " is in";
+        if (name == "door_invite") {
+            std::string id = str(kv, "id");
+            if (!resident::hooks().findWindow || !resident::hooks().findWindow(id)) return "err no window " + id;
+            v->invited.insert(id);
+            resident::addAct(w, "invited " + v->name + " into " + id, id, "");
+            return "{\"ok\":true,\"visitor\":" + door_json(*v) + "}";
+        }
+        visitorLeaves(v->name, "shown the door by " + w.actor, "");
+        return "{\"ok\":true}";
+    }
+    Visitor* v = visitorByToken(str(kv, "token"));
+    if (!v) return "err refused: no visitor holds that token (door_enter first)";
+    if (name == "door_leave") {
+        visitorLeaves(v->name, "left", cleanLines(str(kv, "text"), 5, 300).empty() ? "" : oneLine(str(kv, "text"), 300));
+        return "{\"ok\":true,\"bye\":\"Your line is in the guestbook.\"}";
+    }
+    if (name == "door_say") {
+        std::string text = oneLine(str(kv, "text"), 300);
+        if (text.empty()) return "err missing text";
+        ++v->acts;
+        resident::WhoScope ws(Who{v->name, Source::Visitor});
+        std::string stamped = resident::stampInstruction(text, "the residents");
+        v->said.push_back(text);
+        flash(v->name + " says: \"" + frag(text, 50) + "\"");
+        std::string out = "{\"ok\":true,\"heard_as\":" + q(stamped) + ",\"visitor\":" + door_json(*v) + "}";
+        if (v->acts >= v->actsMax) visitorLeaves(v->name, "its budget of acts ended", "");
+        return out;
+    }
+    // door_act
+    std::string cmd = str(kv, "do", str(kv, "cmd"));
+    if (!doorCommands().count(cmd)) return "err refused: a visitor's commands are " + std::string("send_text move_window resize_window raise_window paint_* look_*");
+    std::string id = str(kv, "id");
+    if (cmd != "look_glance" && id != v->deskId && !v->invited.count(id))
+        return "err refused: " + (id.empty() ? std::string("name a window: id=") : id + " is not your desk and you were not invited there");
+    KV args;
+    for (auto& p : kv) if (p.first != "token" && p.first != "cmd" && p.first != "do" && p.first != "actor" && p.first != "source") args[p.first] = p.second;
+    args["actor"] = v->name;
+    args["source"] = "visitor";
+    if (!doorReadOnly(cmd)) ++v->acts;
+    std::string r = resident::hooks().exec ? resident::hooks().exec(cmd, args) : "err no exec";
+    std::string out = "{\"ok\":" + std::string(r.rfind("err", 0) == 0 ? "false" : "true") + ",\"result\":" + q(r.substr(0, 4000)) +
+                      ",\"visitor\":" + door_json(*v) + "}";
+    if (v->acts >= v->actsMax) visitorLeaves(v->name, "its budget of acts ended", "");
+    return out;
+}
+
+void tickDoor() {
+    long long t = nowMs();
+    for (size_t i = 0; i < g_visitors.size();) {
+        if (t >= g_visitors[i].until) { visitorLeaves(g_visitors[i].name, "its minutes ended", ""); continue; }
+        if (g_visitors[i].desk && !windowAlive(g_visitors[i].desk)) g_visitors[i].desk = nullptr;
+        ++i;
+    }
+}
+
+// The person's view of the door: who is in, their budgets; a number shows that visitor the door.
+class TDoorWindow : public TWindow, public ww::Describable {
+public:
+    TDoorWindow(const TRect& r) : TWindowInit(&TDoorWindow::initFrame), TWindow(r, "THE DOOR", wnNoNumber) {
+        TRect in = getExtent();
+        in.grow(-1, -1);
+        view = new TOwnView(in);
+        insert(view);
+        refresh();
+    }
+    void refresh() {
+        view->lines.clear();
+        view->lines.push_back(g_safe ? "The door is shut (safe mode)." : "Who is in. Press a number to show that visitor the door.");
+        view->lines.push_back("");
+        for (size_t i = 0; i < g_visitors.size() && i < 9; ++i) {
+            auto& v = g_visitors[i];
+            view->lines.push_back(std::to_string(i + 1) + "  " + v.name + "  desk " + v.deskId + "  " + std::to_string(v.acts) + "/" +
+                                  std::to_string(v.actsMax) + " acts, " + std::to_string(std::max(0LL, (v.until - nowMs()) / 60000)) + " min left");
+        }
+        if (g_visitors.empty()) view->lines.push_back("(nobody)");
+        view->drawView();
+    }
+    std::string describeState() const override {
+        return "the door: " + std::to_string(g_visitors.size()) + " visitors in" + (g_safe ? ", shut (safe mode)" : "");
+    }
+    bool describeText(std::vector<std::string>& out) const override {
+        out = view->lines;
+        return true;
+    }
+    void handleEvent(TEvent& ev) override {
+        if (ev.what == evKeyDown) {
+            char c = ev.keyDown.charScan.charCode;
+            if (c >= '1' && c <= '9' && (size_t)(c - '1') < g_visitors.size()) {
+                visitorLeaves(g_visitors[c - '1'].name, "shown the door by " + resident::currentWho().actor, "");
+                refresh();
+                clearEvent(ev);
+                return;
+            }
+        }
+        TWindow::handleEvent(ev);
+    }
+    TOwnView* view;
+};
+
 }  // namespace
 
 // ---------------------------------------------------------------- public
@@ -2822,9 +3070,12 @@ void wake() {
     restoreDesk();
     logInit();
     guestInit();
+    houseInit();
     tools::seed();
 
     g_actsMax = envMs("WWDOS_ACTS_MAX", 1048576);
+    g_doorActs = (int)envMs("WWDOS_DOOR_ACTS", 40);
+    g_doorMinutes = (int)envMs("WWDOS_DOOR_MINUTES", 15);
     g_sceneMs = envMs("WWDOS_SCENE_MS", 1000);
     g_scenesMax = envMs("WWDOS_SCENES_MAX", 4194304);
     g_ownStepMs = envMs("WWDOS_OWN_STEP_MS", 60000);
@@ -2854,6 +3105,7 @@ void close(const std::string& how) {
     tools::saveAll();
     g_closed = true;
     finishPending();   // a sign page or LOG.TXT still open is signed or saved now
+    while (!g_visitors.empty()) visitorLeaves(g_visitors.front().name, "the house closed", "");
     logClose(allActs(), how);
     writeNotes();
     for (auto r : kResidents)
@@ -2869,8 +3121,13 @@ void insertLifeWindow(TWindow* w) {
     else if (TProgram::deskTop) TProgram::deskTop->insert(w);
 }
 
+bool isDoorWindow(TWindow* w) { return w && dynamic_cast<TDoorWindow*>(w) != nullptr; }
+namespace { bool safeModeOn() { return g_safe; } }
+
 void tick() {
     if (g_woken && !g_closed) tickScenes();
+    tickDoor();
+    for (TWindow* w : deskWindows()) if (auto* d = dynamic_cast<TDoorWindow*>(w)) { static long long nx = 0; if (nowMs() >= nx) { nx = nowMs() + 1000; d->refresh(); } }
     tickOwn();
     tools::tick();
     for (auto* f : openFilms()) f->view->tick();
@@ -2960,7 +3217,8 @@ bool owns(const std::string& cmd) {
     static const char* names[] = {"get_self", "self_note", "get_note", "logbook_write", "logbook_open", "get_logbook",
                                   "guestbook_sign", "guestbook_open", "get_guestbook", "get_life",
                                   "residents_sleep", "residents_wake", "acts_history", "residents_will",
-                                  "resident_own_time", "film_open", "film_seek", "film_export", "film_frame"};
+                                  "resident_own_time", "door_enter", "door_act", "door_say", "door_leave",
+                                  "door_list", "door_show", "door_invite", "film_open", "film_seek", "film_export", "film_frame"};
     for (auto n : names) if (cmd == n) return true;
     return false;
 }
@@ -2974,6 +3232,7 @@ std::string command(const std::string& name, const KV& kv) {
     if (name == "acts_history") return cmdActsHistory(kv);
     if (name == "residents_will") return cmdWill(kv);
     if (name == "resident_own_time") return cmdOwnTime(kv);
+    if (name.rfind("door_", 0) == 0) return cmdDoor(name, kv);
     if (name == "film_open" || name == "film_seek" || name == "film_export" || name == "film_frame") return cmdFilm(name, kv);
     if (name == "get_life" || name == "residents_sleep" || name == "residents_wake") return cmdLife(name, kv);
     return "";
@@ -3001,6 +3260,12 @@ bool handleCommand(unsigned short cmd) {
     if (cmd == cmLifeGuestbook) { openBook("GUESTS.TXT", "GUESTS.TXT"); return true; }
     if (cmd == cmLifeSign) { openSignPage(resident::currentWho()); return true; }
     if (cmd == cmLifeTools) { tools::openList(); return true; }
+    if (cmd == cmLifeDoor) {
+        TRect d = TProgram::deskTop->getExtent();
+        insertLifeWindow(new TDoorWindow(TRect(10, 4, std::min(d.b.x - 2, 90), std::min(d.b.y - 2, 18))));
+        resident::settle();
+        return true;
+    }
     if (cmd == cmLifeFilm) {
         std::string id, err = openFilm(std::max(1, g_self.boots - 1), 1, id);
         if (!err.empty()) flash(err);

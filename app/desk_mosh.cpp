@@ -12,6 +12,7 @@
 #define Uses_TDialog
 #define Uses_THardwareInfo
 #include <tvision/tv.h>
+#include <tvision/internal/codepage.h>
 
 #include "describe.h"
 #include "ega_theme.h"
@@ -38,15 +39,17 @@ using Cells = std::vector<TScreenCell>;
 
 // ---------------------------------------------------------------- settings and state
 
-enum Way { Wrap, Tear, Mosh, Bleed, Raw, All, Sound };
-const char* kWayNames[] = {"wrap", "tear", "mosh", "bleed", "raw", "all", "sound"};
-const int kWays = 7;
+enum Way { Wrap, Tear, Mosh, Bleed, Raw, All, Sound, Timelag };
+const char* kWayNames[] = {"wrap", "tear", "mosh", "bleed", "raw", "all", "sound", "timelag"};
+const int kWays = 8;
 
 struct Hit {
     bool kick = false, snare = false, tick = false, rat = false, metal = false, accent = false;
     int step = -1;   // position in the bar (0-15), -1 = count on from the last, -2 = a synth note (no clock step)
     double dueMs = -1;   // when it is heard on the sound clock (sound::clockMs); -1 = now
     int midi = -1;       // a synth note
+    int held = -1;       // a synth note was sounding at this step (1/0; -1 = ask the ears)
+    int way = -1;        // the way this step showed (-1 = choose now; set when replaying)
 };
 double g_lastNoteMs = 0, g_lastDrumEarMs = 0;                          // newest synth note taken from the ears
 double g_heardBass = -1e9, g_heardNote = -1e9, g_heardDrum = -1e9;   // way sound: what sounded last
@@ -67,6 +70,7 @@ uint64_t g_opened = 0, g_closed = 0;
 std::deque<Hit> g_queue;          // steps waiting for tick()
 Clock::time_point g_nextAt;       // internal clock
 Clock::time_point g_last808{};    // last TR-808 step seen
+int g_808Tempo = 0;               // its tempo
 int g_busy = 0;                   // inside a shard's event handler: no windows open or close
 Clock::time_point g_lastEsc{};
 double g_stepMs = 0, g_stepMsAvg = 0, g_loopMsAvg = 0;
@@ -740,6 +744,189 @@ void wayRaw(const Grid& t, std::vector<Spec>& out) {
     }
 }
 
+// ---------------------------------------------------------------- timelag: the desktop as it was
+//
+// After the timelag film (slit-scan time displacement, the tape-head model): head 1 reads
+// the desktop now; every other cell is read by a head up to L behind it, so bands, rings
+// or columns of the screen show different moments at once. The material of every step
+// goes into a ring of past frames; a cell lagging f*L reads the frame that many steps
+// back. L is counted in seconds on the sound clock's beat (sixteenths at the clock's
+// tempo): drum hits widen it, a held synth note narrows it, between them it drifts back.
+
+const size_t kRingFrames = 48;      // at most 48 past frames of the material
+const double kLagMax = 6.0;         // seconds
+struct PastFrame { uint64_t step; double ms; Grid g; };
+std::deque<PastFrame> g_ring;
+double g_lag = 1.5;                 // L, seconds
+int g_lagMode = 0;                  // 0 rows (slit-scan), 1 bands, 2 rings, 3 column pairs, 4 cells
+const char* kLagModes[] = {"rows", "bands", "rings", "columns", "cells"};
+
+size_t ringBytes() {
+    size_t n = 0;
+    for (const PastFrame& f : g_ring) n += f.g.c.size() * sizeof(TScreenCell);
+    return n;
+}
+
+void ringPush(const Grid& t) {
+    if (!g_ring.empty() && (g_ring.back().g.w != t.w || g_ring.back().g.h != t.h)) g_ring.clear();
+    g_ring.push_back({g_step, sound::clockMs(), t});
+    while (g_ring.size() > kRingFrames) g_ring.pop_front();
+}
+
+// The tempo the beat runs at now: the TR-808's when it plays, the internal clock's, else 128.
+int beatTempo();
+
+// How far behind head 1 a cell reads, as a fraction of L (0 = now, 1 = the last head).
+double lagf(int mode, int x, int y, int W, int H) {
+    switch (mode) {
+    case 0: return H > 1 ? (double)y / (H - 1) : 0;                                   // each row a little later
+    case 1: return std::floor(y / std::max(1.0, H / 6.0)) / 5.0;                       // six bands
+    case 2: {                                                                           // rings around the centre
+        double d = std::hypot((x - W / 2.0) / (W / 2.0), (y - H / 2.0) / (H / 2.0) * 0.9) / 1.35;
+        return std::min(1.0, std::floor(d * 13) / 12);
+    }
+    case 3: return std::floor(std::abs(x - W / 2) / 2.0) / (W / 4.0) * (y % 2 ? 1 : 0.7);   // pairs of columns
+    default: return std::floor(h3(x, y, B.tearSeed * 13 + 5) * 49) / 48;                  // single cells
+    }
+}
+
+void lagOnHit(const Hit& hit) {
+    if (hit.step == -2) return;
+    double add = (hit.kick ? 0.5 : 0) + (hit.snare ? 0.25 : 0) + (hit.metal ? 1.0 : 0) + (hit.rat ? 0.15 : 0);
+    if (hit.accent) add *= 1.2;
+    g_lag = std::min(kLagMax, g_lag + add * amt());
+}
+
+// Once a step: a held synth note narrows the lag; otherwise it drifts back to 1.5 s.
+bool earsHeld() { return !sound::ears().sounding(sound::clockMs(), "synth").empty(); }
+
+void lagOnStep(bool held) {
+    if (held) g_lag = std::max(0.1, g_lag * 0.8);
+    else g_lag += (1.5 - g_lag) * 0.08;
+}
+
+void wayTimelag(const Grid& t, std::vector<Spec>& out) {
+    int W = t.w, H = t.h;
+    double stepSec = 60.0 / std::max(20, beatTempo()) / 4.0;
+    double Lsteps = g_lag / stepSec;
+    int bandH = 2, bands = (H + bandH - 1) / bandH;
+    int sw = segWidth(bands, W);
+    int slot = 0;
+    auto frameAt = [&](double back) -> const Grid& {
+        if (g_ring.empty()) return t;
+        long k = (long)g_ring.size() - 1 - (long)std::lround(back);
+        if (k < 0) k = 0;
+        return g_ring[(size_t)k].g;
+    };
+    for (int by = 0; by < bands; ++by) {
+        int y0 = by * bandH, h = std::min(bandH, H - y0);
+        for (int x0 = 0; x0 < W; x0 += sw) {
+            int w = std::min(sw, W - x0);
+            out.push_back(cut(slot++, TRect(x0, y0, x0 + w, y0 + h), [&](int x, int y) {
+                int X = x0 + x, Y = y0 + y;
+                const Grid& g = frameAt(lagf(g_lagMode, X, Y, W, H) * Lsteps);
+                return g.w == W && g.h == H ? g.at(X, Y) : t.at(X, Y);
+            }));
+        }
+    }
+}
+
+// ---------------------------------------------------------------- recording and casts
+
+bool g_recording = false, g_playing = false, g_frozen = false;
+std::string g_recPath, g_castPath;
+std::ostringstream g_rec;
+double g_recStart = 0;
+FILE* g_cast = nullptr;
+std::vector<TScreenCell> g_castLast;
+int g_castW = 0, g_castH = 0;
+double g_castStart = 0;
+long g_castFrames = 0;
+
+std::string hitWords(const Hit& h) {
+    std::string w;
+    auto add = [&](const char* s) { w += (w.empty() ? "" : ","); w += s; };
+    if (h.kick) add("kick");
+    if (h.snare) add("snare");
+    if (h.tick) add("tick");
+    if (h.rat) add("rat");
+    if (h.metal) add("metal");
+    if (h.accent) add("accent");
+    return w.empty() ? "none" : w;
+}
+
+void recordLine(const std::string& what) {
+    if (!g_recording || g_playing) return;
+    char t[32];
+    std::snprintf(t, sizeof t, "at %.1f ", sound::clockMs() - g_recStart);
+    g_rec << t << what << "\n";
+}
+
+void recordHit(const Hit& h) {
+    std::string way = h.way >= 0 ? std::string(" way=") + kWayNames[h.way] : "";
+    if (h.step == -2) recordLine("note " + std::to_string(h.midi) + way);
+    else recordLine("step " + std::to_string(h.step) + " " + hitWords(h) + " held=" + std::to_string(std::max(0, h.held)) + way);
+}
+
+std::string sgrColour(TColor c, bool fg) {
+    if (c.isDefault()) return fg ? "39" : "49";
+    if (c.isRGB()) {
+        uint32_t v = (uint32_t) c.asRGB();
+        return std::string(fg ? "38;2;" : "48;2;") + std::to_string((v >> 16) & 255) + ";" + std::to_string((v >> 8) & 255) + ";" +
+               std::to_string(v & 255);
+    }
+    if (c.isXTerm()) return std::string(fg ? "38;5;" : "48;5;") + std::to_string(c.asXTerm());
+    int b = c.asBIOS() & 15;
+    static const int ansi[8] = {0, 4, 2, 6, 1, 5, 3, 7};   // BIOS order to ANSI order
+    int a = ansi[b & 7];
+    return std::to_string((b & 8 ? (fg ? 90 : 100) : (fg ? 30 : 40)) + a);
+}
+
+std::string jsonText(const std::string& s) {
+    std::string o;
+    for (unsigned char c : s) {
+        if (c == '"' || c == '\\') { o += '\\'; o += (char)c; }
+        else if (c < 0x20) { char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); o += b; }
+        else o += (char)c;
+    }
+    return o;
+}
+
+// One asciinema event: the rows of the screen that changed since the last frame.
+void castFrame() {
+    if (!g_cast || !TScreen::screenBuffer) return;
+    int W = TScreen::screenWidth, H = TScreen::screenHeight;
+    if (W != g_castW || H != g_castH) return;
+    std::string out;
+    for (int y = 0; y < H; ++y) {
+        const TScreenCell* row = TScreen::screenBuffer + (size_t)y * W;
+        bool same = !g_castLast.empty() && std::equal(row, row + W, g_castLast.begin() + (size_t)y * W);
+        if (same) continue;
+        out += "\x1b[" + std::to_string(y + 1) + ";1H";
+        std::string last;
+        for (int x = 0; x < W; ++x) {
+            const TScreenCell& c = row[x];
+            if (c.character.isWideCharTrail()) continue;
+            std::string sgr = sgrColour(c.attribute.getForeground(), true) + ";" + sgrColour(c.attribute.getBackground(), false);
+            if (sgr != last) { out += "\x1b[0;" + sgr + "m"; last = sgr; }
+            TStringView tx = c.character.getText();
+            unsigned char c0 = tx.empty() ? 0 : (unsigned char) tx[0];
+            if (c0 == 0) out += ' ';
+            else if (tx.size() == 1 && (c0 < 0x20 || c0 >= 0x80)) {
+                // a code page 437 byte, as Turbo Vision keeps the old glyphs: the terminal gets UTF-8
+                TScreenCharacter u;
+                u.initWithMultiByteChar(tvision::CpTranslator::toPackedUtf8(c0));
+                TStringView ut = u.getText();
+                out.append(ut.data(), ut.size());
+            } else out.append(tx.data(), tx.size());
+        }
+    }
+    g_castLast.assign(TScreen::screenBuffer, TScreen::screenBuffer + (size_t)W * H);
+    if (out.empty()) return;
+    std::fprintf(g_cast, "[%.6f, \"o\", \"%s\"]\n", (sound::clockMs() - g_castStart) / 1000.0, jsonText(out).c_str());
+    ++g_castFrames;
+}
+
 // ---------------------------------------------------------------- the screen layer (optional)
 //
 // After the windows, a filter over the desktop rows of the screen itself, for what windows
@@ -952,7 +1139,7 @@ int wayFor(int bar) {
         if (p != g_scorePart) {
             g_scorePart = p;
             const ScorePart& sp = g_score.parts[(size_t)p];
-            if (sp.amount >= 0) g_set.amount = sp.amount;
+            if (sp.amount >= 0) { g_set.amount = sp.amount; recordLine("amount " + std::to_string(sp.amount)); }
             if (sp.tempo > 0 && g_set.tempo > 0) g_set.tempo = sp.tempo;   // tempo 0 (manual steps) stays manual
         }
         return g_score.parts[(size_t)p].way == Sound ? Mosh : g_score.parts[(size_t)p].way;
@@ -965,7 +1152,8 @@ int wayFor(int bar) {
         return Bleed;
     }
     if (g_set.way != All) return g_set.way;
-    return (bar / 2) % 5;
+    int k = (bar / 2) % 6;   // the five film ways, then timelag
+    return k < 5 ? k : Timelag;
 }
 
 // ---------------------------------------------------------------- applying specs to windows
@@ -1102,8 +1290,17 @@ Grid crop(const Grid& t, const TRect& r) {
     return g;
 }
 
-void runStep(const Hit& hit) {
+int beatTempo() {
+    if (Clock::now() - g_last808 < std::chrono::seconds(1) && g_808Tempo > 0) return g_808Tempo;
+    return g_set.tempo > 0 ? g_set.tempo : 128;
+}
+
+// One step of the mosh. beat=false redraws the shards from the material without moving
+// the beat (a live source such as a terminal film changed between steps).
+void runStep(const Hit& hitIn, bool beat = true) {
     auto t0 = Clock::now();
+    Hit hit = hitIn;
+    if (beat && hit.step != -2 && hit.held < 0) hit.held = earsHeld() ? 1 : 0;
     if (g_screenOn && g_stepShown.w) g_prevShown = g_stepShown;   // the screen layer's flow moves on per step
     if (!g_on) {
         int pos = hit.step >= 0 ? hit.step : (B.pos + 1) % 16;
@@ -1115,21 +1312,27 @@ void runStep(const Hit& hit) {
     int pos = hit.step >= 0 ? hit.step : hit.step == -2 ? B.pos : (B.pos + 1) % 16;
     if (hit.step == -2) { if (hit.midi < 48) g_heardBass = sound::clockMs(); else g_heardNote = sound::clockMs(); }
     else if (hit.kick || hit.snare || hit.tick || hit.rat || hit.metal) g_heardDrum = sound::clockMs();
-    int w = wayFor(B.bar + (hit.step != -2 && pos <= B.pos ? 1 : 0));
+    int w = hit.way >= 0 ? hit.way : wayFor(B.bar + (hit.step != -2 && pos <= B.pos ? 1 : 0));
+    if (beat) { hit.way = w; recordHit(hit); }
     if (w != B.active) {
         clearShards(false);
         restoreReal();
         B.active = w;
         B.stride = 0; B.phase = 0; B.zoom = 1; B.roll = 0; B.scroll = 0; B.rawLeft = 0;
     }
-    advance(hit);
-    g_step++;
+    if (beat) {
+        advance(hit);
+        g_step++;
+        lagOnHit(hit);
+        if (hit.step != -2) lagOnStep(hit.held == 1);
+        g_lagMode = (B.bar + (int)g_set.seed) % 5;
+    }
     g_region = regionRect();
     TPoint c = caretPoint();
     g_caret = c;
     // the real windows themselves: resized to the wrong width (wrap), recoloured (bleed)
     if (g_set.scope.empty()) {
-        if (w == Wrap && hit.kick && amt() > 0.2) {
+        if (beat && w == Wrap && hit.kick && amt() > 0.2) {
             int i = 0;
             for (TWindow* rw : realWindows()) {
                 if (!(rw->flags & wfGrow) || dynamic_cast<TDialog*>(rw)) { ++i; continue; }
@@ -1145,8 +1348,10 @@ void runStep(const Hit& hit) {
     }
     if (g_scopeLost) return;   // its shards die with the window (tick turns the mosh off)
     Grid t = crop(trueDesk(), g_region);
+    if (beat && hit.step != -2) ringPush(t);
     std::vector<Spec> specs;
     switch (w) {
+    case Timelag: wayTimelag(t, specs); break;
     case Wrap: wayWrap(t, specs); break;
     case Tear: wayTear(t, specs); break;
     case Mosh: wayMosh(t, specs); break;
@@ -1154,6 +1359,7 @@ void runStep(const Hit& hit) {
     default: wayRaw(t, specs); break;
     }
     apply(specs);
+    castFrame();
     g_stepMs = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
     g_stepMsAvg = g_stepMsAvg == 0 ? g_stepMs : g_stepMsAvg * 0.9 + g_stepMs * 0.1;
 }
@@ -1193,6 +1399,9 @@ void turnOn() {
     B = Beat{};
     g_scorePart = -1;
     g_scoreEnded = false;
+    g_ring.clear();
+    g_lag = 1.5;
+    g_frozen = false;
     B.active = wayFor(0);
     captureTrue();
     g_nextAt = Clock::now();
@@ -1234,7 +1443,11 @@ std::string statusJson() {
       << ",\"scope\":" << q(g_set.scope.empty() ? "desktop" : g_set.scope) << ",\"shards\":" << g_pool.size()
       << ",\"held\":" << g_held.size() << ",\"screen\":" << (g_screenOn ? "true" : "false")
       << ",\"score\":" << q(g_scoreOn ? g_score.name : "") << ",\"score_part\":" << (g_scoreOn ? g_scorePart : -1)
-      << ",\"score_bars\":" << (g_scoreOn ? g_score.total : 0) << ",\"flying\":" << g_flights.size() << ",\"caret\":[" << g_caret.x << "," << g_caret.y << "]" << ",\"step\":" << g_step << ",\"bar\":" << B.bar
+      << ",\"score_bars\":" << (g_scoreOn ? g_score.total : 0) << ",\"flying\":" << g_flights.size() << ",\"frozen\":" << (g_frozen ? "true" : "false")
+      << ",\"recording\":" << (g_recording ? "true" : "false") << ",\"playing\":" << (g_playing ? "true" : "false")
+      << ",\"lag\":" << (int)(g_lag * 100) / 100.0 << ",\"lag_map\":" << q(kLagModes[g_lagMode])
+      << ",\"ring_frames\":" << g_ring.size() << ",\"ring_bytes\":" << ringBytes()
+      << ",\"cast_frames\":" << g_castFrames << ",\"caret\":[" << g_caret.x << "," << g_caret.y << "]" << ",\"step\":" << g_step << ",\"bar\":" << B.bar
       << ",\"clock\":" << q(Clock::now() - g_last808 < std::chrono::seconds(1) ? "tr808" : g_set.tempo > 0 ? "internal" : "manual")
       << ",\"opened\":" << g_opened << ",\"closed\":" << g_closed << ",\"by\":" << q(g_by)
       << ",\"step_ms\":" << (int)(g_stepMs * 10) / 10.0 << ",\"step_ms_avg\":" << (int)(g_stepMsAvg * 10) / 10.0
@@ -1256,6 +1469,209 @@ bool parseHits(const std::string& s, Hit& h) {
         else return false;
     }
     return true;
+}
+
+// ---------------------------------------------------------------- live sources
+
+// A terminal window (a film or a program playing in it) or a cast player is a live source: when its cells
+// change between steps the shards are cut again from it, without moving the beat.
+std::map<TWindow*, uint64_t> g_liveHash;
+Clock::time_point g_liveAt{};
+
+bool liveChanged() {
+    if (Clock::now() - g_liveAt < std::chrono::milliseconds(60)) return false;
+    bool changed = false;
+    for (TWindow* w : realWindows()) {
+        std::string type = resident::hooks().typeOf ? resident::hooks().typeOf(w) : "";
+        if ((type != "terminal" && type != "cast_player") || !w->buffer) continue;
+        uint64_t h = 1469598103934665603ull;
+        const unsigned char* p = reinterpret_cast<const unsigned char*>(w->buffer);
+        size_t n = (size_t)w->size.x * w->size.y * sizeof(TScreenCell);
+        for (size_t i = 0; i < n; ++i) h = (h ^ p[i]) * 1099511628211ull;
+        if (g_liveHash[w] != h) { g_liveHash[w] = h; changed = true; }
+    }
+    if (changed) g_liveAt = Clock::now();
+    return changed;
+}
+
+// ---------------------------------------------------------------- the mosh as an instrument
+
+void setWay(int w, const char* why) {
+    if (w < 0 || w >= kWays) return;
+    g_set.way = (Way)w;
+    recordLine(std::string("way ") + kWayNames[w]);
+    (void) why;
+}
+
+void setAmount(int v) {
+    g_set.amount = std::max(0, std::min(100, v));
+    recordLine("amount " + std::to_string(g_set.amount));
+}
+
+void setFrozen(bool on) {
+    if (g_frozen == on) return;
+    g_frozen = on;
+    recordLine(on ? "freeze on" : "freeze off");
+}
+
+// A hit played by hand (a key or a MIDI note): a step now.
+void handHit(const Hit& h) {
+    if (!g_on || g_frozen || g_playing) return;
+    runStep(h);
+}
+
+// MIDI in while the mosh is on: GM drum notes are hits, CC 1 (the mod wheel) sets the
+// amount, CC 64 (the sustain pedal) freezes while held. Other notes go on to the synth.
+bool midiTap(const std::vector<uint8_t>& b) {
+    if (!g_on || g_playing || b.size() < 3) return false;
+    int kind = b[0] & 0xF0;
+    if (kind == 0xB0) {
+        if (b[1] == 1) { setAmount(b[2] * 100 / 127); return true; }
+        if (b[1] == 64) { setFrozen(b[2] >= 64); return true; }
+        return false;
+    }
+    if (kind != 0x90 && kind != 0x80) return false;
+    int n = b[1];
+    Hit h;
+    if (n == 35 || n == 36) h.kick = true;
+    else if (n == 38 || n == 39 || n == 40) h.snare = true;
+    else if (n == 42 || n == 44 || n == 46) h.tick = true;
+    else if (n == 37 || (n >= 41 && n <= 50 && n != 42 && n != 44 && n != 46 && n != 49)) h.rat = true;
+    else if (n == 49 || n == 51 || n == 52 || n == 55 || n == 57 || n == 59) h.metal = true;
+    else return false;
+    if (kind == 0x90 && b[2] > 0) { h.accent = b[2] >= 110; handHit(h); }
+    return true;
+}
+
+// ---------------------------------------------------------------- recording and playback
+
+struct PlayEvent { double ms; std::string kind; Hit hit; std::string arg; };
+std::deque<PlayEvent> g_play;
+double g_playStart = 0;
+bool g_playFast = false;
+int g_tempoBeforePlay = 128;
+
+std::string recordStart(const std::string& path, const std::string& cast) {
+    if (g_recording) return "err already recording";
+    if (g_on) turnOff("off: a recording starts from a fresh mosh");
+    g_recPath = path;
+    g_rec.str("");
+    g_rec.clear();
+    turnOn();
+    g_recording = true;
+    g_recStart = sound::clockMs();
+    g_rec << "# desk mosh recording: replay with mosh_play path=" << path << "\n"
+          << "seed " << g_set.seed << "\nway " << kWayNames[g_set.way] << "\namount " << g_set.amount
+          << "\ncount " << g_set.count << "\n";
+    if (!cast.empty()) {
+        g_cast = std::fopen(cast.c_str(), "w");
+        if (!g_cast) return "err cannot write " + cast;
+        g_castPath = cast;
+        g_castW = TScreen::screenWidth; g_castH = TScreen::screenHeight;
+        g_castLast.clear();
+        g_castStart = sound::clockMs();
+        g_castFrames = 0;
+        std::fprintf(g_cast, "{\"version\": 2, \"width\": %d, \"height\": %d, \"timestamp\": %ld, "
+                             "\"title\": \"desk mosh\", \"env\": {\"TERM\": \"xterm-256color\"}}\n",
+                     g_castW, g_castH, (long)std::time(nullptr));
+        castFrame();
+    }
+    return "";
+}
+
+std::string recordStop() {
+    if (!g_recording) return "err not recording";
+    char t[32];
+    std::snprintf(t, sizeof t, "end %.1f\n", sound::clockMs() - g_recStart);
+    g_rec << t;
+    g_recording = false;
+    if (g_cast) { std::fclose(g_cast); g_cast = nullptr; }
+    FILE* f = std::fopen(g_recPath.c_str(), "w");
+    if (!f) return "err cannot write " + g_recPath;
+    std::string body = g_rec.str();
+    std::fwrite(body.data(), 1, body.size(), f);
+    std::fclose(f);
+    return "";
+}
+
+void playEnd() {
+    g_playing = false;
+    g_play.clear();
+    g_set.tempo = g_tempoBeforePlay;
+    g_nextAt = Clock::now();
+}
+
+void playTick() {
+    double now = sound::clockMs();
+    int n = 0;
+    while (!g_play.empty() && (g_playFast || (g_play.front().ms <= now - g_playStart && n < 64))) {
+        PlayEvent e = g_play.front();
+        g_play.pop_front();
+        if (e.kind == "step" || e.kind == "note") runStep(e.hit);
+        else if (e.kind == "way") { for (int i = 0; i < kWays; ++i) if (e.arg == kWayNames[i]) g_set.way = (Way)i; }
+        else if (e.kind == "amount") g_set.amount = std::atoi(e.arg.c_str());
+        else if (e.kind == "freeze") g_frozen = e.arg == "on";
+        ++n;
+    }
+    if (g_play.empty()) playEnd();
+}
+
+std::string playStart(const std::string& path, bool fast) {
+    FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return "err cannot read " + path;
+    std::string text;
+    char buf[4096];
+    size_t k;
+    while ((k = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, k);
+    std::fclose(f);
+    std::istringstream in(text);
+    std::string line;
+    Settings set = g_set;
+    std::deque<PlayEvent> evs;
+    int n = 0;
+    while (std::getline(in, line)) {
+        ++n;
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ls(line);
+        std::string w;
+        ls >> w;
+        if (w == "seed") ls >> set.seed;
+        else if (w == "way") { std::string v; ls >> v; for (int i = 0; i < kWays; ++i) if (v == kWayNames[i]) set.way = (Way)i; }
+        else if (w == "amount") ls >> set.amount;
+        else if (w == "count") ls >> set.count;
+        else if (w == "end") break;
+        else if (w == "at") {
+            PlayEvent e;
+            ls >> e.ms >> e.kind;
+            if (e.kind == "step") {
+                std::string hits;
+                ls >> e.hit.step >> hits;
+                if (!parseHits(hits, e.hit)) return "err line " + std::to_string(n) + ": hits";
+            } else if (e.kind == "note") {
+                e.hit.step = -2;
+                ls >> e.hit.midi;
+            } else ls >> e.arg;
+            std::string kvw;
+            while (ls >> kvw) {   // held=0|1 way=NAME
+                if (kvw.rfind("held=", 0) == 0) e.hit.held = std::atoi(kvw.c_str() + 5);
+                else if (kvw.rfind("way=", 0) == 0)
+                    for (int i = 0; i < kWays; ++i) if (kvw.substr(4) == kWayNames[i]) e.hit.way = i;
+            }
+            evs.push_back(e);
+        } else return "err line " + std::to_string(n) + ": " + w;
+    }
+    if (g_recording) return "err recording: stop it first";
+    if (g_on) turnOff("off: a recording plays from a fresh mosh");
+    g_tempoBeforePlay = g_set.tempo;
+    g_set.seed = set.seed; g_set.way = set.way; g_set.amount = set.amount; g_set.count = set.count;
+    g_set.tempo = 0;
+    turnOn();
+    g_play = evs;
+    g_playStart = sound::clockMs();
+    g_playFast = fast;
+    g_playing = true;
+    if (fast) playTick();
+    return "";
 }
 
 }  // namespace
@@ -1315,6 +1731,10 @@ void tick() {
     fly(std::min(dt, 0.1));
     if (!g_on && !g_screenOn) return;
     if (TheTopView) return;   // a menu or dialog is open: the mosh waits
+    static bool tapped = false;
+    if (!tapped) { sound::setMidiTap(&midiTap); tapped = true; }
+    if (g_frozen) { g_queue.clear(); g_nextAt = now; return; }
+    if (g_playing) { playTick(); return; }
     bool from808 = now - g_last808 < std::chrono::seconds(1);
     if (!from808 && g_set.tempo > 0 && now >= g_nextAt) {
         int pos = (B.pos + 1) % 16;
@@ -1365,6 +1785,8 @@ void tick() {
         runStep(h);
         ++n;
     }
+    if (n == 0 && g_on && (B.active == Wrap || B.active == Tear || B.active == Bleed || B.active == Timelag) && liveChanged())
+        runStep(Hit{}, false);
     if (g_scoreEnded) {
         g_scoreEnded = false;
         turnOff("ended: the score is over");
@@ -1376,8 +1798,48 @@ void tick() {
     }
 }
 
-void noteEvent(const TEvent& ev) {
-    if (!(g_on || g_screenOn) || ev.what != evKeyDown || ev.keyDown.keyCode != kbEsc) return;
+void noteEvent(TEvent& ev) {
+    if (!(g_on || g_screenOn) || ev.what != evKeyDown) return;
+    // The mosh as an instrument: Shift+F1 kick, Shift+F2 snare, Shift+F4 hat, Shift+F5
+    // ratchet, Shift+F6 crash, Shift+F7 next way, Shift+F8 freeze and release, Shift+F9 and
+    // Shift+F10 amount down and up by 10. Shift+F3 is left out: terminals send it as the
+    // same bytes as a cursor position report. The key is used up.
+    if (g_on) {
+        Hit h;
+        bool hit = true, used = true;
+        switch (ev.keyDown.keyCode) {
+        case kbShiftF1: h.kick = true; h.accent = true; break;
+        case kbShiftF2: h.snare = true; break;
+        case kbShiftF4: h.tick = true; break;
+        case kbShiftF5: h.rat = true; break;
+        case kbShiftF6: h.metal = true; break;
+        default: hit = false; used = false;
+        }
+        if (!used) {
+            used = true;
+            resident::WhoScope ws(resident::eventWho());
+            switch (ev.keyDown.keyCode) {
+            case kbShiftF7: {
+                static const int order[] = {Wrap, Tear, Mosh, Bleed, Raw, Timelag, All, Sound};
+                int i = 0;
+                while (i < 8 && order[i] != (int)g_set.way) ++i;
+                setWay(order[(i + 1) % 8], "key");
+                resident::addAct(resident::eventWho(), std::string("mosh way ") + kWayNames[g_set.way] + " by hand", "", "");
+                break;
+            }
+            case kbShiftF8:
+                setFrozen(!g_frozen);
+                resident::addAct(resident::eventWho(), g_frozen ? "froze the desk mosh" : "released the desk mosh", "", "");
+                break;
+            case kbShiftF9: setAmount(g_set.amount - 10); break;
+            case kbShiftF10: setAmount(g_set.amount + 10); break;
+            default: used = false;
+            }
+        }
+        if (hit) handHit(h);
+        if (used) { ev.what = evNothing; return; }
+    }
+    if (ev.keyDown.keyCode != kbEsc) return;
     auto now = Clock::now();
     if (now - g_lastEsc < std::chrono::milliseconds(800)) {
         resident::WhoScope ws(resident::eventWho());
@@ -1392,7 +1854,10 @@ void noteTr808(const char* type, const std::string& body) {
     if (!(g_on || g_screenOn)) return;
     bool tick = std::strcmp(type, "tr808_tick") == 0;   // a silent step: it moves the mosh too
     if (!tick && std::strcmp(type, "tr808_step") != 0) return;
+    if (g_playing || g_frozen) return;   // a recording plays alone; a frozen mosh takes no steps
     g_last808 = Clock::now();
+    size_t tp = body.find("\"tempo\":");
+    if (tp != std::string::npos) g_808Tempo = std::atoi(body.c_str() + tp + 8);
     Hit h;
     size_t p = body.find("\"step\":");
     if (p != std::string::npos) h.step = std::atoi(body.c_str() + p + 7) % 16;
@@ -1433,8 +1898,47 @@ std::string command(const std::string& nameIn, const KV& kvIn) {
         else if (verb == "step") kv["hits"] = val;
         else if (verb == "screen") kv["value"] = val.empty() ? "on" : val;
         else if (verb == "score") kv["path"] = val;
+        else if (verb == "hit") kv["hits"] = val.empty() ? "kick" : val;
+        else if (verb == "freeze") kv["value"] = val.empty() ? "toggle" : val;
+        else if (verb == "record") { kv["value"] = val.empty() ? "on" : val; std::string p; ss >> p; if (!p.empty()) kv["path"] = p; }
+        else if (verb == "play") kv["path"] = val;
     }
     if (name == "mosh_status") return statusJson();
+    if (name == "mosh_freeze") {
+        std::string v = str(kv, "value", "toggle");
+        setFrozen(v == "toggle" ? !g_frozen : (v == "on" || v == "1"));
+        return statusJson();
+    }
+    if (name == "mosh_hit") {   // a hit played by hand, as the keys and a MIDI keyboard do
+        if (!g_on) return "err mosh is off";
+        if (g_frozen) return "err frozen";
+        Hit h;
+        if (!parseHits(str(kv, "hits", "kick"), h)) return "err hits: kick,snare,tick,rat,metal,accent";
+        handHit(h);
+        return statusJson();
+    }
+    if (name == "mosh_record") {
+        std::string v = str(kv, "value", "on");
+        std::string err;
+        if (v == "on") {
+            std::string path = str(kv, "path");
+            if (path.empty()) return "err mosh_record value=on needs path=";
+            err = recordStart(path, str(kv, "cast"));
+            if (err.empty()) resident::addAct(resident::currentWho(), "mosh recording to " + path, "", "");
+        } else {
+            err = recordStop();
+            if (err.empty()) resident::addAct(resident::currentWho(), "mosh recording saved to " + g_recPath, "", "");
+        }
+        return err.empty() ? statusJson() : err;
+    }
+    if (name == "mosh_play") {
+        std::string path = str(kv, "path");
+        if (path.empty()) return "err mosh_play needs path=";
+        std::string err = playStart(path, str(kv, "fast") == "1");
+        if (!err.empty()) return err;
+        resident::addAct(resident::currentWho(), "mosh playing " + path, "", "");
+        return statusJson();
+    }
     if (name == "mosh_score") {
         std::string path = str(kv, "path"), text = str(kv, "text");
         if (path == "off" || str(kv, "off") == "1") { g_scoreOn = false; return statusJson(); }
@@ -1486,7 +1990,7 @@ std::string command(const std::string& nameIn, const KV& kvIn) {
     if (name == "mosh_way") {
         std::string w = str(kv, "way");
         for (int i = 0; i < kWays; ++i) if (w == kWayNames[i]) { g_set.way = (Way)i; return statusJson(); }
-        return "err way must be wrap|tear|mosh|bleed|raw|all|sound";
+        return "err way must be wrap|tear|mosh|bleed|raw|all|sound|timelag";
     }
     if (name == "mosh_amount") {
         int v = std::atoi(str(kv, "value", str(kv, "amount", "-1")).c_str());

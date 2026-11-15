@@ -18,7 +18,7 @@ Code: `app/desk_mosh.cpp`, `app/desk_mosh.h`. Tests: `tests/resident/test_desk_m
 | `mosh_on` | `way=` optional | starts the window layer |
 | `mosh_off` | | closes every shard, puts back what it changed on real windows |
 | `mosh_panic` | | the same, and stops the screen layer |
-| `mosh_way` | `way=wrap\|tear\|mosh\|bleed\|raw\|all\|sound` | `all` (default) changes way every two bars; `sound` lets the newest sound pick (see The clock) |
+| `mosh_way` | `way=wrap\|tear\|mosh\|bleed\|raw\|timelag\|all\|sound` | `all` (default) changes way every two bars through the six ways; `sound` lets the newest sound pick (see The clock) |
 | `mosh_amount` | `value=0..100` | strength and share of the shard budget used (default 70) |
 | `mosh_tempo` | `bpm=20..400`, or `0` | internal clock (default 128); `0` = steps only from the TR-808 or `mosh_step` |
 | `mosh_seed` | `n=` | same seed and same steps give the same frames |
@@ -27,6 +27,10 @@ Code: `app/desk_mosh.cpp`, `app/desk_mosh.h`. Tests: `tests/resident/test_desk_m
 | `mosh_step` | `hits=kick,snare,tick,rat,metal,accent`, `n=` | runs steps now (tests, scores) |
 | `mosh_screen` | `value=on\|off` | the optional screen layer (below) |
 | `mosh_score` | `path=FILE`, `text=...`, or `path=off` | the mosh follows a score of parts (see A mosh score) |
+| `mosh_hit` | `hits=kick,snare,tick,rat,metal,accent` | a hit played by hand now, as the keys and a MIDI keyboard do |
+| `mosh_freeze` | `value=on\|off\|toggle` | the shards stay where they are and no step is taken |
+| `mosh_record` | `value=on path=FILE [cast=FILE.cast]`, `value=off` | records a performance as steps (see Record and play back) |
+| `mosh_play` | `path=FILE [fast=1]` | plays a recording back step for step |
 | `mosh_status` | | settings, shard count, clock source, step and loop times |
 | `mosh` | `args="way tear"` | the same commands as words, for the chat: `on`, `off`, `panic`, `way X`, `amount N`, `tempo N`, `seed N`, `count N`, `scope window wN`, `step HITS`, `screen on`, `score PATH` |
 
@@ -73,7 +77,7 @@ ratchet; cy, ma = metal. The internal pattern has kicks with pushes, claps on 4 
 a ratchet at the end of each bar and a crash every fourth bar. Nothing is random per frame: every choice is a
 hash of the seed and the step counters, so a test can compare frames.
 
-## The five ways
+## The ways
 
 | way | in the film | on the desk |
 |---|---|---|
@@ -82,6 +86,7 @@ hash of the seed and the step counters, so a test can compare frames.
 | mosh | old glyphs in new colours; blocks not redrawn drift | the film's datamosh: most blocks carry last step's shown cells along their own vector, so shapes smear into trails; refreshed blocks take the true desktop, half keeping old glyphs in the new colours; some blocks also drift as windows; on a crash blocks read at half pitch |
 | bleed | colour changes dropped, palette rotates, glyphs decay to shade blocks | as the film: the palette is the desktop's own colours (most used first, at most 16, written back in the form the desktop used), 4-row bands move ink and paper along it on snares, colour changes are dropped so the last colours run on over the next glyphs (the glyphs stay legible), and 4x2 blocks decay to ░▒▓█ by paper brightness, inked in the paper colour on the next palette colour. Real windows keep their colours |
 | raw | zoomed cells, stale rows, scrolling, bursts with no cursor moves | 2-row band shards: zoom x2/x3 on kicks, bands left stale, rows scroll up on snares, ratchet bursts read the desktop as one stream at the wrong width; a framed x2 zoomed copy of a real window |
+| timelag | (the timelag film: slit-scan time displacement) | band shards whose cells read the desktop as it was: each cell lags f x L behind now, f set by the lag map of the bar (rows, six bands, rings, column pairs, single cells), L in seconds on the beat. Drum hits widen L (kick 0.5 s, snare 0.25 s, crash 1 s), a held synth note narrows it by a fifth a step, between them it drifts back to 1.5 s (at most 6 s) |
 
 ## The screen layer (optional)
 
@@ -92,6 +97,69 @@ the screen to the terminal when it waits) and `deskmosh::screenAfter()` when it 
 `idle()`) restores first, so idle work, IPC and `look_study` see the true screen. Only cells that still hold
 the value the filter wrote are put back, so a view that drew in between keeps its drawing. No change to the
 vendor/tvision fork was needed.
+
+## Timelag's memory
+
+Timelag needs the past: every step pushes the step's material (the true desktop) into a ring of past frames,
+whatever way is showing, so timelag has a past the moment it starts. The ring keeps at most 48 frames: 48 x the
+desktop's cells x `sizeof(TScreenCell)` (24 bytes) is 8.8 MB on a 160x48 desktop. At 128 BPM 48 sixteenths are
+5.6 s, so lags beyond that read the oldest frame. `mosh_status` reports `ring_frames`, `ring_bytes`, `lag` and
+`lag_map`. Turning the mosh on empties the ring.
+
+## Live sources
+
+A terminal window (a film or a program playing in it, which `terminal_pause` and `terminal_resume` hold and
+play) and a cast player window (`open_cast`) are live sources: when its cells change between steps the shards are cut again from it without moving the
+beat (in wrap, tear, bleed and timelag; mosh and raw keep their own flow), at most every 60 ms. Every step
+already cuts shards from every window's own cells, so any window that draws while the mosh runs is followed.
+
+## Play it
+
+While the mosh is on, these keys play it and are used up (not typed):
+
+| key | does |
+|---|---|
+| Shift+F1 | kick (accented) |
+| Shift+F2 | snare |
+| Shift+F4 | hat |
+| Shift+F5 | ratchet |
+| Shift+F6 | crash |
+| Shift+F7 | next way: wrap, tear, mosh, bleed, raw, timelag, all, sound |
+| Shift+F8 | freeze, and again to release |
+| Shift+F9, Shift+F10 | amount down, up by 10 |
+
+Shift+F3 is left out: terminals send it as the same bytes as a cursor position report, and it does not arrive.
+A hit played by hand is a step now. A MIDI keyboard (CoreMIDI in, `app/sound/midi`) plays it too while the mosh is
+on: General MIDI drum notes are hits (35, 36 kick; 38, 39, 40 snare; 42, 44, 46 hat; 37 and the toms 41-50
+ratchet; 49, 51, 52, 55, 57, 59 crash; velocity 110 and up accents), CC 1 (the mod wheel) sets the amount, CC 64
+(the sustain pedal) freezes while held. Other notes go to the synth as before, and the mosh hears them through
+the ears. With the mosh off every MIDI message goes to the synth.
+
+## Record and play back
+
+`mosh_record value=on path=FILE` starts a fresh mosh and records every step to a text file: the seed and settings,
+then one line a step with its time on the sound clock, its position in the bar, its hits, whether a synth note
+was held and the way it showed, and every way, amount and freeze change:
+
+    seed 5
+    way all
+    amount 70
+    count 240
+    at 0.0 step -1 kick,accent held=0 way=wrap
+    at 812.4 way timelag
+    at 903.1 step -1 kick,metal held=0 way=timelag
+    end 2419.7
+
+`mosh_record value=off` saves it. `mosh_play path=FILE` starts a fresh mosh with the recording's settings and plays
+the steps at their times (`fast=1` plays them all at once); the TR-808, the internal clock, the ears, the keys and
+MIDI are ignored while it plays. On the same desktop the frames come out byte for byte.
+
+`cast=FILE.cast` also writes the shown frames as an asciinema cast (asciicast v2): a header line with the screen's
+width and height, then one `[seconds, "o", text]` event per step that changed the screen, carrying the rows that
+changed with 24-bit or 16-colour SGR codes and UTF-8 text (Turbo Vision's code page 437 bytes are translated).
+It is the format of `terminal_record` (docs/terminal-transport.md): `open_cast file=FILE.cast` plays it back in the
+app's own cast player, and `asciinema play FILE.cast` in any terminal. It is large: about 370 KB a second at
+160x50, because a moshed screen changes most rows on every step.
 
 ## A mosh score
 
@@ -125,10 +193,10 @@ its number.
 
 ## Tests and demonstration
 
-    WWDOS_BIN=build-mosh/app/wwdos python3 tests/resident/test_desk_mosh.py        # 84 checks, 14 groups
+    WWDOS_BIN=build-mosh/app/wwdos python3 tests/resident/test_desk_mosh.py        # 107 checks, 18 groups
     WWDOS_BIN=build-mosh/app/wwdos python3 tests/resident/desk_mosh_demo.py --out DIR [--keep]
 
-Groups: follow, bleed, hold, sound, residents, score, screen, ways, input, restore, seed, log, scope, bench. The demo starts an EGA desktop with an editor,
+Groups: timelag, live, keys, record, follow, bleed, hold, sound, residents, score, screen, ways, input, restore, seed, log, scope, bench. The demo starts an EGA desktop with an editor,
 a primer and the TR-808 playing, moshes through the five ways for 20 seconds while it types into the editor,
 and writes one `tmux capture-pane -e` snapshot per frame (5 a second). `--keep` leaves it running:
 `tmux -L moshdemo attach`.
@@ -160,3 +228,8 @@ The band geometry (rows per band, two-cell minimum width) caps the count below t
 - `get_state` lists every shard; the window id map is rescanned per lookup, which is slow with hundreds of
   shards (look_glance hides them by default).
 - At 800 shards a step costs about 40 ms.
+- Timelag's ring holds 48 steps; at slow tempi that is a long time but few moments, at fast ones a short time.
+- The cast is the window layer only: the optional screen layer's filter is not in it, and a reframe of a live
+  source between steps is a frame of its own.
+- A recording replays exactly only on the same desktop; it records the steps, not the windows.
+- Shift+F3 cannot be used (see Play it).
