@@ -144,6 +144,7 @@ class TWindow; TWindow* createAsciiGridDemoWindow(const TRect &bounds);
 #include <cmath>
 #include <sys/stat.h>
 #include <cstdio>
+#include <memory>
 #include <csignal>
 #include <cctype>
 #include <fstream>
@@ -1334,6 +1335,12 @@ TWwdosApp::TWwdosApp() :
 
 void TWwdosApp::handleEvent(TEvent& event)
 {
+    // A command's handler may run a dialog of its own (File > Open) and open windows after it closes:
+    // those windows are the command's author's, not whoever the dialog's loop saw last. Hold the
+    // author for the whole handler and settle before letting go.
+    std::unique_ptr<resident::WhoScope> commandAuthor(
+        event.what == evCommand ? new resident::WhoScope(resident::currentWho()) : nullptr);
+    struct SettleOnExit { bool on; ~SettleOnExit() { if (on) resident::settle(); } } settleOnExit{event.what == evCommand};
     if (event.what == evCommand && resident::listenHandleCommand(event.message.command)) {
         clearEvent(event);
         return;

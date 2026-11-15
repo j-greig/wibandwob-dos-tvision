@@ -21,6 +21,7 @@
 #include <sstream>
 #include <unistd.h>
 #include <vector>
+#include <dirent.h>
 
 namespace resident {
 
@@ -414,6 +415,62 @@ void hearBurst(const Burst& b) {
     queuePlan(p);
 }
 
+// A primer related to a file the person opened: the most words of its name in common, else one by
+// the name's hash, from modules/wibwob-2026/primers (under the app's directory or WWDOS_REPO).
+std::string relatedPrimer(const std::string& path) {
+    std::string dir = "modules/wibwob-2026/primers";
+    if (const char* r = std::getenv("WWDOS_REPO")) dir = std::string(r) + "/" + dir;
+    std::vector<std::string> names;
+    if (DIR* d = opendir(dir.c_str())) {
+        while (dirent* e = readdir(d)) {
+            std::string n = e->d_name;
+            if (n.size() > 4 && n.substr(n.size() - 4) == ".txt") names.push_back(n);
+        }
+        closedir(d);
+    }
+    if (names.empty()) return "";
+    std::sort(names.begin(), names.end());
+    std::string base = path.substr(path.find_last_of('/') + 1);
+    auto words = [](const std::string& s) {
+        std::vector<std::string> w;
+        std::string cur;
+        for (char c : s) {
+            if (std::isalnum((unsigned char)c)) cur += (char)std::tolower((unsigned char)c);
+            else { if (cur.size() > 2 && cur != "txt") w.push_back(cur); cur.clear(); }
+        }
+        if (cur.size() > 2 && cur != "txt") w.push_back(cur);
+        return w;
+    };
+    auto mine = words(base);
+    std::string best;
+    int bestScore = 0;
+    for (const auto& n : names) {
+        if (n == base) continue;
+        int score = 0;
+        for (const auto& a : words(n)) for (const auto& b : mine) if (a == b) ++score;
+        if (score > bestScore) { bestScore = score; best = n; }
+    }
+    if (best.empty()) {
+        size_t h = std::hash<std::string>()(base);
+        best = names[h % names.size()];
+        if (best == base) best = names[(h + 1) % names.size()];
+    }
+    return dir + "/" + best;
+}
+
+// The file a frame player or text view shows, from its describer's sentence.
+std::string fileShown(const std::string& window) {
+    std::string d = hooks().exec ? hooks().exec("describe", {{"id", window}, {"text", "0"}}) : "";
+    std::string s = field(d, "state");
+    for (const char* lead : {"frame player animating ", "text file ", "text view of "}) {
+        size_t p = s.find(lead);
+        if (p == std::string::npos) continue;
+        p += std::strlen(lead);
+        return s.substr(p, s.find(',', p) - p);
+    }
+    return "";
+}
+
 std::map<std::string, std::string> g_noteWin;   // actor -> its notes window, for answers with no line to go under
 
 std::string noteWindow(const std::string& actor) {
@@ -556,6 +613,29 @@ void tickListen() {
             ++g_noticed;
             note(std::string(g_jamStarted ? "" : "could not start: ") + actor + " answers the person's synth phrases (noticed: playing)",
                  win, g_jamStarted ? "" : r.substr(0, 60));
+            continue;
+        }
+        if (kind == "opened" && (type == "frame_player" || type == "text_view") && g_rate != "quiet" &&
+            now - g_lastNoticed > std::chrono::seconds(g_rate == "lively" ? 10 : 60)) {
+            // The person opened a file or a primer: Wib opens a related one beside it, with no words.
+            std::string path = fileShown(win);
+            std::string rel = path.empty() ? "" : relatedPrimer(path);
+            TWindow* w = hooks().findWindow ? hooks().findWindow(win) : nullptr;
+            if (!rel.empty() && w) {
+                g_lastNoticed = now;
+                ++g_noticed;
+                Plan p;
+                p.actor = modeOf("wib") == "witness" ? "wob" : "wib";
+                p.why = "noticed: a file opened";
+                p.window = win;
+                p.type = "file";
+                p.acts.push_back("create_window type=frame_player path=\"" + rel + "\" x=" + std::to_string(w->origin.x + w->size.x + 1) +
+                                 " y=" + std::to_string(w->origin.y) + " w=" + std::to_string(std::max(30, (int)w->size.x)) +
+                                 " h=" + std::to_string(std::max(10, (int)w->size.y)) + " title=\"beside " + win + "\"");
+                queuePlan(p, 800);
+                note("noticed " + path.substr(path.find_last_of('/') + 1) + " opened; " + p.actor + " will open " +
+                     rel.substr(rel.find_last_of('/') + 1) + " beside it", win);
+            }
             continue;
         }
         if ((kind == "click" || kind == "drag") && type == "paint") {
