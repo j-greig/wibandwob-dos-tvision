@@ -206,6 +206,10 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"terminal_resume", "Resume a paused terminal window's program from where it stopped (id=, default as terminal_pause)", false},
         {"terminal_toggle", "Pause a running terminal window's program, or resume a paused one (id=, default as terminal_pause)", false},
         {"terminal_state", "A terminal window's program: state running|paused|exited, its name, seconds paused, and keyboard grab|focus|none (grab: the window holds the keyboard) (id=)", false},
+        {"terminal_record", "Record a terminal window's output as an asciinema v2 cast: action=start file=<path.cast>, action=stop, action=state (id=)", false},
+        {"open_cast", "Open a cast player window for an asciinema v2 file (file=, optional x, y, speed=, loop=1, paused=1); no child process runs", false},
+        {"cast_control", "Drive a cast player window: action=play|pause|toggle, seek=<seconds>, speed=<0.25-8>, loop=0|1 (id=, default the focused player)", false},
+        {"cast_state", "A cast player window's file, size, duration, position, playing, speed and loop (id=)", false},
         {"terminal_release", "Give the keyboard back from a terminal window that holds it (Window > Grab Keyboard); the person's chord is Alt-End (id=)", false},
         {"chat_receive", "Display a remote chat message in Scramble (sender + text params)", true},
         {"wibwob_ask", "Send a user message to the Wib&Wob chat window, triggering an AI response (text param)", true},
@@ -350,7 +354,7 @@ static std::string exec_registry_command_inner(
         std::string r = sound_registry_command(name, kv, &handled);
         if (handled) return r;
     }
-    if (terminal_registry_command && name.rfind("terminal_", 0) == 0) {
+    if (terminal_registry_command && (name.rfind("terminal_", 0) == 0 || name.rfind("cast_", 0) == 0 || name == "open_cast")) {
         bool handled = false;
         std::string r = terminal_registry_command(name, kv, &handled);
         if (handled) return r;

@@ -732,6 +732,7 @@ bool readOnly(const std::string& name, const KV& kv) {
     if (name == "hear" || name == "sound") return true;   // the ears and the stream's state change nothing
     // The terminal transport logs its own acts with what changed (terminal_transport.cpp).
     if (name == "terminal_state" || name == "terminal_pause" || name == "terminal_resume" || name == "terminal_toggle" || name == "terminal_release") return true;
+    if (name == "cast_state" || (name == "terminal_record" && (str(kv, "action").empty() || str(kv, "action") == "state"))) return true;
     if (name == "midi") { std::string a = str(kv, "action"); return a.empty() || a == "state" || a == "log"; }
     if (name == "resident_manners") return !has(kv, "clear");
     return false;
