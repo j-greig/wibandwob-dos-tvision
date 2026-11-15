@@ -4,6 +4,7 @@
 #include "core/json_utils.h"
 #include "resident_senses.h"
 #include "describe.h"
+#include "resident_tool.h"
 
 #define Uses_TWindow
 #define Uses_TView
@@ -2246,6 +2247,7 @@ void wake() {
     restoreDesk();
     logInit();
     guestInit();
+    tools::seed();
 
     g_actsMax = envMs("WWDOS_ACTS_MAX", 1048576);
     g_ownStepMs = envMs("WWDOS_OWN_STEP_MS", 60000);
@@ -2283,8 +2285,14 @@ void close(const std::string& how) {
     flushActs();
 }
 
+void insertLifeWindow(TWindow* w) {
+    if (g_hooks.insertWindow) g_hooks.insertWindow(w);
+    else if (TProgram::deskTop) TProgram::deskTop->insert(w);
+}
+
 void tick() {
     tickOwn();
+    tools::tick();
     if (g_woken && !g_closed && resident::actsClockMs() >= g_actsNextFlush) {
         g_actsNextFlush = resident::actsClockMs() + 500;
         flushActs();
@@ -2365,6 +2373,7 @@ size_t earlierActs(size_t skip, size_t count, std::vector<EarlierAct>& out) {
 }
 
 bool owns(const std::string& cmd) {
+    if (tools::owns(cmd)) return true;
     static const char* names[] = {"get_self", "self_note", "get_note", "logbook_write", "logbook_open", "get_logbook",
                                   "guestbook_sign", "guestbook_open", "get_guestbook", "get_life",
                                   "residents_sleep", "residents_wake", "acts_history", "residents_will",
@@ -2374,6 +2383,7 @@ bool owns(const std::string& cmd) {
 }
 
 std::string command(const std::string& name, const KV& kv) {
+    if (tools::owns(name)) return tools::command(name, kv);
     if (name == "get_self") return cmdSelf(kv);
     if (name == "self_note" || name == "get_note") return cmdNote(kv);
     if (name == "logbook_write" || name == "logbook_open" || name == "get_logbook") return cmdLog(name, kv);
@@ -2406,6 +2416,7 @@ bool handleCommand(unsigned short cmd) {
     if (cmd == cmLifeLogbook) { openBook("LOG.TXT", "LOG.TXT"); return true; }
     if (cmd == cmLifeGuestbook) { openBook("GUESTS.TXT", "GUESTS.TXT"); return true; }
     if (cmd == cmLifeSign) { openSignPage(resident::currentWho()); return true; }
+    if (cmd == cmLifeTools) { tools::openList(); return true; }
     if (cmd == cmLifeOwn) {
         std::string err = startOwn(kResidents[g_ownRotation++ % 3], 60, (int)envMs("WWDOS_OWN_TURNS", 6), resident::currentWho(), false);
         if (!err.empty()) flash(err.substr(4));

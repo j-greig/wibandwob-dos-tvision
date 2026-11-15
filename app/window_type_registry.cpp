@@ -8,6 +8,7 @@
 #include "transparent_text_view.h"
 #include "text_editor_view.h"
 #include "resident_life.h"
+#include "resident_tool.h"
 #include "browser_view.h"
 #include "generative_verse_view.h"
 #include "generative_mycelium_view.h"
@@ -370,6 +371,8 @@ static const WindowTypeSpec k_specs[] = {
     { "boot",              nullptr,                 life::isBootWindow      },  // the residents' boot screen
     { "dream",             nullptr,                 life::isDreamWindow     },  // a resident's dream while asleep
     { "own_time",          nullptr,                 life::isOwnWindow       },  // a resident's time of its own
+    { "tool",              nullptr,                 tools::isToolWindow     },  // a program a resident wrote
+    { "tool_list",         nullptr,                 tools::isToolListWindow },  // the list of those programs
     { "browser",           spawn_browser,           match_browser           },
     { "verse",             spawn_verse,             match_verse             },
     { "mycelium",          spawn_mycelium,          match_mycelium          },
