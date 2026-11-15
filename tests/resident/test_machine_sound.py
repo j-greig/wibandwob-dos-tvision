@@ -866,7 +866,143 @@ def test_voice(desk):
         alt.stop()
 
 
-GROUPS = {"voice": test_voice, "patterns": test_patterns, "jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
+# ---------------------------------------------------------------------------- midi in: clock, controllers, bend
+
+def test_midiin(desk):
+    print("\n[midiin] MIDI clock sets the tempo, start and stop drive the players, controllers and pitch bend reach the synth")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    drm = x(desk, "open_tr808", x=2, y=20, w=118, h=26)["id"]
+    x(desk, "tr808", id=drm, action="load_preset", preset="electro")
+    tid = x(desk, "open_tracker", channels="fm:bass drums", rows=4, x=70, y=1, w=50, h=10)["id"]
+    x(desk, "tracker", id=tid, action="set", row=0, ch=1, cell="BD-")
+    syn = x(desk, "open_synth", x=2, y=1, w=68, h=18)["id"]
+    x(desk, "midi", action="in", data="F8", count=48, every_ms=20)          # 24 a beat, 20 ms apart: 125 bpm
+    st = x(desk, "midi", action="state")
+    R.check(st["clock_bpm"] == 125 and st["follow"], f"48 clock ticks 20 ms apart read as 125 bpm ({st['clock_bpm']})")
+    R.check(x(desk, "tr808", id=drm, action="state")["tempo"] == 125 and x(desk, "tracker", id=tid, action="state")["tempo"] == 125,
+            "the drum machine and the tracker take the clock's tempo")
+    x(desk, "midi", action="in", data="FA")
+    R.check(x(desk, "tr808", id=drm, action="state")["transport"] == "playing" and x(desk, "tracker", id=tid, action="state")["playing"],
+            "MIDI start starts the drum machine and the tracker")
+    time.sleep(0.4)
+    x(desk, "midi", action="in", data="FC")
+    R.check(x(desk, "tr808", id=drm, action="state")["transport"] == "stopped" and not x(desk, "tracker", id=tid, action="state")["playing"],
+            "MIDI stop stops them")
+    x(desk, "midi", action="follow", on=0)
+    x(desk, "midi", action="in", data="F8", count=48, every_ms=25)
+    R.check(x(desk, "tr808", id=drm, action="state")["tempo"] == 125, "with follow off the clock changes nothing")
+    x(desk, "midi", action="follow", on=1)
+
+    # Controllers.
+    x(desk, "midi", action="in", data="B0 01 7F")
+    x(desk, "midi", action="in", data="B0 4A 40")
+    x(desk, "midi", action="in", data="B0 07 40")
+    c = x(desk, "midi", action="state")["controls"]
+    R.check(c["mod"] == 1 and abs(c["feedback"] - 64 / 127) < 1e-3 and abs(c["volume"] - 64 / 127) < 1e-3,
+            f"mod wheel, CC74 and CC7 set the synth's index, feedback and volume ({c})")
+    x(desk, "midi", action="in", data="90 3C 7F")
+    time.sleep(0.1)
+    x(desk, "midi", action="in", data="80 3C 00")
+    e = [h for h in x(desk, "hear", seconds=1, of="synth")["heard"] if h["note"] == "C-4"]
+    R.check(e and abs(e[-1]["level"] - 0.5) < 0.03, f"a MIDI note at velocity 127 plays at half volume after CC7=64 ({e[-1]['level'] if e else None})")
+    x(desk, "midi", action="in", data="B0 07 7F")
+    x(desk, "midi", action="in", data="B0 01 00")
+    x(desk, "midi", action="in", data="B0 0B 7F")
+    m = x(desk, "mosh")
+    R.check(m.get("amount") == 100, f"CC11 sets the desk mosh amount through the command table ({m.get('amount')})")
+    acts = desk.j("acts", by="person")["acts"]
+    R.check(any("midi cc 11=127" in a["what"] and "desk mosh amount (ok)" in a["what"] for a in acts), "the log has the person's controller")
+
+    # Pitch bend: a held speaker A-4 rises two semitones.
+    x(desk, "synth", id=syn, action="audio", on=1)
+    x(desk, "synth", id=syn, action="voice", value="pcspk")
+    x(desk, "midi", action="in", data="90 45 64")
+    time.sleep(0.4)
+    hz0 = x(desk, "sound", action="capture", ms=300)["hz_last_200ms"]
+    x(desk, "midi", action="in", data="E0 7F 7F")
+    time.sleep(0.4)
+    hz1 = x(desk, "sound", action="capture", ms=300)["hz_last_200ms"]
+    x(desk, "midi", action="in", data="80 45 00")
+    x(desk, "midi", action="in", data="E0 00 40")
+    R.check(abs(hz0 - 440) <= 10 and abs(hz1 - 493.9) <= 12, f"pitch bend up takes the held A-4 from {hz0} Hz to {hz1} Hz (494 wanted)")
+    R.check(x(desk, "midi", action="state")["controls"]["bend"] == 0, "the bend wheel back at the centre is no bend")
+    x(desk, "synth", id=syn, action="audio", on=0)
+
+
+# ---------------------------------------------------------------------------- jam: modes, memory, drums, tracker
+
+def test_jam2(desk):
+    print("\n[jam2] the jam follows the resident's mode, remembers the session, keeps the drums' time, hears tracker rows")
+    desk.ipc("close_all")
+    time.sleep(0.3)
+    syn = x(desk, "open_synth", x=2, y=1, w=68, h=18)["id"]
+    time.sleep(2.2)
+    x(desk, "jam", action="start", **{"as": "wob"}, wait_ms=500)
+    mode = lambda m: desk.j("resident_mode", who="wob", mode=m, actor="wob", source="resident")
+
+    def phrase(keys, n):
+        desk.ipc("focus_window", id=syn)
+        time.sleep(1.7)                       # the window is no longer the person's when wob plays
+        desk.person_type(keys, gap=0.15)
+        st = wait_answers(desk, n)
+        return st["answers"][n - 1] if len(st["answers"]) >= n else {}
+
+    mode("follow")
+    a = phrase("zxcv", 1)
+    R.check(a.get("answer") == "C-5 B-4 A-4 G-4" and a.get("mode") == "follow", f"FOLLOW: wob answers the phrase ({a})")
+    mode("oppose")
+    a = phrase("zc", 2)
+    R.check(a.get("answer") == "C-4 G#3" and a.get("mode") == "oppose" and a.get("delay_ms", 0) >= a.get("step_ms", 999) // 2,
+            f"OPPOSE: wob answers against it, contrary motion, off the beat ({a})")
+    time.sleep(0.8)
+    h = [e["note"] for e in x(desk, "hear", seconds=2, of="synth")["heard"] if e["who"] == "wob"]
+    R.check(h[-2:] == ["C-4", "G#3"], f"and plays it ({h[-2:]})")
+    mode("witness")
+    n_wob = len([e for e in x(desk, "hear", seconds=20, of="synth")["heard"] if e["who"] == "wob"])
+    a = phrase("x", 3)
+    time.sleep(0.6)
+    n_wob2 = len([e for e in x(desk, "hear", seconds=20, of="synth")["heard"] if e["who"] == "wob"])
+    acts = desk.j("acts", by="wob")["acts"]
+    R.check(a.get("chose") == "witness" and n_wob2 == n_wob and any("kept quiet (WITNESS)" in x_["what"] for x_ in acts),
+            f"WITNESS: wob plays nothing and writes what it heard ({a.get('chose')})")
+    mode("flow")
+    a = phrase("zxcv", 4)
+    R.check(a.get("chose") == "memory" and a.get("answer") == "C-5 B-4 A-4 G-4",
+            f"a phrase played earlier in the session gets the answer it got then ({a.get('chose')})")
+    st = x(desk, "jam", action="state")
+    R.check(len(st["memory"]) == 4 and st["memory"][0]["phrase"] == "C-4 D-4 E-4 F-4", f"the jam keeps the session's phrases ({len(st['memory'])})")
+
+    # With the drum machine running, the answer keeps the drums' step and lands on their grid.
+    drm = x(desk, "open_tr808", x=2, y=20, w=118, h=26)["id"]
+    x(desk, "tr808", id=drm, action="load_preset", preset="classic-house")
+    x(desk, "tr808", id=drm, action="play")
+    a = phrase("zbm", 5)
+    time.sleep(1.0)
+    heard = x(desk, "hear", seconds=4)["heard"]
+    hits = sorted({e["at_ms"] for e in heard if e["source"] == "tr808"})
+    wob = [e["at_ms"] for e in heard if e["source"] == "synth" and e["who"] == "wob"][-3:]
+    off = [min(abs(t - h_) for h_ in hits) % 125 for t in wob] if hits else []
+    R.check(a.get("rhythm") == "drums" and a.get("step_ms") in (125, 250) and len(wob) == 3 and all(o < 1 or o > 124 for o in off),
+            f"with the drums playing wob's answer takes their step and lands on their grid ({a.get('rhythm')}, {a.get('step_ms')}, {off})")
+    x(desk, "tr808", id=drm, action="stop")
+    desk.ipc("close_window", id=drm)
+
+    # A tracker the person starts is heard as their phrase.
+    song = "tempo 240\nchannels fm:pluck\n00 G-3\n01 A-3\n02 B-3\n03 C-4\n"
+    tid = x(desk, "open_tracker", text=song, x=70, y=1, w=40, h=10)["id"]
+    x(desk, "tracker", id=tid, action="loop", on=0)
+    desk.ipc("focus_window", id=tid)
+    time.sleep(1.7)
+    desk.person_text(" ")
+    st = wait_answers(desk, 6)
+    a = st["answers"][5] if len(st["answers"]) >= 6 else {}
+    R.check(a.get("phrase") == "G-3 A-3 B-3 C-4" and a.get("answer") == "G-4 F#4 E-4 D-4",
+            f"the rows of a tracker the person started are the phrase wob answers ({a})")
+    x(desk, "jam", action="stop")
+
+
+GROUPS = {"jam2": test_jam2, "midiin": test_midiin, "voice": test_voice, "patterns": test_patterns, "jam": test_jam, "midi": test_midi, "tracker": test_tracker, "drums": test_drums, "synth": test_synth, "ears": test_ears, "score": test_score, "hands": test_hands, "stream": test_stream}
 
 
 def main():

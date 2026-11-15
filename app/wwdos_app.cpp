@@ -1297,6 +1297,7 @@ TWwdosApp::TWwdosApp() :
         sh.find = [this](const std::string& id) { return findWindowById(id); };
         sh.idOf = [this](TWindow* w) { auto it = winToId.find(w); return it == winToId.end() ? std::string() : it->second; };
         sh.tr808 = [this](const sound::KV& kv) { return api_tr808_action(*this, kv); };
+        sh.exec = [this](const std::string& n, const sound::KV& kv) { return exec_registry_command(*this, n, kv); };
         sound::setHost(sh);
     }
 
@@ -2977,7 +2978,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
                     *new TMenuItem("Visible ~h~and", resident::cmResidentHand, kbNoKey, hcNoContext, "on") +
                     *new TMenuItem("~L~istening", resident::cmResidentListen, kbNoKey, hcNoContext, "off") +
                     newLine() +
-                    *new TMenuItem("~L~ogbook (LOG.TXT)", life::cmLifeLogbook, kbNoKey) +
+                    *new TMenuItem("L~o~gbook (LOG.TXT)", life::cmLifeLogbook, kbNoKey) +
                     *new TMenuItem("Guest~b~ook (GUESTS.TXT)", life::cmLifeGuestbook, kbNoKey) +
                     *new TMenuItem("Sign the ~g~uestbook", life::cmLifeSign, kbNoKey) +
                     *new TMenuItem("Write the ~w~ill", life::cmLifeWill, kbNoKey) +

@@ -232,6 +232,7 @@ std::string streamCommand(const std::string& action, double captureMs) {
         o << "{\"ok\":true,\"standing\":\"data\",\"out\":\"" << streamOut() << "\",\"rate\":" << kRate
           << ",\"samples\":" << s.size() << ",\"from_ms\":" << g_offsetMs + sampleToMs(first)
           << ",\"to_ms\":" << g_offsetMs + sampleToMs(end) << ",\"peak\":" << peak(s) << ",\"rms\":" << rms(s)
+          << ",\"hz_last_200ms\":" << upCrossings(s, s.size() > (size_t)msToSample(200) ? s.size() - (size_t)msToSample(200) : 0, s.size()) * 5.0
           << ",\"onsets_ms\":[";
         for (size_t i = 0; i < onsets.size(); ++i) o << (i ? "," : "") << onsets[i];
         o << "]}";
