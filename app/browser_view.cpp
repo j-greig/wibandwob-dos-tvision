@@ -91,9 +91,9 @@ static void appendStyled(
     TColorRGB fg = state.fg;
     if (state.bold) {
         fg = TColorRGB(
-            (uint8_t) std::min(255, (int) fg.r + 32),
-            (uint8_t) std::min(255, (int) fg.g + 32),
-            (uint8_t) std::min(255, (int) fg.b + 32)
+            (uint8_t) std::min(255, (int) fg.getRed() + 32),
+            (uint8_t) std::min(255, (int) fg.getGreen() + 32),
+            (uint8_t) std::min(255, (int) fg.getBlue() + 32)
         );
     }
     TColorAttr attr(fg, state.bg);

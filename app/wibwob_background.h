@@ -54,7 +54,7 @@ public:
     uint32_t getRgbBg() const { return rgbBg_; }
     char  getPattern() const { return pattern; }
     // The colours the background is drawn in now (preset or custom).
-    TColorAttr baseAttr() const { return useRgb_ ? TColorAttr(TColorRGB(rgbFg_), TColorRGB(rgbBg_)) : TColorAttr(fgColor, bgColor); }
+    TColorAttr baseAttr() const { return useRgb_ ? TColorAttr(TColorRGB(rgbFg_), TColorRGB(rgbBg_)) : TColorAttr(TColorBIOS(fgColor), TColorBIOS(bgColor)); }
 
 private:
     uchar fgColor;

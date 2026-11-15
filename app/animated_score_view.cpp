@@ -441,7 +441,7 @@ void TAnimatedScoreView::cycleBackground(int delta)
     // Use a light FG on dark BGs, and dark FG on bright BGs for contrast.
     const TColorRGB &bg = kAnsiBg[bgIndex];
     // Compute simple perceived brightness to pick FG
-    int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114; // 0..~255000
+    int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114; // 0..~255000
     TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
     textAttr = TColorAttr(fg, bg);
 }
@@ -451,7 +451,7 @@ void TAnimatedScoreView::setBackgroundIndex(int idx)
     if (idx < 0) idx = 0; if (idx > 15) idx = 15;
     bgIndex = idx;
     const TColorRGB &bg = kAnsiBg[bgIndex];
-    int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+    int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
     TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
     textAttr = TColorAttr(fg, bg);
 }
@@ -485,7 +485,7 @@ public:
                 if (idx >= 16) break;
                 const TColorRGB &bg = kAnsiBg[idx];
                 // Contrast FG for swatch label
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 TColorAttr attr(fg, bg);
                 // Fill swatch area

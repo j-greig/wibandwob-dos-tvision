@@ -9,7 +9,7 @@ already is.
  1 file changed, 6 insertions(+)
 
 diff --git a/source/platform/termio.cpp b/source/platform/termio.cpp
-index b5667aa..0f9fd79 100644
+index 9d943bc..81f9e13 100644
 --- a/source/platform/termio.cpp
 +++ b/source/platform/termio.cpp
 @@ -261,7 +261,13 @@ bool CSIData::readFrom(GetChBuf &buf) noexcept

@@ -12,10 +12,10 @@ Off by default (the variable unset): getEvent behaves as before. With it set, ev
  3 files changed, 21 insertions(+), 1 deletion(-)
 
 diff --git a/include/tvision/internal/platform.h b/include/tvision/internal/platform.h
-index 4e4f357..db54de0 100644
+index 4c2335f..b04f3c2 100644
 --- a/include/tvision/internal/platform.h
 +++ b/include/tvision/internal/platform.h
-@@ -112,7 +112,8 @@ public:
+@@ -114,7 +114,8 @@ public:
      void restoreConsole() noexcept
          { console.lock([&] (auto *&c) { this->restoreConsole(c); }); }
  
@@ -26,10 +26,10 @@ index 4e4f357..db54de0 100644
      void interruptEventWait() noexcept { waiter.interruptEventWait(); }
  
 diff --git a/source/platform/platform.cpp b/source/platform/platform.cpp
-index 8063073..c123f80 100644
+index de1abd2..7b4f344 100644
 --- a/source/platform/platform.cpp
 +++ b/source/platform/platform.cpp
-@@ -153,3 +153,18 @@ void Platform::signalCallback(bool enter) noexcept
+@@ -158,3 +158,18 @@ void Platform::signalCallback(bool enter) noexcept
  }
  
  } // namespace tvision
@@ -49,7 +49,7 @@ index 8063073..c123f80 100644
 +}
 +} // namespace tvision
 diff --git a/source/platform/termio.cpp b/source/platform/termio.cpp
-index 0f9fd79..ff8df40 100644
+index 81f9e13..ad5b937 100644
 --- a/source/platform/termio.cpp
 +++ b/source/platform/termio.cpp
 @@ -290,10 +290,14 @@ void TermIO::mouseOn(ConsoleCtl &con) noexcept
