@@ -13,12 +13,16 @@
 #include <vector>
 
 namespace termtransport {
+std::string idOf(TWibWobTerminalWindow* w);
+std::string jsonEsc(const std::string& s);
 namespace {
 
 std::string str(const std::map<std::string, std::string>& kv, const char* k) {
     auto it = kv.find(k);
     return it == kv.end() ? std::string() : it->second;
 }
+
+}  // namespace
 
 std::string jsonEsc(const std::string& s) {
     std::string o;
@@ -30,6 +34,8 @@ std::string jsonEsc(const std::string& s) {
     return o;
 }
 
+namespace {
+
 const char* stateName(TWibWobTerminalWindow::RunState s) {
     switch (s) {
     case TWibWobTerminalWindow::RunState::Paused: return "paused";
@@ -38,10 +44,14 @@ const char* stateName(TWibWobTerminalWindow::RunState s) {
     }
 }
 
+}  // namespace
+
 std::string idOf(TWibWobTerminalWindow* w) {
     const auto& h = resident::hooks();
     return h.idOf ? h.idOf(w) : std::string();
 }
+
+namespace {
 
 std::vector<TWibWobTerminalWindow*> terminals() {
     std::vector<TWibWobTerminalWindow*> v;
@@ -130,6 +140,17 @@ std::string terminal_registry_command(const std::string& name, const std::map<st
         TWibWobTerminalWindow* t = target(kv, err);
         if (!t) return err;
         return act(t, name.substr(9), resident::currentWho());
+    }
+    if (name == "terminal_release") {
+        std::string err;
+        TWibWobTerminalWindow* t = target(kv, err);
+        if (!t) return err;
+        std::string id = idOf(t);
+        bool released = t->releaseKeyboard();
+        resident::addAct(resident::currentWho(), released ? "gave the keyboard back from the terminal"
+                                                          : "release: the terminal did not hold the keyboard", id, "");
+        return std::string("{\"ok\":true,\"id\":\"") + jsonEsc(id) + "\",\"released\":" +
+               (released ? "true" : "false") + ",\"keyboard\":\"" + (released ? "focus" : t->keyboard()) + "\"}";
     }
     if (name == "terminal_state") {
         std::string err;

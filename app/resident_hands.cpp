@@ -303,7 +303,7 @@ bool pawCommandAllowed(const std::string& name) {
                                "look_glance", "look_read", "create_window", "move_window", "resize_window",
                                "close_window", "window_title",
                                "open_synth", "synth", "hear",   // the machine's sound (app/sound)
-                               "terminal_pause", "terminal_resume", "terminal_toggle", "terminal_state"};
+                               "terminal_pause", "terminal_resume", "terminal_toggle", "terminal_state", "terminal_release"};
     for (const char* n : ok) if (name == n) return true;
     return false;
 }

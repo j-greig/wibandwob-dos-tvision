@@ -2938,6 +2938,7 @@ TMenuBar* TWwdosApp::initMenuBar(TRect r)
             *new TMenuItem("~B~rowser", cmBrowser, kbCtrlB) +
             *new TMenuItem("Te~r~minal", cmOpenTerminal, kbNoKey) +
             *new TMenuItem("Pa~u~se or Play Terminal", termtransport::cmTermToggle, kbNoKey, hcNoContext, "Alt-P") +
+            *new TMenuItem("~G~rab Keyboard (Terminal)", termtransport::cmTermGrab, kbNoKey) +
             *new TMenuItem("~O~pen Text File (Transparent)...", cmOpenTransparentText, kbNoKey) +
             newLine() +
             *new TMenuItem("~C~ascade", cmCascade, kbNoKey) +
@@ -2988,6 +2989,11 @@ TStatusLine* TWwdosApp::initStatusLine(TRect r)
 {
     r.a.y = r.b.y - 1;
     return new TCustomStatusLine(r,
+        // A terminal window holding the keyboard (Window > Grab Keyboard): every other key goes to
+        // its program; Alt-End gives the keyboard back, Alt-P still pauses (terminal_transport.cpp).
+        *new TStatusDef(termtransport::hcTerminalGrab, termtransport::hcTerminalGrab) +
+            *new TStatusItem("~Alt-End~ Release keyboard", kbAltEnd, termtransport::cmTermRelease) +
+            *new TStatusItem("~Alt-P~ Pause/Play", kbAltP, termtransport::cmTermToggle) +
         // A focused terminal window: Alt-P pauses and plays its program (terminal_transport.cpp).
         *new TStatusDef(termtransport::hcTerminal, termtransport::hcTerminal) +
             *new TStatusItem("~Alt-P~ Pause/Play", kbAltP, termtransport::cmTermToggle) +

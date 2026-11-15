@@ -33,24 +33,28 @@
 #include "terminal_transport.h"
 
 // Command IDs for tvterm integration — must not collide with existing app commands.
-// These are wired through TVTermConstants so tvterm-core uses our IDs.
+// These are wired through TVTermConstants so tvterm-core uses our IDs. Every field is
+// named: the struct has cmCopySelection between cmReleaseInput and hcInputGrabbed, and a
+// positional list that skips it leaves hcInputGrabbed at 0 (hcNoContext), which made every
+// terminal window's title read "(Input Grab)" although none held the keyboard.
 enum : ushort
 {
-    cmTvTermCheckUpdates = 500,
-    cmTvTermUpdated      = 501,
-    cmTvTermGrabInput    = 502,
-    cmTvTermReleaseInput = 503,
-    hcTvTermInputGrabbed = 504,
+    cmTvTermCheckUpdates  = 500,
+    cmTvTermUpdated       = 501,
+    cmTvTermCopySelection = 505,
 };
 
-const tvterm::TVTermConstants TWibWobTerminalWindow::termConsts =
+const tvterm::TVTermConstants TWibWobTerminalWindow::termConsts = []
 {
-    cmTvTermCheckUpdates,
-    cmTvTermUpdated,
-    cmTvTermGrabInput,
-    cmTvTermReleaseInput,
-    hcTvTermInputGrabbed,
-};
+    tvterm::TVTermConstants k {};
+    k.cmCheckTerminalUpdates = cmTvTermCheckUpdates;
+    k.cmTerminalUpdated = cmTvTermUpdated;
+    k.cmGrabInput = termtransport::cmTermGrab;        // Window > Grab Keyboard
+    k.cmReleaseInput = termtransport::cmTermRelease;  // Alt-End, a click outside, terminal_release
+    k.cmCopySelection = cmTvTermCopySelection;
+    k.hcInputGrabbed = termtransport::hcTerminalGrab; // the status line while grabbed
+    return k;
+}();
 
 TWibWobTerminalWindow::TWibWobTerminalWindow(
     const TRect &bounds,

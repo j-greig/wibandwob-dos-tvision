@@ -234,7 +234,57 @@ def test_shell(desk):
     desk.ipc("close_all")
 
 
-GROUPS = {"commands": test_commands, "shell": test_shell, "person": test_person, "focus": test_focus, "close": test_close}
+def grab(desk, wid):
+    desk.ipc("focus_window", id=wid)
+    time.sleep(0.3)
+    desk.person_keys("M-w")
+    time.sleep(0.3)
+    desk.person_keys("g")
+    time.sleep(0.5)
+
+
+def test_keyboard(desk):
+    print("\n[keyboard] grab, the release chord, terminal_release")
+    desk.ipc("close_all")
+    wid = open_counter(desk)
+    s = state(desk, wid)
+    R.check(s["keyboard"] == "focus", f"a focused terminal reads keyboard=focus ({s['keyboard']})")
+    R.check("Input Grab" not in title(desk, wid), f"no '(Input Grab)' on a terminal that does not hold the keyboard ({title(desk, wid)!r})")
+    ed = desk.editor(70, 1, 40, 10, "other")
+    time.sleep(0.2)
+    R.check(state(desk, wid)["keyboard"] == "none", "an unfocused terminal reads keyboard=none")
+    grab(desk, wid)
+    s = state(desk, wid)
+    R.check(s["keyboard"] == "grab", f"Window > Grab Keyboard: keyboard=grab ({s['keyboard']})")
+    R.check("(Input Grab)" in title(desk, wid), f"the title says it holds the keyboard ({title(desk, wid)!r})")
+    R.check("Alt-End" in " ".join(desk.screen()[-3:]), "the status line names Alt-End while grabbed")
+    d = desk.j("describe", id=wid)
+    R.check("holds the keyboard" in d.get("state", ""), "describe says the window holds the keyboard")
+    desk.person_keys("F6")
+    time.sleep(0.3)
+    R.check(state(desk, wid)["keyboard"] == "grab", "F6 does not leave a grabbed terminal")
+    desk.person_keys("M-p")
+    time.sleep(0.4)
+    R.check(state(desk, wid)["state"] == "paused", "Alt-P pauses while the terminal holds the keyboard")
+    desk.person_keys("M-p")
+    time.sleep(0.4)
+    R.check(state(desk, wid)["state"] == "running", "Alt-P plays while the terminal holds the keyboard")
+    desk.person_keys("M-End")
+    time.sleep(0.4)
+    s = state(desk, wid)
+    R.check(s["keyboard"] == "focus" and "Input Grab" not in title(desk, wid), f"Alt-End gives the keyboard back ({s['keyboard']})")
+    grab(desk, wid)
+    R.check(state(desk, wid)["keyboard"] == "grab", "grabbed again")
+    r = desk.j("terminal_release", id=wid, actor="wob", source="resident")
+    time.sleep(0.4)
+    R.check(r.get("released") and state(desk, wid)["keyboard"] != "grab", f"terminal_release gives it back ({r})")
+    r = desk.j("terminal_release", id=wid)
+    R.check(r.get("ok") and not r.get("released"), "terminal_release on a window that does not hold it changes nothing")
+    R.check("gave the keyboard back" in acts_text(desk), "the act log records the release")
+    desk.ipc("close_all")
+
+
+GROUPS = {"commands": test_commands, "keyboard": test_keyboard, "shell": test_shell, "person": test_person, "focus": test_focus, "close": test_close}
 
 
 def main():
