@@ -510,6 +510,14 @@ double Stage::sectionTime(int dir) const
 int Stage::due()
 {
     double t = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (catchUpDue && wallLast >= 0) {     // after a modal loop: every tick owed, up to 30 s of them
+        catchUpDue = false;
+        wallAcc += std::min(t - wallLast, 30.0) * clockHz; wallLast = t;
+        int n = int(wallAcc + 0.5);
+        wallAcc -= n;
+        return n;
+    }
+    catchUpDue = false;
     if (wallLast < 0 || t - wallLast > 1.0) { wallLast = t; wallAcc = 0; return 1; }
     wallAcc += (t - wallLast) * clockHz; wallLast = t;
     int n = int(wallAcc + 0.5);            // nearest: a timer a hair early still runs its tick
@@ -632,7 +640,11 @@ void Stage::pinFront()
         v = v->next;
     } while (v != d->first());
     if (!any) return;
+    // putInFrontOf resets the desktop's current view to the front selectable one; the viewer's selection (focus, the
+    // active frame, what Alt-F3 closes, what a press on a title drags) goes back to the window that had it
+    TView* cur = d->current;
     for (auto it = pins.rbegin(); it != pins.rend(); ++it) (*it)->putInFrontOf(d->first());
+    if (cur && d->current != cur && d->indexOf(cur) != 0) d->setCurrent(cur, TGroup::normalSelect);
 }
 
 // Frames in a file of line-art frames (as the desktop counts them): blocks between "----" lines.

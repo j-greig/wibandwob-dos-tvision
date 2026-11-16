@@ -247,6 +247,9 @@ public:
     int hz() const { return clockHz; }
     void tick();                          // one clock tick: run due commands, advance tweens
     int due();                            // ticks owed by the monotonic clock since the last call
+    // After a modal loop (a drag, a menu): the next due() owes every tick since the last one (up to 30 s), so the clock
+    // keeps its time and the commands that came due during the loop run in order, instead of starting again from now.
+    void catchUp() { catchUpDue = true; }
     void rebase() { wallLast = -1; }      // after a pause or a seek: the clock starts again from now
     void seek(double secs, bool keepClock = false);   // the state at secs, drawn; quiet (no sounds)
     // Tempo and quantised jumps (stage command "tempo"; scrubber wide, PgDn/PgUp, wwdosStage.jump)
@@ -362,6 +365,7 @@ private:
     struct Widget { bool bar; double from, to; int start, dur, width; std::string text; int shown; };
     std::map<std::string, Widget> widgets;   // bar and counter values running over time
     double wallLast = -1, wallAcc = 0;
+    bool catchUpDue = false;
     std::map<std::string, Mark> marks;
     bool quiet = false;                   // replaying after a resize: no sounds
     const char* warn = nullptr;           // why the last command did nothing, for the trace

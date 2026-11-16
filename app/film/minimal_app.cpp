@@ -930,9 +930,17 @@ public:
             if (k == "Enter") emit("submit", name, -1, -1, "");
         }
     }
+    // Turbo Vision runs a modal loop inside handleEvent for a title-bar drag, a resize, a menu and a dialog, and that
+    // loop calls idle() and drops timer events. Nothing may change the views under it (a swap destroys the window being
+    // dragged): while handleDepth > 0 idle() applies nothing, and live lines, tool seeks, restores and the stage's ticks
+    // wait. When the loop ends the clock catches up (Stage::catchUp): the ticks owed run in order, script lines and
+    // queued live lines included, at most a loop late, and stage time does not stall.
+    int handleDepth = 0;
+    bool modalSeen = false;
     void idle() override
     {
         TApplication::idle();
+        if (handleDepth > 0) { modalSeen = true; return; }
         // A timer may have drawn a view under a clear sprite (a drawing's own frame); draw the sprites again before
         // the screen is flushed.
         if (g_timerSeen) { g_timerSeen = false; stage.spriteSettle(); }
@@ -1324,6 +1332,8 @@ void TMinApp::closeAll()
 
 void TMinApp::handleEvent(TEvent& event)
 {
+    struct Depth { TMinApp& a; Depth(TMinApp& a) : a(a) { ++a.handleDepth; }
+        ~Depth() { if (--a.handleDepth == 0 && a.modalSeen) { a.modalSeen = false; a.stage.catchUp(); } } } depth(*this);
 #ifdef __EMSCRIPTEN__
     // Exit in a browser: ending Turbo Vision's loop would freeze the page, so the page exits instead
     // (back to the films player when framed, otherwise a DOS prompt; web/shell-webgl.html "!exit").
