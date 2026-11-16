@@ -209,7 +209,7 @@
     wins.forEach(function (w) {
       var g = memberOf[w.name], p = g && gobj[g] ? gobj[g].id : 0;
       var o = byName[w.name] = add({ name: w.name, kind: w.kind, content: w.content, x: D.x + w.x, y: D.y + w.y, w: w.w, h: w.h, z: w.z,
-        frame: w.frame, frames: w.frames, fps: w.fps, file: w.file, title: w.title, ghost: w.ghost, clear: w.clear, group: g,
+        frame: w.frame, frames: w.frames, fps: w.fps, file: w.file, title: w.title, ghost: w.ghost, clear: w.clear, pinned: !!w.pinned, group: g,
         parent: p, depth: objs[p].depth + 1, src: src[w.name], win: true });
       if (!w.ghost && w.w > 2 && w.h > 2)   // a framed window holds its contents: the interior, as a child box
         add({ name: w.name, kind: w.content, content: 'inside ' + w.name, x: o.x + 1, y: o.y + 1, w: w.w - 2, h: w.h - 2, z: w.z,
@@ -276,6 +276,7 @@
     L.push('rect   ' + (o.x - D.x) + ',' + (o.y - D.y) + '  ' + o.w + '×' + o.h);
     if (o.win) L.push('z      ' + o.z + ' (0 is the front)'); else if (o.kind === 'mark') L.push('layer  z ' + o.z + ', under every window');
     if (o.group) L.push('group  ' + o.group);
+    if (o.pinned) L.push('pinned Close All, Alt-F3, Tile and Cascade leave it');
     L.push('shows  ' + o.shows);
     var fr = xrFrames(o); if (fr) L.push('frame  ' + fr);
     if (o.title) L.push('title  ' + o.title);
@@ -378,9 +379,10 @@
           for (var j = 0; j < n; j++) { var xj = x0 + j; if (xj >= 0 && xj < C) used[o.y * C + xj] = 1; }
           text(x0, o.y, s, 0, XR_EGA[on ? k : XR_DIM], n);
         });
-        xrLayers({ put: put, text: text, box: box, panel: panel, C: C, R: R, m: m, sel: sel, cells: cells });
+        xrLayers({ put: put, text: text, box: box, panel: panel, C: C, R: R, m: m, sel: sel, cells: cells,
+                   cp: function (x, y) { return out[(y * C + x) * 3] & 0x1FFFFF || 32; } });
         if (xr.tree) {
-          var ids = xrTree(), lines = ids.map(function (id) { var o = m.objs[id]; return rep('  ', o.depth) + o.name + ' ' + o.kind + (o.shows !== 'visible' ? ' (' + o.shows + ')' : ''); });
+          var ids = xrTree(), lines = ids.map(function (id) { var o = m.objs[id]; return rep('  ', o.depth) + o.name + ' ' + o.kind + (o.pinned ? ' pinned' : '') + (o.shows !== 'visible' ? ' (' + o.shows + ')' : ''); });
           xr.treeAt = Math.max(0, Math.min(ids.length - 1, xr.treeAt));
           var room = R - 4, top = Math.max(0, Math.min(xr.treeAt - (room >> 1), ids.length - room));
           var shown = lines.slice(top, top + room); shown.unshift('objects, front first   ↑↓ Enter Esc');
@@ -417,7 +419,7 @@
     return items.concat([[' ' + pad('Copy stage name', 26) + ' ', 'name'], [' ' + pad('Copy rect', 26) + ' ', 'rect'],
                          [' ' + pad('Close', 17) + pad('Esc', 9) + ' ', 'close']]);
   }
-  var XR_DONE = ['boxes', 'transport'];   // layers built so far
+  var XR_DONE = ['boxes', 'transport', 'next'];   // layers built so far
   function xrLayer(name, on) { xr.on = true; xr.L[name] = on === undefined ? !xr.L[name] : !!on; xrRedraw(); }
   // ---- the script as the page holds it (wwdosScene.files['stage.txt']), parsed once: the commands with their times,
   // ticks and source lines, the tempo, the loop, the sections. The layers read the film from this and from the engine.
@@ -432,12 +434,14 @@
       else if (/^size /.test(l)) { var z = l.split(/\s+/); size = [+z[1], +z[2]]; }
       else if (l[0] === '@') {
         var m = /^@(\S+)\s+(.*)$/.exec(l); if (!m) return;
-        var line = m[2], w = line.split(/\s+/), a = at[k];
-        cmds.push({ t: parseFloat(m[1]), line: line, cmd: w[0], name: w[1] || '', i: k, src: a ? files[a[0]] + ':' + a[1] : '' });
+        var line = m[2], w = line.split(/\s+/);
+        cmds.push({ t: parseFloat(m[1]), line: line, cmd: w[0], name: w[1] || '', j: k });
         k++;
       }
     });
-    cmds = cmds.map(function (c, j) { c.j = j; return c; }).sort(function (a, b) { return a.t - b.t || a.j - b.j; });
+    // the engine's order: stably sorted by time; the source lines (scene.py xray_map) are in that order
+    cmds.sort(function (a, b) { return a.t - b.t || a.j - b.j; });
+    cmds.forEach(function (c, i) { var a = at[i]; c.i = i; c.src = a ? String(files[a[0]]).replace(/^.*\//, '').replace(/\.stage$/, '') + ':' + a[1] : ''; });
     var tick = function (t) { return Math.max(0, Math.ceil(t * hz - 0.5 - 1e-9)); };
     cmds.forEach(function (c) { c.k = tick(c.t); });
     var tempo = null, sections = [], loop = null, end = null;
@@ -479,6 +483,41 @@
     var n = 0; for (var x = x0; x < x1; x++) { var cp = cells[(y * C + x) * 3] & 0x1FFFFF; if (cp > 32 && cp !== 0x2591 && cp !== 0x2592 && cp !== 0x2593) n++; }
     return n;
   }
+  // ---- 2. next cues: the stage lines due next, with the time to go, the object, the verb and the source line
+  var XR_WINCMD = { open: 1, move: 1, rect: 1, close: 1, raise: 1, lower: 1, title: 1, swap: 1, say: 1, colour: 1, text: 1,
+                    bar: 1, counter: 1, mark: 1, drift: 1 };
+  var XR_TAG = { open: 'reopens', move: 'moves', rect: 'resizes', close: 'closes', raise: 'rises', lower: 'sinks',
+                 title: 'retitles', swap: 'changes', say: 'speaks', colour: 'recolours', text: 'updates', bar: 'updates',
+                 counter: 'updates', mark: 'moves', drift: 'drifts' };
+  function xrDue(dt) {
+    var s = xrScript();
+    if (dt <= 1e-6) return 'now';
+    if (!s.tempo.assumed) { var b = dt / s.beat; return (Math.round(b * 10) / 10) + 'b'; }
+    return (Math.round(dt * 100) / 100) + 's';
+  }
+  function xrCueObj(c) {
+    if (XR_WINCMD[c.cmd]) return c.name;
+    if (c.cmd === 'sound') return c.name;
+    if (c.cmd === 'on' || c.cmd === 'follow') return c.line.split(/\s+/).slice(1).join(' ');
+    return '';
+  }
+  // the lines firing on the tick on screen (now) and the next N after it, in the engine's order
+  function xrNextCues(n) {
+    var s = xrScript(), t = xrNow(), k = Math.round(t * s.hz), out = [];
+    s.cmds.forEach(function (c) {
+      if (c.cmd === 'tempo') return;
+      if (c.k === k) out.push({ c: c, now: true, dt: 0 });
+      else if (c.k > k && out.filter(function (o) { return !o.now; }).length < n) out.push({ c: c, now: false, dt: c.t - t });
+    });
+    return out;
+  }
+  function xrNextLines(n) {
+    var rows = xrNextCues(n || 6).map(function (o) {
+      var c = o.c, obj = xrCueObj(c);
+      return pad(o.now ? '\u25b6 now' : '  in ' + xrDue(o.dt), 11) + ' ' + pad(c.cmd, 7) + ' ' + pad(obj, 12) + ' ' + (c.src || '@' + c.t);
+    });
+    return ['next cues at ' + xrNow().toFixed(3) + 's, bar ' + xrBarBeat(xrNow())].concat(rows.length ? rows : ['  (nothing more in the script)']);
+  }
   function xrLayers(g) {
     var m = g.m, D = m.desk, R = g.R, C = g.C;
     if (xr.L.transport) {
@@ -489,6 +528,29 @@
       for (var x = 0; x < C; x++) g.put(x, row, ' ', 0xFFFFFF, 0x000055);
       g.text(0, row, txt, 0xFFFF55, 0x000055, C);
       xr.transportRow = row;
+    }
+    if (xr.L.next) {
+      var cues = xrNextCues(6), lines = xrNextLines(6), tagged = {};
+      // countdown tags on the boxes of the objects the listed cues act on (the first cue for each)
+      cues.forEach(function (o) {
+        var c = o.c; if (!XR_WINCMD[c.cmd] || tagged[c.name] || o.now) return;
+        tagged[c.name] = 1;
+        m.objs.forEach(function (ob) {
+          if (ob.name !== c.name || ob.inner || ob.w < 6) return;
+          var tag = ' ' + XR_TAG[c.cmd] + ' in ' + xrDue(o.dt) + ' ', y = ob.y + ob.h - 1;
+          if (y >= 0 && y < R) g.text(ob.x + 1, y, tag, 0, XR_EGA[11], ob.w - 2);
+        });
+      });
+      // the corner that covers the fewest tagged boxes (top right first)
+      var pw = 2, ph = Math.min(lines.length + 2, R); lines.forEach(function (l) { pw = Math.max(pw, l.length + 2); }); pw = Math.min(pw, C);
+      var tagObjs = m.objs.filter(function (ob) { return tagged[ob.name] && !ob.inner; }), best = null, bestN = 1e9;
+      [[C - pw, D.y], [C - pw, R - ph], [0, R - ph], [0, D.y]].forEach(function (c) {
+        var n = 0; tagObjs.forEach(function (ob) { if (!(c[0] + pw <= ob.x || c[0] >= ob.x + ob.w || c[1] + ph <= ob.y || c[1] >= ob.y + ob.h)) n++; });
+        if (n < bestN) { bestN = n; best = c; }
+      });
+      var p = g.panel(lines, best[0], best[1], null, 0xFFFFFF, 0x003300, 0x55FF55, -1);
+      // the lines firing now, reversed (they flash for the tick they run on)
+      cues.forEach(function (o, i) { if (o.now) for (var x = 1; x < p.w - 1; x++) g.put(p.x + x, p.y + 2 + i, String.fromCodePoint(g.cp(p.x + x, p.y + 2 + i)), 0x003300, 0x55FF55); });
     }
   }
   // transport keys (x-ray on): Space pause/play, , and . a tick, [ and ] a bar, Home the section start; all by seek
@@ -640,6 +702,7 @@
     panel: function (on) { xr.panel = !!on; xrRedraw(); },
     // layers({transport: true, boxes: false, ...}) switches layers (x-ray on); with no argument it reads them
     layers: function (set) { if (set) { xr.on = true; for (var k in set) if (k in xr.L) xr.L[k] = !!set[k]; xrRedraw(); } var o = {}; for (var j in xr.L) o[j] = xr.L[j]; return o; },
+    next: function (n) { return xrNextLines(n || 6); },
     transport: function () { if (!last) return ''; xr.model = xrModel(); return xr.model ? xrTransportText(last, lastCols, lastRows, xr.model).trim() : ''; },   // the readout panel on the grid (the terminal tool prints it below)
     kinds: function (list) { xr.kinds = list && list.length ? list : null; xrRedraw(); },
     menu: function (x, y) { if (x === undefined) { xr.menu = null; xrRedraw(); return null; } xrOpenMenu(x, y); return xrMenuItems().map(function (e) { return e[0].trim(); }); },

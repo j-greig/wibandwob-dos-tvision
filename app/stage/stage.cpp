@@ -109,6 +109,10 @@ struct StageWindow : TFrameAnimationWindow
     }
     // A clear sprite ("open NAME ... ghost clear", "ink contrast"): see draw() below.
     bool clear = false, contrast = false;
+    // "pin NAME": Close All and Alt-F3 (cmClose, close()) leave it; Tile and Cascade skip it (not ofTileable)
+    bool pinned = false;
+    void setPinned(bool on) { pinned = on; if (on || clear) options &= ~ofTileable; else options |= ofTileable; }
+    void close() override { if (!pinned) TFrameAnimationWindow::close(); }
     void setClear(bool on, bool ink)
     {
         if (on != clear) {
@@ -116,7 +120,7 @@ struct StageWindow : TFrameAnimationWindow
             // straight to the screen; draw() puts the buffer on the screen with the blank cells left out.
             if (on) ++lockFlag; else if (lockFlag) --lockFlag;
             clear = on;
-            if (on) options &= ~ofTileable; else options |= ofTileable;
+            if (on || pinned) options &= ~ofTileable; else options |= ofTileable;
         }
         contrast = on && ink;
         drawView();
@@ -611,6 +615,24 @@ void Stage::advance()
         sendMark(kv.first, m);
     }
     picWindows();
+    pinFront();
+}
+
+// Pinned windows in front of the unpinned ones, keeping their order among themselves; the focus is left alone.
+void Stage::pinFront()
+{
+    TDeskTop* d = host.stageDesk();
+    std::vector<TView*> pins;
+    TView* v = d->first();
+    bool behind = false, any = false;
+    if (v) do {                           // front to back: is a pinned window behind an unpinned stage window?
+        auto* sw = dynamic_cast<StageWindow*>(v);
+        if (sw && sw->pinned) { pins.push_back(v); if (behind) any = true; }
+        else if (sw) behind = true;
+        v = v->next;
+    } while (v != d->first());
+    if (!any) return;
+    for (auto it = pins.rbegin(); it != pins.rend(); ++it) (*it)->putInFrontOf(d->first());
 }
 
 // Frames in a file of line-art frames (as the desktop counts them): blocks between "----" lines.
@@ -791,7 +813,7 @@ void Stage::swapWin(const std::string& name, const std::string& path)
     if (!old) return;
     std::string title = old->title ? old->title : "";
     auto* w = new StageWindow(old->getBounds(), title.c_str(), path, old->isFrameless(), old->isFrameless());
-    if (auto* os = dynamic_cast<StageWindow*>(old)) if (os->clear) w->setClear(true, os->contrast);
+    if (auto* os = dynamic_cast<StageWindow*>(old)) { if (os->clear) w->setClear(true, os->contrast); if (os->pinned) w->setPinned(true); }
     ww::WinColour colour = ww::windowColour(old);        // the colour belongs to the name, not the window object
     if (colour.bg >= 0 || colour.ink >= 0) ww::setWindowColour(w, colour);
     ww::forgetWindow(old);
@@ -870,7 +892,7 @@ void Stage::run(const std::string& line)
     warn = nullptr;
     host.stageNow(now);
     struct InRun { bool& f; bool was; InRun(bool& f) : f(f), was(f) { f = true; } ~InRun() { f = was; } } inRunGuard(inRun);
-    static const char* const needWin[] = {"move", "rect", "close", "raise", "lower", "title", "swap", "say", "colour", "text", "bar", "counter"};
+    static const char* const needWin[] = {"move", "rect", "close", "raise", "lower", "title", "swap", "say", "colour", "text", "bar", "counter", "pin"};
     for (const char* k : needWin)
         if (cmd == k) { std::string nm; std::istringstream(head) >> nm; if (!win(nm)) warn = "no window"; break; }
 
@@ -927,6 +949,9 @@ void Stage::run(const std::string& line)
         tweens.push_back({name, from, to, now, std::max(1, int(secs * clockHz)), ease});
     } else if (cmd == "close") {
         std::string name; h >> name; closeWin(name);
+    } else if (cmd == "pin") {
+        std::string name, v; h >> name >> v;
+        if (auto* sw = dynamic_cast<StageWindow*>(win(name))) { sw->setPinned(v != "off"); pinFront(); }
     } else if (cmd == "raise") {
         std::string name; h >> name; if (auto* w = win(name)) w->select();
     } else if (cmd == "lower") {
@@ -1185,7 +1210,7 @@ std::string Stage::checkLive(const std::string& raw, const std::set<std::string>
     for (const char* k : notLive) if (cmd == k) return cmd + " does not run live";
     static const char* const known[] = {"open", "move", "rect", "close", "raise", "lower", "title", "swap", "say", "hint", "bg",
         "weather", "sound", "scrubber", "theme", "colour", "mark", "drift", "text", "bar", "counter", "shake", "seed", "floors", "tile", "cascade", "bars", "xray",
-        "on", "follow", "reset", "restart"};
+        "on", "follow", "reset", "restart", "pin"};
     bool ok = false;
     for (const char* k : known) if (cmd == k) ok = true;
     if (!ok) return "unknown command: " + cmd;
@@ -1198,7 +1223,7 @@ std::string Stage::checkLive(const std::string& raw, const std::set<std::string>
         if (!(h >> xs >> ys >> w >> hh)) return "open needs NAME X Y W H";
         return "";
     }
-    static const char* const needWin[] = {"move", "rect", "close", "raise", "lower", "title", "swap", "say", "colour", "text", "bar", "counter"};
+    static const char* const needWin[] = {"move", "rect", "close", "raise", "lower", "title", "swap", "say", "colour", "text", "bar", "counter", "pin"};
     for (const char* k : needWin)
         if (cmd == k) {
             if (name.empty()) return cmd + " needs a window name";
@@ -1357,8 +1382,9 @@ std::string Stage::objectsJson()
                 frames = lineArtFrames(path);
             }
             TRect r = w->getBounds();
-            snprintf(b, sizeof b, "%s{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d,\"z\":%d,\"frames\":%d,\"frame\":%d,\"fps\":%g,\"ghost\":%s,\"clear\":%s,\"kind\":",
-                     n++ ? "," : "", r.a.x, r.a.y, r.b.x - r.a.x, r.b.y - r.a.y, z, frames, frame, fps, ghost ? "true" : "false", clear ? "true" : "false");
+            snprintf(b, sizeof b, "%s{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d,\"z\":%d,\"frames\":%d,\"frame\":%d,\"fps\":%g,\"ghost\":%s,\"clear\":%s,\"pinned\":%s,\"kind\":",
+                     n++ ? "," : "", r.a.x, r.a.y, r.b.x - r.a.x, r.b.y - r.a.y, z, frames, frame, fps, ghost ? "true" : "false", clear ? "true" : "false",
+                     sw && sw->pinned ? "true" : "false");
             out += b + jsonStr(kind) + ",\"content\":" + jsonStr(content) + ",\"name\":" + jsonStr(name) + ",\"title\":" + jsonStr(w->title ? w->title : "")
                 + ",\"file\":" + jsonStr(path) + "}";
         }

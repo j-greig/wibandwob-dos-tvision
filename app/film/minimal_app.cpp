@@ -940,6 +940,7 @@ public:
         if (g_liveRedrawStatus) { g_liveRedrawStatus = false; if (statusLine) statusLine->drawView(); }
         if (g_logLoadDue) { g_logLoadDue = false; stage.loadLog(g_logLoad); g_logLoad.clear(); }
         if (g_stage && press.due) resolvePress();
+        if (g_stage) stage.keepPinned();           // a viewer's click may have brought an unpinned window forward
         if (g_stage) for (auto& n : stage.takeClosed()) emit("close", n, -1, -1, "");
         if (g_stage && !g_inputQueue.empty()) {    // wwdosStage.input: a replayed input, as the viewer gave it
             std::vector<std::array<std::string, 3>> q; q.swap(g_inputQueue);

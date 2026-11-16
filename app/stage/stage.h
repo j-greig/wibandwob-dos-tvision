@@ -23,6 +23,9 @@
 //   move NAME X Y [in S] [ease]       glide the window to X Y over S seconds (default: at once)
 //   rect NAME X Y W H [in S] [ease]   glide position and size; W H = 0 0 is the file's own size again
 //   close NAME | raise NAME | lower NAME
+//   pin NAME [off]                    a pinned window stays: Close All and Alt-F3 leave it, Tile and Cascade skip it, and it
+//                                     stays in front of every unpinned window; it can still be dragged by its title bar,
+//                                     and the script can still close, move or raise it. off unpins it
 //   title NAME |text
 //   swap NAME /boot/file.txt [frame K] [fps N] [loop|once]   new contents, same place and title. A PAINT file or a
 //                                     picture film (in open too) shows as a colour picture from the window's top-left
@@ -419,6 +422,10 @@ private:
     void setText(const std::string& name, const std::string& text);
     void drawWidget(const std::string& name, Widget& w);
     void advance();                       // glides, shake and bubbles at the present tick
+    void pinFront();                      // pinned windows in front of the unpinned ones (stage.h, pin)
+public:
+    void keepPinned() { pinFront(); }     // the host after a viewer brought another window forward
+private:
     TRect placeSized(int x, int y, int w, int h) const;
 };
 

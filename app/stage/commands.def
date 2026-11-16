@@ -15,6 +15,7 @@ open       run  5   n   y    y    | opens a window of a primer; on an open NAME 
 move       run  3   y   n    y    | glides the window to X Y [in S] [ease]
 rect       run  5   y   n    y    | glides position and size; 0 0 is the primer's own size again
 close      run  1   y   n    y    | closes the window
+pin        run  1   y   n    y    | the window stays: Close All, Alt-F3, Tile and Cascade leave it; in front of unpinned windows (pin NAME off unpins)
 raise      run  1   y   n    y    | brings the window to the front
 lower      run  1   y   n    y    | sends the window to the back
 title      run  1   y   y    y    | retitles the window
