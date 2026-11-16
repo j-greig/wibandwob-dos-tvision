@@ -147,6 +147,24 @@ class PaintIPCTests:
         resp = ipc_send(f"cmd:paint_text id={self.window_id} x=3 y=3 text={text_encoded} fg=15 bg=0")
         self.assert_startswith(resp, "ok", "paint_text returns ok")
 
+    def test_paint_grid(self):
+        """AC: paint_grid writes a w x h block of chars and attrs in one call."""
+        print("\n[6b] Paint grid")
+        if not self.window_id:
+            print("  SKIP: no paint window ID")
+            return
+        import base64
+        chars = b"AB  CD"                          # 3 x 2
+        attrs = bytes([0x0E, 0x30, 0x00, 0x00, 0x0B, 0x08])
+        enc = lambda b: "base64:" + base64.b64encode(b).decode()
+        resp = ipc_send(f"cmd:paint_grid id={self.window_id} x=1 y=8 w=3 h=2 chars={enc(chars)} attrs={enc(attrs)}")
+        self.assert_startswith(resp, "ok 6", "paint_grid returns ok and the cell count")
+        out = ipc_send(f"cmd:paint_export id={self.window_id}")
+        self.assert_contains(out, "AB", "paint_grid first row is in the export")
+        self.assert_contains(out, " CD", "paint_grid second row is in the export")
+        short = ipc_send(f"cmd:paint_grid id={self.window_id} x=0 y=0 w=4 h=4 chars={enc(b'x')} attrs={enc(b'x')}")
+        self.assert_startswith(short, "err", "paint_grid refuses too few bytes")
+
     def test_paint_export_inline(self):
         """AC: paint_export returns canvas content as JSON."""
         print("\n[7] Paint export (inline)")
@@ -199,7 +217,7 @@ class PaintIPCTests:
     def run_all(self):
         print("=" * 60)
         print("Paint Canvas IPC Test Suite (E010)")
-        print(f"Socket: {_sock_path()}")
+        print(f"Socket: {resolve_sock_path()}")
         print("=" * 60)
 
         self.test_connection()
@@ -208,6 +226,7 @@ class PaintIPCTests:
         self.test_paint_line()
         self.test_paint_rect()
         self.test_paint_text()
+        self.test_paint_grid()
         self.test_paint_export_inline()
         self.test_paint_export_file()
         self.test_paint_error_handling()
@@ -222,7 +241,7 @@ class PaintIPCTests:
 
 if __name__ == "__main__":
     # Check socket exists
-    sock = _sock_path()
+    sock = resolve_sock_path()
     if not os.path.exists(sock):
         print(f"ERROR: Socket {sock} not found.")
         print("Start the app first: ./build/app/wwdos")

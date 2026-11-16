@@ -79,6 +79,9 @@ public:
     // Public API for IPC control
     void putCell(int x, int y, uint8_t fgColor, uint8_t bgColor);
     void putText(int x, int y, const std::string& text, uint8_t fgColor, uint8_t bgColor);
+    // A w x h rectangle of text cells in one call and one redraw. chars and attrs hold w*h bytes, row by row;
+    // an attr byte is fg | bg << 4. Cells outside the canvas are skipped. Returns the number of cells written.
+    int putGrid(int x, int y, int w, int h, const std::string& chars, const std::string& attrs);
     void putLine(int x0, int y0, int x1, int y1, bool erase = false);
     void putRect(int x0, int y0, int x1, int y1, bool erase = false);
     std::string exportText() const;

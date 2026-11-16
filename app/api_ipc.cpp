@@ -868,6 +868,8 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
                 resp = "ok\n";
             }
         }
+    } else if (cmd == "paint_grid") {
+        resp = exec_registry_command(*app_, cmd, kv) + "\n";
     } else if (cmd == "paint_line") {
         auto id_it = kv.find("id");
         auto x0_it = kv.find("x0"); auto y0_it = kv.find("y0");

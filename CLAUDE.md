@@ -6,6 +6,7 @@
 
 When a session touches both, SAY SO explicitly at each switch: name the repo and branch before running git commands or editing files there.
 
+- Never `ls` the repo root: it holds thousands of `*-spawned.txt` files (one per plain `send_text`). List directories with `ls -d */`.
 - Build vintage demos standalone: `cmake -B build/demos -S app/demos && cmake --build build/demos -j8` (targets: `demo_golem`, `demo_winwin`, `demo_corpus`, +20 more)
 - To launch/drive any TUI binary in Ghostty via AppleScript, see `docs/development/ghostty-applescript.md`
 - Show layer for live performances (typed reveal, glide, cursors, shape, fall, droste, chrome, capture, `/events` SSE): `tools/api_server/show.py`, documented in `tools/api_server/README.md` § Show endpoints. It calls IPC directly (no spawn-log files) and retries a dropped socket; plain `send_text` writes a `*-spawned.txt` file at repo root per call.

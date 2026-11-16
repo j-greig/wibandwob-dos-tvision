@@ -34,6 +34,7 @@ std::string api_chat_receive(TWwdosApp&, const std::string&, const std::string&)
 std::string api_wibwob_ask(TWwdosApp&, const std::string&) { return "ok"; }
 std::string api_paint_cell(TWwdosApp&, const std::string&, int, int, uint8_t, uint8_t) { return "ok"; }
 std::string api_paint_text(TWwdosApp&, const std::string&, int, int, const std::string&, uint8_t, uint8_t) { return "ok"; }
+std::string api_paint_grid(TWwdosApp&, const std::string&, int, int, int, int, const std::string&, const std::string&) { return "ok"; }
 std::string api_window_text(TWwdosApp&, const std::string&) { return "ok"; }
 std::string api_paint_line(TWwdosApp&, const std::string&, int, int, int, int, bool) { return "ok"; }
 std::string api_paint_rect(TWwdosApp&, const std::string&, int, int, int, int, bool) { return "ok"; }
@@ -70,6 +71,7 @@ int main() {
         "\"name\":\"chat_receive\"",
         "\"name\":\"paint_cell\"",
         "\"name\":\"paint_text\"",
+        "\"name\":\"paint_grid\"",
         "\"name\":\"paint_line\"",
         "\"name\":\"paint_rect\"",
         "\"name\":\"paint_clear\"",

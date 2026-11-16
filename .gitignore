@@ -56,3 +56,6 @@ scratch/
 # Workspaces
 workspaces/*
 !workspaces/.gitkeep
+
+# one file per plain send_text call, written at the repo root
+/*-spawned.txt
