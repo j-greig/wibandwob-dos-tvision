@@ -30,6 +30,7 @@
 #include <tvision/internal/codepage.h>   // tvision::CpTranslator, for cellCodepoint
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -384,6 +385,8 @@ EM_JS(double, wwdos_js_audio_time, (), { return Module.wwdosAudioTime ? Module.w
 EM_JS(void, wwdos_js_sections, (const char *json), { window.wwdosSections = JSON.parse(UTF8ToString(json)); });
 // Stage gate: 1 lets the clock run on (sound on already, no sounds, ?t= or ?autostart=1; web/shell-webgl.html).
 EM_JS(int, wwdos_js_gate_pass, (), { return Module.wwdosGatePass ? Module.wwdosGatePass() : 1; });
+// "gate cue": 1 on a tool's page (?paused=1 or ?cues=0), else 0 (web/shell-webgl.html, Module.wwdosCuePass).
+EM_JS(int, wwdos_js_cue_pass, (), { return Module.wwdosCuePass ? Module.wwdosCuePass() : 0; });
 // Events out (docs/stage.md § Events): a click, key, drag, close or submit on a named window, for the page to post.
 EM_JS(void, wwdos_js_event, (const char *kind, const char *name, int x, int y, const char *value, double t), {
     if (Module.wwdosEvent) Module.wwdosEvent(UTF8ToString(kind), UTF8ToString(name), x, y, UTF8ToString(value), t);
@@ -482,6 +485,7 @@ static void wwdos_js_trace(double t, const char *line, const char *warn)
     fflush(g_traceFile);
 }
 static int wwdos_js_gate_pass() { return g_autostart; }
+static int wwdos_js_cue_pass() { return g_optPaused == 1; }
 static void wwdos_js_xray(const char*) {}   // the terminal build has no x-ray view (tools/stage.py xray reads the page)
 // Events out natively: one line each in the --trace file ("event KIND NAME X Y VALUE").
 static void wwdos_js_event(const char *kind, const char *name, int x, int y, const char *value, double t)
@@ -501,6 +505,7 @@ static double g_seekTo = -1;
 static Stage* g_liveStage = nullptr;          // the app's stage, loaded or not: wwdosStage.run works on any page
 static std::vector<std::string> g_liveQueue;  // checked live lines waiting for TMinApp::idle
 static std::string g_liveErr;
+static std::vector<std::array<std::string, 3>> g_inputQueue;   // wwdosStage.input(KIND, NAME, VALUE), applied at idle
 static std::string g_logLoad;                 // wwdosStage.restore(LOG): applied at the next idle call
 static bool g_logLoadDue = false;
 static bool g_liveRedrawStatus = false;
@@ -584,6 +589,21 @@ EMSCRIPTEN_KEEPALIVE int wwdos_stage_record(int on)
 }
 EMSCRIPTEN_KEEPALIVE void wwdos_stage_log_clear() { if (g_liveStage) g_liveStage->clearLog(); }
 EMSCRIPTEN_KEEPALIVE void wwdos_stage_log_load(const char* text) { g_logLoad = text ? text : ""; g_logLoadDue = true; }
+// Viewer input fed by a tool (a session replayed tick by tick): applied at the next idle call, as an event would be.
+EMSCRIPTEN_KEEPALIVE void wwdos_stage_input(const char* kind, const char* name, const char* value)
+{
+    g_inputQueue.push_back({kind ? kind : "", name ? name : "", value ? value : ""});
+}
+// The session tick (ticks run since the page started) and the inputs recorded with it: "STICK KIND NAME VALUE" rows.
+EMSCRIPTEN_KEEPALIVE double wwdos_stage_session() { return g_liveStage ? double(g_liveStage->sessionTick()) : 0; }
+EMSCRIPTEN_KEEPALIVE const char* wwdos_stage_inputs()
+{
+    static std::string ret;
+    ret.clear();
+    if (g_liveStage) for (auto& i : g_liveStage->inputs())
+        ret += std::to_string(i.stick) + "\t" + i.kind + "\t" + i.name + "\t" + i.value + "\n";
+    return ret.c_str();
+}
 EMSCRIPTEN_KEEPALIVE int wwdos_stage_clock() { return g_liveStage ? g_liveStage->hz() : 8; }
 // Why the last applied live command did nothing ("" when it worked).
 EMSCRIPTEN_KEEPALIVE const char* wwdos_stage_live_error() { return g_liveErr.c_str(); }
@@ -884,6 +904,13 @@ public:
     void emit(const char* kind, const std::string& name, int x, int y, const std::string& value)
     {
         wwdos_js_event(kind, name.c_str(), x, y, value.c_str(), stage.shownTime());
+        act(stage.input(kind, name, value));
+    }
+    // What a matched "on" handler leaves to the host: the page's Exit, or a gate opened.
+    void act(const std::string& a)
+    {
+        if (a == "go") stage.go();
+        else if (a == "exit") { TEvent q; q.what = evCommand; q.message.command = cmQuit; q.message.infoPtr = nullptr; putEvent(q); }
     }
     void watchInput(const TEvent& ev)
     {
@@ -912,6 +939,10 @@ public:
         if (g_logLoadDue) { g_logLoadDue = false; stage.loadLog(g_logLoad); g_logLoad.clear(); }
         if (g_stage && press.due) resolvePress();
         if (g_stage) for (auto& n : stage.takeClosed()) emit("close", n, -1, -1, "");
+        if (g_stage && !g_inputQueue.empty()) {    // wwdosStage.input: a replayed input, as the viewer gave it
+            std::vector<std::array<std::string, 3>> q; q.swap(g_inputQueue);
+            for (auto& i : q) act(stage.input(i[0], i[1], i[2]));
+        }
         if (g_liveQueue.empty()) return;
         std::vector<std::string> lines; lines.swap(g_liveQueue);
         for (auto& l : lines) g_liveErr = stage.runLive(l);
@@ -1004,6 +1035,7 @@ public:
 #endif
     void stageTrace(double t, const std::string& line, const char* warn) override { wwdos_js_trace(t, line.c_str(), warn); }
     bool stageGatePass() override { return wwdos_js_gate_pass(); }
+    bool stageCuePass() override { return wwdos_js_cue_pass(); }
     double stageAudioTime() override { return wwdos_js_audio_time(); }
     // Fire the stage timer next in secs, then every period: the tick after a quantised jump meets the audio.
     void stageRetime(double secs) override

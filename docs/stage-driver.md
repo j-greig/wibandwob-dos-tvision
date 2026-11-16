@@ -129,5 +129,9 @@ Nothing is generated from it yet: the dispatch in `Stage::run` and `COMMANDS` ar
 - Events out (on-chain `docs/stage.md` § Events): `TMinApp::getEvent` sees every event before the views; a click,
   drag (resolved at idle, after the views acted), key, submit and close on a named stage window go to the page through
   `wwdos_js_event` (`Stage::nameAt`, `rectOf`, `frontName`, `takeClosed`). The terminal build writes them to `--trace`.
+- Viewer input (on-chain `docs/stage.md` § Viewer input): `on`, `follow` and `gate cue` are dispatched in `Stage::run`;
+  `Stage::input` matches an event against the handlers and queues the jump (landed in `tick()`), leaving exit and go to
+  the host. A gate passes when a jump is already queued. Inputs are kept with the session tick while recording
+  (`wwdos_stage_inputs`, `wwdos_stage_session`); `wwdos_stage_input` feeds one, so a session replays exactly.
 - The core's native desktop build (`wwdos`) was not built here (it needs the macOS-era dependencies); the app edits
   were built in the browser desktop (`dist-web/wwdos*.html`, smoke test passes) and in the film targets.

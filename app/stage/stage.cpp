@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <climits>
 #include <cstdint>
 #include <cmath>
@@ -370,6 +371,7 @@ void Stage::replay(int target, size_t upto)
     soundSent.assign(cmds.size(), 0);
     for (auto& n : names) closeWin(n);
     wins.clear(); tweens.clear(); bubbles.clear(); shakeHome.clear(); shakeUntil = -1; marks.clear(); widgets.clear();
+    handlers.clear();
     host.stageWeather("off"); host.stageHint("");
     int lastK = -1;
     // Logged live lines (stage.h, Log) run in their place among the script's: before the script command of their
@@ -1063,7 +1065,39 @@ void Stage::run(const std::string& line)
         while (next < cmds.size() && cmds[next].t < t) ++next;
         return;   // the tick that follows runs the commands at t
     } else if (cmd == "gate") {
-        if (!quiet && !host.stageGatePass()) { gated = true; gateWall = wallNow(); }
+        std::string kind; h >> kind;
+        bool cue = kind == "cue";
+        // a jump already queued (a viewer's input, a follow) is not held by a gate: it lands on its bar
+        if (!quiet && !jq && (cue ? !host.stageCuePass() : !host.stageGatePass())) { gated = true; gateWall = wallNow(); }
+    } else if (cmd == "on") {
+        // on EVENT [WHAT] ACTION [TARGET]: tokens after EVENT up to the action word are WHAT
+        std::vector<std::string> w; std::string tok;
+        while (h >> tok) w.push_back(tok);
+        static const char* const acts[] = {"jump", "next", "exit", "go", "off"};
+        size_t a = 1;
+        auto isAct = [&](const std::string& x) { for (const char* k : acts) if (x == k) return true; return false; };
+        while (a < w.size() && !isAct(w[a])) ++a;
+        if (w.empty() || a >= w.size()) { warn = "on needs EVENT and an action (jump, next, exit, go, off)"; return; }
+        Handler hd {w[0], a > 1 ? w[1] : "", w[a], ""};
+        for (size_t i = a + 1; i < w.size(); ++i) hd.target += (hd.target.empty() ? "" : " ") + w[i];
+        if (!title.empty()) hd.target = title;
+        if (hd.action == "jump" && targetTime(hd.target) < 0) warn = "no such section or time";
+        handlers.erase(std::remove_if(handlers.begin(), handlers.end(),
+            [&](const Handler& x) { return x.event == hd.event && x.what == hd.what; }), handlers.end());
+        if (hd.action != "off") handlers.push_back(hd);
+    } else if (cmd == "follow") {
+        double bars = 0; h >> bars;
+        std::vector<double> to; std::string tok;
+        while (h >> tok) { double t = targetTime(tok); if (t >= 0) to.push_back(t); else warn = "no such section or time"; }
+        if (!title.empty()) { double t = targetTime(title); if (t >= 0) to.push_back(t); }
+        if (quiet || to.empty() || bars <= 0) return;
+        size_t pick = 0;
+        if (to.size() > 1) {
+            unsigned x = seed * 2654435761u + unsigned(now) * 374761393u + (follows++) * 668265263u;
+            x ^= x >> 13; x *= 1274126177u; x ^= x >> 16;
+            pick = x % to.size();
+        }
+        jShow = jTarget = to[pick]; jLand = curT + bars * barLen(); jSent = false; jq = true; jCut = false;
     } else if (cmd == "end") {
         running = false;
     } else if (cmd == "xray") {
@@ -1130,6 +1164,7 @@ void Stage::tick()
     advance();
     host.stageEveryTick();
     ++now;
+    ++stick;
 }
 
 // Live commands (wwdosStage.run): the same run() a script line goes through, without the time field.
@@ -1149,7 +1184,8 @@ std::string Stage::checkLive(const std::string& raw, const std::set<std::string>
     static const char* const notLive[] = {"loop", "end", "gate", "tempo", "section", "clock", "size"};
     for (const char* k : notLive) if (cmd == k) return cmd + " does not run live";
     static const char* const known[] = {"open", "move", "rect", "close", "raise", "lower", "title", "swap", "say", "hint", "bg",
-        "weather", "sound", "scrubber", "theme", "colour", "mark", "drift", "text", "bar", "counter", "shake", "seed", "floors", "tile", "cascade", "bars", "xray"};
+        "weather", "sound", "scrubber", "theme", "colour", "mark", "drift", "text", "bar", "counter", "shake", "seed", "floors", "tile", "cascade", "bars", "xray",
+        "on", "follow"};
     bool ok = false;
     for (const char* k : known) if (cmd == k) ok = true;
     if (!ok) return "unknown command: " + cmd;
@@ -1225,6 +1261,54 @@ bool Stage::rectOf(const std::string& name, TRect& r)
     if (!w) return false;
     r = w->getBounds();
     return true;
+}
+
+double Stage::targetTime(const std::string& word) const
+{
+    if (word.empty()) return -1;
+    for (size_t i = 0; i < secNames.size(); ++i) if (secNames[i] == word) return sections[i];
+    char* end = nullptr;
+    double t = strtod(word.c_str(), &end);
+    if (end && *end == 's' && end[1] == 0) ++end;
+    return end && *end == 0 && t >= 0 ? t : -1;
+}
+
+// The viewer's keys, left out of a plain "on key" and "on any": the page's own (stage.h, on).
+static bool viewerKey(const std::string& v)
+{
+    if (v.size() >= 2 && v[0] == 'F' && isdigit((unsigned char) v[1])) return true;
+    return v == "PgUp" || v == "PgDn" || v == "Tab" || v == "ShiftTab" || v == "Esc" || v == "q" || v == "Q" || v == "m" || v == "M";
+}
+
+static bool sameKey(const std::string& a, const std::string& b)
+{
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) if (tolower((unsigned char) a[i]) != tolower((unsigned char) b[i])) return false;
+    return true;
+}
+
+std::string Stage::input(const std::string& kind, const std::string& name, const std::string& value)
+{
+    if (quiet || inRun) return "";
+    if (rec) inputLog.push_back({stick, kind, name, value});
+    for (auto& hd : handlers) {
+        bool hit = false;
+        if (hd.event == "key") hit = kind == "key" && (hd.what.empty() ? !viewerKey(value) : sameKey(hd.what, value));
+        else if (hd.event == "esc") hit = kind == "key" && value == "Esc";
+        else if (hd.event == "any") hit = (kind == "click" || (kind == "key" && !viewerKey(value))) && (hd.what.empty() || hd.what == name);
+        else if (hd.event == "click" || hd.event == "drag" || hd.event == "close" || hd.event == "submit")
+            hit = kind == hd.event && (hd.what.empty() || hd.what == name);
+        if (!hit) continue;
+        if (hd.action == "exit" || hd.action == "go") return hd.action;
+        double t = hd.action == "next" ? sectionTimeFrom(jq ? jShow : time(), 1) : targetTime(hd.target);
+        if (t < 0) return "";
+        // At a gate the jump lands at once (the gate opens); otherwise it is queued under the quantise and lands in
+        // tick(), so a session played and a session replayed tick by tick land it on the same tick.
+        if (gated) { gated = false; queueJump(t, true); }
+        else queueJump(t, false);
+        return "";
+    }
+    return "";
 }
 
 std::string Stage::frontName()

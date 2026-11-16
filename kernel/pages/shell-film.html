@@ -246,6 +246,14 @@
     if ((o.content === 'drawing') && o.frames > 1) return o.frames + ' frames';
     return '';
   }
+  // The film's sound, as tools/stage_sound.py says it: SOUND (clips), BLIPS ONLY (the built-in window effects), SILENT.
+  function xrSound() {
+    var S0 = window.wwdosScene || {}, clips = Object.keys(S0.sounds || {}), fx = Object.keys(S0.sfx || {});
+    if (clips.length) return 'SOUND (' + clips.length + ' clip' + (clips.length > 1 ? 's' : '') + ')';
+    var txt = (S0.files && S0.files['stage.txt']) || '', n = 0;
+    txt.split('\n').forEach(function (l) { var w = l.replace(/^\s*@\S+\s+/, '').split(' ')[0]; if (fx.indexOf(w) >= 0) n++; });
+    return fx.length && n ? 'BLIPS ONLY (built-in window effects)' : 'SILENT';
+  }
   function xrSel() { return xr.pinned !== null ? xr.pinned : xr.hover; }
   function xrLabel(o) {
     var k = o.kind === 'mark' ? 'mark' : o.kind;
@@ -268,6 +276,7 @@
     if (o.title) L.push('title  ' + o.title);
     if (o.file && !/\/_(text|say)_/.test(o.file)) L.push('file   ' + o.file.replace(/^\/boot\//, ''));
     if (o.src) L.push('source ' + o.src);
+    if (o.kind === 'desktop' || o.kind === 'gate') L.push('sound  ' + xrSound());
     if (xr.pinned === o.id) L.push('pinned: click or Esc lets go');
     return L;
   }
@@ -955,6 +964,8 @@
   }
   M.wwdosSound = playSound;
   M.wwdosAudioTime = function () { return actx && clipBase !== null && actx.state === 'running' ? actx.currentTime - clipBase : -1; };
+  // "gate cue" (a GO cue) waits on a viewer's page every time; a tool's page (?paused=1, or ?cues=0) passes it.
+  M.wwdosCuePass = function () { return opts.paused === 1 || q.get('cues') === '0' ? 1 : 0; };
   M.wwdosGatePass = function () {
     return !hint || opts.t >= 0 || q.get('autostart') === '1' || opts.autostart === 1 ? 1 : 0;
   };
@@ -1121,6 +1132,15 @@
       var text = typeof log === 'string' ? log : (log || []).map(function (e) { return e.tick + ' ' + e.pos + ' ' + e.line; }).join('\n');
       if (M.ccall) { M.ccall('wwdos_stage_log_load', null, ['string'], [text]); wake(); }
     },
+    // Viewer input (docs/stage.md § Viewer input): input(KIND, NAME, VALUE) feeds one input at the next idle call, as the
+    // viewer's would be (a session replayed tick by tick); inputs() -> [{stick, kind, name, value}] while recording;
+    // session() -> the session tick (ticks run since the page started).
+    input: function (kind, name, value) { if (M.ccall) { M.ccall('wwdos_stage_input', null, ['string', 'string', 'string'], [String(kind), String(name || ''), String(value || '')]); wake(); } },
+    inputs: function () {
+      var t = M.ccall ? M.ccall('wwdos_stage_inputs', 'string', [], []) : '';
+      return t.split('\n').filter(Boolean).map(function (r) { var f = r.split('\t'); return { stick: +f[0], kind: f[1], name: f[2], value: f[3] }; });
+    },
+    session: function () { return M._wwdos_stage_session ? M._wwdos_stage_session() : 0; },
     // events(SINCE): the events out with seq above SINCE (default all kept), oldest first
     events: function (since) { since = +since || 0; return (window.wwdosEvents || []).filter(function (e) { return e.seq > since; }); },
     get scale() { return devScale; }

@@ -78,6 +78,21 @@
 //                                     click or key, which also turns sound on); passes at once when sound is
 //                                     already on, the page has no sounds, or the URL has ?t= or ?autostart=1.
 //                                     Primers keep animating while it waits. Seek and resize replays skip it.
+//   gate cue                          a GO cue between sections: waits for a click or a key every time it is reached,
+//                                     sound or no sound (a talk deck); passes at once on a tool's page (?paused=1, or
+//                                     ?cues=0; natively --paused). Seek and resize replays skip it. A gate of either kind
+//                                     passes when a jump is already queued (an input, a follow): the jump lands on its bar.
+//   on EVENT [WHAT] ACTION [TARGET]   viewer input from now on: EVENT key, click, esc, any (a key or a click), drag,
+//                                     close or submit; WHAT a key (key x, key Space, key Enter) or a window name
+//                                     (click door); ACTION jump TARGET (a section name, or |a name with spaces, or
+//                                     seconds; queued and landed under the quantise, at once at a gate), next (the next
+//                                     section, queued), exit (out of the film: the page's Exit), go (open a gate), off
+//                                     (forget the handler). A later on for the same EVENT and WHAT replaces it. A plain
+//                                     "key" or "any" leaves out the viewer's keys (F1-F12, PgUp, PgDn, Tab, Esc, Q, M).
+//                                     Handlers are state: a seek has those its script set up to there.
+//   follow BARS TARGET [TARGET ...]   after BARS bars from this command, jump to TARGET (a section name or seconds);
+//                                     with several, one chosen by the seed. Queued like a jump: a viewer's jump before
+//                                     it lands replaces it. Armed only when playing passes the command (a seek drops it).
 //   section |name                     marks where a part of the piece starts; PgDn and PgUp (View menu) jump between them
 //   scrubber on|off                   a small timeline in the status line, left of the sound icon: filled to the
 //                                     present, a mark at each section; a click jumps to the section clicked
@@ -198,6 +213,7 @@ struct StageHost
     // every command the clock runs, with its script time; warn is set when it did nothing (no such window)
     virtual void stageTrace(double, const std::string&, const char*) {}
     virtual bool stageGatePass() { return true; }
+    virtual bool stageCuePass() { return false; }    // a "gate cue" passes at once (a tool's page)
     // Seconds ahead of its script time a clip may be handed to the host, which then starts it at the exact time
     // ("NAME#SECONDS"). 0 = the host cannot schedule (the terminal build): clips start when their tick comes.
     virtual double stageSoundLead() { return 0; }
@@ -289,6 +305,14 @@ public:
     }
     // The name of the front (active) stage window, "" when the front window is not a stage window.
     std::string frontName();
+    // Viewer input (on, follow, stage.h above). Called by the host for each event out; acts on the first handler that
+    // matches (a jump is queued here and lands in tick()). Returns what the host must do: "", "exit" or "go".
+    std::string input(const std::string& kind, const std::string& name, const std::string& value);
+    // Inputs while recording, with the session tick (ticks run since the page started, through seeks and jumps):
+    // feeding the same inputs at the same session ticks replays a session exactly.
+    struct Input { long stick; std::string kind, name, value; };
+    const std::vector<Input>& inputs() const { return inputLog; }
+    long sessionTick() const { return stick; }
     // The stage's windows, front first, as JSON: [{"name","x","y","w","h","title","ghost","file"}] (speech bubbles
     // are named _sayN). Cells are desktop cells: the menu bar row is not counted. The page's wwdosStage.windows().
     std::string windowsJson();
@@ -354,7 +378,13 @@ private:
     int bubbleSerial = 0;
 
     void run(const std::string& line);
-    std::vector<std::string> handClosed;  // stage windows the viewer closed, for the host's close events
+    std::vector<std::string> handClosed;
+    struct Handler { std::string event, what, action, target; };
+    std::vector<Handler> handlers;        // on EVENT ...: state set by the script (replay clears it)
+    std::vector<Input> inputLog;
+    long stick = 0;                       // session tick: every tick run, through seeks and jumps
+    unsigned follows = 0;                 // follow commands fired, for the seeded choice
+    double targetTime(const std::string& word) const;   // a section name or seconds; -1 when neither  // stage windows the viewer closed, for the host's close events
     std::vector<LogEntry> liveLog;        // ordered by (tick, pos), then by arrival
     bool rec = false;                     // recording: the log outlives seeks and loops (an overdub of the script)
     void logAdd(const std::string& line);

@@ -43,4 +43,6 @@ section    run  0   n   y    n    | marks a part of the piece for PgDn, PgUp and
 tempo      run  1   n   n    n    | bar 1 of the film starts here (written by the compiler from bpm)
 loop       run  0   n   n    n    | clock back to T seconds (default 0)
 end        run  0   n   n    n    | stops the clock
+on         run  2   n   y    y    | viewer input from now on: on EVENT [WHAT] jump TARGET|next|exit|go|off
+follow     run  2   n   n    y    | after BARS bars, jump to TARGET (one of several, chosen by the seed)
 xray       run  0   n   n    y    | live only: the page's x-ray view on, off, toggle or inspect (never part of the film)
