@@ -504,3 +504,18 @@ TWindow* createRoomChatWindow(const TRect& bounds) {
     static int num = 0;
     return new TRoomChatWindow(bounds, "Room Chat", ++num);
 }
+
+std::string TRoomChatWindow::describeState() const {
+    size_t n = msgView_ ? msgView_->messages().size() : 0;
+    size_t p = strip_ ? strip_->participants().size() : 0;
+    std::string s = "room chat with " + std::to_string(n) + " messages and " + std::to_string(p) + " people present";
+    if (n) s += "; the last from " + msgView_->messages().back().sender;
+    if (!inputBuf_.empty()) s += "; typing \"" + ww::clipText(inputBuf_, 30) + "\"";
+    return s;
+}
+bool TRoomChatWindow::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    if (!msgView_) return false;
+    for (const auto& m : msgView_->messages()) out.push_back(m.sender + ": " + m.text);
+    return true;
+}

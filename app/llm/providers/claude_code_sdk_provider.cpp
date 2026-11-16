@@ -18,6 +18,8 @@
 #include <iomanip>
 #include <unistd.h>
 #include <sys/wait.h>
+#include "../../resident_senses.h"
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <iostream>
@@ -180,6 +182,12 @@ struct ClaudeCodeSDKProvider::NodeBridge {
         return true;
     }
     
+    // True once when the bridge process has ended on its own; status is its wait status.
+    bool exited(int& status) {
+        if (!active || pid <= 0) return false;
+        return waitpid(pid, &status, WNOHANG) == pid;
+    }
+
     std::string readResponse() {
         if (!active || !output) return "";
         
@@ -210,22 +218,33 @@ ClaudeCodeSDKProvider::~ClaudeCodeSDKProvider() {
     shutdownSDK();
 }
 
+// Why the bridge cannot run ("" when it can): read by the chat window to say so in one line.
+static std::string g_bridgeProblem;
+const std::string& claudeBridgeProblem() { return g_bridgeProblem; }
+
 bool ClaudeCodeSDKProvider::isAvailable() const {
-    // Check if Node.js is available
-    int result = system("which node > /dev/null 2>&1");
-    if (result != 0) {
-        fprintf(stderr, "DEBUG: Node.js not available\n");
+    // Checked once: the answer does not change while the app runs, and the check forks.
+    static int cached = -1;
+    if (cached >= 0) return cached == 1;
+    cached = 0;
+    if (system("which node > /dev/null 2>&1") != 0) {
+        g_bridgeProblem = "The chat needs Node.js (node on PATH).";
         return false;
     }
-    
     // Check if bridge script exists (search upward so this works from repo root or build/app).
     const std::string resolvedScriptPath = ww_find_first_existing_upwards({nodeScriptPath}, 6);
     if (resolvedScriptPath.empty()) {
-        fprintf(stderr, "DEBUG: Bridge script not found (searched upwards). Configured path: %s\n", nodeScriptPath.c_str());
+        g_bridgeProblem = "The chat's bridge script is missing: " + nodeScriptPath;
         return false;
     }
-    
-    fprintf(stderr, "DEBUG: claude_code_sdk provider is available\n");
+    // Its packages: a fresh checkout or worktree has none until npm install has run there.
+    std::string dir = resolvedScriptPath.substr(0, resolvedScriptPath.find_last_of('/'));
+    std::string sdk = dir + "/node_modules/@anthropic-ai/claude-agent-sdk/package.json";
+    if (access(sdk.c_str(), R_OK) != 0) {
+        g_bridgeProblem = "The chat's bridge is not installed. Run: npm install --prefix " + dir + "  then reopen the chat.";
+        return false;
+    }
+    cached = 1;
     return true;
 }
 
@@ -487,6 +506,19 @@ void ClaudeCodeSDKProvider::cancel() {
 void ClaudeCodeSDKProvider::poll() {
     if (useFallback && fallbackProvider) {
         fallbackProvider->poll();
+    }
+    // A bridge process that died is a system line in the act log (the Feed), not a silent stall.
+    int st = 0;
+    if (nodeBridge && nodeBridge->exited(st)) {
+        std::string how = WIFEXITED(st) ? "exit " + std::to_string(WEXITSTATUS(st))
+                        : WIFSIGNALED(st) ? "signal " + std::to_string(WTERMSIG(st)) : "status " + std::to_string(st);
+        resident::addAct(resident::Who{"app", resident::Source::App}, "the chat's bridge process ended (" + how + ")", "",
+                         "child process died");
+        nodeBridge->pid = -1;
+        nodeBridge->shutdown();
+        streamingActive = false;
+        sessionStarted = false;
+        sessionStarting = false;
     }
 
     // Handle async session startup: read bridge responses until SESSION_STARTED.

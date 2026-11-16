@@ -1,6 +1,9 @@
 #define Uses_TEventQueue
 #include <tvision/tv.h>
 
+#include "resident_senses.h"
+#include "resident_teach.h"
+#include "resident_room.h"
 #include "api_ipc.h"
 #include "command_registry.h"
 #include "core/json_utils.h"
@@ -16,9 +19,12 @@
 #include <unistd.h>
 #include <errno.h>
 #include <poll.h>
+#include <sys/time.h>
 #endif
 
-#ifdef __APPLE__
+#if defined(__EMSCRIPTEN__)
+// Browser build: the IPC server never starts, so no HMAC library is linked.
+#elif defined(__APPLE__)
 #include <CommonCrypto/CommonHMAC.h>
 #else
 #include <openssl/hmac.h>
@@ -200,7 +206,9 @@ std::string ApiIpcServer::generate_nonce() {
 
 std::string ApiIpcServer::compute_hmac(const std::string& nonce) {
     unsigned char result[32]; // SHA-256 = 32 bytes
-#ifdef __APPLE__
+#if defined(__EMSCRIPTEN__)
+    memset(result, 0, sizeof(result));
+#elif defined(__APPLE__)
     CCHmac(kCCHmacAlgSHA256,
            auth_secret_.data(), auth_secret_.size(),
            nonce.data(), nonce.size(),
@@ -381,6 +389,7 @@ void ApiIpcServer::poll() {
     // Serve every connection that is waiting (a client often sends several in a row).
     for (int k = 0; k < 32; ++k)
         if (!pollOne()) break;
+    serveGestures();
 #endif
 }
 
@@ -435,6 +444,29 @@ bool ApiIpcServer::pollOne() {
 
     std::string cmd;
     std::string resp = dispatch(line, cmd);
+
+    if ((cmd == "person_wait" || cmd == "room_wait") && resp.find("\"count\":0,") != std::string::npos) {
+        // Nothing yet: hold the connection; poll() answers when a gesture arrives or the time is up.
+        Waiter wt;
+        wt.fd = fd;
+        std::istringstream iss(line);
+        std::string tok;
+        int ms = 10000;
+        while (iss >> tok) {
+            auto eq = tok.find('=');
+            if (eq == std::string::npos) continue;
+            std::string k = tok.substr(0, eq), v = percent_decode(tok.substr(eq + 1));
+            if (k == "since") wt.since = std::strtoull(v.c_str(), nullptr, 10);
+            else if (k == "kinds") wt.kinds = v;
+            else if (k == "limit") wt.limit = std::max(1, std::atoi(v.c_str()));
+            else if (k == "ms") ms = std::max(0, std::min(std::atoi(v.c_str()), 60000));
+            else if (k == "actor" && cmd == "room_wait") wt.room = v;
+        }
+        if (cmd == "room_wait" && wt.room.empty()) wt.room = "visitor";
+        wt.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+        waiters_.push_back(wt);
+        return true;
+    }
 
     if (cmd == "subscribe_events") {
         // Keep this fd open — the client will receive pushed events.
@@ -505,6 +537,7 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
     if (cmd == "batch") {
         // Many commands in one message, run in order in this one tick:
         // lines=base64:<"cmd:a k=v\ncmd:b k=v\n...">. Returns {"results":["<resp a>","<resp b>",...]}.
+        resident::ipcBegin("batch", kv);
         std::string payload = kv["lines"];
         if (payload.rfind("base64:", 0) == 0) payload = base64_decode(payload.substr(7));
         std::string out = "{\"results\":[";
@@ -526,9 +559,16 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
         }
         out += "]}\n";
         last_command_time_ = std::chrono::steady_clock::now();
+        resident::ipcEnd("batch", kv, out);
         return out;
     }
-    if (cmd == "get_capabilities") {
+    // Every command below runs as the caller it names (actor=, source=) and is logged as an act.
+    resident::ipcBegin(cmd, kv);
+    // The Laws of Jam: a resident in WITNESS may not act; in FOLLOW it acts only after someone else.
+    const std::string modeRefusal = resident::modeGate(cmd == "exec_command" ? kv["name"] : cmd, kv);
+    if (!modeRefusal.empty()) {
+        resp = modeRefusal + "\n";
+    } else if (cmd == "get_capabilities") {
         resp = get_command_capabilities_json() + "\n";
     } else if (cmd == "get_window_types") {
         resp = get_window_types_json() + "\n";
@@ -545,7 +585,7 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
         const std::string& type = kv["type"];
         const WindowTypeSpec* spec = find_window_type_by_name(type);
         if (!spec) {
-            resp = "err unknown type\n";
+            resp = resident::unknownWindowType(type) + "\n";
         } else if (!spec->spawn) {
             resp = "err unsupported type\n";
         } else {
@@ -925,9 +965,14 @@ std::string ApiIpcServer::dispatch(const std::string& rawLine, std::string& cmd)
             }
         }
     } else {
-        resp = "err unknown cmd\n";
+        // One command table: any registry command is reachable by its own name, as through
+        // exec_command, the API server and MCP (command_registry.cpp).
+        bool known = false;
+        for (const auto& c : get_command_capabilities()) if (cmd == c.name) { known = true; break; }
+        resp = known ? exec_registry_command(*app_, cmd, kv) + "\n" : resident::unknownCommand(cmd) + "\n";
     }
 
+    resident::ipcEnd(cmd, kv, resp);
     return resp;
 }
 
@@ -939,6 +984,37 @@ ApiIpcServer::ConnectionStatus ApiIpcServer::getConnectionStatus() const {
     s.api_active = (total_commands_ > 0 && elapsed < 10);
     s.client_count = static_cast<int>(event_subscribers_.size());
     return s;
+}
+
+// The person's gestures: push new ones to subscribers ("gesture" events) and answer the
+// person_wait connections that have one, or whose time is up.
+void ApiIpcServer::serveGestures() {
+#ifndef _WIN32
+    uint64_t last = resident::gestureLast();
+    if (gesturePublished_ > last) gesturePublished_ = last;
+    while (gesturePublished_ < last) {
+        ++gesturePublished_;
+        std::string g = resident::gestureJson(gesturePublished_);
+        if (!g.empty()) publish_event("gesture", g);
+    }
+    if (waiters_.empty()) return;
+    auto now = std::chrono::steady_clock::now();
+    for (auto it = waiters_.begin(); it != waiters_.end();) {
+        int count = 0;
+        bool room = !it->room.empty();
+        std::string list = room ? resident::roomSince(it->since, it->room, count)
+                                : resident::gesturesSince(it->since, it->limit, it->kinds, count);
+        bool late = now >= it->deadline;
+        if (!count && !late) { ++it; continue; }
+        std::string resp = "{\"last\":" + std::to_string(room ? resident::roomLast() : last) + ",\"count\":" +
+                           std::to_string(count) + ",\"timeout\":" + (count ? "false" : "true") +
+                           (room ? ",\"messages\":" : ",\"gestures\":") + list + "}\n";
+        (void)safe_write(it->fd, resp.c_str(), resp.size());
+        ::shutdown(it->fd, SHUT_WR);
+        ::close(it->fd);
+        it = waiters_.erase(it);
+    }
+#endif
 }
 
 void ApiIpcServer::publish_event(const char* event_type, const std::string& payload_json) {
@@ -996,6 +1072,8 @@ void ApiIpcServer::stop() {
 #ifndef _WIN32
     stopWake_ = true;
     if (wakeThread_.joinable()) wakeThread_.join();
+    for (auto& w : waiters_) ::close(w.fd);
+    waiters_.clear();
     // Close all event subscriber fds.
     for (int sub_fd : event_subscribers_) ::close(sub_fd);
     event_subscribers_.clear();

@@ -1,0 +1,28 @@
+Subject: termio: stop CSIData::readFrom writing one past
+ _separators
+
+A CSI sequence with maxLength or more ';'/':' separators wrote _separators[maxLength - 1],
+one past the end of the array. The sequence is now rejected, as an over-long sequence
+already is.
+---
+ source/platform/termio.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/source/platform/termio.cpp b/source/platform/termio.cpp
+index 9d943bc..81f9e13 100644
+--- a/source/platform/termio.cpp
++++ b/source/platform/termio.cpp
+@@ -261,7 +261,13 @@ bool CSIData::readFrom(GetChBuf &buf) noexcept
+             // No more input and CSI is not yet complete.
+             return false;
+         if (k == ';' || k == ':')
++        {
++            // _separators has room for maxLength - 1 entries; a CSI sequence with
++            // maxLength or more parameters would write one past its end.
++            if (i + 1 == maxLength)
++                return false;
+             _separators[i] = (char) k;
++        }
+         else
+         {
+             terminator = (char) k;

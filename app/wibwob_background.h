@@ -29,6 +29,7 @@ inline const std::vector<DesktopPreset>& getDesktopPresets() {
         {"white_paper",   ' ',    15, 15, true,  0xFFFFFF, 0xFFFFFF}, // true white RGB
         {"gallery_wall",  ' ',    0,  0,  true,  0x000000, 0x000000}, // true black — gallery mode
         {"ega",           '\xB0', 7,  1,  true,  0xAAAAAA, 0x0000AA}, // ░ EGA light grey on EGA blue (theme ega)
+        {"ega_solid",     ' ',    7,  1,  true,  0xAAAAAA, 0x0000AA}, // flat EGA blue: line-art marks sit on it with no pattern behind
     };
     return presets;
 }
@@ -52,6 +53,8 @@ public:
     uint32_t getRgbFg() const { return rgbFg_; }
     uint32_t getRgbBg() const { return rgbBg_; }
     char  getPattern() const { return pattern; }
+    // The colours the background is drawn in now (preset or custom).
+    TColorAttr baseAttr() const { return useRgb_ ? TColorAttr(TColorRGB(rgbFg_), TColorRGB(rgbBg_)) : TColorAttr(TColorBIOS(fgColor), TColorBIOS(bgColor)); }
 
 private:
     uchar fgColor;

@@ -118,8 +118,8 @@ void TTransparentTextView::draw()
             textAttr = bg->getColor(0x01);
             fillChar = bg->pattern;
         } else {
-            TColorDesired defaultFg = {};
-            TColorDesired defaultBg = {};
+            TColor defaultFg = {};
+            TColor defaultBg = {};
             textAttr = TColorAttr(defaultFg, defaultBg);
         }
     }
@@ -256,4 +256,13 @@ const std::string& TTransparentTextWindow::getFilePath() const {
 TFrame* TTransparentTextWindow::initFrame(TRect r)
 {
     return new TFrame(r);
+}
+
+std::string TTransparentTextView::describeState() const {
+    return "text view of " + fileName + ", " + std::to_string(rawLines.size()) + " lines, word wrap " + ww::onOff(wordWrap) +
+           ", scrolled to line " + std::to_string(delta.y + 1);
+}
+bool TTransparentTextView::describeText(std::vector<std::string>& out) const {
+    out = rawLines;
+    return true;
 }

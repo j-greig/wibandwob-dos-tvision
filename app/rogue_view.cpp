@@ -653,7 +653,7 @@ void TRogueView::draw() {
     for (int screenY = 0; screenY < H; ++screenY) {
         // Clear line
         for (int sx = 0; sx < W; ++sx)
-            setCell(lineBuf[sx], ' ', C_BG);
+            lineBuf[sx] = TScreenCell(' ', C_BG);
 
         if (screenY < mapViewH) {
             // Map area
@@ -661,7 +661,7 @@ void TRogueView::draw() {
             for (int sx = 0; sx < W; ++sx) {
                 int mapX = sx + camX;
                 if (mapX < 0 || mapX >= MAP_W || mapY < 0 || mapY >= MAP_H) {
-                    setCell(lineBuf[sx], ' ', C_BG);
+                    lineBuf[sx] = TScreenCell(' ', C_BG);
                     continue;
                 }
 
@@ -670,7 +670,7 @@ void TRogueView::draw() {
                 bool wasSeen = seen[mapY * MAP_W + mapX];
 
                 if (!vis && !wasSeen) {
-                    setCell(lineBuf[sx], ' ', C_BG);
+                    lineBuf[sx] = TScreenCell(' ', C_BG);
                     continue;
                 }
 
@@ -687,7 +687,7 @@ void TRogueView::draw() {
                     case Tile::Terminal:  ch = '&'; attr = vis ? C_TERMINAL : C_SEEN; break;
                 }
 
-                setCell(lineBuf[sx], ch, attr);
+                lineBuf[sx] = TScreenCell(ch, attr);
             }
 
             // Draw items (only in FOV)
@@ -695,7 +695,7 @@ void TRogueView::draw() {
                 int sx = it.x - camX;
                 int sy = it.y - camY;
                 if (sy == screenY && sx >= 0 && sx < W && isVisible(it.x, it.y)) {
-                    setCell(lineBuf[sx], itemGlyph(it.kind), itemColor(it.kind));
+                    lineBuf[sx] = TScreenCell(itemGlyph(it.kind), itemColor(it.kind));
                 }
             }
 
@@ -705,7 +705,7 @@ void TRogueView::draw() {
                 int sx = c.x - camX;
                 int sy = c.y - camY;
                 if (sy == screenY && sx >= 0 && sx < W && isVisible(c.x, c.y)) {
-                    setCell(lineBuf[sx], c.glyph(), creatureColor(c.kind));
+                    lineBuf[sx] = TScreenCell(c.glyph(), creatureColor(c.kind));
                 }
             }
 
@@ -714,7 +714,7 @@ void TRogueView::draw() {
                 int sx = player.x - camX;
                 int sy = player.y - camY;
                 if (sy == screenY && sx >= 0 && sx < W) {
-                    setCell(lineBuf[sx], '@', C_PLAYER);
+                    lineBuf[sx] = TScreenCell('@', C_PLAYER);
                 }
             }
 
@@ -735,13 +735,13 @@ void TRogueView::draw() {
                 TColorAttr attr = C_HUD;
                 // Color HP portion
                 if (i >= 4 && i < 4 + 10) attr = hpColor;
-                setCell(lineBuf[i], buf[i], attr);
+                lineBuf[i] = TScreenCell(buf[i], attr);
             }
 
         } else if (screenY == mapViewH + 1) {
             // Separator
             for (int sx = 0; sx < W; ++sx)
-                setCell(lineBuf[sx], '-', TColorAttr(TColorRGB(0x00,0x00,0x00), TColorRGB(0x40,0x40,0x40)));
+                lineBuf[sx] = TScreenCell('-', TColorAttr(TColorRGB(0x00,0x00,0x00), TColorRGB(0x40,0x40,0x40)));
 
         } else {
             // Log area
@@ -757,7 +757,7 @@ void TRogueView::draw() {
                     default: attr = C_LOG_NORM; break;
                 }
                 for (int i = 0; i < (int)msg.text.size() && i < W; ++i)
-                    setCell(lineBuf[i], msg.text[i], attr);
+                    lineBuf[i] = TScreenCell(msg.text[i], attr);
             }
         }
 
@@ -776,7 +776,7 @@ void TRogueView::draw() {
                 int len = (int)strlen(msg);
                 int mx = std::max(0, (W - len) / 2);
                 for (int i = 0; i < len && mx + i < W; ++i)
-                    setCell(lineBuf[mx + i], msg[i], attr);
+                    lineBuf[mx + i] = TScreenCell(msg[i], attr);
             }
         }
 
@@ -880,4 +880,18 @@ TWindow* createRogueWindow(const TRect &bounds) {
     auto *w = new TRogueWindow(bounds);
     w->setup();
     return w;
+}
+
+std::string TRogueView::describeState() const {
+    std::string s = std::string("rogue game, ") + (victory ? "won" : gameOver ? "game over" : "playing") + ": floor " +
+                    std::to_string(player.floor) + ", HP " + std::to_string(player.hp) + "/" + std::to_string(player.maxHp) +
+                    ", level " + std::to_string(player.level) + ", gold " + std::to_string(player.gold) +
+                    (player.hasKey ? ", holding the key" : "");
+    if (!log.empty()) s += "; last message: " + ww::clipText(log.back().text, 60);
+    return s;
+}
+bool TRogueView::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    for (const auto& m : log) out.push_back(m.text);
+    return true;
 }

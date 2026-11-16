@@ -7,6 +7,7 @@
 #define Uses_TWindow
 #define Uses_TRect
 #define Uses_TEvent
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <map>
@@ -20,8 +21,9 @@
 using Tr808EventSink = void (*)(TWindow* window, const char* type, const std::string& body);
 void tr808SetEventSink(Tr808EventSink sink);
 
-class TTR808View : public TView {
+class TTR808View : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TTR808View(const TRect& bounds);
     ~TTR808View() override;
 
@@ -37,7 +39,7 @@ public:
     std::string apiAction(const std::string& action, const std::map<std::string, std::string>& kv);
     std::string stateJson() const;
 
-    void play();
+    void play(double atMs = -1.0);
     void stop();
 
 private:
@@ -55,6 +57,9 @@ private:
     int cursor_ = 0;
     size_t presetIdx_ = 0;
     TTimerId timer_ = nullptr;
+    std::string startedBy_ = "app";   // who started the pattern (the ears name it)
+    double midiLastMs_ = 0;           // the time after the last MIDI clock tick sent
+    std::string startPreset_;         // the preset play() loaded into an empty pattern ("" when none)
 };
 
 class TTR808Window : public TWindow {

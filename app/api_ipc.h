@@ -33,6 +33,10 @@ public:
     // Stop and clean up.
     void stop();
 
+    // Run one command line ("cmd:name k=v ...") as if it came on the socket, without one:
+    // the residents' own hands inside the app (resident_hands.cpp) use it.
+    std::string runLine(const std::string& line) { std::string cmd; return dispatch(line, cmd); }
+
     // Push a newline-delimited JSON event to all active subscribers.
     // Cleans up disconnected subscriber fds automatically.
     void publish_event(const char* event_type, const std::string& payload_json = "{}");
@@ -50,6 +54,19 @@ private:
     // Event push: persistent subscriber connections
     std::vector<int> event_subscribers_;
     uint64_t next_event_seq_ = 1;
+
+    // person_wait connections held until a gesture arrives (resident_senses.h, gestures).
+    struct Waiter {
+        int fd = -1;
+        uint64_t since = 0;
+        int limit = 200;
+        std::string kinds;
+        std::string room;        // room_wait: the participant waiting ("" for person_wait)
+        std::chrono::steady_clock::time_point deadline;
+    };
+    std::vector<Waiter> waiters_;
+    uint64_t gesturePublished_ = 0;   // the last gesture pushed to subscribers
+    void serveGestures();
 
     // Connection tracking for status indicator
     std::chrono::steady_clock::time_point last_command_time_{};

@@ -1,3 +1,4 @@
+#ifndef __EMSCRIPTEN__
 #define Uses_TEvent
 #define Uses_TRect
 #define Uses_TPoint
@@ -13,7 +14,9 @@
 #include <tvterm/termview.h>
 #include <tvterm/vtermemu.h>
 #include <tvterm/termemu.h>
+#include <tvterm/termframe.h>
 #include <algorithm>
+#include <cerrno>
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
@@ -21,40 +24,65 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <dirent.h>
+#ifdef __APPLE__
+#include <libproc.h>
+#include <sys/proc_info.h>
+#include <sys/proc.h>
+#endif
+#include "terminal_transport.h"
+#include "cast_record.h"
 
 // Command IDs for tvterm integration — must not collide with existing app commands.
-// These are wired through TVTermConstants so tvterm-core uses our IDs.
+// These are wired through TVTermConstants so tvterm-core uses our IDs. Every field is
+// named: the struct has cmCopySelection between cmReleaseInput and hcInputGrabbed, and a
+// positional list that skips it leaves hcInputGrabbed at 0 (hcNoContext), which made every
+// terminal window's title read "(Input Grab)" although none held the keyboard.
 enum : ushort
 {
-    cmTvTermCheckUpdates = 500,
-    cmTvTermUpdated      = 501,
-    cmTvTermGrabInput    = 502,
-    cmTvTermReleaseInput = 503,
-    hcTvTermInputGrabbed = 504,
+    cmTvTermCheckUpdates  = 500,
+    cmTvTermUpdated       = 501,
+    cmTvTermCopySelection = 505,
 };
 
-const tvterm::TVTermConstants TWibWobTerminalWindow::termConsts =
+const tvterm::TVTermConstants TWibWobTerminalWindow::termConsts = []
 {
-    cmTvTermCheckUpdates,
-    cmTvTermUpdated,
-    cmTvTermGrabInput,
-    cmTvTermReleaseInput,
-    hcTvTermInputGrabbed,
-};
+    tvterm::TVTermConstants k {};
+    k.cmCheckTerminalUpdates = cmTvTermCheckUpdates;
+    k.cmTerminalUpdated = cmTvTermUpdated;
+    k.cmGrabInput = termtransport::cmTermGrab;        // Window > Grab Keyboard
+    k.cmReleaseInput = termtransport::cmTermRelease;  // Alt-End, a click outside, terminal_release
+    k.cmCopySelection = cmTvTermCopySelection;
+    k.hcInputGrabbed = termtransport::hcTerminalGrab; // the status line while grabbed
+    return k;
+}();
 
 TWibWobTerminalWindow::TWibWobTerminalWindow(
     const TRect &bounds,
     tvterm::TerminalController &termCtrl
 ) noexcept :
-    TWindowInit(&initFrame),
+    TWindowInit(&TWibWobTerminalWindow::initTermFrame),
     Super(bounds, termCtrl, termConsts)
 {
     options |= ofTileable;
     growMode = gfGrowAll | gfGrowRel;
+    helpCtx = termtransport::hcTerminal;   // the status line names Alt-P while a terminal is focused
 }
 
 void TWibWobTerminalWindow::handleEvent(TEvent &ev)
 {
+    // Alt-P reaches the window as a key when a resident addresses it (resident_key id=),
+    // and as cmTermToggle from the status line or the Window menu when a person presses it.
+    if ((ev.what == evKeyDown && ev.keyDown.keyCode == kbAltP) ||
+        (ev.what == evCommand && ev.message.command == termtransport::cmTermToggle))
+    {
+        if (!isDisconnected())
+        {
+            termtransport::act(this, "toggle", resident::currentWho());
+            clearEvent(ev);
+            return;
+        }
+    }
     if (ev.what == evKeyDown && isDisconnected() &&
         !(state & (sfDragging | sfModal)))
     {
@@ -139,7 +167,7 @@ std::string TWibWobTerminalWindow::getOutputText() const
             row.reserve(cols);
             for (int x = 0; x < cols; ++x) {
                 const TScreenCell &cell = state.surface.at(y, x);
-                const TCellChar   &ch   = cell._ch;
+                const TScreenCharacter   &ch   = cell.character;
                 if (!ch.isWideCharTrail()) {
                     TStringView sv = ch.getText();
                     row.append(sv.data(), sv.size());
@@ -172,6 +200,18 @@ static void onTermErrorQuiet(const char *reason)
 
 void TWibWobTerminalWindow::shutDown()
 {
+    if (recorder_) recorder_->stop();
+    if (paused_)
+    {
+        // A stopped process holds SIGHUP until it runs again: hang up, then continue, so
+        // closing the window still ends a paused program (and tvterm's wait does not hang).
+        for (pid_t g : stopped_) kill(-g, SIGHUP);
+        for (auto it = stopped_.rbegin(); it != stopped_.rend(); ++it) kill(-*it, SIGCONT);
+        stopped_.clear();
+        paused_ = false;
+    }
+    if (!childPidFile_.empty())
+        unlink((childPidFile_ + ".exit").c_str());
     if (!childPidFile_.empty())
     {
         pid_t pid = 0;
@@ -228,12 +268,346 @@ void TWibWobTerminalWindow::setFixedTitle(const std::string &t)
 
 const char *TWibWobTerminalWindow::getTitle(short maxSize)
 {
+    std::string t;
     if (!fixedTitle_.empty())
-        return fixedTitle_.c_str();
-    return Super::getTitle(maxSize);
+    {
+        t = fixedTitle_;
+        if (state & sfModal) t += " (Input Grab)";
+    }
+    else if (const char *s = Super::getTitle(maxSize))
+        t = s;
+    if (paused_) t += " (Paused)";
+    if (recorder_ && recorder_->active()) t += " (Rec)";
+    titleBuf_ = t;
+    return titleBuf_.empty() ? nullptr : titleBuf_.c_str();
+}
+
+// ---------------------------------------------------------------- transport
+
+namespace {
+
+struct ProcInfo
+{
+    pid_t pid {0}, pgid {0}, tpgid {0};
+    long long tdev {-1};
+    std::string name;
+};
+
+bool procInfo(pid_t pid, ProcInfo &out)
+{
+    if (pid <= 0) return false;
+#ifdef __APPLE__
+    struct proc_bsdinfo bi;
+    if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bi, sizeof bi) != (int) sizeof bi)
+        return false;
+    if (bi.pbi_status == SZOMB) return false;
+    out.pid = pid;
+    out.pgid = (pid_t) bi.pbi_pgid;
+    out.tpgid = (pid_t) bi.e_tpgid;
+    out.tdev = (bi.e_tdev == (uint32_t) NODEV) ? -1 : (long long) bi.e_tdev;
+    out.name = bi.pbi_name[0] ? bi.pbi_name : bi.pbi_comm;
+    return true;
+#else
+    char path[64];
+    snprintf(path, sizeof path, "/proc/%d/stat", (int) pid);
+    FILE *f = fopen(path, "r");
+    if (!f) return false;
+    char buf[1024] = {0};
+    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    char *lp = strchr(buf, '('), *rp = strrchr(buf, ')');
+    if (!lp || !rp) return false;
+    out.pid = pid;
+    out.name.assign(lp + 1, rp - lp - 1);
+    char st = 0;
+    int ppid = 0, pgrp = 0, sess = 0, tty = 0, tpgid = 0;
+    if (sscanf(rp + 2, "%c %d %d %d %d %d", &st, &ppid, &pgrp, &sess, &tty, &tpgid) != 6) return false;
+    if (st == 'Z') return false;
+    out.pgid = pgrp;
+    out.tpgid = tpgid;
+    out.tdev = tty ? tty : -1;
+    return true;
+#endif
+}
+
+std::vector<pid_t> allPids()
+{
+    std::vector<pid_t> v;
+#ifdef __APPLE__
+    int n = proc_listallpids(nullptr, 0);
+    if (n <= 0) return v;
+    v.resize(n + 64);
+    n = proc_listallpids(v.data(), (int) (v.size() * sizeof(pid_t)));
+    v.resize(n > 0 ? n : 0);
+#else
+    if (DIR *d = opendir("/proc"))
+    {
+        while (dirent *e = readdir(d))
+            if (e->d_name[0] >= '0' && e->d_name[0] <= '9') v.push_back((pid_t) atoi(e->d_name));
+        closedir(d);
+    }
+#endif
+    return v;
+}
+
+// Every process group on the session's terminal, the leader's own group first.
+std::vector<pid_t> sessionGroups(pid_t leader)
+{
+    std::vector<pid_t> groups;
+    ProcInfo li;
+    if (!procInfo(leader, li)) return groups;
+    pid_t mine = getpgrp();
+    auto add = [&](pid_t g) {
+        if (g > 1 && g != mine && std::find(groups.begin(), groups.end(), g) == groups.end())
+            groups.push_back(g);
+    };
+    add(li.pgid);
+    if (li.tdev >= 0)
+        for (pid_t p : allPids())
+        {
+            ProcInfo pi;
+            if (p != leader && procInfo(p, pi) && pi.tdev == li.tdev) add(pi.pgid);
+        }
+    return groups;
+}
+
+} // namespace
+
+std::vector<pid_t> termChildPids()
+{
+    std::vector<pid_t> v;
+#ifdef __APPLE__
+    v.resize(1024);
+    int n = proc_listchildpids(getpid(), v.data(), (int) (v.size() * sizeof(pid_t)));
+    v.resize(n > 0 ? n : 0);
+#else
+    pid_t me = getpid();
+    for (pid_t p : allPids())
+    {
+        char path[64];
+        snprintf(path, sizeof path, "/proc/%d/stat", (int) p);
+        if (FILE *f = fopen(path, "r"))
+        {
+            char buf[512] = {0};
+            size_t n = fread(buf, 1, sizeof buf - 1, f);
+            fclose(f);
+            buf[n] = 0;
+            char *rp = strrchr(buf, ')');
+            char st;
+            int ppid = 0;
+            if (rp && sscanf(rp + 2, "%c %d", &st, &ppid) == 2 && ppid == me) v.push_back(p);
+        }
+    }
+#endif
+    return v;
+}
+
+TWibWobTerminalWindow::RunState TWibWobTerminalWindow::runState()
+{
+    if (isDisconnected()) return RunState::Exited;
+    if (!childPidFile_.empty() && access((childPidFile_ + ".exit").c_str(), F_OK) == 0)
+        return RunState::Exited;   // hold=1: the program ended, the window keeps its last screen
+    if (leader_ > 0 && kill(leader_, 0) != 0 && errno == ESRCH) return RunState::Exited;
+    return paused_ ? RunState::Paused : RunState::Running;
+}
+
+bool TWibWobTerminalWindow::pause(std::string &err)
+{
+    if (paused_) return true;
+    if (runState() == RunState::Exited) { err = "the program has exited"; return false; }
+    if (leader_ <= 0) { err = "no process is known for this terminal"; return false; }
+    std::vector<pid_t> groups = sessionGroups(leader_);
+    if (groups.empty()) { err = "no process to pause"; return false; }
+    // The leader (the shell) first, so it cannot see its job stop and take the terminal back.
+    for (pid_t g : groups) kill(-g, SIGSTOP);
+    stopped_ = groups;
+    paused_ = true;
+    if (recorder_) recorder_->hold(true);
+    pausedAt_ = std::chrono::steady_clock::now();
+    transportChanged();
+    return true;
+}
+
+bool TWibWobTerminalWindow::resume(std::string &err)
+{
+    if (!paused_) return true;
+    // The job before the shell, the reverse of the stop order.
+    for (auto it = stopped_.rbegin(); it != stopped_.rend(); ++it) kill(-*it, SIGCONT);
+    stopped_.clear();
+    paused_ = false;
+    if (recorder_) recorder_->hold(false);
+    transportChanged();
+    (void) err;
+    return true;
+}
+
+double TWibWobTerminalWindow::secondsPaused() const
+{
+    if (!paused_) return 0;
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - pausedAt_).count();
+}
+
+std::string TWibWobTerminalWindow::programName()
+{
+    ProcInfo li;
+    if (!procInfo(leader_, li)) return "";
+    pid_t fg = li.tpgid > 0 ? li.tpgid : li.pgid;
+    ProcInfo fi;
+    if (procInfo(fg, fi)) return fi.name;
+    for (pid_t p : allPids())
+    {
+        ProcInfo pi;
+        if (procInfo(p, pi) && pi.pgid == fg) return pi.name;
+    }
+    return li.name;
+}
+
+std::string TWibWobTerminalWindow::keyboard() const
+{
+    if (state & sfModal) return "grab";
+    if (state & sfFocused) return "focus";
+    return "none";
+}
+
+bool TWibWobTerminalWindow::releaseKeyboard()
+{
+    if (!(state & sfModal)) return false;
+    endModal(cmCancel);
+    return true;
+}
+
+bool TWibWobTerminalWindow::startRecording(const std::string &path, std::string &err)
+{
+    if (!recorder_) { err = "this terminal cannot record"; return false; }
+    std::vector<std::string> screen;
+    std::string text = getOutputText(), line;
+    for (char ch : text)
+    {
+        if (ch == '\n') { screen.push_back(line); line.clear(); }
+        else line += ch;
+    }
+    while (!screen.empty() && screen.back().empty()) screen.pop_back();
+    const char *t = getTitle(0);
+    if (!recorder_->start(path, std::max(1, size.x - 2), std::max(1, size.y - 2), t ? t : "", screen, err))
+        return false;
+    if (paused_) recorder_->hold(true);
+    transportChanged();
+    return true;
+}
+
+long TWibWobTerminalWindow::stopRecording(std::string &err)
+{
+    long n = recorder_ ? recorder_->stop() : -1;
+    if (n < 0) err = "not recording";
+    transportChanged();
+    return n;
+}
+
+std::string TWibWobTerminalWindow::recordingPath() const
+{
+    return recorder_ ? recorder_->path() : std::string();
+}
+
+double TWibWobTerminalWindow::recordingSeconds() const
+{
+    return recorder_ ? recorder_->seconds() : 0;
+}
+
+void TWibWobTerminalWindow::transportChanged()
+{
+    if (frame) frame->drawView();
+}
+
+// ---------------------------------------------------------------- the frame's mark
+
+namespace {
+
+class TTermTransportFrame : public tvterm::BasicTerminalFrame
+{
+public:
+    using BasicTerminalFrame::BasicTerminalFrame;
+
+    int markX() const { return size.x >= 22 ? size.x - 9 : -1; }
+
+    TWibWobTerminalWindow *win() const { return dynamic_cast<TWibWobTerminalWindow *>(owner); }
+
+    void draw() override
+    {
+        BasicTerminalFrame::draw();
+        auto *w = win();
+        int x = markX();
+        if (!w || x < 0 || w->runState() == TWibWobTerminalWindow::RunState::Exited) return;
+        TDrawBuffer b;
+        TColorAttr col = mapColor((state & sfActive) ? 3 : 1);
+        b.moveStr(0, w->isPaused() ? "[►]" : "[‖]", col);
+        writeLine(x, 0, 3, 1, b);
+    }
+
+    void handleEvent(TEvent &ev) override
+    {
+        if (ev.what == evMouseDown)
+        {
+            TPoint p = makeLocal(ev.mouse.where);
+            int x = markX();
+            auto *w = win();
+            if (w && x >= 0 && p.y == 0 && p.x >= x && p.x < x + 3 &&
+                w->runState() != TWibWobTerminalWindow::RunState::Exited)
+            {
+                termtransport::act(w, "toggle", resident::currentWho());
+                clearEvent(ev);
+                return;
+            }
+        }
+        BasicTerminalFrame::handleEvent(ev);
+    }
+};
+
+} // namespace
+
+TFrame *TWibWobTerminalWindow::initTermFrame(TRect r)
+{
+    return new TTermTransportFrame(r);
 }
 
 namespace {
+
+// Passes everything to tvterm's vterm emulator and gives the program's output, as it is
+// read from the pty, to the window's cast recorder (when it is recording).
+class RecordingEmulator final : public tvterm::TerminalEmulator
+{
+public:
+    RecordingEmulator(tvterm::TerminalEmulator &inner, std::shared_ptr<ww::CastRecorder> rec) :
+        inner_(inner), rec_(std::move(rec)) {}
+    ~RecordingEmulator() { delete &inner_; }
+    void handleEvent(const tvterm::TerminalEvent &ev) noexcept override
+    {
+        if (ev.type == tvterm::TerminalEventType::ClientDataRead && rec_)
+            rec_->output(ev.clientDataRead.data, ev.clientDataRead.size);
+        inner_.handleEvent(ev);
+    }
+    void updateState(tvterm::TerminalState &state) noexcept override { inner_.updateState(state); }
+private:
+    tvterm::TerminalEmulator &inner_;
+    std::shared_ptr<ww::CastRecorder> rec_;
+};
+
+class RecordingEmulatorFactory final : public tvterm::TerminalEmulatorFactory
+{
+public:
+    explicit RecordingEmulatorFactory(std::shared_ptr<ww::CastRecorder> rec) : rec_(std::move(rec)) {}
+    tvterm::TerminalEmulator &create(TPoint size, tvterm::Writer &w) noexcept override
+    {
+        return *new RecordingEmulator(inner_.create(size, w), rec_);
+    }
+    TSpan<const tvterm::EnvironmentVar> getCustomEnvironment() noexcept override
+    {
+        return inner_.getCustomEnvironment();
+    }
+private:
+    tvterm::VTermEmulatorFactory inner_;
+    std::shared_ptr<ww::CastRecorder> rec_;
+};
 
 // Wraps the vterm factory and adds the environment that makes tools/term_exec.sh the
 // terminal's program: SHELL points at the wrapper, WWDOS_TERM_EXEC carries the command.
@@ -241,8 +615,8 @@ class ExecEmulatorFactory final : public tvterm::TerminalEmulatorFactory
 {
 public:
     ExecEmulatorFactory(const std::string &wrapper, const std::string &exec, bool hold,
-                        const std::string &pidFile) :
-        wrapper_(wrapper), exec_(exec), hold_(hold ? "1" : "0"), pidFile_(pidFile)
+                        const std::string &pidFile, std::shared_ptr<ww::CastRecorder> rec) :
+        inner_(rec), wrapper_(wrapper), exec_(exec), hold_(hold ? "1" : "0"), pidFile_(pidFile)
     {
         const char *sh = std::getenv("SHELL");
         shell_ = (sh && *sh && wrapper_ != sh) ? sh : "/bin/zsh";
@@ -266,10 +640,24 @@ public:
     }
 
 private:
-    tvterm::VTermEmulatorFactory inner_;
+    RecordingEmulatorFactory inner_;
     std::string wrapper_, exec_, hold_, pidFile_, shell_;
     tvterm::EnvironmentVar vars_[7];
 };
+
+} // namespace
+
+// The pty's process: tvterm forks it inside TerminalController::create and does not say
+// its pid, so it is the child of the app that was not there before.
+static pid_t newChild(const std::vector<pid_t> &before)
+{
+    pid_t found = 0;
+    for (pid_t p : termChildPids())
+        if (std::find(before.begin(), before.end(), p) == before.end() && p > found) found = p;
+    return found;
+}
+
+namespace {
 
 std::string findTermExecWrapper()
 {
@@ -300,24 +688,64 @@ TWindow* createTerminalWindowExec(const TRect &bounds, const std::string &exec, 
     char pidFile[96];
     snprintf(pidFile, sizeof(pidFile), "/tmp/wwdos-term-%d-%u.pid", (int) getpid(), ++counter);
     unlink(pidFile);
-    ExecEmulatorFactory factory(wrapper, exec, hold, pidFile);
+    auto rec = std::make_shared<ww::CastRecorder>();
+    ExecEmulatorFactory factory(wrapper, exec, hold, pidFile, rec);
     TPoint viewSize = BasicTerminalWindow::viewSize(bounds);
     // No message box: this runs from the API with nobody at the keyboard.
+    std::vector<pid_t> before = termChildPids();
     auto *termCtrl = TerminalController::create(viewSize, factory, onTermErrorQuiet);
     if (!termCtrl)
         return nullptr;
     auto *w = new TWibWobTerminalWindow(bounds, *termCtrl);
     w->setChildPidFile(pidFile);
+    w->setLeaderPid(newChild(before));
+    w->setRecorder(rec);
     return w;
 }
 
 TWindow* createTerminalWindow(const TRect &bounds)
 {
     using namespace tvterm;
-    VTermEmulatorFactory factory;
+    auto rec = std::make_shared<ww::CastRecorder>();
+    RecordingEmulatorFactory factory(rec);
     TPoint viewSize = BasicTerminalWindow::viewSize(bounds);
+    std::vector<pid_t> before = termChildPids();
     auto *termCtrl = TerminalController::create(viewSize, factory, onTermError);
     if (!termCtrl)
         return nullptr;
-    return new TWibWobTerminalWindow(bounds, *termCtrl);
+    auto *w = new TWibWobTerminalWindow(bounds, *termCtrl);
+    w->setLeaderPid(newChild(before));
+    w->setRecorder(rec);
+    return w;
 }
+
+#endif // __EMSCRIPTEN__
+
+#ifndef __EMSCRIPTEN__   // the browser's stand-in window describes itself (tvterm_view.h)
+std::string TWibWobTerminalWindow::describeState() const {
+    const char* t = const_cast<TWibWobTerminalWindow*>(this)->getTitle(0);
+    auto lines = ww::splitText(getOutputText());
+    std::string last;
+    for (auto it = lines.rbegin(); it != lines.rend(); ++it) if (!it->empty()) { last = ww::clipText(*it, 50); break; }
+    std::string s = std::string("terminal") + (t && *t ? std::string(" \"") + t + "\"" : "") + " showing " +
+           std::to_string(lines.size()) + " lines of output" + (last.empty() ? "" : "; last line: \"" + last + "\"");
+#ifndef __EMSCRIPTEN__
+    auto *self = const_cast<TWibWobTerminalWindow*>(this);
+    std::string prog = self->programName();
+    switch (self->runState()) {
+    case RunState::Paused:
+        s += "; " + (prog.empty() ? std::string("its program") : prog) + " is paused (" +
+             std::to_string((int) secondsPaused()) + " s), Alt-P or terminal_resume plays it";
+        break;
+    case RunState::Exited: s += "; its program has exited"; break;
+    case RunState::Running: if (!prog.empty()) s += "; running " + prog; break;
+    }
+    if (keyboard() == "grab") s += "; it holds the keyboard (Alt-End or terminal_release gives it back)";
+#endif
+    return s;
+}
+bool TWibWobTerminalWindow::describeText(std::vector<std::string>& out) const {
+    out = ww::splitText(getOutputText());
+    return true;
+}
+#endif

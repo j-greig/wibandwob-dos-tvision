@@ -1,0 +1,248 @@
+<!-- WebGL page template: no xterm.js. kernel/tools/bundle.py --shell kernel/pages/shell-webgl.html fills the INLINE markers. -->
+<title>WIBWOB-DOS</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #term { display: block; position: absolute; left: 0; top: 0; outline: none;
+          image-rendering: pixelated; image-rendering: crisp-edges; }
+  #boot { position: absolute; left: 16px; top: 16px; color: #aaa; font: 14px Menlo, Consolas, monospace; }
+</style>
+<canvas id="term" class="xterm-screen" tabindex="0"></canvas>
+<div id="boot">loading WIBWOB-DOS...</div>
+<!--INLINE_ATLAS-->
+<script>
+(function () {
+  // ---- the cell renderer: one instanced quad per cell, glyphs from a 1-bit atlas ----
+  var A = window.WWDOS_ATLAS, GW = 8, GH = 16, ACOLS = 32;
+  var canvas = document.getElementById('term');
+  var gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true });
+  if (!gl) { document.getElementById('boot').textContent = 'WebGL2 is needed to draw this page.'; return; }
+  var glyphOf = new Map(), wideOf = new Map();
+  for (var i = 0; i < A.cps.length; i++) { glyphOf.set(A.cps[i], A.idx[i]); wideOf.set(A.cps[i], A.wide[i]); }
+  var UNKNOWN = glyphOf.get(63), BLANK = glyphOf.get(32);
+  var arows = Math.ceil(A.n / ACOLS);
+  (function uploadAtlas() {
+    var raw = atob(A.bits), tex = new Uint8Array(ACOLS * GW * arows * GH);
+    for (var g = 0; g < A.n; g++) {
+      var gx = (g % ACOLS) * GW, gy = Math.floor(g / ACOLS) * GH;
+      for (var y = 0; y < GH; y++) {
+        var b = raw.charCodeAt(g * GH + y);
+        for (var x = 0; x < GW; x++) if (b & (0x80 >> x)) tex[(gy + y) * ACOLS * GW + gx + x] = 255;
+      }
+    }
+    var t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, ACOLS * GW, arows * GH, 0, gl.RED, gl.UNSIGNED_BYTE, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  })();
+  function shader(type, src) {
+    var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  var prog = gl.createProgram();
+  gl.attachShader(prog, shader(gl.VERTEX_SHADER, [
+    '#version 300 es', 'precision highp float;',
+    'in uint a_glyph; in vec4 a_fg; in vec4 a_bg;',
+    'uniform vec2 u_px; uniform int u_cols; uniform vec2 u_atlas;',
+    'out vec4 fg; out vec4 bg; out vec2 st; out vec2 uv;',
+    'void main(){',
+    '  vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));',
+    '  vec2 cell = vec2(float(gl_InstanceID % u_cols), float(gl_InstanceID / u_cols));',
+    '  vec2 p = (cell + c) * u_px;',
+    '  gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);',
+    '  uint cols = uint(u_atlas.x);',
+    '  vec2 ac = vec2(float(a_glyph % cols), float(a_glyph / cols));',
+    '  st = (c + ac) / u_atlas; uv = c; fg = a_fg; bg = a_bg;',
+    '}'].join('\n')));
+  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, [
+    '#version 300 es', 'precision highp float;',
+    'uniform sampler2D u_tex; in vec4 fg; in vec4 bg; in vec2 st; in vec2 uv; out vec4 o;',
+    'void main(){',
+    '  float m = texture(u_tex, st).r;',
+    '  if (fg.a > 0.5 && uv.y > 0.9) m = 1.0;',   // underline row
+    '  o = vec4(mix(bg.rgb, fg.rgb, m), 1.0);',
+    '}'].join('\n')));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  var uPx = gl.getUniformLocation(prog, 'u_px'), uCols = gl.getUniformLocation(prog, 'u_cols'),
+      uAtlas = gl.getUniformLocation(prog, 'u_atlas');
+  gl.uniform2f(uAtlas, ACOLS, arows);
+  gl.uniform1i(gl.getUniformLocation(prog, 'u_tex'), 0);
+  var vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  function attrib(name, size, type, norm) {
+    var b = gl.createBuffer(), loc = gl.getAttribLocation(prog, name);
+    gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.enableVertexAttribArray(loc);
+    if (type === gl.UNSIGNED_SHORT && !norm) gl.vertexAttribIPointer(loc, size, type, 0, 0);
+    else gl.vertexAttribPointer(loc, size, type, norm, 0, 0);
+    gl.vertexAttribDivisor(loc, 1);
+    return b;
+  }
+  var bGlyph = attrib('a_glyph', 1, gl.UNSIGNED_SHORT, false),
+      bFg = attrib('a_fg', 4, gl.UNSIGNED_BYTE, true), bBg = attrib('a_bg', 4, gl.UNSIGNED_BYTE, true);
+
+  // ---- grid size follows the window; cells are 8x16 font pixels at an integer device scale ----
+  // URL: ?scale=1..4 (css px per font px). A host page may set window.wwdosOpts = {scale: N} instead.
+  // F3 or Alt+Enter toggles fullscreen (handled by the page, not the app).
+  var q = new URLSearchParams(location.search), opts = window.wwdosOpts || {};
+  var dpr = window.devicePixelRatio || 1;
+  var scale = parseInt(q.get('scale') || '0', 10) || opts.scale || 1; // css px per font px
+  var devScale = Math.max(1, Math.round(scale * dpr));
+  var cols = 80, rows = 25, cellCssW = GW * devScale / dpr, cellCssH = GH * devScale / dpr;
+  var glyphs, fgs, bgs, last = null, lastCols = 0, lastRows = 0;
+  function measure() {
+    var w = window.innerWidth, h = window.innerHeight;
+    var c = Math.max(20, Math.floor(w / cellCssW)), r = Math.max(5, Math.floor(h / cellCssH));
+    if (c * r > 65535) r = Math.floor(65535 / c);
+    var changed = (c !== cols || r !== rows);
+    cols = c; rows = r;
+    canvas.width = cols * GW * devScale; canvas.height = rows * GH * devScale;
+    canvas.style.width = (cols * cellCssW) + 'px'; canvas.style.height = (rows * cellCssH) + 'px';
+    canvas.style.left = Math.floor((w - cols * cellCssW) / 2) + 'px';
+    canvas.style.top = Math.floor((h - rows * cellCssH) / 2) + 'px';
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform2f(uPx, 1 / cols, 1 / rows); gl.uniform1i(uCols, cols);
+    return changed;
+  }
+  measure();
+
+  // ---- flush: the wasm hands over cols*rows*3 uint32 [cp|flags, fg, bg] ----
+  function draw(cells, c, r, cx, cy) {
+    var n = c * r;
+    if (!glyphs || glyphs.length !== n) { glyphs = new Uint16Array(n); fgs = new Uint8Array(n * 4); bgs = new Uint8Array(n * 4); }
+    var prevGlyph = BLANK, prevWide = 0;
+    for (var i = 0; i < n; i++) {
+      var w = cells[i * 3], fg = cells[i * 3 + 1], bg = cells[i * 3 + 2], g;
+      if (w & 0x40000000) g = prevWide ? prevGlyph + 1 : BLANK;            // trail of a wide char
+      else { var cp = w & 0x1FFFFF; g = glyphOf.get(cp); if (g === undefined) g = UNKNOWN; prevGlyph = g; prevWide = wideOf.get(cp) || 0; }
+      if (cx === i % c && cy === Math.floor(i / c)) { var t = fg; fg = bg; bg = t; }  // caret: reverse the cell
+      glyphs[i] = g;
+      fgs[i * 4] = (fg >> 16) & 255; fgs[i * 4 + 1] = (fg >> 8) & 255; fgs[i * 4 + 2] = fg & 255; fgs[i * 4 + 3] = (fg >> 24) & 1 ? 255 : 0;
+      bgs[i * 4] = (bg >> 16) & 255; bgs[i * 4 + 1] = (bg >> 8) & 255; bgs[i * 4 + 2] = bg & 255; bgs[i * 4 + 3] = 255;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, bGlyph); gl.bufferData(gl.ARRAY_BUFFER, glyphs, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bFg); gl.bufferData(gl.ARRAY_BUFFER, fgs, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bBg); gl.bufferData(gl.ARRAY_BUFFER, bgs, gl.DYNAMIC_DRAW);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+    window.wwdosFrames = (window.wwdosFrames | 0) + 1;
+  }
+
+  // ---- the module: same queue contract as the xterm page (wasmcon.cpp) ----
+  var enc = new TextEncoder();
+  var M = {
+    wwdosOpts: opts,
+    wwdosQueue: [], wwdosResized: false, wwdosWake: null,
+    wwdosWrite: function () {},           // ANSI mode-set sequences from TermIO: nothing to do here
+    wwdosCols: function () { return cols; },
+    wwdosRows: function () { return rows; },
+    wwdosGrid: function (cells, c, r, cx, cy) {
+      last = new Uint32Array(cells); lastCols = c; lastRows = r;   // copy: wasm memory may move
+      draw(last, c, r, cx, cy);
+    },
+    print: function (s) { console.log(s); },
+    printErr: function (s) { console.warn(s); },
+    onRuntimeInitialized: function () {
+      var b = document.getElementById('boot'); if (b) b.remove();
+      window.wwdosBootMs = performance.now();
+    }
+  };
+  // A loader page may hand over the wasm bytes itself (window.wwdosWasm) instead of the inlined base64.
+  if (window.wwdosWasm) M.instantiateWasm = function (info, done) {
+    WebAssembly.instantiate(window.wwdosWasm, info).then(function (r) { done(r.instance); });
+    return {};
+  };
+  function wake() { if (M.wwdosWake) M.wwdosWake(); }
+  function push(str) { var b = enc.encode(str); for (var i = 0; i < b.length; i++) M.wwdosQueue.push(b[i]); wake(); }
+
+  // ---- keyboard -> the escape sequences TermIO parses (CSI keys, tilde keys, ESC+key = Alt) ----
+  var CSI = { ArrowUp: 'A', ArrowDown: 'B', ArrowRight: 'C', ArrowLeft: 'D', Home: 'H', End: 'F' };
+  // F1-F4 go as ESC[11~..14~: tvision's TermIO rejects the ESC O P form and reads it as Alt+O.
+  var TILDE = { Insert: 2, Delete: 3, PageUp: 5, PageDown: 6, F1: 11, F2: 12, F3: 13, F4: 14, F5: 15, F6: 17, F7: 18, F8: 19, F9: 20, F10: 21, F11: 23, F12: 24 };
+  window.addEventListener('keydown', function (e) {
+    if (e.metaKey && !e.altKey) return;  // leave Cmd shortcuts to the browser
+    var k = e.key;
+    if (k === 'F3' || (k === 'Enter' && e.altKey)) {   // fullscreen is the page's job
+      e.preventDefault();
+      if (document.fullscreenElement) document.exitFullscreen().catch(function () {});
+      else document.documentElement.requestFullscreen().catch(function () {});
+      return;
+    }
+    var mod = 1 + (e.shiftKey ? 1 : 0) + (e.altKey ? 2 : 0) + (e.ctrlKey ? 4 : 0), s = null;
+    if (CSI[k]) s = mod > 1 ? '\x1b[1;' + mod + CSI[k] : '\x1b[' + CSI[k];
+    else if (TILDE[k]) s = mod > 1 ? '\x1b[' + TILDE[k] + ';' + mod + '~' : '\x1b[' + TILDE[k] + '~';
+    else if (k === 'Enter') s = '\r';
+    else if (k === 'Backspace') s = '\x7f';
+    else if (k === 'Tab') s = e.shiftKey ? '\x1b[Z' : '\t';
+    else if (k === 'Escape') s = '\x1b';
+    else if (k.length === 1 || (e.altKey && /^Key[A-Z]$|^Digit[0-9]$/.test(e.code))) {
+      var ch = k;
+      if (e.altKey && e.code.indexOf('Key') === 0) ch = e.code.slice(3).toLowerCase();   // macOS Option changes e.key
+      else if (e.altKey && e.code.indexOf('Digit') === 0) ch = e.code.slice(5);
+      if (e.ctrlKey && ch.length === 1) {
+        var c = ch.toUpperCase().charCodeAt(0);
+        if (c >= 64 && c < 96) ch = String.fromCharCode(c & 31); else if (c >= 97 && c < 123) ch = String.fromCharCode(c & 31);
+      }
+      s = (e.altKey ? '\x1b' : '') + ch;
+    }
+    if (s !== null) { e.preventDefault(); push(s); }
+  });
+  window.addEventListener('paste', function (e) {
+    var t = (e.clipboardData || window.clipboardData).getData('text');
+    if (t) { e.preventDefault(); push('\x1b[200~' + t + '\x1b[201~'); }
+  });
+
+  // ---- mouse -> SGR 1006 reports ----
+  var buttons = 0;
+  function cellAt(e) {
+    var r = canvas.getBoundingClientRect();
+    return [Math.max(1, Math.min(cols, Math.floor((e.clientX - r.left) / cellCssW) + 1)),
+            Math.max(1, Math.min(rows, Math.floor((e.clientY - r.top) / cellCssH) + 1))];
+  }
+  function mods(e) { return (e.shiftKey ? 4 : 0) + (e.altKey ? 8 : 0) + (e.ctrlKey ? 16 : 0); }
+  function report(b, e, release) { var p = cellAt(e); push('\x1b[<' + b + ';' + p[0] + ';' + p[1] + (release ? 'm' : 'M')); }
+  canvas.addEventListener('mousedown', function (e) { canvas.focus(); buttons |= (1 << e.button); report(e.button + mods(e), e, false); e.preventDefault(); });
+  window.addEventListener('mouseup', function (e) { if (!(buttons & (1 << e.button))) return; buttons &= ~(1 << e.button); report(e.button + mods(e), e, true); });
+  window.addEventListener('mousemove', function (e) {
+    if (!buttons) return;
+    var b = buttons & 1 ? 0 : buttons & 4 ? 2 : 1;   // bit 2 of the mask is the right button
+    report(32 + b + mods(e), e, false);
+  });
+  canvas.addEventListener('wheel', function (e) { report((e.deltaY < 0 ? 64 : 65) + mods(e), e, false); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  var rt = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () { if (measure()) { M.wwdosResized = true; wake(); } else if (last) draw(last, lastCols, lastRows, -1, -1); }, 60);
+  });
+
+  // Tests (tests/web/smoke.py) read the screen through the same xterm-shaped object as on the xterm page.
+  window.wwdosTerm = {
+    get cols() { return cols; }, get rows() { return rows; },
+    buffer: { active: { getLine: function (y) { return { translateToString: function () {
+      if (!last || y >= lastRows) return '';
+      var s = '';
+      for (var x = 0; x < lastCols; x++) { var w = last[(y * lastCols + x) * 3]; if (w & 0x40000000) continue; s += String.fromCodePoint(w & 0x1FFFFF || 32); }
+      return s.replace(/\s+$/, '');
+    } }; } } }
+  };
+  window.wwdosRenderer = 'webgl-grid';
+  window.wwdosModule = M;
+  window.addEventListener('load', function () {
+    var tries = 0;
+    (function start() {
+      measure();
+      if ((rows < 20 || cols < 60) && tries++ < 60) { requestAnimationFrame(start); return; }
+      canvas.focus();
+      WWDOS(M);
+    })();
+  });
+})();
+</script>
+<!--INLINE_APP-->

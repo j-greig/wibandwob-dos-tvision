@@ -49,9 +49,9 @@ namespace {
     // Linear interpolation between two colors
     TColorRGB interpolateColors(TColorRGB start, TColorRGB end, float t) {
         t = std::max(0.0f, std::min(1.0f, t));
-        uint8_t r = static_cast<uint8_t>(start.r + (end.r - start.r) * t);
-        uint8_t g = static_cast<uint8_t>(start.g + (end.g - start.g) * t);
-        uint8_t b = static_cast<uint8_t>(start.b + (end.b - start.b) * t);
+        uint8_t r = static_cast<uint8_t>(start.getRed() + (end.getRed() - start.getRed()) * t);
+        uint8_t g = static_cast<uint8_t>(start.getGreen() + (end.getGreen() - start.getGreen()) * t);
+        uint8_t b = static_cast<uint8_t>(start.getBlue() + (end.getBlue() - start.getBlue()) * t);
         return TColorRGB(r, g, b);
     }
     
@@ -93,35 +93,35 @@ namespace {
                 
             case TBackgroundType::Solid: {
                 const TColorRGB &bg = kAnsiBg[config.solidColorIndex];
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::HorizontalGradient: {
                 TColorRGB bg = getHorizontalGradientColor(x, width, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::VerticalGradient: {
                 TColorRGB bg = getVerticalGradientColor(y, height, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::RadialGradient: {
                 TColorRGB bg = getRadialGradientColor(x, y, width, height, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
                 
             case TBackgroundType::DiagonalGradient: {
                 TColorRGB bg = getDiagonalGradientColor(x, y, width, height, config.gradientStart, config.gradientEnd);
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 return TColorAttr(fg, bg);
             }
@@ -132,6 +132,15 @@ namespace {
     }
 }
 
+// Viewer pause and single step (WibWob-DOS browser pages: F9 pause, F8 step).
+// Paused players skip their ticks; bumping ww_anim_step lets every player advance one frame.
+bool ww_anim_paused = false;
+unsigned ww_anim_step = 0;
+// A clock for drawings, in seconds (the stage sets it: Stage::animTime). With a clock, the frame a player shows is
+// a function of the time since it was made, so a seek, a replay and an export show the frame that playing shows.
+// With none (the full app, a page with no stage), a player counts its own timer events as before.
+double (*ww_anim_clock)() = nullptr;
+
 FrameFilePlayerView::FrameFilePlayerView(const TRect &bounds, const std::string &path, unsigned periodMs)
     : TView(bounds), filePath_(path), periodMs(periodMs) {
     growMode = gfGrowHiX | gfGrowHiY;
@@ -139,6 +148,14 @@ FrameFilePlayerView::FrameFilePlayerView(const TRect &bounds, const std::string 
     // See TProgram::idle() and TTimerQueue in the library.
     eventMask |= evBroadcast;
     loadAndIndex(path);
+    if (ww_anim_clock) clockStart_ = ww_anim_clock();
+}
+
+size_t FrameFilePlayerView::clockIndex() const {
+    if (frames.empty() || periodMs == 0) return 0;
+    double dt = ww_anim_clock() - clockStart_;
+    if (dt <= 0) return 0;
+    return (size_t) (dt * 1000.0 / periodMs + 1e-6) % frames.size();
 }
 
 FrameFilePlayerView::~FrameFilePlayerView() {
@@ -225,6 +242,7 @@ void FrameFilePlayerView::loadAndIndex(const std::string &path) {
     const std::string delim = "----";
     const size_t npos = std::string::npos;
     size_t curStart = npos;
+    const size_t firstStart = pos;   // after the FPS header: the first frame begins here
 
     while (pos < n) {
         size_t lineStart = pos;
@@ -237,7 +255,10 @@ void FrameFilePlayerView::loadAndIndex(const std::string &path) {
 
         if (isDelim) {
             if (curStart == npos) {
-                // Frame begins after this delimiter
+                // What stands before the first delimiter is the first frame. (Until 2026-11-15 it was dropped: a
+                // drawing of frames A, B, C played B, C, and one of two frames did not move.)
+                if (lineStart > firstStart)
+                    frames.push_back(Span{firstStart, lineStart});
                 curStart = nextLineStart(fileData, lineStart);
             } else {
                 // Close previous frame before this delimiter line
@@ -267,6 +288,7 @@ void FrameFilePlayerView::loadAndIndex(const std::string &path) {
 }
 
 void FrameFilePlayerView::draw() {
+    if (ww_anim_clock) frameIndex = clockIndex();   // any redraw shows the frame the clock asks for
     // Window colour (API) or the EGA theme's blue window, else the configured background.
     TColorAttr themed;
     const bool useThemed = ww::contentAttr(this, 15, themed,
@@ -340,6 +362,16 @@ void FrameFilePlayerView::handleEvent(TEvent &ev) {
     if (ev.what == evBroadcast && ev.message.command == cmTimerExpired) {
         // Only act on our own timer; 'infoPtr' carries the TTimerId that fired.
         if (timerId != 0 && ev.message.infoPtr == timerId) {
+            if (ww_anim_clock) {                 // the clock holds still while paused, and steps with the stage
+                size_t idx = clockIndex();
+                if (idx != frameIndex) { frameIndex = idx; drawView(); }
+                clearEvent(ev);
+                return;
+            }
+            if (ww_anim_paused) {
+                if (ww_anim_step == stepSeen_) { clearEvent(ev); return; }
+                stepSeen_ = ww_anim_step;
+            }
             advanceFrame();
             drawView();
             clearEvent(ev);
@@ -351,7 +383,7 @@ void FrameFilePlayerView::setState(ushort aState, Boolean enable) {
     TView::setState(aState, enable);
     if ((aState & sfExposed) != 0) {
         if (enable) {
-            frameIndex = 0;
+            frameIndex = ww_anim_clock ? clockIndex() : 0;
             // Start periodic animation strictly from the UI/event loop.
             // No threads; timer callbacks arrive as cmTimerExpired broadcasts.
             startTimer();
@@ -436,7 +468,7 @@ void TTextFileView::draw()
     
     TDrawBuffer buf;
     int viewHeight = size.y;
-    int viewWidth = size.x - 1; // Leave space for scrollbar
+    int viewWidth = wholeWidth_ ? size.x : size.x - 1; // Leave space for scrollbar (not in a stage window)
     
     for (int y = 0; y < viewHeight; y++) {
         int lineIndex = topLine + y;
@@ -560,6 +592,13 @@ void TTextFileView::handleEvent(TEvent &ev)
     }
 }
 
+void TTextFileView::useWholeWidth()
+{
+    wholeWidth_ = true;
+    if (vScrollBar) vScrollBar->hide();   // nothing drawn or clicked in the last column but the text
+    drawView();
+}
+
 void TTextFileView::changeBounds(const TRect& bounds)
 {
     TGroup::changeBounds(bounds);
@@ -605,7 +644,7 @@ public:
                 int idx = ry*cols + cx;
                 if (idx >= 16) break;
                 const TColorRGB &bg = kAnsiBg[idx];
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 TColorAttr attr(fg, bg);
                 int sw = std::min(cellW-1, 12);
@@ -679,7 +718,7 @@ public:
                 int idx = ry*cols + cx;
                 if (idx >= 16) break;
                 const TColorRGB &bg = kAnsiBg[idx];
-                int bright = (int)bg.r * 299 + (int)bg.g * 587 + (int)bg.b * 114;
+                int bright = (int)bg.getRed() * 299 + (int)bg.getGreen() * 587 + (int)bg.getBlue() * 114;
                 TColorRGB fg = bright > 128000 ? TColorRGB(0x20,0x20,0x20) : TColorRGB(0xFF,0xFF,0xFF);
                 TColorAttr attr(fg, bg);
                 int sw = std::min(cellW-1, 12);

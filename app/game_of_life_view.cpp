@@ -241,7 +241,7 @@ void TGameOfLifeView::draw() {
                 attr = TColorAttr(0x0F); // Bright white for living cells
             }
             
-            setCell(lineBuf[x], ch, attr);
+            lineBuf[x] = TScreenCell(ch, attr);
         }
         writeLine(0, y, W, 1, lineBuf.data());
     }
@@ -318,4 +318,9 @@ TWindow* createGameOfLifeWindow(const TRect &bounds)
     auto *w = new TGameOfLifeWindow(bounds);
     w->setup();
     return w;
+}
+
+std::string TGameOfLifeView::describeState() const {
+    return "Game of Life at generation " + std::to_string(generation) + ": " + std::to_string(livingCells.size()) +
+           " cells alive on a " + std::to_string(gridWidth) + "x" + std::to_string(gridHeight) + " grid, " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
 }

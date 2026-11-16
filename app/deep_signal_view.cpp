@@ -565,7 +565,7 @@ void TDeepSignalView::draw() {
     for (int screenY = 0; screenY < H; screenY++) {
         // Clear line
         for (int sx = 0; sx < W; sx++)
-            setCell(lineBuf[sx], ' ', C_BLACK);
+            lineBuf[sx] = TScreenCell(' ', C_BLACK);
 
         if (screenY < mapRows) {
             drawMapLine(screenY, camY + screenY);
@@ -575,7 +575,7 @@ void TDeepSignalView::draw() {
             // Separator line
             TColorAttr sepColor = TColorAttr(TColorRGB(0,0,0), TColorRGB(60,60,80));
             for (int sx = 0; sx < W; sx++)
-                setCell(lineBuf[sx], '-', sepColor);
+                lineBuf[sx] = TScreenCell('-', sepColor);
         } else if (screenY >= logStart) {
             int logIdx = screenY - logStart;
             drawLog(screenY, logIdx);
@@ -718,7 +718,7 @@ void TDeepSignalView::drawMapLine(int screenY, int mapY) {
             bgc = TColorRGB(5, 8, 15); // very subtle blue tint in cone
         }
 
-        setCell(lineBuf[sx], ch, TColorAttr(bgc, fgc));
+        lineBuf[sx] = TScreenCell(ch, TColorAttr(bgc, fgc));
     }
 }
 
@@ -768,7 +768,7 @@ void TDeepSignalView::drawHUD(int screenY) {
         } else {
             fgc = TColorRGB(140, 160, 200);
         }
-        setCell(lineBuf[i], hud[i], TColorAttr(TColorRGB(10, 10, 20), fgc));
+        lineBuf[i] = TScreenCell(hud[i], TColorAttr(TColorRGB(10, 10, 20), fgc));
     }
 }
 
@@ -792,7 +792,7 @@ void TDeepSignalView::drawLog(int screenY, int logIdx) {
 
     TColorAttr attr = TColorAttr(TColorRGB(0, 0, 0), fgc);
     for (int i = 0; i < W && i < (int)entry.text.size(); i++)
-        setCell(lineBuf[i], entry.text[i], attr);
+        lineBuf[i] = TScreenCell(entry.text[i], attr);
 }
 
 // ── Input ────────────────────────────────────────────────
@@ -873,4 +873,17 @@ TWindow* createDeepSignalWindow(const TRect &bounds) {
     auto *w = new TDeepSignalWindow(bounds);
     w->setup();
     return w;
+}
+
+std::string TDeepSignalView::describeState() const {
+    std::string s = std::string("deep signal game, ") + (victory ? "won" : gameOver ? "game over" : "playing") + ": turn " +
+                    std::to_string(turn) + ", fuel " + std::to_string(probe.fuel) + "/" + std::to_string(probe.maxFuel) + ", " +
+                    std::to_string(signalsDecoded) + " of " + std::to_string(signals.size()) + " signals decoded";
+    if (!logMessages.empty()) s += "; last message: " + ww::clipText(logMessages.back().text, 60);
+    return s;
+}
+bool TDeepSignalView::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    for (const auto& m : logMessages) out.push_back(m.text);
+    return true;
 }

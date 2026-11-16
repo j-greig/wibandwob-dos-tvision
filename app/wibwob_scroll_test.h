@@ -20,6 +20,7 @@
 #define Uses_TFrame
 #define Uses_TScrollBar
 #define Uses_TScroller
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <string>
@@ -41,8 +42,10 @@ std::vector<TestMessage> getTestChatContent();
 // OPTION A: standardScrollBar() fix (extends TView)
 //=============================================================================
 
-class TWibWobTestViewA : public TView {
+class TWibWobTestViewA : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TWibWobTestViewA(const TRect& bounds, TScrollBar* vScroll);
     virtual ~TWibWobTestViewA() = default;
 
@@ -80,8 +83,10 @@ TWindow* createWibWobTestWindowA(const TRect& bounds, const std::string& title);
 // OPTION B: TScroller-based (proper TV pattern)
 //=============================================================================
 
-class TWibWobTestViewB : public TScroller {
+class TWibWobTestViewB : public TScroller, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TWibWobTestViewB(const TRect& bounds, TScrollBar* hScroll, TScrollBar* vScroll);
     virtual ~TWibWobTestViewB() = default;
 

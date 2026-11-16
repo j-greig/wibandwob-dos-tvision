@@ -7,6 +7,8 @@
 #include "frame_file_player_view.h"
 #include "transparent_text_view.h"
 #include "text_editor_view.h"
+#include "resident_life.h"
+#include "resident_tool.h"
 #include "browser_view.h"
 #include "generative_verse_view.h"
 #include "generative_mycelium_view.h"
@@ -35,9 +37,17 @@
 #include "paint/paint_window.h"
 #include "micropolis_ascii_view.h"
 #include "tvterm_view.h"
+#include "cast_player.h"
 #include "backrooms_tv_view.h"
 #include "figlet_text_view.h"
 #include "tr808_view.h"
+#include "sound/sound_host.h"
+#include "sound/synth_view.h"
+#include "sound/score_view.h"
+#include "sound/tracker_view.h"
+#include "sound/midi_view.h"
+#include "ascii_image_view.h"
+#include "feed_view.h"
 
 // tvision for TRect
 #define Uses_TRect
@@ -311,6 +321,7 @@ static bool match_monster_portal(TWindow* w) { return has_child_view<TGenerative
 static bool match_paint(TWindow* w) { return dynamic_cast<TPaintWindow*>(w) != nullptr; }
 static bool match_micropolis_ascii(TWindow* w) { return has_child_view<TMicropolisAsciiView>(w); }
 static bool match_terminal(TWindow* w) { return dynamic_cast<TWibWobTerminalWindow*>(w) != nullptr; }
+static bool match_cast_player(TWindow* w) { return dynamic_cast<TCastPlayerWindow*>(w) != nullptr; }
 static bool match_wibwob(TWindow* w) { return dynamic_cast<TWibWobWindow*>(w) != nullptr; }
 static bool match_room_chat(TWindow* w) { return dynamic_cast<TRoomChatWindow*>(w) != nullptr; }
 static bool match_scramble(TWindow* w)    { return dynamic_cast<TScrambleWindow*>(w) != nullptr; }
@@ -322,7 +333,33 @@ static bool match_backrooms_tv(TWindow* w) { return has_child_view<TBackroomsTvV
 static bool match_app_launcher(TWindow* w){ return dynamic_cast<TAppLauncherWindow*>(w) != nullptr; }
 static bool match_gallery(TWindow* w)     { return dynamic_cast<TGalleryWindow*>(w) != nullptr; }
 static bool match_figlet_text(TWindow* w) { return dynamic_cast<TFigletTextWindow*>(w) != nullptr; }
+extern void api_spawn_feed(TWwdosApp&, const TRect*, const std::string&);
+static const char* spawn_feed(TWwdosApp& app, const std::map<std::string,std::string>& kv) {
+    TRect r; auto b = kv.find("by"); api_spawn_feed(app, opt_bounds(kv, r), b == kv.end() ? "" : b->second); return nullptr;
+}
+static bool match_feed(TWindow* w) { return dynamic_cast<TFeedWindow*>(w) != nullptr; }
+static bool match_ascii_image(TWindow* w) { return isAsciiImageWindow(w); }
 static bool match_tr808(TWindow* w)       { return dynamic_cast<TTR808Window*>(w) != nullptr; }
+static const char* spawn_synth(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    sound::command("open_synth", kv); return nullptr; }
+static bool match_synth(TWindow* w)       { return dynamic_cast<TSynthWindow*>(w) != nullptr; }
+// kv: score=<name> or text=<score>, start=1
+static const char* spawn_event_score(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    std::string r = sound::command("open_event_score", kv);
+    static std::string err;
+    if (r.rfind("err", 0) == 0) { err = r; return err.c_str(); }
+    return nullptr; }
+static bool match_event_score(TWindow* w) { return dynamic_cast<TScoreWindow*>(w) != nullptr; }
+// kv: track=<name> or text=<song>, channels=, rows=, tempo=, play=1
+static const char* spawn_tracker(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    std::string r = sound::command("open_tracker", kv);
+    static std::string err;
+    if (r.rfind("err", 0) == 0) { err = r; return err.c_str(); }
+    return nullptr; }
+static bool match_tracker(TWindow* w) { return dynamic_cast<TTrackerWindow*>(w) != nullptr; }
+static const char* spawn_midi(TWwdosApp&, const std::map<std::string,std::string>& kv) {
+    sound::command("open_midi", kv); return nullptr; }
+static bool match_midi(TWindow* w) { return dynamic_cast<TMidiWindow*>(w) != nullptr; }
 
 // ── Registry table ────────────────────────────────────────────────────────────
 // Add new window types here — nowhere else.
@@ -333,6 +370,14 @@ static const WindowTypeSpec k_specs[] = {
     { "frame_player",      spawn_frame_player,      match_frame_player      },
     { "text_view",         spawn_text_view,         match_text_view         },
     { "text_editor",       spawn_text_editor,       match_text_editor       },
+    { "boot",              nullptr,                 life::isBootWindow      },  // the residents' boot screen
+    { "dream",             nullptr,                 life::isDreamWindow     },  // a resident's dream while asleep
+    { "own_time",          nullptr,                 life::isOwnWindow       },  // a resident's time of its own
+    { "tool",              nullptr,                 tools::isToolWindow     },  // a program a resident wrote
+    { "tool_list",         nullptr,                 tools::isToolListWindow },  // the list of those programs
+    { "film",              nullptr,                 life::isFilmWindow      },  // a waking replayed from ACTS.TXT
+    { "door",              nullptr,                 life::isDoorWindow      },  // who came in by the door
+    { "panel",             nullptr,                 life::isPanelWindow     },  // the operator's panel
     { "browser",           spawn_browser,           match_browser           },
     { "verse",             spawn_verse,             match_verse             },
     { "mycelium",          spawn_mycelium,          match_mycelium          },
@@ -367,6 +412,13 @@ static const WindowTypeSpec k_specs[] = {
     { "gallery",           spawn_gallery,          match_gallery            },
     { "figlet_text",       spawn_figlet_text,      match_figlet_text        },
     { "tr808",             spawn_tr808,            match_tr808              },
+    { "synth",             spawn_synth,            match_synth              },
+    { "event_score",       spawn_event_score,      match_event_score        },
+    { "tracker",           spawn_tracker,          match_tracker            },
+    { "midi",              spawn_midi,             match_midi               },
+    { "ascii_image",       nullptr,                match_ascii_image        },
+    { "feed",              spawn_feed,             match_feed               },
+    { "cast_player",       nullptr,                match_cast_player        },   // open_cast file=
 };
 
 // ── Lookup implementations ────────────────────────────────────────────────────

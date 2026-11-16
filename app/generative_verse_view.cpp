@@ -162,7 +162,7 @@ void TGenerativeVerseView::draw()
             float bgk = clampf(0.05f + 0.25f * (r*0.5f));
             TColorRGB bg(to8(bgk), to8(bgk*0.95f), to8(bgk*0.9f));
 
-            ::setCell(line[(size_t)x], ch, TColorAttr(fg, bg));
+            line[(size_t)x] = TScreenCell(ch, TColorAttr(fg, bg));
         }
         writeLine(0, y, W, 1, line.data());
     }
@@ -214,3 +214,8 @@ private:
 
 TWindow* createGenerativeVerseWindow(const TRect &bounds) { auto *w = new TGenerativeVerseWindow(bounds); w->setup(/*periodMs=*/50); return w; }
 
+std::string TGenerativeVerseView::describeState() const {
+    static const char* modes[] = {"flow", "swirl", "weave"};
+    return std::string("verse field in ") + modes[mode] + " mode, palette " + std::to_string(paletteIndex) + ", frame " +
+           std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

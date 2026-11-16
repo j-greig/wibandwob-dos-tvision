@@ -35,7 +35,7 @@ static inline RGB pal(int idx, float t){ int n=5; t=clampf(t); float x=t*(n-1); 
 
 } // namespace
 
-TGenerativeTorusView::TGenerativeTorusView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowAll; eventMask|=evBroadcast|evKeyboard; }
+TGenerativeTorusView::TGenerativeTorusView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowHiX|gfGrowHiY; eventMask|=evBroadcast|evKeyboard; }
 TGenerativeTorusView::~TGenerativeTorusView(){ stopTimer(); }
 void TGenerativeTorusView::startTimer(){ if(!timerId) timerId=setTimer(periodMs,(int)periodMs);}    
 void TGenerativeTorusView::stopTimer(){ if(timerId){ killTimer(timerId); timerId=0; }}
@@ -52,7 +52,7 @@ void TGenerativeTorusView::draw()
         for (int x=0;x<W;++x){
             TColorRGB bg(5,5,6); // very dark
             TColorRGB fg(180,180,190);
-            ::setCell(screen[(size_t)y*W + x], ' ', TColorAttr(fg,bg));
+            screen[(size_t)y*W + x] = TScreenCell(' ', TColorAttr(fg,bg));
         }
     }
 
@@ -112,7 +112,7 @@ void TGenerativeTorusView::draw()
                 TColorRGB fg(to8(c.r), to8(c.g), to8(c.b));
                 // Background darker for depth
                 TColorRGB bg( (uchar)8, (uchar)8, (uchar)10 );
-                ::setCell(screen[idx], ch, TColorAttr(fg,bg));
+                screen[idx] = TScreenCell(ch, TColorAttr(fg,bg));
             }
         }
     }
@@ -162,3 +162,8 @@ private:
 };
 
 TWindow* createGenerativeTorusWindow(const TRect &bounds){ auto *w=new TGenerativeTorusWindow(bounds); w->setup(40); return w; }
+
+std::string TGenerativeTorusView::describeState() const {
+    return "spinning torus, palette " + std::to_string(paletteIndex) + ", rotation " + std::to_string((int)(aRot * 57.3f) % 360) +
+           " and " + std::to_string((int)(bRot * 57.3f) % 360) + " degrees, frame " + std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

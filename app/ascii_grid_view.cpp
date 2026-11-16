@@ -13,7 +13,7 @@ TAsciiGridView::TAsciiGridView(const TRect &bounds, int gridW, int gridH)
     : TView(bounds), gw(gridW), gh(gridH)
 {
     options |= ofSelectable;
-    growMode = gfGrowAll;
+    growMode = gfGrowHiX | gfGrowHiY;
     resizeGrid(gridW, gridH);
 }
 

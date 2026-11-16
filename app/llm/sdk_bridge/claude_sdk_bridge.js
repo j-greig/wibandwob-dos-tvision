@@ -10,6 +10,7 @@ const process = require('process');
 const readline = require('readline');
 const { createTuiMcpServer } = require('./mcp_tools');
 const { loadSdk } = require('./sdk_loader');
+const { confinedOptions } = require('./confine');
 
 class ClaudeSDKBridge {
     constructor() {
@@ -17,8 +18,9 @@ class ClaudeSDKBridge {
         this.sessionId = null;           // Our internal session ID
         this.sdkSessionId = null;        // SDK session ID for resume
         this.systemPrompt = null;        // Agent SDK uses 'systemPrompt' not 'customSystemPrompt'
-        // this.allowedTools = ['Read', 'Write', 'Grep', 'Bash', 'LS', 'WebSearch', 'WebFetch'];
-        this.allowedTools = ['Read', 'Write', 'Grep', 'WebSearch', 'WebFetch'];
+        // The chat's agent acts only through the desktop's own tools (mcp_tools.js). No file, shell or web tools:
+        // those reach the person's machine.
+        this.allowedTools = [];
         this.maxTurns = 50;
         this.sdkSource = 'unknown';
         this.queryFn = null;
@@ -145,7 +147,7 @@ class ClaudeSDKBridge {
             this.sessionConfig = {
                 systemPrompt: this.systemPrompt,
                 maxTurns: data.maxTurns || this.maxTurns,
-                allowedTools: data.allowedTools || this.allowedTools,
+                allowedTools: this.allowedTools,                // the app's list is ignored: desktop tools only
                 model: data.model || 'claude-sonnet-4-6'  // Default to sonnet 4.6 if not specified
             };
 
@@ -264,7 +266,7 @@ class ClaudeSDKBridge {
             console.error('DEBUG: MCP server initialized:', !!this.mcpServer);
             
             // Build allowed tools list — auto-derive MCP tool names from the server
-            const baseTools = this.sessionConfig.allowedTools || [];
+            const baseTools = [];   // built-in tools never: confine.js
             let mcpTools = [];
             if (this.mcpServer && this.mcpServer.tools) {
                 // Auto-derive from whatever tools mcp_tools.js defines
@@ -277,19 +279,19 @@ class ClaudeSDKBridge {
                 }).filter(n => n !== 'mcp__tui-control__');
                 console.error(`[BRIDGE] Auto-derived ${mcpTools.length} MCP tool names from server`);
             }
-            const toolList = [...new Set([...baseTools, ...mcpTools])];
-            const modelId = this.normalizeModelId(this.sessionConfig.model);
+            // The desktop's own tools are always allowed (confine.js also allows them by server name).
+            const deskTools = ['mcp__tui-control__tui_list_commands', 'mcp__tui-control__tui_menu_command'];
+            const toolList = [...new Set([...baseTools, ...mcpTools, ...deskTools])];
+            // WWDOS_CHAT_MODEL overrides the configured model (the residents' self-test uses haiku).
+            const modelId = this.normalizeModelId(process.env.WWDOS_CHAT_MODEL || this.sessionConfig.model);
 
-            const queryOptions = {
+            const queryOptions = confinedOptions({
                 systemPrompt: this.systemPrompt,
                 maxTurns: this.sessionConfig.maxTurns,
                 model: modelId,
-                allowedTools: toolList,
-                permissionMode: 'bypassPermissions',           // MCP tools are safe (localhost HTTP only)
-                allowDangerouslySkipPermissions: true,          // SDK Options field name
                 includePartialMessages: true,
                 stderr: (msg) => console.error('[CLAUDE STDERR]', String(msg).trim())
-            };
+            }, this.mcpServer, toolList);
 
             // Add resume option if we have a previous SDK session ID (multi-turn)
             if (this.sdkSessionId) {
@@ -298,9 +300,7 @@ class ClaudeSDKBridge {
             }
 
             // Only add MCP servers if server was successfully created
-            if (this.mcpServer) {
-                queryOptions.mcpServers = { "tui-control": this.mcpServer };
-            }
+            // mcpServers is set by confinedOptions.
 
             console.error('[BRIDGE] Query options:', JSON.stringify({
                 ...queryOptions,
@@ -310,8 +310,12 @@ class ClaudeSDKBridge {
             console.error('[BRIDGE] Allowed tools list:', toolList);
 
             // Helper to emit deltas and accumulate full response
+            // Text after a tool call starts on a new line: without it the words before and after the call run together.
+            let afterTool = false;
             const pushDelta = (text) => {
                 if (!text) return;
+                if (afterTool && fullResponse && !fullResponse.endsWith('\n')) text = '\n' + text;
+                afterTool = false;
                 this.sendResponse('CONTENT_DELTA', {
                     sessionId: this.sessionId,
                     content: text,
@@ -346,6 +350,10 @@ class ClaudeSDKBridge {
                     options: queryOptions
                 })) {
                     messageCount++;
+                    const blocks = message.message?.content;
+                    if ((message.type === 'assistant' && Array.isArray(blocks) && blocks.some(b => b.type === 'tool_use')) ||
+                        (message.type === 'stream_event' && message.event?.type === 'content_block_start' &&
+                         message.event?.content_block?.type === 'tool_use')) afterTool = true;
 
                     // Only log complete messages (assistant text, tool calls, results, errors)
                     // Skip noisy stream deltas (content_block_delta, message_delta, start/stop)
@@ -505,9 +513,7 @@ class ClaudeSDKBridge {
     }
     
     configure(data) {
-        if (data.allowedTools) {
-            this.allowedTools = data.allowedTools;
-        }
+        // data.allowedTools is ignored: the chat's agent keeps to the desktop's own tools.
         if (data.maxTurns) {
             this.maxTurns = data.maxTurns;
         }

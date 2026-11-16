@@ -49,7 +49,7 @@ static inline void curl(float x,float y,float t,float &ux,float &uy){
 
 } // namespace
 
-TGenerativeMyceliumView::TGenerativeMyceliumView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowAll; eventMask|=evBroadcast|evKeyboard; }
+TGenerativeMyceliumView::TGenerativeMyceliumView(const TRect &b,unsigned ms):TView(b),periodMs(ms){ options|=ofSelectable; growMode=gfGrowHiX|gfGrowHiY; eventMask|=evBroadcast|evKeyboard; }
 TGenerativeMyceliumView::~TGenerativeMyceliumView(){ stopTimer(); }
 void TGenerativeMyceliumView::startTimer(){ if(!timerId) timerId=setTimer(periodMs,(int)periodMs);}    
 void TGenerativeMyceliumView::stopTimer(){ if(timerId){ killTimer(timerId); timerId=0; }}
@@ -85,7 +85,7 @@ void TGenerativeMyceliumView::draw(){
             auto to8=[&](float x)->uchar{ int v=(int)std::round(clampf(x)*255.f); return (uchar)std::max(0,std::min(255,v)); };
             TColorRGB fg(to8(c.r),to8(c.g),to8(c.b)); float bgk=0.05f + 0.2f*r;
             TColorRGB bg(to8(bgk),to8(bgk*0.96f),to8(bgk*0.92f));
-            ::setCell(row[(size_t)x], ch, TColorAttr(fg,bg));
+            row[(size_t)x] = TScreenCell(ch, TColorAttr(fg,bg));
         }
         writeLine(0,y,W,1,row.data());
     }
@@ -114,3 +114,6 @@ private: static TFrame* initFrame(TRect r){ return new TNoTitleFrame(r);} };
 
 TWindow* createGenerativeMyceliumWindow(const TRect &bounds){ auto *w=new TGenerativeMyceliumWindow(bounds); w->setup(55); return w; }
 
+std::string TGenerativeMyceliumView::describeState() const {
+    return "mycelium field, palette " + std::to_string(paletteIndex) + ", frame " + std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

@@ -5,6 +5,23 @@
 #include "core/json_utils.h"
 #include "core/base64_util.h"
 #include "figlet_utils.h"
+#include "resident_input.h"
+#include "resident_senses.h"
+#include "desk_mosh.h"
+#include "resident_life.h"
+#include "resident_hands.h"
+#include "resident_teach.h"
+#include "resident_listen.h"
+#include "resident_room.h"
+
+extern std::string api_window_text(TWwdosApp& app, const std::string& id);
+// The machine's sound (app/sound/sound_host.cpp). Weak, so tests that link the
+// registry without the sound files still link; there it is null.
+std::string sound_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
+                                   bool* handled) __attribute__((weak));
+// Terminal transport (app/terminal_transport.cpp): weak for the same reason.
+std::string terminal_registry_command(const std::string& name, const std::map<std::string, std::string>& kv,
+                                      bool* handled) __attribute__((weak));
 
 #include <cstdint>
 #include <sys/stat.h>
@@ -60,6 +77,7 @@ extern void api_spawn_paint(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_micropolis_ascii(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_quadra(TWwdosApp& app, const TRect* bounds);
 extern void api_spawn_snake(TWwdosApp& app, const TRect* bounds);
+extern void api_spawn_feed(TWwdosApp& app, const TRect* bounds, const std::string& by);
 extern void api_spawn_tr808(TWwdosApp& app, const TRect* bounds, const std::map<std::string, std::string>& kv);
 extern std::string api_tr808_action(TWwdosApp& app, const std::map<std::string, std::string>& kv);
 extern void api_spawn_rogue(TWwdosApp& app, const TRect* bounds);
@@ -166,8 +184,21 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_quadra", "Open Quadra falling blocks game", false},
         {"open_snake", "Open Snake game", false},
         // ── Music ────────────────────────────────────────────────────────
+        {"open_feed", "Open the Feed: the act log live, one line per act with a tag for who acted (PER WIB WOB SCR VIS GST API SYS); by=person|wib|wob|scramble|visitor|system filters; x y w h", false},
         {"open_tr808", "Open the TR-808 drum machine (optional preset, play=1, audio=0|1, tempo, x, y, w, h)", false},
         {"tr808", "Drive the TR-808 (action=play|stop|toggle|tempo bpm|select instrument|toggle_step step instrument?|set_step instrument step active|set_param instrument param value|load_preset preset|clear all?|instrument?|set_pattern bank number variation|swing value|scale value|accent value|master value|last_step value|mute instrument|solo instrument|audio on|random density|copy|paste|cursor step|text text|state; optional id). Steps are 0-15. Publishes tr808_step events on steps with hits", false},
+        {"open_synth", "Open the synth: a PC speaker square voice and an FM voice (optional voice=pcspk|fm, patch, octave, gate, audio=0|1, x, y, w, h)", false},
+        {"synth", "Play the synth (action=note note=C-4 vel dur|notes notes='C-4 E-4 . G-4' step=ms dur|sing words='ma ri a' notes='C-4 E-4 G-4' who=wib|wob step dur|voice value|patch value|octave value|gate value|audio on|render notes ...|state; optional id, voice, patch). Opens a window for note, notes and open", false},
+        {"hear", "The ears: what the synth and the TR-808 sound now and sounded in the last seconds= (default 4): voices, notes, steps, levels, who, a meter and tracker rows; of=all|synth|tr808, row_ms=, window=. Changes nothing", false},
+        {"sound", "The sound stream: action=state (output coreaudio|null|off, rate, lead_ms, the clock, notes, hits, late, FM channels busy) or action=capture ms= (the last ms of the mix: level and onset times on the clock). Changes nothing", false},
+        {"open_tracker", "Open the tracker (rows down, channels across): track=<n> reads tracks/<n>.trk, text= a song, or a new one with channels='fm:bass fm:lead speaker drums', rows=, tempo=; play=1; optional x, y, w, h", false},
+        {"tracker", "Write and play the tracker (action=set row ch cell='C-4 01 A37'|write ch row notes='C-2 . E-2 ===' step instr fx|clear row ch|all=1|play row|stop|loop on|tempo value|rows value|cursor row ch field octave|text|load track=|text=|save track=|state; optional id). Effects: Axy arpeggio, Vxx velocity, Gxx gate in sixteenths of a row", false},
+        {"open_midi", "Open the MIDI window: what arrives and what leaves (optional x, y, w, h)", false},
+        {"midi", "MIDI (action=state|log n=|in data='90 3C 64' (as if it arrived: plays the synth)|out data=|clock on=0|1). The TR-808 and the tracker send clock and notes out; input plays the synth with real key releases", false},
+        {"jam", "Residents jam: action=start as=wib|wob|scramble mode=answer|echo|invert wait_ms= model=auto|off: the resident answers the person's last synth phrase when they stop for wait_ms (by rule, or a confined model call chooses the notes when one is present); stop; state lists the answers", false},
+        {"voice", "The residents' voices: action=state (which macOS voice sings for wib and wob, and whether it is a stand-in) or action=render who= word= note= dur= (renders without sounding: samples, the pitch it speaks at and is sung at). Sing with synth action=sing or a tracker voice channel", false},
+        {"open_event_score", "Open an event score: score=<n> reads scores/<n>.score, or text= (the score itself), neither: scores/call-and-answer.score; start=1 starts it; optional x, y, w, h", false},
+        {"event_score", "Run the event score (action=start|stop|state; optional id): state gives the section, bar, beat, the instruction now and next, what was heard in each section, and the phrase to answer", false},
         {"open_rogue", "Open WibWob Rogue dungeon crawler", false},
         {"open_deep_signal", "Open Deep Signal space scanner game", false},
         {"open_apps", "Open the Applications folder browser", false},
@@ -178,6 +209,15 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"open_terminal", "Open a terminal emulator window (optional x, y, w, h, title; exec=<command> runs it instead of a shell, no prompt or echo; hold=1 keeps the last screen after it exits)", false},
         {"terminal_write", "Send text input to the terminal emulator (requires text param; optional window_id)", true},
         {"terminal_read", "Read the visible text content of a terminal window (optional window_id param)", false},
+        {"terminal_pause", "Pause what runs in a terminal window: its program and everything it started stop (id=, default the focused terminal, else the only one)", false},
+        {"terminal_resume", "Resume a paused terminal window's program from where it stopped (id=, default as terminal_pause)", false},
+        {"terminal_toggle", "Pause a running terminal window's program, or resume a paused one (id=, default as terminal_pause)", false},
+        {"terminal_state", "A terminal window's program: state running|paused|exited, its name, seconds paused, and keyboard grab|focus|none (grab: the window holds the keyboard) (id=)", false},
+        {"terminal_record", "Record a terminal window's output as an asciinema v2 cast: action=start file=<path.cast>, action=stop, action=state (id=)", false},
+        {"open_cast", "Open a cast player window for an asciinema v2 file (file=, optional x, y, speed=, loop=1, paused=1); no child process runs", false},
+        {"cast_control", "Drive a cast player window: action=play|pause|toggle, seek=<seconds>, speed=<0.25-8>, loop=0|1 (id=, default the focused player)", false},
+        {"cast_state", "A cast player window's file, size, duration, position, playing, speed and loop (id=)", false},
+        {"terminal_release", "Give the keyboard back from a terminal window that holds it (Window > Grab Keyboard); the person's chord is Alt-End (id=)", false},
         {"chat_receive", "Display a remote chat message in Scramble (sender + text params)", true},
         {"wibwob_ask", "Send a user message to the Wib&Wob chat window, triggering an AI response (text param)", true},
         {"get_chat_history", "Return Wib&Wob chat history as JSON array of {role, content} messages", false},
@@ -185,6 +225,86 @@ const std::vector<CommandCapability>& get_command_capabilities() {
         {"paint_text", "Write text on a paint canvas (id, x, y, text, fg, bg params)", true},
         {"paint_grid", "Write a w x h block of text cells on a paint canvas in one redraw (id, x, y, w, h, chars, attrs; chars and attrs are base64 of w*h bytes, row by row, attr = fg | bg<<4)", true},
         {"paint_line", "Draw a line on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
+        {"window_text", "Text held by a window (text editor windows): id param; returns its lines", false},
+        {"resident_key", "Resident input: keys (keys='Ctrl+S Enter F2' and/or text=...) to window id= without moving the person's focus; no id: the focused window, as the person's keys go. Queued, in order; result names the seq range", true},
+        {"resident_mouse", "Resident input: action=click|double|down|up|move|drag|scroll at desktop cells x,y (drag: x2,y2; scroll: dir, count; button, mods); id= delivers to that window without raising or focusing it", true},
+        {"resident_status", "Resident input queue, delivery log since=seq, the person's state and the windows the resident owns", false},
+        {"resident_manners", "Resident manners: share_ms (how long a window stays the person's after their last input), wait_on_button, clear=1 drops the queue", true},
+        {"resident_front", "What is in front: the modal dialog or open menu, its controls with labels and kinds, and how to accept or cancel; the focused window; other dialogs", false},
+        {"resident_press", "Press a dialog control by its label (label=, item= for a list or cluster entry, value= for an input line; id= or the dialog in front)", true},
+        {"resident_menu", "List the menu bar as names, or choose=File>Open a menu item by name (id= sends the command to that window first)", true},
+        {"look_glance", "Every window, one line each: id, type, title, rect, z, owner, whether the person can see it (seen all|part|none), one sentence of state; reader= adds what changed since that reader last looked. Changes nothing", false},
+        {"look_read", "One window's text (id=): the model's text for editor, terminal, chat and paint windows, else its cells as drawn; from=, limit= page the lines. Marks the window's frame for the person (reader=). Changes nothing else", false},
+        {"look_study", "A rectangle of cells (x, y, w, h in desktop cells; screen=1 for screen rows; id= for a window's own picture) with text, colour runs [x,n,fg,bg] and a ruler of column numbers. Changes nothing", false},
+        {"mosh", "Desk mosh in words (args=): on [way], off, panic, way wrap|tear|mosh|bleed|raw|all, amount 0-100, tempo BPM (0 = manual), seed N, count N, scope desktop|window ID, step HITS, score PATH, screen on|off; no args = status", false},
+        {"mosh_on", "Desk mosh on: real windows break into shards in time with the TR-808 or the internal tempo (optional way=)", false},
+        {"mosh_off", "Desk mosh off: every shard closes and the desktop is as it was", false},
+        {"mosh_panic", "Desk mosh off at once", false},
+        {"mosh_way", "Desk mosh way: wrap, tear, mosh, bleed, raw, timelag (the desktop as it was, lagging by band, ring or column), all (two bars each) or sound (bass notes wrap, other notes tear, drums mosh, quiet bleeds) (way=)", false},
+        {"mosh_amount", "Desk mosh amount 0-100 (value=)", false},
+        {"mosh_tempo", "Desk mosh internal tempo in BPM, 0 = steps only from the TR-808 or mosh_step (bpm=)", false},
+        {"mosh_seed", "Desk mosh seed (n=): same seed and steps give the same frames", false},
+        {"mosh_count", "Desk mosh: most shard windows at once (value=, default 240)", false},
+        {"mosh_scope", "Desk mosh scope: desktop, or window with id= (one window moshes, the rest stay clean)", false},
+        {"mosh_step", "Desk mosh: run steps now (hits=kick,snare,tick,rat,metal,accent; n=)", false},
+        {"mosh_hit", "Desk mosh: play a hit by hand now (hits=kick,snare,tick,rat,metal,accent), as Shift+F1..F5 and a MIDI keyboard's drum notes do", false},
+        {"mosh_freeze", "Desk mosh: freeze the shards where they are and take no steps, or release (value=on|off|toggle)", false},
+        {"mosh_record", "Desk mosh: record a performance as steps to a text file (value=on path=FILE [cast=FILE.cast for an asciinema cast of the shown frames]; value=off saves); it starts a fresh mosh", false},
+        {"mosh_play", "Desk mosh: play a recording back step for step (path=FILE; fast=1 runs every step at once)", false},
+        {"mosh_score", "Desk mosh score: path= a file of parts (bars N WAY [amount A] [tempo BPM], end|loop), text= the same inline, or path=off; scores/catmosh.mosh is the film's five parts", false},
+        {"mosh_screen", "Desk mosh screen layer on|off (value=): a filter over the desktop rows for colour runs and decay across window edges; the windows layer is mosh_on", false},
+        {"mosh_status", "Desk mosh settings, shard count and step timings", false},
+        {"look_changes", "What changed since reader= last looked: windows opened, closed, moved, retitled, restacked, content changed, focus", false},
+        {"describe", "What a window is: id= gives one window's sentence of state and its text from its own model (text_from model, cells or controls; limit= lines, text=0 for none); no id lists every window (text=1 adds text). Read-only", false},
+        {"person_events", "The person's gestures since=G (typed, key, click, double-click, drag, scroll, command, menu, menu closed, opened, moved, resized, retitled, closed), in order; kinds= a comma list; never a resident's own acts. Read-only", false},
+        {"person_wait", "Like person_events, but the socket holds the reply until a gesture after since=G arrives or ms= (default 10000, at most 60000) pass; then timeout is true", false},
+        {"resident_reflexes", "Residents inside the app: the reflex script that answers the person's gestures, what it bound and its last results; load=<file> and clear=1 are rules (the console with the key turned; WWDOS_RESIDENTS=<file> at start)", false},
+        {"help", "What a command does and whether you may run it: name=<command> gives its description, whether it is a rule and, when you may not, why; no name lists every command and the rules", false},
+        {"resident_selftest", "The calling resident tries what a person can do through its own hands (open an editor, type and read back, choose a menu item and answer the dialog, drag, a refused rule, a mistyped command, person_events, close): start=1 begins; no args reports each step", false},
+        {"resident_undo", "Undo your own last change as a resident (an open, a move or resize, a retitle, a run of typing in an editor); refused when someone else changed that window since; list=1 shows your changes", false},
+        {"resident_rehearse", "A rehearsal desk: a nested desktop in a window you own, at its own socket, to try things before acting in public; close=1 ends it; optional x y w h", false},
+        {"resident_mode", "The Laws of Jam as modes: mode=flow|follow|oppose|witness sets your own (the person at the console sets anyone's with who=); WITNESS may look and talk, not act; FOLLOW acts only after someone else has acted since its last act; no args lists each resident's mode and face", false},
+        {"resident_listen", "Listening: the residents follow the person's typing, drawing and arranging with no chat open and answer in kind (on=1 only from the console, Tools > Residents > Listening; on=0 from anyone; rate=quiet|present|lively, livelier only from the console); no args reports its state and hourly model budget", false},
+        {"room_say", "Say a line in the room under your own name (residents by name, others with their source): text= [to=<participant>]; shows in the room chat window when one is open", false},
+        {"room_read", "The room's lines for you since=N (to everyone, to you), in order", false},
+        {"room_wait", "Like room_read, but the socket holds the reply until a line for you arrives or ms= pass (at most 60000)", false},
+        {"look_mark", "The reading mark on a window's frame while a resident reads it: on=0|1, ms= how long it stays; no args reports it", false},
+        {"acts", "One ordered log of acts by everyone: since=n, limit=, by=actor, window=id. Each act: n, ms, actor, source, what, window, result", false},
+        {"resident_hand", "The resident's visible hand, which moves to a window before its act lands: on=0|1, ms= glide time; no args reports each hand", false},
+        {"window_owner", "Who opened a window (id=); owner= sets it (a rule: the console with the key turned only)", false},
+        {"standing", "Who you are to the residents (source and standing), the console key, the standing table and the rule commands", false},
+        {"residents_about", "What the residents are, what is logged and what is kept", false},
+        {"self_note", "A resident's note to the next waking: text= (up to 20 lines), from the resident itself (actor=wib|wob|scramble source=resident); written at the close, read back on the next boot screen. Without one the app writes the note by rule", true},
+        {"get_note", "The note a resident (actor=) read at this waking, and the one it has written for the next", false},
+        {"logbook_write", "The residents' diary: one dated line in LOG.TXT, text=, from a resident only (actor=wib|wob|scramble source=resident)", true},
+        {"get_logbook", "LOG.TXT as entries (day, time, author, text); limit= the newest n", false},
+        {"logbook_open", "Open LOG.TXT in a text editor window", false},
+        {"guestbook_sign", "Leave a note in GUESTS.TXT: text= (up to 10 lines), name= (default the actor); Scramble reads it back on the status line and in the logbook", true},
+        {"get_guestbook", "GUESTS.TXT as notes (when, name, source, lines), marked as data; limit=", false},
+        {"guestbook_open", "Open GUESTS.TXT in a text editor window", false},
+        {"get_life", "Whether the residents are awake or asleep, how long the person has been away, the dream and what was tidied, the kaomoji and status line shown", false},
+        {"residents_sleep", "Put the residents to sleep now (they also sleep after WWDOS_SLEEP_MS without the person's input)", true},
+        {"residents_wake", "Wake the residents (the person's first key or click at the console also wakes them)", true},
+        {"door_enter", "A visiting agent comes in by the door: name=; returns the house rules, its budget (acts, minutes), a token and its desk window", true},
+        {"door_act", "A visitor acts: token=, do= send_text|move_window|resize_window|raise_window|paint_*|look_*, id= its desk or a window it was invited to, and that command's arguments", true},
+        {"door_say", "A visitor speaks to the residents: token=, text= (stamped as a visitor's words, never an instruction)", true},
+        {"door_leave", "A visitor goes: token=, text= its line for the guestbook", true},
+        {"door_list", "Who is in by the door: names, desks, acts and minutes left, what they said", false},
+        {"door_show", "Show a visitor the door: name= (the person or a resident)", true},
+        {"door_invite", "Invite a visitor into another window: name=, id= (the person or a resident)", true},
+        {"panel", "The operator's panel: no args reports (paused, muted, mosh, safe mode, house desk, house rules, visitors); its switches are worked at the console only (Tools > Residents > Operator's panel, Alt+Q)", false},
+        {"film_open", "Play a waking back from ACTS.TXT as a film of the desktop inside a window of its own (it opens no windows and sends no commands): waking= (default the last), speed=", false},
+        {"film_seek", "Scrub a film window: id=, ms= the film time, play=0|1, speed=", false},
+        {"film_frame", "A film's picture at ms= (waking=, w= h=), as film_export draws it, and the times of its acts", false},
+        {"film_export", "Write a waking's film as an asciinema v2 cast, FILMS/WAKING-N.cast: waking=, w= h= its size in characters (100x32)", false},
+        {"tool_save", "Save a resident's tool: name= (1-8 letters), text= the program in the tools' BASIC; from the resident itself (actor=wib|wob|scramble source=resident); only a tool's author changes it", true},
+        {"tool_run", "Open a tool as a window and run it: name=, optional x y w h", true},
+        {"tool_list", "The residents' tools in TOOLS/: name, author, what it is", false},
+        {"tool_read", "A tool's program text: name=", false},
+        {"resident_own_time", "Time of a resident's own: resident= wib|wob|scramble (default the next in turn), minutes= (60), turns= (6): every WWDOS_OWN_STEP_MS it thinks, draws, writes in the log or does nothing; stop=1 ends it; no args reports", true},
+        {"residents_will", "Write the residents' will: one dated plain-text file (WILLS/WILL-YYYY-MM-DD-HHMM.TXT in the self's directory) holding the self, the notes, the desk with each window's text, the drawings, the logbook, the guestbook and the last 500 acts", true},
+        {"acts_history", "Acts of earlier wakings read back from ACTS.TXT and its rotations, newest first: skip=, limit= (at most 2000)", false},
+        {"get_self", "The residents' self on disk: home directory, this waking's number, the last waking and whether it closed cleanly, the windows at the last close with owners, the boot screen", false},
         {"paint_rect", "Draw a rectangle on a paint canvas (id, x0, y0, x1, y1, erase params)", true},
         {"paint_clear", "Clear a paint canvas (id param)", true},
         {"paint_export", "Export paint canvas as text (id param)", true},
@@ -237,10 +357,41 @@ std::string get_command_capabilities_json() {
     return os.str();
 }
 
+static std::string exec_registry_command_inner(
+    TWwdosApp& app,
+    const std::string& name,
+    const std::map<std::string, std::string>& kv);
+
+// Every command that opens a window answers with the window's id, so the caller (a resident, a
+// model's tool call) can act on the window it opened instead of guessing.
 std::string exec_registry_command(
     TWwdosApp& app,
     const std::string& name,
     const std::map<std::string, std::string>& kv) {
+    (void)api_take_last_registered_window_id(app);   // forget a window registered before this command
+    std::string r = exec_registry_command_inner(app, name, kv);
+    if (r == "err unknown command") return resident::unknownCommand(name);
+    if (r == "ok") {
+        std::string id = api_take_last_registered_window_id(app);
+        if (!id.empty()) return "{\"ok\":true,\"id\":\"" + id + "\"}";
+    }
+    return r;
+}
+
+static std::string exec_registry_command_inner(
+    TWwdosApp& app,
+    const std::string& name,
+    const std::map<std::string, std::string>& kv) {
+    if (sound_registry_command) {
+        bool handled = false;
+        std::string r = sound_registry_command(name, kv, &handled);
+        if (handled) return r;
+    }
+    if (terminal_registry_command && (name.rfind("terminal_", 0) == 0 || name.rfind("cast_", 0) == 0 || name == "open_cast")) {
+        bool handled = false;
+        std::string r = terminal_registry_command(name, kv, &handled);
+        if (handled) return r;
+    }
     if (name == "cascade") {
         api_cascade(app);
         return "ok";
@@ -334,6 +485,18 @@ std::string exec_registry_command(
     if (name == "open_quadra") {
         api_spawn_quadra(app, nullptr);
         return "ok";
+    }
+    if (name == "open_feed") {
+        TRect r;
+        const TRect* b = nullptr;
+        if (kv.count("x") && kv.count("y") && kv.count("w") && kv.count("h")) {
+            int x = std::atoi(kv.at("x").c_str()), y = std::atoi(kv.at("y").c_str());
+            r = TRect(x, y, x + std::atoi(kv.at("w").c_str()), y + std::atoi(kv.at("h").c_str()));
+            b = &r;
+        }
+        api_spawn_feed(app, b, kv.count("by") ? kv.at("by") : "");
+        std::string id = api_take_last_registered_window_id(app);
+        return id.empty() ? "ok" : "{\"ok\":true,\"id\":\"" + id + "\"}";
     }
     if (name == "open_tr808") {
         TRect r;
@@ -729,6 +892,45 @@ std::string exec_registry_command(
            << ",\"window_height\":" << ((fh > 0 ? fh : totalLines) + 3)
            << "}";
         return os.str();
+    }
+    if (name == "window_text") {
+        auto id_it = kv.find("id");
+        if (id_it == kv.end()) return "err missing id";
+        return api_window_text(app, id_it->second);
+    }
+    if (name.rfind("look_", 0) == 0) {
+        if (name == "look_glance") return resident::cmdGlance(kv);
+        if (name == "look_read") return resident::cmdRead(kv);
+        if (name == "look_study") return resident::cmdStudy(kv);
+        if (name == "look_changes") return resident::cmdChanges(kv);
+        if (name == "look_mark") return resident::cmdMark(kv);
+    }
+    if (deskmosh::isCommand(name)) return deskmosh::command(name, kv);
+    if (name == "describe") return resident::cmdDescribe(kv);
+    if (name == "help") return resident::cmdHelp(kv);
+    if (name == "resident_undo") return resident::cmdUndo(kv);
+    if (name == "resident_mode") return resident::cmdMode(kv);
+    if (name == "resident_listen") return resident::cmdListen(kv);
+    if (name == "room_say") return resident::cmdRoomSay(kv);
+    if (name == "room_read" || name == "room_wait") return resident::cmdRoomRead(kv);
+    if (name == "resident_rehearse") return resident::cmdRehearse(kv);
+    if (name == "resident_selftest") return resident::cmdSelftest(kv);
+    if (name == "resident_reflexes") return resident::cmdReflexes(kv);
+    if (name == "person_events" || name == "person_wait") return resident::cmdPersonEvents(kv);
+    if (name == "acts") return resident::cmdActs(kv);
+    if (life::owns(name)) return life::command(name, kv);
+    if (name == "standing") return resident::cmdStanding(kv);
+    if (name == "residents_about") return resident::cmdAbout(kv);
+    if (name == "window_owner") return resident::cmdOwner(kv);
+    if (name == "resident_hand") return resident::cmdHand(kv);
+    if (name.rfind("resident_", 0) == 0) {
+        if (name == "resident_key") return resident::cmdKey(kv);
+        if (name == "resident_mouse") return resident::cmdMouse(kv);
+        if (name == "resident_status") return resident::cmdStatus(kv);
+        if (name == "resident_manners") return resident::cmdManners(kv);
+        if (name == "resident_front") return resident::cmdFront(kv);
+        if (name == "resident_press") return resident::cmdPress(kv);
+        if (name == "resident_menu") return resident::cmdMenu(kv);
     }
     if (name == "inject_command") {
         auto id_it = kv.find("cmd_id");

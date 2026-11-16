@@ -66,9 +66,9 @@ TColorRGB TAnimatedHGradientView::interpolate(TColorRGB start, TColorRGB end, fl
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
     
-    int r = (int)(start.r + (end.r - start.r) * t);
-    int g = (int)(start.g + (end.g - start.g) * t);
-    int b = (int)(start.b + (end.b - start.b) * t);
+    int r = (int)(start.getRed() + (end.getRed() - start.getRed()) * t);
+    int g = (int)(start.getGreen() + (end.getGreen() - start.getGreen()) * t);
+    int b = (int)(start.getBlue() + (end.getBlue() - start.getBlue()) * t);
     
     return TColorRGB(r, g, b);
 }
@@ -103,7 +103,7 @@ void TAnimatedHGradientView::draw() {
             TColorRGB color = interpolate(startColor, endColor, t);
             TColorAttr attr(color, color);  // Same fore/back color for solid block
             
-            setCell(lineBuf[x], fillChar, attr);
+            lineBuf[x] = TScreenCell(fillChar, attr);
         }
         writeLine(0, y, W, 1, lineBuf.data());
     }
@@ -171,4 +171,8 @@ TWindow* createAnimatedGradientWindow(const TRect &bounds)
     auto *w = new TAnimatedGradientWindow(bounds);
     w->setup();
     return w;
+}
+
+std::string TAnimatedHGradientView::describeState() const {
+    return "animated horizontal colour gradient at phase " + std::to_string(phase) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
 }

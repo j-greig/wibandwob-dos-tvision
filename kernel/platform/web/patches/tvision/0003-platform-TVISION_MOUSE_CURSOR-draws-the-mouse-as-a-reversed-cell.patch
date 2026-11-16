@@ -1,0 +1,72 @@
+From fe5c4e034081bdd5a7dc19a9de9b21938091c011 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 15 Nov 2026 09:33:17 +0000
+Subject: [PATCH] platform: TVISION_MOUSE_CURSOR=1 draws the mouse as a
+ reversed cell
+
+Off by default (the variable unset): getEvent behaves as before. With it set, every mouse event moves the visible cursor to the mouse cell, and the terminal is asked for plain motion reports (1003) so the block follows the mouse between clicks. Used by the native terminal build of the film engine (wwdos-stage); it compiles into the browser build too, where the variable is never set.
+---
+ include/tvision/internal/platform.h |  3 ++-
+ source/platform/platform.cpp        | 15 +++++++++++++++
+ source/platform/termio.cpp          |  4 ++++
+ 3 files changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/include/tvision/internal/platform.h b/include/tvision/internal/platform.h
+index 4c2335f..b04f3c2 100644
+--- a/include/tvision/internal/platform.h
++++ b/include/tvision/internal/platform.h
+@@ -114,7 +114,8 @@ public:
+     void restoreConsole() noexcept
+         { console.lock([&] (auto *&c) { this->restoreConsole(c); }); }
+ 
+-    bool getEvent(TEvent &ev) noexcept { return waiter.getEvent(ev); }
++    // TVISION_MOUSE_CURSOR=1: draw the mouse as a reversed cell (the DOS block), as the Linux console path does.
++    bool getEvent(TEvent &ev) noexcept;
+     void waitForEvents(int ms) noexcept;
+     void interruptEventWait() noexcept { waiter.interruptEventWait(); }
+ 
+diff --git a/source/platform/platform.cpp b/source/platform/platform.cpp
+index de1abd2..7b4f344 100644
+--- a/source/platform/platform.cpp
++++ b/source/platform/platform.cpp
+@@ -158,3 +158,18 @@ void Platform::signalCallback(bool enter) noexcept
+ }
+ 
+ } // namespace tvision
++
++namespace tvision
++{
++bool Platform::getEvent(TEvent &ev) noexcept
++{
++    static const bool mouseCursor = getEnv<int>("TVISION_MOUSE_CURSOR", 0) != 0;
++    bool got = waiter.getEvent(ev);
++    if (got && mouseCursor && (ev.what & evMouse))
++    {
++        displayBuf.setCursorPosition(ev.mouse.where.x, ev.mouse.where.y);
++        displayBuf.setCursorVisibility(true);
++    }
++    return got;
++}
++} // namespace tvision
+diff --git a/source/platform/termio.cpp b/source/platform/termio.cpp
+index 81f9e13..ad5b937 100644
+--- a/source/platform/termio.cpp
++++ b/source/platform/termio.cpp
+@@ -290,10 +290,14 @@ void TermIO::mouseOn(ConsoleCtl &con) noexcept
+                       "\x1B[?1006h" // Enable SGR extended mouse reporting.
+                     ;
+     con.write(seq.data(), seq.size());
++    if (getEnv<int>("TVISION_MOUSE_CURSOR", 0))  // the block cursor follows plain moves too
++        con.write("\x1B[?1003h", 8);
+ }
+ 
+ void TermIO::mouseOff(ConsoleCtl &con) noexcept
+ {
++    if (getEnv<int>("TVISION_MOUSE_CURSOR", 0))
++        con.write("\x1B[?1003l", 8);
+     TStringView seq = "\x1B[?1006l" // Disable SGR extended mouse reporting.
+                       "\x1B[?1002l" // Disable mouse drag reporting.
+                       "\x1B[?1000l" // Disable mouse reporting.
+-- 
+2.43.0
+

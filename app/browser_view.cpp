@@ -91,9 +91,9 @@ static void appendStyled(
     TColorRGB fg = state.fg;
     if (state.bold) {
         fg = TColorRGB(
-            (uint8_t) std::min(255, (int) fg.r + 32),
-            (uint8_t) std::min(255, (int) fg.g + 32),
-            (uint8_t) std::min(255, (int) fg.b + 32)
+            (uint8_t) std::min(255, (int) fg.getRed() + 32),
+            (uint8_t) std::min(255, (int) fg.getGreen() + 32),
+            (uint8_t) std::min(255, (int) fg.getBlue() + 32)
         );
     }
     TColorAttr attr(fg, state.bg);
@@ -1035,4 +1035,17 @@ void TBrowserWindow::refreshCopyPayload(const std::string& rawJson) {
 // Factory function
 TWindow* createBrowserWindow(const TRect& bounds) {
     return new TBrowserWindow(bounds);
+}
+
+std::string TBrowserWindow::describeState() const {
+    static const char* states[] = {"idle", "fetching", "showing", "failed"};
+    std::string s = std::string("browser ") + states[fetchState];
+    if (!currentUrl.empty()) s += " " + currentUrl;
+    if (!pageTitle.empty()) s += " (\"" + ww::clipText(pageTitle, 40) + "\")";
+    if (fetchState == Error && !errorMessage.empty()) s += ": " + ww::clipText(errorMessage, 60);
+    return s;
+}
+bool TBrowserWindow::describeText(std::vector<std::string>& out) const {
+    out = contentView ? ww::splitText(contentView->getPlainText()) : std::vector<std::string>();
+    return true;
 }

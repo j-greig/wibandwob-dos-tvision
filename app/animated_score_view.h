@@ -23,10 +23,12 @@
 #define Uses_TDrawBuffer
 #define Uses_TEvent
 #define Uses_TColorAttr
+#include "describe.h"
 #include <tvision/tv.h>
 
-class TAnimatedScoreView : public TView {
+class TAnimatedScoreView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TAnimatedScoreView(const TRect &bounds, unsigned periodMs = 120);
     virtual ~TAnimatedScoreView();
 

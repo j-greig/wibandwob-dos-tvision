@@ -2,7 +2,12 @@
 
 #include <cstdlib>
 #include <cstring>
+#ifdef __EMSCRIPTEN__
+#include <cstdint>
+static int _NSGetExecutablePath(char *, uint32_t *) { return -1; } // no executable path in the browser
+#else
 #include <mach-o/dyld.h>
+#endif
 #include <ctime>
 #include <unistd.h>
 #include <fcntl.h>
@@ -377,8 +382,8 @@ public:
         eventMask |= evMouseWheel;
     }
     virtual void handleEvent(TEvent& ev) override {
-        // Mouse wheel scroll
-        if (ev.what == evMouseWheel) {
+        // Mouse wheel scroll (vertical only: Turbo Vision also reports mwLeft/mwRight)
+        if (ev.what == evMouseWheel && (ev.mouse.wheel == mwUp || ev.mouse.wheel == mwDown)) {
             int delta = (ev.mouse.wheel == mwUp) ? -3 : 3;
             focusItem(std::max(0, std::min((int)range - 1, focused + delta)));
             message(owner, evBroadcast, cmStampFocus, this);
@@ -1444,4 +1449,16 @@ TWindow* createGenerativeLabWindow(const TRect& bounds) {
     auto* w = new TGenerativeLabWindow(bounds);
     w->setup();
     return w;
+}
+
+std::string TGenerativeLabView::describeState() const {
+    std::string s = "generative lab, preset " + (presetIdx_ >= 10 ? std::string("random") : std::to_string(presetIdx_)) +
+                    ", seed " + std::to_string(seed_) + ", " + std::to_string(stamps_.size()) + " primers stamped, canvas mode " +
+                    ww::onOff(canvasMode_) + ", " + std::to_string(lines_.size()) + " lines drawn";
+    if (!statusLine_.empty()) s += "; status: " + ww::clipText(statusLine_, 60);
+    return s;
+}
+bool TGenerativeLabView::describeText(std::vector<std::string>& out) const {
+    out = lines_;
+    return true;
 }

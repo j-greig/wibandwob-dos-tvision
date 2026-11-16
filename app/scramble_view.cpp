@@ -273,8 +273,8 @@ void TScrambleView::draw()
         bgAttr = bg->getColor(0x01);
         bgChar = bg->pattern;
     } else {
-        TColorDesired defaultFg = {};
-        TColorDesired defaultBg = {};
+        TColor defaultFg = {};
+        TColor defaultBg = {};
         bgAttr = TColorAttr(defaultFg, defaultBg);
     }
 
@@ -934,4 +934,21 @@ TFrame* TScrambleWindow::initFrame(TRect r)
 TWindow* createScrambleWindow(const TRect& bounds, ScrambleDisplayState state)
 {
     return new TScrambleWindow(bounds, state);
+}
+
+std::string TScrambleWindow::describeState() const {
+    static const char* poses[] = {"sitting", "sleeping", "curious"};
+    static const char* sizes[] = {"hidden", "small", "tall"};
+    int pose = scrambleView ? (int)scrambleView->getPose() : 0;
+    size_t n = messageView ? messageView->getMessages().size() : 0;
+    std::string s = std::string("Scramble the cat, ") + poses[(pose >= 0 && pose < 3) ? pose : 0] + ", window " +
+                    sizes[(int)displayState] + ", " + std::to_string(n) + " messages";
+    if (n) s += "; the last from " + messageView->getMessages().back().sender;
+    return s;
+}
+bool TScrambleWindow::describeText(std::vector<std::string>& out) const {
+    out.clear();
+    if (!messageView) return false;
+    for (const auto& m : messageView->getMessages()) out.push_back(m.sender + ": " + m.text);
+    return true;
 }

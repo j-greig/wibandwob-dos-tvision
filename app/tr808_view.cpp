@@ -7,6 +7,10 @@
 #include <tvision/tv.h>
 
 #include "tr808_audio.h"
+#include "sound/ears.h"
+#include "sound/sound_host.h"
+#include "sound/stream.h"
+#include "sound/midi.h"
 
 #include <algorithm>
 #include <chrono>
@@ -24,10 +28,8 @@ using namespace tr808;
 static Tr808EventSink gSink = nullptr;
 void tr808SetEventSink(Tr808EventSink sink) { gSink = sink; }
 
-static double nowMs() {
-    using namespace std::chrono;
-    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
-}
+// The machine's one clock (the sound stream's samples when it runs), shared with the synth and scores.
+static double nowMs() { return sound::clockMs(); }
 
 static long long epochMs() {
     using namespace std::chrono;
@@ -75,7 +77,7 @@ TTR808View::Pal TTR808View::palette() const {
     TColorAttr themed;
     if (ww::contentAttr(this, 15, themed)) {
         // EGA theme or an explicit window colour: EGA colours on the window background.
-        const TColorDesired bg = ::getBack(themed);
+        const TColor bg = themed.getBackground();
         auto on = [&](int idx) { return TColorAttr(ww::egaRGB(idx), bg); };
         p.base = themed;
         p.dim = on(7);
@@ -149,12 +151,54 @@ void TTR808View::fire(const StepEvent& ev) {
         levels << "\"" << voiceDef(v).id << "\":" << lvl;
         double vol = 0.9 * (ev.accent ? 1.0 + eng_.accentLevel() / 240.0 : 1.0)
                    * (lvl / 80.0) * (eng_.master() / 100.0);
-        if (vol > 0.0) playVoice(voiceDef(v).id, vol);
+        if (vol > 0.0 && audioEnabled()) {
+            // On the stream: the hit lands on the sample its step is due (plus the lead), never late
+            // by a timer's wake-up. Without a stream: afplay, as before.
+            if (sound::streamRunning()) sound::mixer().scheduleSample(sound::drumSample(voiceDef(v).id), vol * 0.6, sound::sampleForClock(ev.atMs));
+            else playVoice(voiceDef(v).id, vol);
+        }
+        if (vol > 0.0) {
+            // The ears hear the hit as the engine played it, sound on or off.
+            sound::Heard h;
+            h.startMs = ev.atMs + sound::leadMs();
+            h.endMs = h.startMs + sound::drumRingMs(voiceDef(v).id);
+            h.source = "tr808";
+            TWindow* win = dynamic_cast<TWindow*>(owner);
+            h.window = (win && sound::host().idOf) ? sound::host().idOf(win) : "";
+            h.voice = voiceDef(v).id;
+            h.step = ev.step;
+            h.level = vol;
+            h.accent = ev.accent;
+            h.tempo = eng_.tempo();
+            h.who = startedBy_;
+            sound::ears().hear(h);
+        }
     }
-    // Only steps with hits (a voice or an accent) are published.
-    if (ev.voices.empty() && !ev.accent) return;
+    // MIDI out: the step's clock ticks (24 a beat) and its hits as General MIDI drums on channel 10.
+    if (sound::midi::clockOut()) {
+        const double tick = 60000.0 / eng_.tempo() / 24.0;
+        const int ticks = std::max(1, (int)std::lround(eng_.baseStepMs() / tick));
+        for (int k = 0; k < ticks; ++k) sound::midi::send({0xF8}, ev.atMs + k * tick, "tr808");
+        midiLastMs_ = ev.atMs + ticks * tick;   // stop goes out after the ticks already sent
+    }
+    for (int v : ev.voices) {
+        const int lvl = eng_.getParam(v, "level");
+        const int vel = std::max(1, std::min(127, (int)std::lround(lvl * 1.27 * (ev.accent ? 1.0 : 0.8))));
+        const uint8_t key = (uint8_t)sound::midi::gmDrum(v);
+        sound::midi::send({0x99, key, (uint8_t)vel}, ev.atMs, "tr808");
+        sound::midi::send({0x89, key, 0}, ev.atMs + 50, "tr808");
+    }
+    // Steps with hits are published as tr808_step. A silent step goes out as tr808_tick for
+    // the app alone (the desk mosh keeps time on it; the sink does not pass it to subscribers).
+    const double heardMs = ev.atMs + sound::leadMs();   // when the step is heard, on the sound clock
+    if (ev.voices.empty() && !ev.accent) {
+        std::ostringstream t;
+        t << "\"step\":" << ev.step << ",\"tempo\":" << eng_.tempo() << ",\"clock_ms\":" << heardMs;
+        publish("tr808_tick", t.str());
+        return;
+    }
     std::ostringstream o;
-    o << "\"step\":" << ev.step << ",\"voices\":[" << voices.str() << "]"
+    o << "\"step\":" << ev.step << ",\"clock_ms\":" << heardMs << ",\"voices\":[" << voices.str() << "]"
       << ",\"levels\":{" << levels.str() << "}"
       << ",\"accent\":" << (ev.accent ? "true" : "false")
       << ",\"accent_level\":" << eng_.accentLevel() << ",\"master\":" << eng_.master()
@@ -180,9 +224,23 @@ void TTR808View::onTimer() {
     drawView();
 }
 
-void TTR808View::play() {
+// A started drum machine is heard: an empty pattern (no step on, no accent) takes this preset first.
+static const char* kStartPreset = "classic-house";
+
+void TTR808View::play(double atMs) {
     if (eng_.playing()) return;
-    StepEvent ev = eng_.start(nowMs());
+    startedBy_ = sound::currentActor();
+    bool empty = true;
+    for (int v = 0; v < kVoices && empty; ++v) if (eng_.countSteps(v)) empty = false;
+    for (int s = 0; s < kSteps && empty; ++s) if (eng_.pattern().accent[s]) empty = false;
+    if (empty) {
+        eng_.loadPreset(kStartPreset);
+        startPreset_ = kStartPreset;
+    }
+    // atMs: start on that time of the clock (a score's bar line), if it has not gone by more than a step.
+    const double now = nowMs();
+    StepEvent ev = eng_.start(atMs >= 0 && atMs <= now && now - atMs < eng_.baseStepMs() ? atMs : now);
+    if (sound::midi::clockOut()) sound::midi::send({0xFA}, ev.atMs, "tr808");
     publish("tr808_transport", transportBody("play"));
     fire(ev);
     schedule();
@@ -192,6 +250,7 @@ void TTR808View::play() {
 void TTR808View::stop() {
     if (!eng_.playing()) return;
     eng_.stop();
+    if (sound::midi::clockOut()) sound::midi::send({0xFC}, std::max(nowMs(), midiLastMs_), "tr808");
     schedule();
     publish("tr808_transport", transportBody("stop"));
     drawView();
@@ -497,6 +556,7 @@ std::string TTR808View::stateJson() const {
       << ",\"last_step\":" << eng_.pattern().lastStep
       << ",\"selected\":\"" << (eng_.selected() == kAccentSel ? "accent" : voiceDef(eng_.selected()).id) << "\""
       << ",\"cursor\":" << cursor_
+      << ",\"start_preset\":\"" << startPreset_ << "\""
       << ",\"audio\":" << (audioEnabled() ? "true" : "false")
       << ",\"audio_available\":" << (audioAvailable() ? "true" : "false")
       << ",\"presets\":[";
@@ -541,7 +601,7 @@ std::string TTR808View::apiAction(const std::string& action,
     if (action.empty() || action == "state" || action == "get_state" || action == "open") {
         // open: the caller already has (or just made) the window
     } else if (action == "play" || action == "start") {
-        play();
+        play(has(kv, "at_ms") ? std::atof(get(kv, "at_ms").c_str()) : -1.0);
     } else if (action == "stop") {
         stop();
     } else if (action == "toggle") {
@@ -695,4 +755,10 @@ TWindow* createTR808Window(const TRect& bounds, const std::map<std::string, std:
     if (has(kv, "preset")) v->engine().loadPreset(get(kv, "preset"));
     if (has(kv, "tempo")) v->engine().setTempo(toInt(get(kv, "tempo"), 120), 0);
     return w;
+}
+
+std::string TTR808View::describeState() const {
+    return std::string("TR-808 drum machine, ") + (eng_.playing() ? "playing at step " + std::to_string(eng_.step() + 1) : std::string("stopped")) +
+           ", tempo " + std::to_string(eng_.tempo()) + " BPM, preset " + std::to_string(presetIdx_) + ", cursor on step " +
+           std::to_string(cursor_ + 1);
 }

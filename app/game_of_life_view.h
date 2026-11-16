@@ -10,6 +10,7 @@
 #define Uses_TView
 #define Uses_TDrawBuffer
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 #include <vector>
 #include <unordered_set>
@@ -38,8 +39,9 @@ struct CellCoordHash {
 // Conway's Game of Life cellular automaton view (v2 with sparse grid optimization)
 // Implements classic rules: birth (3 neighbors), survival (2-3 neighbors), death (otherwise)
 // Performance: O(living_cells) instead of O(grid_width * grid_height)
-class TGameOfLifeView : public TView {
+class TGameOfLifeView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TGameOfLifeView(const TRect &bounds, unsigned periodMs = 400);
     virtual ~TGameOfLifeView();
 

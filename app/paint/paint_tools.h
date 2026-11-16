@@ -38,7 +38,7 @@ public:
                                (ctx->tool == PaintContext::Line   && i==2) ||
                                (ctx->tool == PaintContext::Rect   && i==3) ||
                                (ctx->tool == PaintContext::Text   && i==4));
-            TColorAttr col = sel ? reverseAttribute(cFrame) : cFrame;
+            TColorAttr col = sel ? cFrame.reversed() : cFrame;
             b.moveStr(1, items[i], col);
             writeLine(0, i+1, size.x, 1, b);
         }

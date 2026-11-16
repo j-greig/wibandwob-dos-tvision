@@ -86,7 +86,7 @@ void TAnimatedBlocksView::draw() {
             int shifted = moveRight ? (x + phase) : (x - phase);
             int idx = shifted % 16;
             if (idx < 0) idx += 16;
-            setCell(lineBuf[x], '\xDB', kAnsi16[idx]);
+            lineBuf[x] = TScreenCell('\xDB', kAnsi16[idx]);
         }
         writeLine(0, y, W, 1, lineBuf.data());
     }
@@ -159,4 +159,8 @@ TWindow* createAnimatedBlocksWindow(const TRect &bounds, unsigned periodMs)
     auto *w = new TAnimatedBlocksWindow(bounds);
     w->setup(periodMs);
     return w;
+}
+
+std::string TAnimatedBlocksView::describeState() const {
+    return "zigzag blocks animation at phase " + std::to_string(phase) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
 }

@@ -18,13 +18,18 @@
 #define Uses_TScrollBar
 #define Uses_TScroller
 #define Uses_TGroup
+#include "describe.h"
 #include <tvision/tv.h>
 
 #include <atomic>
 #include <string>
+#include <deque>
+#include <chrono>
 #include <vector>
 #include <functional>
 #include <chrono>
+
+#include "resident_senses.h"
 
 // Forward declarations
 class WibWobEngine;
@@ -53,6 +58,8 @@ public:
     // Message operations
     void addMessage(const std::string& sender, const std::string& content, bool is_error = false);
     void clear();
+    // Take out the first message from sender (all of them when all is true); returns how many went.
+    int removeFrom(const std::string& sender, bool all = false);
     void scrollToBottom();
     void scrollToTop();
     void scrollLineUp();
@@ -146,8 +153,10 @@ private:
 /*  TWibWobWindow - Coordinates message + input views      */
 /*  Owns the engine and logging                            */
 /*---------------------------------------------------------*/
-class TWibWobWindow : public TWindow {
+class TWibWobWindow : public TWindow, public ww::Describable {
 public:
+    std::string describeState() const override;
+    bool describeText(std::vector<std::string>& out) const override;
     TWibWobWindow(const TRect& bounds, const std::string& title);
     virtual ~TWibWobWindow();
 
@@ -160,7 +169,7 @@ public:
     TWibWobInputView* getInputView() { return inputView; }
 
     // API: queue a user message to be processed when the engine is idle
-    void injectUserMessage(const std::string& text) { pendingAsk_ = text; }
+    void injectUserMessage(const std::string& text) { pendingAsk_ = text; pendingAskWho_ = resident::currentWho(); }
 
 private:
     static TFrame* initFrame(TRect r);
@@ -181,7 +190,20 @@ private:
 
     // Logging
     std::string sessionId;
-    std::string pendingAsk_;  // queued self-prompt, drained when engine idle
+    std::string pendingAsk_;  // unused: asks join queued_ (kept for the describer's wording)
+    resident::Who pendingAskWho_{"app", resident::Source::App};
+    // Lines typed or asked while a reply streams: shown as "waiting", sent in order when it ends;
+    // Esc clears them. Each keeps its author (who is speaking) and whether it came from wibwob_ask.
+    struct Queued { std::string text; resident::Who who; bool ask; };
+    std::deque<Queued> queued_;
+    bool busy() const;
+    void drainQueue();
+    void showQueueStatus();
+    // A stand-in reply for tests (WWDOS_CHAT_STANDIN_MS=<ms>): the chat is busy for that long, then
+    // answers "stand-in reply to: <text>", with no model.
+    bool standinActive_ = false;
+    std::chrono::steady_clock::time_point standinUntil_{};
+    std::string standinText_;
     bool speakNextUserMessage_ = false;  // TTS the self-prompted user message
     std::string logFilePath;
 

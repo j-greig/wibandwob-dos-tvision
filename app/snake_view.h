@@ -10,6 +10,7 @@
 #define Uses_TView
 #define Uses_TDrawBuffer
 #define Uses_TRect
+#include "describe.h"
 #include <tvision/tv.h>
 #include <deque>
 #include <vector>
@@ -23,8 +24,9 @@ struct Pos {
     bool operator!=(const Pos& o) const { return !(*this == o); }
 };
 
-class TSnakeView : public TView {
+class TSnakeView : public TView, public ww::Describable {
 public:
+    std::string describeState() const override;
     explicit TSnakeView(const TRect &bounds, unsigned periodMs = 120);
     virtual ~TSnakeView();
 

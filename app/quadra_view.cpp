@@ -311,7 +311,7 @@ void TQuadraView::draw() {
     for (int screenY = 0; screenY < H; ++screenY) {
         // Clear line
         for (int sx = 0; sx < W; ++sx)
-            setCell(lineBuf[sx], ' ', TColorAttr(TColorRGB(0x10, 0x10, 0x10), TColorRGB(0x10, 0x10, 0x10)));
+            lineBuf[sx] = TScreenCell(' ', TColorAttr(TColorRGB(0x10, 0x10, 0x10), TColorRGB(0x10, 0x10, 0x10)));
 
         int boardY = screenY - offY - 1; // -1 for top border
 
@@ -319,15 +319,15 @@ void TQuadraView::draw() {
         if (screenY == offY) {
             // Top border
             for (int bx = 0; bx < boardPixW && offX + bx < W; ++bx)
-                setCell(lineBuf[offX + bx], (bx == 0 || bx == boardPixW - 1) ? '+' : '-', BORDER_ATTR);
+                lineBuf[offX + bx] = TScreenCell((bx == 0 || bx == boardPixW - 1) ? '+' : '-', BORDER_ATTR);
         } else if (screenY == offY + boardPixH - 1) {
             // Bottom border
             for (int bx = 0; bx < boardPixW && offX + bx < W; ++bx)
-                setCell(lineBuf[offX + bx], (bx == 0 || bx == boardPixW - 1) ? '+' : '-', BORDER_ATTR);
+                lineBuf[offX + bx] = TScreenCell((bx == 0 || bx == boardPixW - 1) ? '+' : '-', BORDER_ATTR);
         } else if (boardY >= 0 && boardY < BOARD_H) {
             // Left border
             if (offX < W)
-                setCell(lineBuf[offX], '|', BORDER_ATTR);
+                lineBuf[offX] = TScreenCell('|', BORDER_ATTR);
 
             // Board cells
             for (int bx = 0; bx < BOARD_W; ++bx) {
@@ -344,8 +344,8 @@ void TQuadraView::draw() {
                     ch1 = ']';
                 }
 
-                setCell(lineBuf[sx], ch0, attr);
-                setCell(lineBuf[sx + 1], ch1, attr);
+                lineBuf[sx] = TScreenCell(ch0, attr);
+                lineBuf[sx + 1] = TScreenCell(ch1, attr);
             }
 
             // Draw ghost piece
@@ -365,8 +365,8 @@ void TQuadraView::draw() {
                                     isCurrentCell = true;
                             }
                             if (!isCurrentCell) {
-                                setCell(lineBuf[sx], '[', GHOST_ATTR);
-                                setCell(lineBuf[sx + 1], ']', GHOST_ATTR);
+                                lineBuf[sx] = TScreenCell('[', GHOST_ATTR);
+                                lineBuf[sx + 1] = TScreenCell(']', GHOST_ATTR);
                             }
                         }
                     }
@@ -382,8 +382,8 @@ void TQuadraView::draw() {
                         int sx = offX + 1 + curCells[i][0] * CELL_W;
                         if (sx + 1 < W) {
                             TColorAttr attr = PIECE_COLORS[(int)current.type];
-                            setCell(lineBuf[sx], '[', attr);
-                            setCell(lineBuf[sx + 1], ']', attr);
+                            lineBuf[sx] = TScreenCell('[', attr);
+                            lineBuf[sx + 1] = TScreenCell(']', attr);
                         }
                     }
                 }
@@ -392,7 +392,7 @@ void TQuadraView::draw() {
             // Right border
             int rx = offX + boardPixW - 1;
             if (rx < W)
-                setCell(lineBuf[rx], '|', BORDER_ATTR);
+                lineBuf[rx] = TScreenCell('|', BORDER_ATTR);
         }
 
         // HUD area (right of board)
@@ -402,26 +402,26 @@ void TQuadraView::draw() {
                 // Title
                 const char* title = "Q U A D R A";
                 for (int i = 0; title[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], title[i], TITLE_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(title[i], TITLE_ATTR);
             } else if (screenY == offY + 3) {
                 char buf[32];
                 snprintf(buf, sizeof(buf), "Score: %d", score);
                 for (int i = 0; buf[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], buf[i], HUD_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(buf[i], HUD_ATTR);
             } else if (screenY == offY + 4) {
                 char buf[32];
                 snprintf(buf, sizeof(buf), "Lines: %d", lines);
                 for (int i = 0; buf[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], buf[i], HUD_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(buf[i], HUD_ATTR);
             } else if (screenY == offY + 5) {
                 char buf[32];
                 snprintf(buf, sizeof(buf), "Level: %d", level);
                 for (int i = 0; buf[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], buf[i], HUD_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(buf[i], HUD_ATTR);
             } else if (screenY == offY + 7) {
                 const char* label = "Next:";
                 for (int i = 0; label[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], label[i], HUD_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(label[i], HUD_ATTR);
             } else if (screenY >= offY + 8 && screenY <= offY + 11) {
                 // Draw next piece preview
                 int py = screenY - (offY + 8);
@@ -432,8 +432,8 @@ void TQuadraView::draw() {
                         int px = SHAPES[t][0][i][0];
                         int sx = hudX + px * CELL_W;
                         if (sx + 1 < W) {
-                            setCell(lineBuf[sx], '[', attr);
-                            setCell(lineBuf[sx + 1], ']', attr);
+                            lineBuf[sx] = TScreenCell('[', attr);
+                            lineBuf[sx + 1] = TScreenCell(']', attr);
                         }
                     }
                 }
@@ -441,15 +441,15 @@ void TQuadraView::draw() {
                 char buf[32];
                 snprintf(buf, sizeof(buf), "Chain x%d!", chainCount);
                 for (int i = 0; buf[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], buf[i], TITLE_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(buf[i], TITLE_ATTR);
             } else if (screenY == offY + 15) {
                 const char* help = "Arrows/ZX/Space";
                 for (int i = 0; help[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], help[i], BORDER_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(help[i], BORDER_ATTR);
             } else if (screenY == offY + 16) {
                 const char* help = "P=Pause R=Reset";
                 for (int i = 0; help[i] && hudX + i < W; ++i)
-                    setCell(lineBuf[hudX + i], help[i], BORDER_ATTR);
+                    lineBuf[hudX + i] = TScreenCell(help[i], BORDER_ATTR);
             }
         }
 
@@ -461,13 +461,13 @@ void TQuadraView::draw() {
                 int msgX = offX + (boardPixW - 11) / 2;
                 TColorAttr goAttr = TColorAttr(TColorRGB(0xFF, 0x00, 0x00), TColorRGB(0xFF, 0xFF, 0xFF));
                 for (int i = 0; msg[i] && msgX + i < W; ++i)
-                    setCell(lineBuf[msgX + i], msg[i], goAttr);
+                    lineBuf[msgX + i] = TScreenCell(msg[i], goAttr);
             } else if (screenY == midY + 1) {
                 const char* msg = " Press R ";
                 int msgX = offX + (boardPixW - 9) / 2;
                 TColorAttr goAttr = TColorAttr(TColorRGB(0xFF, 0x00, 0x00), TColorRGB(0xFF, 0xFF, 0xFF));
                 for (int i = 0; msg[i] && msgX + i < W; ++i)
-                    setCell(lineBuf[msgX + i], msg[i], goAttr);
+                    lineBuf[msgX + i] = TScreenCell(msg[i], goAttr);
             }
         }
 
@@ -478,7 +478,7 @@ void TQuadraView::draw() {
                 const char* msg = " PAUSED ";
                 int msgX = offX + (boardPixW - 8) / 2;
                 for (int i = 0; msg[i] && msgX + i < W; ++i)
-                    setCell(lineBuf[msgX + i], msg[i], TITLE_ATTR);
+                    lineBuf[msgX + i] = TScreenCell(msg[i], TITLE_ATTR);
             }
         }
 
@@ -594,4 +594,9 @@ TWindow* createQuadraWindow(const TRect &bounds) {
     auto *w = new TQuadraWindow(bounds);
     w->setup();
     return w;
+}
+
+std::string TQuadraView::describeState() const {
+    return std::string("Quadra falling-block game, ") + (gameOver ? "game over" : paused ? "paused" : "playing") + ": score " +
+           std::to_string(score) + ", " + std::to_string(lines) + " lines, level " + std::to_string(level);
 }

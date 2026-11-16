@@ -46,7 +46,7 @@ TGenerativeOrbitView::TGenerativeOrbitView(const TRect &bounds, unsigned periodM
     : TView(bounds), periodMs(periodMs)
 {
     options |= ofSelectable;
-    growMode = gfGrowAll;
+    growMode = gfGrowHiX | gfGrowHiY;
     eventMask |= evBroadcast | evKeyboard;
 }
 
@@ -94,7 +94,7 @@ void TGenerativeOrbitView::draw()
             TColorRGB fg(to8(c.r), to8(c.g), to8(c.b));
             float bgk = 0.06f + 0.18f*(u*u+v*v);
             TColorRGB bg(to8(bgk), to8(bgk*0.95f), to8(bgk*0.9f));
-            ::setCell(row[(size_t)x], ch, TColorAttr(fg,bg));
+            row[(size_t)x] = TScreenCell(ch, TColorAttr(fg,bg));
         }
         writeLine(0,y,W,1,row.data());
     }
@@ -135,3 +135,6 @@ private: static TFrame* initFrame(TRect r){ return new TNoTitleFrame(r);} };
 
 TWindow* createGenerativeOrbitWindow(const TRect &bounds){ auto *w=new TGenerativeOrbitWindow(bounds); w->setup(50); return w; }
 
+std::string TGenerativeOrbitView::describeState() const {
+    return "orbit field, palette " + std::to_string(paletteIndex) + ", frame " + std::to_string(frame) + ", " + (timerId ? "running" : "stopped") + std::string(" every ") + std::to_string(periodMs) + " ms";
+}

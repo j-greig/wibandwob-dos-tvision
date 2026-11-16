@@ -1,0 +1,45 @@
+# The stage commands: one table that the engine's lists, the on-chain compiler's COMMANDS and the docs are checked
+# against (docs/stage-driver.md § Command table). The dispatch in stage.cpp is still written by hand.
+#
+# One command a line:  NAME  KIND  MIN  WIN  TEXT  LIVE  | what it does
+#   KIND  run: a timed line (@T NAME ...); head: a header line of the stage file (no time)
+#   MIN   the fewest words after NAME, before any |text
+#   WIN   y: the first word names a window that must be open (stage.cpp needWin[])
+#   TEXT  y: the command takes |text after its words
+#   LIVE  y: window.wwdosStage.run() accepts it (stage.cpp checkLive known[]); n: it refuses it (notLive[])
+#
+# name     kind min win text live | doc
+clock      head 1   n   n    n    | ticks per second (default 8)
+size       head 2   n   n    n    | the desktop the stage was laid out for, W H
+open       run  5   n   y    y    | opens a window of a primer; on an open NAME it moves and retitles it
+move       run  3   y   n    y    | glides the window to X Y [in S] [ease]
+rect       run  5   y   n    y    | glides position and size; 0 0 is the primer's own size again
+close      run  1   y   n    y    | closes the window
+raise      run  1   y   n    y    | brings the window to the front
+lower      run  1   y   n    y    | sends the window to the back
+title      run  1   y   y    y    | retitles the window
+swap       run  2   y   n    y    | new contents; place, title and depth stay
+say        run  1   y   y    y    | a speech bubble above the window for S seconds (default 3)
+hint       run  0   n   y    y    | the status line's right-hand text
+bg         run  1   n   n    y    | the desktop pattern (a preset name)
+theme      run  1   n   n    y    | the whole desktop's palette: ega or monochrome
+colour     run  2   y   n    y    | one window's colour family and text ink
+mark       run  2   n   n    y    | line art on the desktop under every window; mark NAME off removes it
+weather    run  1   n   n    y    | rain, a lightning flash, or off
+shake      run  0   n   n    y    | every stage window jitters for S seconds, seeded
+seed       run  1   n   n    y    | the seed of everything random (shake); default 0
+floors     run  1   n   n    y    | off: stage windows keep their sizes; on (default): Turbo Vision's 16x6 floor
+tile       run  0   n   n    y    | Turbo Vision's tiled window layout
+cascade    run  0   n   n    y    | Turbo Vision's cascaded window layout
+bars       run  1   n   n    y    | shows or hides the menu bar and status line
+sound      run  1   n   n    y    | plays the scene's clip NAME, or a synthesised effect ~NAME
+drift      run  3   n   n    y    | the mark NAME moves VX cells a second right and VY down from now; drift NAME 0 0 stops it
+text       run  1   y   y    y    | the window shows these lines (engine widget)
+bar        run  5   y   n    y    | a progress bar filling from FROM to TO percent (engine widget)
+counter    run  5   y   y    y    | a number running from FROM to TO in FORMAT's %d (engine widget)
+scrubber   run  1   n   n    y    | the small timeline in the status line, or the wide one across the bottom two rows
+gate       run  0   n   n    n    | holds the clock until the first click or key
+section    run  0   n   y    n    | marks a part of the piece for PgDn, PgUp and the scrubbers
+tempo      run  1   n   n    n    | bar 1 of the film starts here (written by the compiler from bpm)
+loop       run  0   n   n    n    | clock back to T seconds (default 0)
+end        run  0   n   n    n    | stops the clock
