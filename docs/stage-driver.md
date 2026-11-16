@@ -122,5 +122,9 @@ Nothing is generated from it yet: the dispatch in `Stage::run` and `COMMANDS` ar
 - X-ray (on-chain `docs/stage.md` § X-ray): the driver's part is read-only. `Stage::objectsJson()` (with
   `StageHost::stageMarkRect`) is the map of windows and marks the page boxes; the live line `xray MODE` is handed to the
   host (`stageXray`) before anything runs or is traced. A script line `xray` warns and does nothing.
+- The open log (stage.h, Log): `Stage::runLive` keeps each live line with its tick and script position; `replay` puts
+  logged lines back among the script's; with recording on (`record(true)`) the log outlives seeks and loops. The
+  host exports `wwdos_stage_log`, `wwdos_stage_record`, `wwdos_stage_log_clear`, `wwdos_stage_log_load` (applied at idle)
+  and `wwdos_stage_clock`.
 - The core's native desktop build (`wwdos`) was not built here (it needs the macOS-era dependencies); the app edits
   were built in the browser desktop (`dist-web/wwdos*.html`, smoke test passes) and in the film targets.

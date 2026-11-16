@@ -609,6 +609,11 @@
       var b = document.getElementById('boot'); if (b) b.remove();
       window.wwdosBootMs = performance.now();
       if (opts.t >= 0) M._wwdos_stage_seek(opts.t);   // applied at the stage's first timer event
+      if (q.get('restore') === '1') try {            // a recording kept over a reload (webglcontextrestored)
+        var kept = JSON.parse(sessionStorage.getItem('wwdos-log') || 'null');
+        sessionStorage.removeItem('wwdos-log');
+        if (kept) setTimeout(function () { window.wwdosStage.record(true); window.wwdosStage.restore(kept); }, 300);
+      } catch (e) {}
     }
   };
   // ---- sound: clips baked into the page (scene manifest "sounds") and synthesised effects ("sfx") ----
@@ -698,6 +703,8 @@
   canvas.addEventListener('webglcontextrestored', function () {
     var S = window.wwdosStage, t = S && S.length() > 0 ? S.time() : 0, u = new URLSearchParams(location.search);
     u.set('t', t.toFixed(2)); u.set('autostart', '1');
+    // a recording survives the reload: its log goes to this tab's session storage and comes back (restore=1)
+    try { if (S && S.record()) { sessionStorage.setItem('wwdos-log', JSON.stringify(S.log())); u.set('restore', '1'); } } catch (e) {}
     location.search = '?' + u.toString();
   });
   var userPaused = false, muted = false;            // muted: File > Mute or the status line's sound icon; userPaused: the app paused the stage, so keys must not resume the audio
@@ -1092,11 +1099,26 @@
     pause: function (on) { return M._wwdos_stage_pause ? !!M._wwdos_stage_pause(on === undefined ? -1 : on ? 1 : 0) : false; },
     sectionsList: function () { return (window.wwdosSections || []).map(function (s) { return { name: s.name, bar: s.bar, time: s.time }; }); },
     audio: function () { return actx ? { now: actx.currentTime, base: clipBase, state: actx.state } : null; },
+    // The open log (docs/stage.md § The open log): every live line the page ran, with the tick it ran on and the
+    // script position. log() -> [{tick, pos, t, line}]; record(on) keeps it through seeks and loops (an overdub);
+    // clearLog(); restore(LOG) replaces it (the array log() gives, or "TICK POS LINE" rows) and rebuilds the desktop.
+    log: function () {
+      var hz = M._wwdos_stage_clock ? M._wwdos_stage_clock() : 8, text = M.ccall ? M.ccall('wwdos_stage_log', 'string', [], []) : '';
+      return text.split('\n').map(function (r) { var m = /^(\d+) (\d+) (.*)$/.exec(r); return m ? { tick: +m[1], pos: +m[2], t: +m[1] / hz, line: m[3] } : null; })
+                 .filter(Boolean);
+    },
+    record: function (on) { return M._wwdos_stage_record ? !!M._wwdos_stage_record(on === undefined ? -1 : on ? 1 : 0) : false; },
+    clearLog: function () { if (M._wwdos_stage_log_clear) M._wwdos_stage_log_clear(); },
+    restore: function (log) {
+      var text = typeof log === 'string' ? log : (log || []).map(function (e) { return e.tick + ' ' + e.pos + ' ' + e.line; }).join('\n');
+      if (M.ccall) { M.ccall('wwdos_stage_log_load', null, ['string'], [text]); wake(); }
+    },
     get scale() { return devScale; }
   };
   // A page that holds this film in an iframe may be another origin (every file:// page is), so it cannot call
   // wwdosStage directly. It posts {wwdos: 'seek', t: SECONDS} or {wwdos: 'time'}; the answer to either is
   // {wwdos: 'time', t, length} posted back to the sender. It may also post {wwdos: 'run', line}, {wwdos: 'jump', bar},
+  // {wwdos: 'log'}, {wwdos: 'record', on} and {wwdos: 'restore', log} are answered with {wwdos: 'log', recording, log}.
   // {wwdos: 'quantise', mode}, {wwdos: 'pause', on} or {wwdos: 'state'}; each is answered with
   // {wwdos: 'state', t, length, bar, bars, quantise, queued, paused, sections, error}. error is run()'s answer for a
   // 'run' message, else why the last live command did nothing ('' when it worked). {wwdos: 'sound'} hands over the parent's
@@ -1119,6 +1141,12 @@
     else if (d.wwdos === 'jump' && isFinite(+d.bar)) S.jump(+d.bar);
     else if (d.wwdos === 'quantise') S.quantise(d.mode);
     else if (d.wwdos === 'pause') S.pause(d.on === undefined ? !S.pause() : !!d.on);
+    else if (d.wwdos === 'log' || d.wwdos === 'record' || d.wwdos === 'restore') {
+      if (d.wwdos === 'record') S.record(d.on === undefined ? true : !!d.on);
+      if (d.wwdos === 'restore') S.restore(d.log);
+      if (e.source) e.source.postMessage({ wwdos: 'log', recording: S.record(), log: S.log() }, '*');
+      return;
+    }
     else if (d.wwdos !== 'state') return;
     if (error === null) error = S.lastError();
     if (e.source)

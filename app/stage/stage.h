@@ -102,6 +102,13 @@
 // Live: runLive(LINE) runs one command now, without a time field (the page's wwdosStage.run). Windows it opens are
 // stage windows: the next seek or replay closes them. loop, end, gate, tempo, section, clock and size are refused.
 // Commands aimed at a window that is not open do nothing; the page trace (window.wwdosTrace) marks them warn.
+// Log: every live line that runs is kept with the tick it ran on (time() then: the tick to run next while playing, the
+// tick shown after a seek) and the script position (how many script commands had run), so a replay puts it back in
+// order: before the script's commands of a later position, after those already run. A resize replay keeps the
+// logged lines. Recording off (the default), a seek or a loop ends the log, as it always closed live windows.
+// Recording on (wwdosStage.record(true)), the log outlives seeks and loops: seek(T) applies the lines logged up to T
+// and playing on runs later ones when their tick comes, so the log is an overdub of the script and the picture is a
+// function of the script, the stage tick and the log. Nothing is kept anywhere but the page's memory.
 // Windows: a drawing fills the whole interior, its last column included (a one-frame drawing's text view once kept a
 // scroll-bar column). A framed window's title is cut to width - 10 cells while it is the active (front) window, which
 // shows the close and zoom icons, and to width - 4 (the corners and a space each side) while it is not.
@@ -214,6 +221,7 @@ public:
     bool load(const char* path);          // false when the file is missing or has no commands
     bool loaded() const { return !cmds.empty(); }
     int periodMs() const { return 1000 / clockHz; }
+    int hz() const { return clockHz; }
     void tick();                          // one clock tick: run due commands, advance tweens
     int due();                            // ticks owed by the monotonic clock since the last call
     void rebase() { wallLast = -1; }      // after a pause or a seek: the clock starts again from now
@@ -255,6 +263,16 @@ public:
     // queued open commands will create. runLive applies it and returns "" or why it did nothing.
     std::string checkLive(const std::string& line, const std::set<std::string>& pending) const;
     std::string runLive(const std::string& line);
+    // The open log (see Log above): every live line that ran, with the tick it ran on and the script position.
+    struct LogEntry { int tick; size_t pos; std::string line; bool done; };
+    bool recording() const { return rec; }
+    void record(bool on) { rec = on; }
+    const std::vector<LogEntry>& log() const { return liveLog; }
+    void clearLog() { liveLog.clear(); }
+    // Replace the log (a page restoring a session): entries are "TICK POS LINE" lines; the desktop is rebuilt at the
+    // present tick from the script and the log, as a resize replay does. Returns the number of entries read.
+    int loadLog(const std::string& text);
+    std::string logText() const;          // the log as "TICK POS LINE" lines, oldest position first
     void go() { if (gated) { gated = false; rebase(); } }
     // The stage's windows, front first, as JSON: [{"name","x","y","w","h","title","ghost","file"}] (speech bubbles
     // are named _sayN). Cells are desktop cells: the menu bar row is not counted. The page's wwdosStage.windows().
@@ -321,6 +339,10 @@ private:
     int bubbleSerial = 0;
 
     void run(const std::string& line);
+    std::vector<LogEntry> liveLog;        // ordered by (tick, pos), then by arrival
+    bool rec = false;                     // recording: the log outlives seeks and loops (an overdub of the script)
+    void logAdd(const std::string& line);
+    void runLogDue();                     // in tick(): logged lines whose tick and position have come
     TFrameAnimationWindow* win(const std::string& name);
     TRect place(int x, int y, int w, int h) const;
     TRect fit(const std::string& path, bool ghost, bool clear = false) const;

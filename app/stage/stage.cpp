@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <chrono>
 #include <climits>
+#include <cstdint>
 #include <cmath>
 #include "ega_theme.h"
 #include <cstdio>
@@ -371,7 +372,23 @@ void Stage::replay(int target, size_t upto)
     wins.clear(); tweens.clear(); bubbles.clear(); shakeHome.clear(); shakeUntil = -1; marks.clear(); widgets.clear();
     host.stageWeather("off"); host.stageHint("");
     int lastK = -1;
+    // Logged live lines (stage.h, Log) run in their place among the script's: before the script command of their
+    // position, on their tick. Those after this target wait for tick() (runLogDue).
+    size_t li = 0;
+    for (auto& e : liveLog) e.done = false;
+    auto logged = [&](size_t pos) {
+        for (; li < liveLog.size() && liveLog[li].pos <= pos; ++li) {
+            LogEntry& e = liveLog[li];
+            if (!(e.tick < target || (e.tick == target && e.pos <= upto))) continue;
+            int k = std::max(e.tick, lastK);
+            if (k != lastK) { if (k > 0) { now = k - 1; advance(); } lastK = k; }
+            now = k;
+            run(e.line);
+            e.done = true;
+        }
+    };
     for (size_t i = 0; i < upto && i < cmds.size(); ++i) {
+        logged(i);
         const std::string& l = cmds[i].line;
         if (l.compare(0, 4, "loop") == 0) continue;
         // As tick() has it: a command at tick k runs on what the advance of tick k-1 left (a bubble sits where its
@@ -381,6 +398,7 @@ void Stage::replay(int target, size_t upto)
         now = k;
         run(l);
     }
+    logged(SIZE_MAX);
     now = target; next = upto; shown = target;
     quiet = false;
 }
@@ -400,6 +418,7 @@ void Stage::seek(double secs, bool keepClock)
     size_t upto = 0;
     while (upto < cmds.size() && cmds[upto].t <= t + 0.5 / clockHz && cmds[upto].line.compare(0, 4, "loop") != 0) ++upto;
     running = true; gated = false;
+    if (!rec) liveLog.clear();            // recording off: a seek ends the log, as it closes live windows
     ++seeks;
     auto w0 = std::chrono::steady_clock::now();
     replay(target, upto);
@@ -1035,6 +1054,7 @@ void Stage::run(const std::string& line)
         while (upto < cmds.size() && cmds[upto].t < t && cmds[upto].line.compare(0, 4, "loop") != 0) ++upto;
         int target = tickOf(t);
         bool wasQuiet = quiet;
+        if (!rec) liveLog.clear();        // recording off: the loop ends the log (live windows close at a loop)
         replay(target, upto);
         quiet = wasQuiet;
         while (next < cmds.size() && cmds[next].t < t) ++next;
@@ -1072,6 +1092,7 @@ void Stage::tick()
     double t = double(now) / clockHz;
     size_t guard = 0;
     bool looped = false;
+    runLogDue();
     // A command runs at the tick nearest its time (not the first tick after it), so nothing is late on average.
     while (next < cmds.size() && cmds[next].t <= t + half && guard++ < 1000) {
         size_t i = next++;
@@ -1079,6 +1100,7 @@ void Stage::tick()
         if (!(i < soundSent.size() && soundSent[i])) run(cmds[i].line);
         host.stageTrace(cmds[i].t, cmds[i].line, warn);
         if (gated) { advance(); return; }      // the clock holds at this tick until go()
+        runLogDue();
         if (next <= i) {        // loop put the stage at its target: this tick shows that tick, and runs its commands
             if (looped) break;
             looped = true; shown = now; t = double(now) / clockHz;
@@ -1269,8 +1291,64 @@ std::string Stage::runLive(const std::string& raw)
     }
     curT = time();
     run(line);
+    logAdd(line);
     host.stageFlush();
     spriteSettle();
     host.stageTrace(curT, line, warn);
     return warn ? warn : "";
+}
+
+// The open log (stage.h, Log). A line is kept with the tick it ran on and the script position, after every entry
+// with the same tick and position (arrival order).
+void Stage::logAdd(const std::string& line)
+{
+    LogEntry e {now, next, line, true};
+    auto at = std::upper_bound(liveLog.begin(), liveLog.end(), e,
+        [](const LogEntry& a, const LogEntry& b) { return a.tick < b.tick || (a.tick == b.tick && a.pos < b.pos); });
+    liveLog.insert(at, e);
+}
+
+// Logged lines whose tick has come and whose position the script has reached (recording: an overdub plays on).
+void Stage::runLogDue()
+{
+    for (auto& e : liveLog) {
+        if (e.done || e.tick > now || e.pos > next) continue;
+        curT = time();
+        run(e.line);
+        e.done = true;
+        host.stageTrace(curT, e.line, warn);
+    }
+}
+
+std::string Stage::logText() const
+{
+    std::string out;
+    for (auto& e : liveLog) out += std::to_string(e.tick) + " " + std::to_string(e.pos) + " " + e.line + "\n";
+    return out;
+}
+
+int Stage::loadLog(const std::string& text)
+{
+    liveLog.clear();
+    std::istringstream in(text);
+    std::string row;
+    while (std::getline(in, row)) {
+        std::istringstream r(row);
+        long tk = -1; long ps = -1;
+        if (!(r >> tk >> ps) || tk < 0 || ps < 0) continue;
+        std::string line; std::getline(r, line); line = liveLine(line);
+        // a line that names a window may come before the log's own open is replayed: only "no window" is let by
+        if (line.empty() || line.compare(0, 4, "xray") == 0) continue;
+        std::string why = checkLive(line, {});
+        if (!why.empty() && why.compare(0, 10, "no window:") != 0) continue;
+        LogEntry e {int(tk), size_t(ps), line, false};
+        auto at = std::upper_bound(liveLog.begin(), liveLog.end(), e,
+            [](const LogEntry& a, const LogEntry& b) { return a.tick < b.tick || (a.tick == b.tick && a.pos < b.pos); });
+        liveLog.insert(at, e);
+    }
+    replay(now, next);
+    advance();
+    host.stageFlush();
+    settle();
+    return int(liveLog.size());
 }

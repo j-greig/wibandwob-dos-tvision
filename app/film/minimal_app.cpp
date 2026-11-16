@@ -490,6 +490,8 @@ static double g_seekTo = -1;
 static Stage* g_liveStage = nullptr;          // the app's stage, loaded or not: wwdosStage.run works on any page
 static std::vector<std::string> g_liveQueue;  // checked live lines waiting for TMinApp::idle
 static std::string g_liveErr;
+static std::string g_logLoad;                 // wwdosStage.restore(LOG): applied at the next idle call
+static bool g_logLoadDue = false;
 static bool g_liveRedrawStatus = false;
 #ifndef EMSCRIPTEN_KEEPALIVE
 #define EMSCRIPTEN_KEEPALIVE
@@ -556,6 +558,22 @@ EMSCRIPTEN_KEEPALIVE const char* wwdos_stage_objects()
     ret = g_liveStage ? g_liveStage->objectsJson() : "{}";
     return ret.c_str();
 }
+// The open log (stage.h, Log): "TICK POS LINE" rows. wwdosStage.log(), record(on), clearLog(), restore(LOG).
+EMSCRIPTEN_KEEPALIVE const char* wwdos_stage_log()
+{
+    static std::string ret;
+    ret = g_liveStage ? g_liveStage->logText() : "";
+    return ret.c_str();
+}
+EMSCRIPTEN_KEEPALIVE int wwdos_stage_record(int on)
+{
+    if (!g_liveStage) return 0;
+    if (on >= 0) g_liveStage->record(on != 0);
+    return g_liveStage->recording() ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE void wwdos_stage_log_clear() { if (g_liveStage) g_liveStage->clearLog(); }
+EMSCRIPTEN_KEEPALIVE void wwdos_stage_log_load(const char* text) { g_logLoad = text ? text : ""; g_logLoadDue = true; }
+EMSCRIPTEN_KEEPALIVE int wwdos_stage_clock() { return g_liveStage ? g_liveStage->hz() : 8; }
 // Why the last applied live command did nothing ("" when it worked).
 EMSCRIPTEN_KEEPALIVE const char* wwdos_stage_live_error() { return g_liveErr.c_str(); }
 // on 1 pauses, 0 plays, -1 asks; returns 1 when paused. Same effect as F9.
@@ -816,6 +834,7 @@ public:
         if (g_timerSeen) { g_timerSeen = false; stage.spriteSettle(); }
         serveTools();
         if (g_liveRedrawStatus) { g_liveRedrawStatus = false; if (statusLine) statusLine->drawView(); }
+        if (g_logLoadDue) { g_logLoadDue = false; stage.loadLog(g_logLoad); g_logLoad.clear(); }
         if (g_liveQueue.empty()) return;
         std::vector<std::string> lines; lines.swap(g_liveQueue);
         for (auto& l : lines) g_liveErr = stage.runLive(l);
