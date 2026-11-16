@@ -154,6 +154,32 @@ public:
     // The frame a mark shows at the tick on screen: the stage's choice, or every 3 ticks from the tick it was placed.
     int frameOf(const Ink& k, int n) const { return k.m.frame >= 0 ? k.m.frame % n : (std::max(0, now - k.start) / 3) % n; }
 
+    // The x-ray map (StageHost::stageMarkRect): where drawLayers puts the mark NAME and the frame it shows. A wrapped
+    // mark covers the whole desktop along its wrap.
+    bool markRect(const std::string& name, int& x, int& y, int& w, int& h, int& frame, int& frames) const
+    {
+        auto it = inks.find(name);
+        if (it == inks.end()) return false;
+        const Ink& k = it->second;
+        x = k.m.x; y = k.m.y; w = h = 0;
+        if (k.pic) {
+            frames = k.pic->frames();
+            if (frames == 0) return false;
+            frame = frameOf(k, frames); w = k.pic->w; h = k.pic->h;
+        } else {
+            frames = (int) k.frames.size();
+            if (frames == 0) return false;
+            frame = frameOf(k, frames);
+            for (auto& s : k.frames[frame]) w = std::max(w, (int) TText::width(TStringView(s.c_str(), s.size())));
+            h = (int) k.frames[frame].size();
+        }
+        if (k.m.right) x = size.x - w - 1 + k.m.x;
+        if (k.m.bottom) y = size.y - h + k.m.y;
+        if (k.m.wrapX) { x = 0; w = size.x; }
+        if (k.m.wrapY) { y = 0; h = size.y; }
+        return w > 0 && h > 0;
+    }
+
     // The desktop under the marks, one row: the pattern, or the rain sky.
     void skyRow(pic::Row& b, int y)
     {
@@ -358,6 +384,8 @@ EM_JS(double, wwdos_js_audio_time, (), { return Module.wwdosAudioTime ? Module.w
 EM_JS(void, wwdos_js_sections, (const char *json), { window.wwdosSections = JSON.parse(UTF8ToString(json)); });
 // Stage gate: 1 lets the clock run on (sound on already, no sounds, ?t= or ?autostart=1; web/shell-webgl.html).
 EM_JS(int, wwdos_js_gate_pass, (), { return Module.wwdosGatePass ? Module.wwdosGatePass() : 1; });
+// "xray on|off|toggle|inspect" from a live line: the page's x-ray view (web/shell-webgl.html, Module.wwdosXray).
+EM_JS(void, wwdos_js_xray, (const char *mode), { if (Module.wwdosXray) Module.wwdosXray(UTF8ToString(mode)); });
 #else
 // Native build (wwdos-stage, tools/stage_term.py): command-line options stand in for the page.
 #include <csignal>
@@ -450,6 +478,7 @@ static void wwdos_js_trace(double t, const char *line, const char *warn)
     fflush(g_traceFile);
 }
 static int wwdos_js_gate_pass() { return g_autostart; }
+static void wwdos_js_xray(const char*) {}   // the terminal build has no x-ray view (tools/stage.py xray reads the page)
 static void wwdos_js_sections(const char*) {}
 static double wwdos_js_audio_time() { return -1; }
 #endif
@@ -518,6 +547,13 @@ EMSCRIPTEN_KEEPALIVE const char* wwdos_stage_windows()
 {
     static std::string ret;
     ret = g_liveStage ? g_liveStage->windowsJson() : "[]";
+    return ret.c_str();
+}
+// The x-ray map (Stage::objectsJson): every window and mark with its kind, rect and frame.
+EMSCRIPTEN_KEEPALIVE const char* wwdos_stage_objects()
+{
+    static std::string ret;
+    ret = g_liveStage ? g_liveStage->objectsJson() : "{}";
     return ret.c_str();
 }
 // Why the last applied live command did nothing ("" when it worked).
@@ -889,6 +925,12 @@ public:
         if (auto* bg = dynamic_cast<TWibWobBackground*>(deskTop->background)) bg->setPreset(ww::isEga() ? "ega" : "default", false);
         redraw();
     }
+    bool stageMarkRect(const std::string& name, int& x, int& y, int& w, int& h, int& frame, int& frames) override
+    {
+        auto* bg = dynamic_cast<TWeatherBackground*>(deskTop->background);
+        return bg && bg->markRect(name, x, y, w, h, frame, frames);
+    }
+    void stageXray(const std::string& mode) override { wwdos_js_xray(mode.c_str()); }
     void stageMark(const std::string& name, const StageMark& m) override
     {
         if (auto* bg = dynamic_cast<TWeatherBackground*>(deskTop->background)) bg->setInk(name, m);

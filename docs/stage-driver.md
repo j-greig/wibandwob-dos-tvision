@@ -117,7 +117,10 @@ Nothing is generated from it yet: the dispatch in `Stage::run` and `COMMANDS` ar
   film's files are synced.
 - The film page files are copied here, not synced: `kernel/pages/shell-film.html`, `film-host.js` and
   `sfx-default.json` are byte copies of the on-chain `web/shell-webgl.html`, `web/film-host.js` and
-  `web/sfx-default.json` at c7e5d29. A change to the on-chain copies must be brought here by hand until the film tools
-  move.
+  `web/sfx-default.json` (`shell-film.html` at the on-chain `film-input` branch, with the x-ray view; the other two
+  at c7e5d29). A change to the on-chain copies must be brought here by hand until the film tools move.
+- X-ray (on-chain `docs/stage.md` § X-ray): the driver's part is read-only. `Stage::objectsJson()` (with
+  `StageHost::stageMarkRect`) is the map of windows and marks the page boxes; the live line `xray MODE` is handed to the
+  host (`stageXray`) before anything runs or is traced. A script line `xray` warns and does nothing.
 - The core's native desktop build (`wwdos`) was not built here (it needs the macOS-era dependencies); the app edits
   were built in the browser desktop (`dist-web/wwdos*.html`, smoke test passes) and in the film targets.

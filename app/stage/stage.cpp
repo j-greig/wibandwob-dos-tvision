@@ -1043,6 +1043,8 @@ void Stage::run(const std::string& line)
         if (!quiet && !host.stageGatePass()) { gated = true; gateWall = wallNow(); }
     } else if (cmd == "end") {
         running = false;
+    } else if (cmd == "xray") {
+        warn = "xray runs live only (a view on the film, not part of it)";
     }
 }
 
@@ -1122,7 +1124,7 @@ std::string Stage::checkLive(const std::string& raw, const std::set<std::string>
     static const char* const notLive[] = {"loop", "end", "gate", "tempo", "section", "clock", "size"};
     for (const char* k : notLive) if (cmd == k) return cmd + " does not run live";
     static const char* const known[] = {"open", "move", "rect", "close", "raise", "lower", "title", "swap", "say", "hint", "bg",
-        "weather", "sound", "scrubber", "theme", "colour", "mark", "drift", "text", "bar", "counter", "shake", "seed", "floors", "tile", "cascade", "bars"};
+        "weather", "sound", "scrubber", "theme", "colour", "mark", "drift", "text", "bar", "counter", "shake", "seed", "floors", "tile", "cascade", "bars", "xray"};
     bool ok = false;
     for (const char* k : known) if (cmd == k) ok = true;
     if (!ok) return "unknown command: " + cmd;
@@ -1178,6 +1180,72 @@ std::string Stage::windowsJson()
     return out + "]";
 }
 
+// The x-ray map (stage.h objectsJson). Rects are desktop cells; "desk" places the desktop on the screen.
+std::string Stage::objectsJson()
+{
+    TDeskTop* d = host.stageDesk();
+    TPoint o = d->makeGlobal(TPoint {0, 0});
+    TRect e = d->getExtent();
+    char b[256];
+    snprintf(b, sizeof b, "{\"desk\":{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d},\"t\":%.4f,\"waiting\":%s,\"windows\":[",
+             o.x, o.y, e.b.x, e.b.y, shownTime(), gated ? "true" : "false");
+    std::string out = b;
+    std::map<TView*, std::string> byView;
+    for (auto& kv : wins) if (win(kv.first)) byView[kv.second] = kv.first;
+    TView* v = d->first();
+    int z = 0, n = 0;
+    if (v) do {
+        auto it = byView.find(v);
+        if (it != byView.end()) {
+            auto* w = static_cast<TFrameAnimationWindow*>(v);
+            auto* sw = dynamic_cast<StageWindow*>(w);
+            const std::string& name = it->second;
+            const std::string& path = w->getFilePath();
+            bool ghost = w->isFrameless(), clear = sw && sw->clear;
+            std::string kind = name.compare(0, 4, "_say") == 0 ? "bubble" : clear ? "sprite" : ghost ? "ghost" : "window";
+            std::string content = "drawing";
+            int frames = 1, frame = -1; double fps = 0;
+            bool mirror = false;
+            w->forEach([](TView* c, void* f) { if (dynamic_cast<TMirrorView*>(c)) *(bool*) f = true; }, &mirror);
+            if (mirror) content = "mirror";
+            else if (auto p = pic::get(path)) {
+                content = p->film ? "picture film" : "picture";
+                frames = p->frames();
+                auto pc = winPics.find(name);
+                if (pc != winPics.end()) { frame = std::max(0, pc->second.shown); fps = pc->second.fps >= 0 ? pc->second.fps : (p->film && pc->second.frame0 < 0 ? p->fps : 0); }
+            } else {
+                if (widgets.count(name)) content = widgets[name].bar ? "bar" : "counter";
+                else if (path.find("/_text_") != std::string::npos) content = "text";
+                frames = lineArtFrames(path);
+            }
+            TRect r = w->getBounds();
+            snprintf(b, sizeof b, "%s{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d,\"z\":%d,\"frames\":%d,\"frame\":%d,\"fps\":%g,\"ghost\":%s,\"clear\":%s,\"kind\":",
+                     n++ ? "," : "", r.a.x, r.a.y, r.b.x - r.a.x, r.b.y - r.a.y, z, frames, frame, fps, ghost ? "true" : "false", clear ? "true" : "false");
+            out += b + jsonStr(kind) + ",\"content\":" + jsonStr(content) + ",\"name\":" + jsonStr(name) + ",\"title\":" + jsonStr(w->title ? w->title : "")
+                + ",\"file\":" + jsonStr(path) + "}";
+        }
+        if (dynamic_cast<TWindow*>(v)) ++z;
+        v = v->next;
+    } while (v != d->first());
+    out += "],\"marks\":[";
+    std::vector<std::pair<std::pair<int, std::string>, const Mark*>> order;
+    for (auto& kv : marks) order.push_back({{kv.second.z, kv.first}, &kv.second});
+    std::sort(order.begin(), order.end(), [](const auto& a, const auto& c) { return a.first < c.first; });
+    n = 0;
+    for (auto& od : order) {
+        const Mark& m = *od.second;
+        int x = 0, y = 0, w = 0, h = 0, frame = -1, frames = 0;
+        if (!host.stageMarkRect(od.first.second, x, y, w, h, frame, frames)) continue;
+        auto p = pic::get(m.path);
+        double fps = m.fps >= 0 ? m.fps : (p && p->film && m.frame0 < 0 ? p->fps : 0);
+        std::string content = p ? (p->film ? "picture film" : "picture") : "line art";
+        snprintf(b, sizeof b, "%s{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d,\"z\":%d,\"frames\":%d,\"frame\":%d,\"fps\":%g,\"wrapX\":%s,\"wrapY\":%s,\"kind\":\"mark\",\"content\":",
+                 n++ ? "," : "", x, y, w, h, m.z, frames, frame, fps, m.wrapX ? "true" : "false", m.wrapY ? "true" : "false");
+        out += b + jsonStr(content) + ",\"name\":" + jsonStr(od.first.second) + ",\"file\":" + jsonStr(m.path) + "}";
+    }
+    return out + "]}";
+}
+
 // Every clear sprite drawn again, back to front, so each shows what is under it now (see StageWindow::draw).
 void Stage::spriteSettle()
 {
@@ -1193,6 +1261,12 @@ void Stage::spriteSettle()
 std::string Stage::runLive(const std::string& raw)
 {
     std::string line = liveLine(raw);
+    // x-ray is the page's view: handed to the host, not run, not traced (nothing of it reaches the film)
+    if (line.compare(0, 4, "xray") == 0 && (line.size() == 4 || line[4] == ' ')) {
+        std::string mode = trim(line.substr(4));
+        host.stageXray(mode.empty() ? "toggle" : mode);
+        return "";
+    }
     curT = time();
     run(line);
     host.stageFlush();

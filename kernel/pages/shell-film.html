@@ -162,6 +162,368 @@
   }
   measure();
 
+  // ---- x-ray: a box and a label over every window, sprite, picture, mark and group, drawn into a copy of the cells
+  // before they are painted (docs/stage.md § X-ray). It is a view on the film, never part of it: the engine's cells
+  // (window.wwdosTerm, every tool) stay as they were, and nothing here reaches the stage clock, the gate or the film.
+  // Keys: F2 x-ray on/off, Shift+F2 inspect the object under the pointer; with x-ray on: T object tree, P parent,
+  // C child under the pointer, Esc lets go. A click pins (and never reaches the film); a right-click, or a long press,
+  // opens the x-ray menu. ?xray=1 starts with it on; the live line "xray on|off|toggle|inspect" switches it.
+  var XR_EGA = [0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xAA5500, 0xAAAAAA,
+                0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF];
+  // one colour per kind (EGA index); a content kind (what a framed window shows) has its own
+  var XR_INK = { window: 14, ghost: 11, sprite: 13, bubble: 15, mark: 12, group: 5, gate: 2, desktop: 7,
+                 'picture film': 10, picture: 10, drawing: 7, text: 7, bar: 7, counter: 7, mirror: 9, 'line art': 12 };
+  var XR_PARENT = 3, XR_DIM = 8;
+  var xr = { on: q.get('xray') === '1', hover: null, pinned: null, tree: false, treeAt: 0, menu: null, px: -1, py: -1,
+             eat: false, press: null, model: null, kinds: null, panel: true };
+  var XB = { light: '┌┐└┘─│', dash: '┌┐└┘┄┆',
+             heavy: '┏┓┗┛━┃', dbl: '╔╗╚╝═║' };
+  function xrActive() { return xr.on || !!xr.menu; }
+  // The x-ray model: the engine's map (wwdos_stage_objects) in screen cells, with nesting and what covers what.
+  function xrModel() {
+    var j;
+    try { j = JSON.parse(M.ccall('wwdos_stage_objects', 'string', [], [])); } catch (e) { return null; }
+    if (!j || !j.desk) return null;
+    var D = j.desk, SXR = (window.wwdosScene && window.wwdosScene.xray) || {}, src = SXR.src || {}, groups = SXR.groups || {};
+    var objs = [], byName = {};
+    function add(o) { o.id = objs.length; o.kids = []; objs.push(o); if (o.parent >= 0) objs[o.parent].kids.push(o.id); return o; }
+    var desk = add({ name: 'desktop', kind: 'desktop', x: D.x, y: D.y, w: D.w, h: D.h, parent: -1, depth: 0, z: -1 });
+    if (j.waiting) add({ name: 'gate', kind: 'gate', content: 'the clock waits for a click or a key', x: D.x, y: D.y, w: D.w, h: D.h, parent: 0, depth: 1, z: -1 });
+    var memberOf = {};
+    Object.keys(groups).forEach(function (g) { groups[g].forEach(function (m) { if (!(m in memberOf)) memberOf[m] = g; }); });
+    var wins = j.windows || [], gobj = {};
+    Object.keys(groups).forEach(function (g) {
+      var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, n = 0;
+      wins.forEach(function (w) { if (memberOf[w.name] === g) { n++; x0 = Math.min(x0, w.x); y0 = Math.min(y0, w.y); x1 = Math.max(x1, w.x + w.w); y1 = Math.max(y1, w.y + w.h); } });
+      if (n) gobj[g] = add({ name: g, kind: 'group', content: n + ' open of ' + groups[g].length, x: D.x + x0, y: D.y + y0, w: x1 - x0, h: y1 - y0, parent: 0, depth: 1, z: -1 });
+    });
+    (j.marks || []).forEach(function (m, i) {
+      byName[m.name] = add({ name: m.name, kind: 'mark', content: m.content, x: D.x + m.x, y: D.y + m.y, w: m.w, h: m.h, z: m.z, layer: i,
+                             frame: m.frame, frames: m.frames, fps: m.fps, file: m.file, parent: 0, depth: 1, src: src[m.name] });
+    });
+    wins.forEach(function (w) {
+      var g = memberOf[w.name], p = g && gobj[g] ? gobj[g].id : 0;
+      var o = byName[w.name] = add({ name: w.name, kind: w.kind, content: w.content, x: D.x + w.x, y: D.y + w.y, w: w.w, h: w.h, z: w.z,
+        frame: w.frame, frames: w.frames, fps: w.fps, file: w.file, title: w.title, ghost: w.ghost, clear: w.clear, group: g,
+        parent: p, depth: objs[p].depth + 1, src: src[w.name], win: true });
+      if (!w.ghost && w.w > 2 && w.h > 2)   // a framed window holds its contents: the interior, as a child box
+        add({ name: w.name, kind: w.content, content: 'inside ' + w.name, x: o.x + 1, y: o.y + 1, w: w.w - 2, h: w.h - 2, z: w.z,
+             frame: w.frame, frames: w.frames, fps: w.fps, file: w.file, parent: o.id, depth: o.depth + 1, inner: true });
+    });
+    // what covers what: windows front first; a clear sprite covers nothing (its blank cells show through)
+    var C = lastCols || cols, R = lastRows || rows, cov = new Uint8Array(C * R);
+    function count(o, mark) {
+      var n = 0, seen = 0;
+      for (var y = Math.max(0, o.y); y < Math.min(R, o.y + o.h); y++)
+        for (var x = Math.max(0, o.x); x < Math.min(C, o.x + o.w); x++) { n++; if (!cov[y * C + x]) seen++; if (mark) cov[y * C + x] = 1; }
+      o.cells = n; o.seen = seen;
+      o.shows = n === 0 ? 'off screen' : seen === n ? 'visible' : seen === 0 ? 'covered' : Math.round(100 * (n - seen) / n) + '% covered';
+    }
+    objs.filter(function (o) { return o.win; }).sort(function (a, b) { return a.z - b.z; }).forEach(function (o) { count(o, !o.clear); });
+    objs.forEach(function (o) { if (o.inner) { var w = objs[o.parent]; o.shows = w.shows; } else if (!o.win && o.kind !== 'desktop') count(o, false); });
+    desk.shows = 'visible';
+    return { objs: objs, desk: desk, t: j.t, waiting: j.waiting };
+  }
+  function xrObj(id) { return xr.model && id !== null && id >= 0 && id < xr.model.objs.length ? xr.model.objs[id] : null; }
+  function inRect(o, x, y) { return x >= o.x && x < o.x + o.w && y >= o.y && y < o.y + o.h; }
+  // the top-most object under a cell: the front window (its contents when deep), then the front mark, then the desktop
+  function xrPick(x, y, deep) {
+    var m = xr.model; if (!m) return null;
+    var best = null;
+    m.objs.forEach(function (o) { if (o.win && inRect(o, x, y) && (!best || o.z < best.z)) best = o; });
+    if (best) {
+      if (deep) for (var i = 0; i < best.kids.length; i++) if (inRect(m.objs[best.kids[i]], x, y)) return best.kids[i];
+      return best.id;
+    }
+    for (var k = m.objs.length - 1; k >= 0; k--) { var o = m.objs[k]; if (o.kind === 'mark' && inRect(o, x, y)) return o.id; }
+    for (var g = 0; g < m.objs.length; g++) if (m.objs[g].kind === 'gate') return g;
+    return 0;
+  }
+  // a picture's frame (the stage clock chooses it); a drawing's count of frames (its own clock, not read here)
+  function xrFrames(o) {
+    if (/picture/.test(o.content || '')) return (o.frame >= 0 ? o.frame + 1 : '?') + ' of ' + o.frames + (o.fps > 0 ? ' at ' + o.fps + ' fps' : '');
+    if (o.kind === 'mark' && o.frames > 1) return (o.frame + 1) + ' of ' + o.frames;
+    if ((o.content === 'drawing') && o.frames > 1) return o.frames + ' frames';
+    return '';
+  }
+  function xrSel() { return xr.pinned !== null ? xr.pinned : xr.hover; }
+  function xrLabel(o) {
+    var k = o.kind === 'mark' ? 'mark' : o.kind;
+    return o.inner ? o.name + ' ' + k : o.name + ' ' + k + (o.win ? ' z' + o.z : o.kind === 'mark' ? ' z' + o.z : '') +
+           ' ' + (o.x - xr.model.desk.x) + ',' + (o.y - xr.model.desk.y) + ' ' + o.w + '×' + o.h;
+  }
+  // the readout: what DevTools' tooltip says about an element, for one stage object
+  function xrReadout(o) {
+    var D = xr.model.desk, L = [];
+    L.push(o.name + (o.inner ? ' (contents)' : ''));
+    var kind = o.kind + (o.content && !o.inner && o.kind !== 'group' && o.kind !== 'gate' ? ', ' + o.content : '') +
+               (o.kind === 'sprite' ? ' (ghost, clear)' : '');
+    L.push('kind   ' + kind);
+    if (o.kind === 'group' || o.kind === 'gate' || o.inner) L.push('       ' + o.content);
+    L.push('rect   ' + (o.x - D.x) + ',' + (o.y - D.y) + '  ' + o.w + '×' + o.h);
+    if (o.win) L.push('z      ' + o.z + ' (0 is the front)'); else if (o.kind === 'mark') L.push('layer  z ' + o.z + ', under every window');
+    if (o.group) L.push('group  ' + o.group);
+    L.push('shows  ' + o.shows);
+    var fr = xrFrames(o); if (fr) L.push('frame  ' + fr);
+    if (o.title) L.push('title  ' + o.title);
+    if (o.file && !/\/_(text|say)_/.test(o.file)) L.push('file   ' + o.file.replace(/^\/boot\//, ''));
+    if (o.src) L.push('source ' + o.src);
+    if (xr.pinned === o.id) L.push('pinned: click or Esc lets go');
+    return L;
+  }
+  function xrTree() {
+    var m = xr.model, out = [];
+    function walk(id) {
+      var o = m.objs[id]; if (o.inner) return;
+      out.push(id);
+      o.kids.map(function (k) { return m.objs[k]; }).sort(function (a, b) {
+        var ra = a.win ? 1 : a.kind === 'mark' ? 2 : 0, rb = b.win ? 1 : b.kind === 'mark' ? 2 : 0;
+        if (ra !== rb) return ra - rb;
+        return ra === 2 ? b.layer - a.layer : (a.win ? a.z - b.z : a.id - b.id);
+      }).forEach(function (k) { walk(k.id); });
+    }
+    if (m) walk(0);
+    return out;
+  }
+  // A pick is kept by its object's name and kind across a fresh map (objects open, close and move between flushes).
+  function xrKey(id) { var o = xrObj(id); return o ? o.name + '|' + o.kind + (o.inner ? '|in' : '') : null; }
+  function xrRefresh() {
+    var pk = xrKey(xr.pinned), hk = xrKey(xr.hover), m = xrModel();
+    xr.model = m;
+    var find = function (k) { if (k === null || !m) return null; for (var i = 0; i < m.objs.length; i++) if (xrKey(i) === k) return i; return null; };
+    xr.pinned = find(pk); xr.hover = find(hk);
+  }
+  function xv(cells, c, r) {
+    if (!xrActive() || !cells) return cells;
+    if (xr.on) xrRefresh();
+    return xrCompose(cells, c, r);
+  }
+  function xrCompose(cells, C, R) {
+    var out = new Uint32Array(cells);
+    function put(x, y, ch, fg, bg) {
+      if (x < 0 || y < 0 || x >= C || y >= R) return;
+      var i = (y * C + x) * 3;
+      out[i] = ch.codePointAt(0); out[i + 1] = fg; out[i + 2] = bg === undefined ? (cells[i + 2] & 0xFFFFFF) : bg;
+    }
+    function text(x, y, s, fg, bg, max) { for (var i = 0; i < s.length && i < max; i++) put(x + i, y, s[i], fg, bg); }
+    function box(o, set, ink) {
+      var b = XB[set], x0 = o.x, y0 = o.y, x1 = o.x + o.w - 1, y1 = o.y + o.h - 1;
+      if (o.w < 2 || o.h < 2) { for (var y = y0; y <= y1; y++) for (var x = x0; x <= x1; x++) put(x, y, o.w < 2 ? b[5] : b[4], ink); return; }
+      for (var xx = x0 + 1; xx < x1; xx++) { put(xx, y0, b[4], ink); put(xx, y1, b[4], ink); }
+      for (var yy = y0 + 1; yy < y1; yy++) { put(x0, yy, b[5], ink); put(x1, yy, b[5], ink); }
+      put(x0, y0, b[0], ink); put(x1, y0, b[1], ink); put(x0, y1, b[2], ink); put(x1, y1, b[3], ink);
+    }
+    function panel(lines, ax, ay, avoid, fg, bg, edge, hi) {
+      var w = 0; lines.forEach(function (l) { w = Math.max(w, l.length); }); w = Math.min(w + 2, C); var h = Math.min(lines.length + 2, R);
+      var spots = avoid ? [[avoid.x + avoid.w + 1, avoid.y], [avoid.x - w - 1, avoid.y], [avoid.x, avoid.y + avoid.h], [avoid.x, avoid.y - h],
+                           [C - w, R - h], [0, R - h], [C - w, 1], [0, 1]] : [[ax, ay]];
+      var at = null;
+      for (var i = 0; i < spots.length && !at; i++) {
+        var sx = spots[i][0], sy = spots[i][1];
+        if (sx < 0 || sy < 0 || sx + w > C || sy + h > R) continue;
+        if (avoid && i < 4 && !(sx + w <= avoid.x || sx >= avoid.x + avoid.w || sy + h <= avoid.y || sy >= avoid.y + avoid.h)) continue;
+        at = [sx, sy];
+      }
+      if (!at) at = [Math.max(0, Math.min(C - w, ax)), Math.max(0, Math.min(R - h, ay))];
+      var p = { x: at[0], y: at[1], w: w, h: h };
+      for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) put(p.x + x, p.y + y, ' ', fg, bg);
+      box(p, 'light', edge);
+      for (var k = 0; k < lines.length && k < h - 2; k++) {
+        var sel = k === hi;
+        if (sel) for (var x2 = 1; x2 < w - 1; x2++) put(p.x + x2, p.y + 1 + k, ' ', bg, fg);
+        text(p.x + 1, p.y + 1 + k, lines[k], sel ? bg : fg, sel ? fg : bg, w - 2);
+      }
+      return p;
+    }
+    if (xr.on) {
+      if (!xr.model) xr.model = xrModel();
+      var m = xr.model;
+      if (m) {
+        var sel = xrObj(xrSel()), chain = {};
+        for (var p = sel ? sel.parent : -1; p > 0; p = m.objs[p].parent) chain[p] = 1;
+        // back to front: the gate, the marks, the groups, the windows from the back; contents only when chosen
+        var order = m.objs.filter(function (o) { return o.kind !== 'desktop' && xrKind(o) && (!o.inner || (sel && (sel.id === o.id || sel.id === o.parent))); });
+        var rank = function (o) { return o.kind === 'gate' ? 0 : o.kind === 'mark' ? 1 : o.kind === 'group' ? 2 : 3; };
+        order.sort(function (a, b) { return rank(a) - rank(b) || (a.kind === 'mark' ? a.layer - b.layer : 0) || (b.z - a.z) || (a.inner ? 1 : 0) - (b.inner ? 1 : 0); });
+        order.forEach(function (o) {
+          var ink = XR_EGA[sel ? (chain[o.id] ? XR_PARENT : sel.id === o.id ? XR_INK[o.kind] || 7 : XR_DIM) : XR_INK[o.kind] || 7];
+          box(o, sel && sel.id === o.id ? 'heavy' : chain[o.id] ? 'dbl' : o.shows === 'covered' || o.shows === 'off screen' ? 'dash' : 'light', ink);
+        });
+        if (sel && sel.kind !== 'desktop') box(sel, 'heavy', XR_EGA[XR_INK[sel.kind] || 7]);
+        // labels last: the chosen object's first, then front to back; a label stops where a label in front of it
+        // already lies, so where two collide the top-most object's label is the one left whole
+        var used = new Uint8Array(C * R), lab = order.slice().reverse();
+        if (sel) lab.sort(function (a, b) { return (b.id === sel.id) - (a.id === sel.id); });
+        lab.forEach(function (o) {
+          if (o.w < 4 || o.y < 0 || o.y >= R) return;
+          var on = !sel || sel.id === o.id || chain[o.id];
+          var k = sel && chain[o.id] ? XR_PARENT : XR_INK[o.kind] || 7;
+          var s = ' ' + xrLabel(o) + ' ', n = Math.min(s.length, o.w - 2), x0 = o.x + 1;
+          for (var i = 0; i < n; i++) { var xx = x0 + i; if (xx >= 0 && xx < C && used[o.y * C + xx]) { n = i; break; } }
+          if (n < Math.min(4, s.length)) return;
+          for (var j = 0; j < n; j++) { var xj = x0 + j; if (xj >= 0 && xj < C) used[o.y * C + xj] = 1; }
+          text(x0, o.y, s, 0, XR_EGA[on ? k : XR_DIM], n);
+        });
+        if (xr.tree) {
+          var ids = xrTree(), lines = ids.map(function (id) { var o = m.objs[id]; return rep('  ', o.depth) + o.name + ' ' + o.kind + (o.shows !== 'visible' ? ' (' + o.shows + ')' : ''); });
+          xr.treeAt = Math.max(0, Math.min(ids.length - 1, xr.treeAt));
+          var room = R - 4, top = Math.max(0, Math.min(xr.treeAt - (room >> 1), ids.length - room));
+          var shown = lines.slice(top, top + room); shown.unshift('objects, front first   ↑↓ Enter Esc');
+          var side = sel && sel.x < C / 2 ? C : 0;
+          panel(shown, side, 1, null, 0xFFFFFF, 0x0000AA, 0x55FFFF, xr.treeAt - top + 1);
+        } else if (sel && xr.panel) panel(xrReadout(sel), sel.x, sel.y, sel, 0xFFFFFF, 0x0000AA, 0x55FFFF, -1);
+      }
+    }
+    if (xr.menu) {
+      var it = xrMenuItems();
+      xr.menu.p = panel(it.map(function (e) { return e[0]; }), xr.menu.x, xr.menu.y, null, 0, 0xAAAAAA, 0xFFFFFF, xr.menu.at);
+    }
+    return out;
+  }
+  // xr.kinds (tools/stage_xray.py --kinds): only these kinds get a box; "picture" means anything showing a picture
+  function xrKind(o) {
+    if (!xr.kinds) return true;
+    var k = o.inner ? xr.model.objs[o.parent] : o;
+    return xr.kinds.indexOf(k.kind) >= 0 || (xr.kinds.indexOf('picture') >= 0 && /picture/.test(k.content || ''));
+  }
+  function rep(s, n) { var o = ''; while (n-- > 0) o += s; return o; }
+  function xrMenuItems() {
+    var on = xr.on;
+    return [[' Inspect          Shift+F2 ', 'inspect'], [' X-ray ' + (on ? 'off' : 'on ') + '        F2       ', 'toggle'],
+            [' Object tree      T        ', 'tree'], [' Copy stage name           ', 'name'], [' Copy rect                 ', 'rect'],
+            [' Close            Esc      ', 'close']];
+  }
+  function xrRedraw() {
+    if (last && !noDraw) draw(menuNote(xv(last, lastCols, lastRows), lastCols), lastCols, lastRows, lastCx, lastCy);
+  }
+  function xrSet(mode) {
+    mode = String(mode || 'toggle').trim();
+    if (mode === 'on') xr.on = true; else if (mode === 'off') xr.on = false;
+    else if (mode === 'inspect') { xr.on = true; xr.model = xrModel(); xr.pinned = xr.px >= 0 ? xrPick(xr.px, xr.py, false) : null; }
+    else xr.on = !xr.on;
+    if (!xr.on) { xr.hover = xr.pinned = null; xr.tree = false; xr.model = null; }
+    xrRedraw();
+  }
+  function xrCellOf(e) { var p = cellAt(e); return [p[0] - 1, p[1] - 1]; }
+  function xrCopy(s) { try { navigator.clipboard.writeText(s); } catch (e) {} window.wwdosXrayCopied = s; }
+  function xrDo(what) {
+    var id = xr.menu ? xr.menu.target : null; xr.menu = null;
+    if (what === 'inspect') { xr.on = true; xr.model = xrModel(); xr.pinned = id; xr.tree = false; }
+    else if (what === 'toggle') { xrSet(xr.on ? 'off' : 'on'); return; }
+    else if (what === 'tree') { xr.on = true; xr.model = xrModel(); xr.tree = true; var ids = xrTree(); xr.treeAt = Math.max(0, ids.indexOf(id)); xr.pinned = id; }
+    else if (what === 'name' || what === 'rect') {
+      var m = xrModel(), o = m && id !== null ? m.objs[id] : null;
+      if (o) xrCopy(what === 'name' ? o.name : (o.x - m.desk.x) + ' ' + (o.y - m.desk.y) + ' ' + o.w + ' ' + o.h);
+    }
+    xrRedraw();
+  }
+  function xrOpenMenu(x, y) {
+    var m = xrModel();
+    xr.menu = { x: x, y: y, at: 0, target: m ? (xr.model = m, xrPick(x, y, false)) : null };
+    if (!xr.on) xr.model = null;
+    xrRedraw();
+  }
+  function xrMenuHit(x, y) { var p = xr.menu && xr.menu.p; return p && x > p.x && x < p.x + p.w - 1 && y > p.y && y < p.y + p.h - 1 ? y - p.y - 1 : -1; }
+  function eat(e) { e.stopImmediatePropagation(); e.preventDefault(); }
+  // Pointer: registered before the page's own listeners (sound unlock, the gate, the mouse reports), so a press the
+  // x-ray takes never reaches them.
+  window.addEventListener('pointerdown', function (e) {
+    var c = xrCellOf(e); xr.px = c[0]; xr.py = c[1];
+    if (xr.menu) {
+      var k = xrMenuHit(c[0], c[1]);
+      eat(e); xr.eat = true;
+      if (k >= 0) xrDo(xrMenuItems()[k][1]); else { xr.menu = null; xrRedraw(); }
+      return;
+    }
+    if (e.button === 2) { eat(e); xr.eat = true; xrOpenMenu(c[0], c[1]); return; }
+    if (xr.on && e.button === 0) {
+      eat(e); xr.eat = true;
+      if (!xr.model) xr.model = xrModel();
+      var id = xrPick(c[0], c[1], false);
+      xr.pinned = xr.pinned === null || xr.pinned !== id ? id : null;
+      xr.tree = false; xrRedraw();
+      return;
+    }
+    if (e.pointerType === 'touch') {         // a long press opens the x-ray menu
+      clearTimeout(xr.press && xr.press.timer);
+      xr.press = { x: c[0], y: c[1], timer: setTimeout(function () { xr.press.fired = true; xrOpenMenu(xr.press.x, xr.press.y); }, 550) };
+    }
+  }, true);
+  ['pointerup', 'mousedown', 'mouseup', 'click', 'touchend'].forEach(function (type) {
+    window.addEventListener(type, function (e) {
+      if (type === 'pointerup' && xr.press) { clearTimeout(xr.press.timer); if (xr.press.fired) xr.eat = true; xr.press = null; }
+      if (!xr.eat) return;
+      eat(e);
+      if (type === 'click' || type === 'touchend' || type === 'mouseup') setTimeout(function () { xr.eat = false; }, 0);
+    }, true);
+  });
+  window.addEventListener('pointermove', function (e) {
+    var c = xrCellOf(e); xr.px = c[0]; xr.py = c[1];
+    if (xr.press && (Math.abs(c[0] - xr.press.x) > 1 || Math.abs(c[1] - xr.press.y) > 1)) { clearTimeout(xr.press.timer); xr.press = null; }
+    if (xr.menu) { var k = xrMenuHit(c[0], c[1]); if (k >= 0 && k !== xr.menu.at) { xr.menu.at = k; xrRedraw(); } return; }
+    if (!xr.on || xr.tree) return;
+    if (!xr.model) xr.model = xrModel();
+    var id = xrPick(c[0], c[1], false);
+    if (id !== xr.hover) { xr.hover = id; if (xr.pinned === null) xrRedraw(); }
+  }, true);
+  // Keys: F2 and Shift+F2 always; with x-ray on, T P C and Esc; in the tree and the menu, the arrows and Enter.
+  window.addEventListener('keydown', function (e) {
+    var k = e.key, code = e.code;
+    if (code === 'F2' && !e.ctrlKey && !e.altKey && !e.metaKey) { eat(e); xr.menu = null; xrSet(e.shiftKey ? 'inspect' : 'toggle'); return; }
+    if (xr.menu) {
+      eat(e);
+      var n = xrMenuItems().length;
+      if (k === 'ArrowDown') xr.menu.at = (xr.menu.at + 1) % n; else if (k === 'ArrowUp') xr.menu.at = (xr.menu.at + n - 1) % n;
+      else if (k === 'Enter') { xrDo(xrMenuItems()[xr.menu.at][1]); return; } else if (k === 'Escape') xr.menu = null;
+      xrRedraw(); return;
+    }
+    if (!xr.on || e.ctrlKey || e.altKey || e.metaKey) return;
+    if (xr.tree) {
+      var ids = xrTree();
+      if (k === 'ArrowDown' || k === 'ArrowUp' || k === 'Home' || k === 'End') {
+        xr.treeAt = k === 'Home' ? 0 : k === 'End' ? ids.length - 1 : xr.treeAt + (k === 'ArrowDown' ? 1 : -1);
+        xr.treeAt = Math.max(0, Math.min(ids.length - 1, xr.treeAt)); xr.pinned = ids[xr.treeAt];
+      } else if (k === 'Enter') { xr.pinned = ids[xr.treeAt]; xr.tree = false; }
+      else if (k === 'Escape' || k === 't' || k === 'T') xr.tree = false;
+      else return;
+      eat(e); xrRedraw(); return;
+    }
+    var sel = xrObj(xrSel());
+    if (k === 't' || k === 'T') { xr.model = xrModel(); xr.tree = true; var ids2 = xrTree(); xr.treeAt = Math.max(0, ids2.indexOf(xrSel())); if (xr.pinned === null) xr.pinned = ids2[xr.treeAt]; }
+    else if ((k === 'p' || k === 'P') && sel) xr.pinned = sel.parent >= 0 ? sel.parent : sel.id;
+    else if ((k === 'c' || k === 'C') && sel) {
+      var down = sel.kids.filter(function (id) { return inRect(xr.model.objs[id], xr.px, xr.py); });
+      xr.pinned = down.length ? down[down.length - 1] : sel.kids.length ? sel.kids[sel.kids.length - 1] : sel.id;
+    }
+    else if (k === 'Escape' && xr.pinned !== null) xr.pinned = null;
+    else return;
+    eat(e); xrRedraw();
+  }, true);
+  // Tools (tools/stage_xray.py) and tests read the view through this; set() is the live line's "xray MODE".
+  window.wwdosXray = {
+    on: function () { return xr.on; },
+    set: function (mode) { xrSet(mode); return xr.on; },
+    objects: function () {
+      xrRefresh(); var m = xr.model;
+      return m ? m.objs.map(function (o) { var c = {}; for (var k in o) if (k !== 'kids') c[k] = o[k]; c.kids = o.kids.slice(); c.label = xrLabel(o); c.frameText = xrFrames(o); return c; }) : [];
+    },
+    pick: function (what) {
+      xr.model = xrModel(); if (!xr.model) return null;
+      var id = null;
+      if (Array.isArray(what)) id = xrPick(xr.model.desk.x + what[0], xr.model.desk.y + what[1], false);
+      else xr.model.objs.forEach(function (o) { if (id === null && o.name === what && !o.inner) id = o.id; });
+      xr.on = true; xr.pinned = id; xr.tree = false; xrRedraw();
+      return id === null ? null : xrReadout(xr.model.objs[id]);
+    },
+    tree: function (on) { xr.tree = !!on; xrRedraw(); },
+    panel: function (on) { xr.panel = !!on; xrRedraw(); },   // the readout panel on the grid (the terminal tool prints it below)
+    kinds: function (list) { xr.kinds = list && list.length ? list : null; xrRedraw(); },
+    menu: function (x, y) { if (x === undefined) { xr.menu = null; xrRedraw(); return null; } xrOpenMenu(x, y); return xrMenuItems().map(function (e) { return e[0].trim(); }); },
+    // the cells as painted with the x-ray (the engine's own stay in window.wwdosTerm.cells)
+    cells: function () { return last ? Array.from(xv(last, lastCols, lastRows)) : []; },
+    get pinned() { return xr.pinned; }
+  };
+
   // The mouse pointer is a text-mode block: the cell under it drawn reversed (the system pointer is hidden).
   var mouseCell = -1, mouseCols = 0, lastCx = -1, lastCy = -1;
   // The caret and the pointer are the cell drawn reversed, as in DOS: the ink becomes the block, the paper the ink.
@@ -231,6 +593,7 @@
     wwdosOpts: opts,
     wwdosQueue: [], wwdosResized: false, wwdosWake: null,
     wwdosWrite: function () {},           // ANSI mode-set sequences from TermIO: nothing to do here
+    wwdosXray: function (mode) { xrSet(mode); },   // the live line "xray MODE" (stage.cpp runLive)
     wwdosUnder: function (u) { under = u; },   // the under-glyph list, sent with every draw of a desktop with marks
     wwdosCols: function () { return cols; },
     wwdosRows: function () { return rows; },
@@ -238,7 +601,7 @@
       last = new Uint32Array(cells); lastCols = c; lastRows = r; lastCx = cx; lastCy = cy;   // copy: wasm memory may move
       flushes++;
       if (noDraw) { window.wwdosFrames = (window.wwdosFrames | 0) + 1; return; }   // ?draw=0: a tool reads the cells; nothing is painted (headless WebGL is slow)
-      draw(menuNote(last, c), c, r, cx, cy);
+      draw(menuNote(xv(last, c, r), c), c, r, cx, cy);
     },
     print: function (s) { console.log(s); },
     printErr: function (s) { console.warn(s); },
@@ -254,17 +617,19 @@
   // made when the page loads (it starts suspended) and every clip is decoded then, so a cue right after the first
   // click finds its clip ready and starts from its first sample. The click resumes the context (unlocked); clips wait
   // in the list below until its clock runs, and the first one to start ties script time to it.
-  var SC = window.wwdosScene || {}, SND = SC.sounds || {}, SFX = SC.sfx || {};
+  var SC = window.wwdosScene || {}, SND = SC.sounds || {}, SFX = SC.sfx || {}, hasSound = Object.keys(SND).length || Object.keys(SFX).length;
   var actx = null, master = null, bufs = {}, lastSfx = {}, hint = false, unlocked = false;
+  // handed: the page that frames this one had the viewer's click (?sound=1 or a {wwdos: 'sound'} message); see handSound
+  var framed = window.parent !== window, handed = framed && (q.get('sound') === '1' || opts.sound === 1);
   function ready() { return !!actx && unlocked && actx.state === 'running'; }
   function makeAudio() {
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
     try { actx = new AC(); } catch (e) { actx = null; return false; }
-    if (actx.state === 'running' && !unlocked) actx.suspend();   // a browser that allows autoplay still waits for the click
+    if (actx.state === 'running' && !unlocked && !handed) actx.suspend();   // a browser that allows autoplay still waits for the click
     master = actx.createGain(); master.gain.value = muted ? 0 : (SC.volume === undefined ? 0.9 : SC.volume);
     master.connect(actx.destination);
-    actx.onstatechange = function () { if (ready()) startWaiting(); };
+    actx.onstatechange = function () { if (handed && !unlocked && actx.state === 'running') unlock(); if (ready()) startWaiting(); };
     Object.keys(SND).forEach(function (name) {
       var done = function (buf) { bufs[name] = buf; startWaiting(); }, fail = function () { bufs[name] = null; startWaiting(); };
       var decode = function (ab) {
@@ -315,7 +680,7 @@
     } else still = 0;
     lastT = t;
     if (!/^error/.test(note)) note = still >= 3 ? 'stalled at ' + t.toFixed(1) + 's  F5 skips on' : '';
-    if ((note || dbg) && last) draw(menuNote(last, lastCols), lastCols, lastRows, -1, -1);
+    if ((note || dbg) && last) draw(menuNote(xv(last, lastCols, lastRows), lastCols), lastCols, lastRows, -1, -1);
   }, 1000);
   window.addEventListener('error', function (e) { note = 'error: ' + ascii(e.message || e.type); });
   // A lost graphics context leaves a frozen picture while the sound runs on. Say so, and when the browser gives
@@ -347,7 +712,7 @@
     var press = !!e && e.type === 'pointerdown';
     if (press) pressAt = [e.clientX || 0, e.clientY || 0];
     if (unlocked) { if (!press) go(); if (actx && actx.state === 'suspended' && !userPaused) actx.resume(); return; }
-    if (hint) { hint = false; if (last) draw(last, lastCols, lastRows, -1, -1); }
+    if (hint) { hint = false; if (last) draw(xv(last, lastCols, lastRows), lastCols, lastRows, -1, -1); }
     if (!actx && !makeAudio()) { if (!press) go(); return; }   // no context at load (an old browser): make it now
     unlocked = true;
     // The audio clock starts some time after resume() (about 0.1 s, more on a busy machine). The first click opens
@@ -359,7 +724,7 @@
       if (opened) return;
       opened = true; clockWait = false;
       if (gateDue) { gateDue = false; go(); }
-      startWaiting();
+      startWaiting(); tell();
     };
     var p = actx.resume();
     if (actx.state === 'running') open();
@@ -373,6 +738,35 @@
   }
   // iOS counts a tap's touchend (not its pointerdown) as the gesture that may start audio: resume there too.
   function resumeSound() { if (unlocked && actx && actx.state === 'suspended' && !userPaused) actx.resume(); }
+  // A films player that frames this page (the manual's PLAY) hands over its click: it loads the page with ?sound=1 or
+  // posts {wwdos: 'sound'}, and gives the iframe allow="autoplay". A browser that lets a framed page play after a click
+  // in its parent runs the context; the page is then unlocked as by a click here, and the clips cued so far start
+  // part-way on the audio clock. A browser that refuses leaves the context suspended and the page waits for a click.
+  // Framed, the page tells its parent {wwdos: 'sound', on, clips} when sound comes on, or after 3 s when it stays off,
+  // so the player can let the next tap through to the film.
+  function tell() {
+    if (framed) window.parent.postMessage({ wwdos: 'sound', on: ready(), clips: !!hasSound }, '*');
+  }
+  function unlock() {
+    unlocked = true;
+    if (hint) { hint = false; if (last) draw(xv(last, lastCols, lastRows), lastCols, lastRows, -1, -1); }
+    startWaiting(); tell();
+  }
+  function handSound() {
+    handed = true;
+    if (!hasSound || unlocked) { tell(); return; }
+    if (!actx && !makeAudio()) { tell(); return; }
+    // A context made while the page loads can be refused once and allowed a moment later (Chrome with the stricter
+    // autoplay rule): ask again every 250 ms for 3 s, then tell the parent the sound is still off.
+    var tries = 0;
+    (function ask() {
+      if (unlocked) return;
+      if (actx.state === 'running') { unlock(); return; }
+      var p = actx.resume();
+      if (p && p.catch) p.catch(function () {});
+      if (++tries < 12) setTimeout(ask, 250); else tell();
+    })();
+  }
   function synth(q) {
     var t = actx.currentTime, d = (q.ms || 60) / 1000, g = actx.createGain(), f = q.f || [440, 440], src;
     g.gain.setValueAtTime(q.gain || 0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
@@ -534,7 +928,7 @@
     var s = actx.createBufferSource(); s.buffer = bufs[name]; s.connect(master); s.start(when, from);
     live.push(s); s.onended = function () { var i = live.indexOf(s); if (i >= 0) live.splice(i, 1); };
   }
-  if (Object.keys(SND).length || Object.keys(SFX).length) {
+  if (hasSound) {
     hint = true;
     window.addEventListener('pointerdown', unlockSound, true);
     window.addEventListener('pointerup', releasePress, true);
@@ -542,6 +936,7 @@
     window.addEventListener('touchend', resumeSound, true);
     window.addEventListener('click', resumeSound, true);
     if (Object.keys(SND).length) makeAudio();
+    if (handed) handSound();
   }
   M.wwdosSound = playSound;
   M.wwdosAudioTime = function () { return actx && clipBase !== null && actx.state === 'running' ? actx.currentTime - clipBase : -1; };
@@ -622,16 +1017,16 @@
   }
   function mods(e) { return (e.shiftKey ? 4 : 0) + (e.altKey ? 8 : 0) + (e.ctrlKey ? 16 : 0); }
   function report(b, e, release) { var p = cellAt(e); push('\x1b[<' + b + ';' + p[0] + ';' + p[1] + (release ? 'm' : 'M')); }
-  canvas.addEventListener('mousedown', function (e) { canvas.focus(); buttons |= (1 << e.button); report(e.button + mods(e), e, false); e.preventDefault(); });
+  canvas.addEventListener('mousedown', function (e) { canvas.focus({ preventScroll: true }); buttons |= (1 << e.button); report(e.button + mods(e), e, false); e.preventDefault(); });
   window.addEventListener('mouseup', function (e) { if (!(buttons & (1 << e.button))) return; buttons &= ~(1 << e.button); report(e.button + mods(e), e, true); });
   function movePointer(e) {
     var r = canvas.getBoundingClientRect(), x = Math.floor((e.clientX - r.left) / cellCssW), y = Math.floor((e.clientY - r.top) / cellCssH);
     var at = (x >= 0 && x < cols && y >= 0 && y < rows) ? y * cols + x : -1;
     if (at === mouseCell && mouseCols === cols) return;
     mouseCell = at; mouseCols = cols;
-    if (last && lastCols === cols) draw(menuNote(last, lastCols), lastCols, lastRows, lastCx, lastCy);
+    if (last && lastCols === cols) draw(menuNote(xv(last, lastCols, lastRows), lastCols), lastCols, lastRows, lastCx, lastCy);
   }
-  document.addEventListener('mouseleave', function () { mouseCell = -1; if (last) draw(menuNote(last, lastCols), lastCols, lastRows, lastCx, lastCy); });
+  document.addEventListener('mouseleave', function () { mouseCell = -1; if (last) draw(menuNote(xv(last, lastCols, lastRows), lastCols), lastCols, lastRows, lastCx, lastCy); });
   window.addEventListener('mousemove', function (e) {
     movePointer(e);
     if (!buttons) return;
@@ -644,7 +1039,7 @@
   var rt = null;
   window.addEventListener('resize', function () {
     clearTimeout(rt);
-    rt = setTimeout(function () { if (measure()) { M.wwdosResized = true; wake(); } else if (last) draw(last, lastCols, lastRows, -1, -1); }, 60);
+    rt = setTimeout(function () { if (measure()) { M.wwdosResized = true; wake(); } else if (last) draw(xv(last, lastCols, lastRows), lastCols, lastRows, -1, -1); }, 60);
   });
 
   // The test harness (tools/shoot.py) reads the screen through an xterm-shaped object.
@@ -704,10 +1099,12 @@
   // {wwdos: 'time', t, length} posted back to the sender. It may also post {wwdos: 'run', line}, {wwdos: 'jump', bar},
   // {wwdos: 'quantise', mode}, {wwdos: 'pause', on} or {wwdos: 'state'}; each is answered with
   // {wwdos: 'state', t, length, bar, bars, quantise, queued, paused, sections, error}. error is run()'s answer for a
-  // 'run' message, else why the last live command did nothing ('' when it worked).
+  // 'run' message, else why the last live command did nothing ('' when it worked). {wwdos: 'sound'} hands over the parent's
+  // click (handSound); its answer is {wwdos: 'sound', on, clips}.
   window.addEventListener('message', function (e) {
     var d = e.data, S = window.wwdosStage;
     if (!d || typeof d !== 'object' || !d.wwdos) return;
+    if (d.wwdos === 'sound') { handSound(); return; }
     if (d.wwdos === 'seek' && isFinite(+d.t)) S.seek(+d.t);
     if ((d.wwdos === 'seek' || d.wwdos === 'time') && e.source) {
       e.source.postMessage({ wwdos: 'time', t: S.time(), length: S.length() }, '*');
@@ -735,7 +1132,9 @@
     (function start() {
       measure();
       if ((rows < 20 || cols < 60) && tries++ < 60) { requestAnimationFrame(start); return; }
-      canvas.focus();
+      // Framed, focus would scroll the embedding page to this frame as it loads; the frame gets focus from the
+      // visitor's click (or the player's full screen), and keys are read on the window either way.
+      if (!framed) canvas.focus({ preventScroll: true });
       WWDOS(M);
     })();
   });

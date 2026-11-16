@@ -89,12 +89,16 @@
 //                                     first section). The engine uses the first one only.
 //   loop [T]                          clock back to T seconds (default 0) and run on
 //   end                               stop the clock
+//   xray on|off|toggle|inspect        live only: the page's x-ray view (see X-ray below); a script line does nothing
 // Quantise: a queued jump lands on the next bar line (BAR, the default), on the next beat at the same beat of the
 // target bar (BEAT), or at once (OFF); Q cycles the mode. A second jump before landing replaces the first. PgDn and
 // PgUp queue too. While paused or at a gate a jump lands at once. With no tempo command the engine assumes 120 bpm
 // 4/4 from the first section. The page adds bars(), bar(), jump(BAR), quantise(MODE), sectionsList() to wwdosStage.
 // Anchors: in open, move and rect, X may be "right" or "centre" and Y "bottom" or "centre": the window sits
 // against that edge, or in the middle, of the real desktop (not the laid-out size). open k centre bottom 0 0 ...
+// X-ray: xray on|off|toggle|inspect (live only) shows the page's x-ray view: a box and a label over every window,
+// sprite, picture, mark and the gate, drawn by the page on top of the cells (web/shell-webgl.html). It is a view,
+// never part of the film: it changes no cell the engine draws, no stage time and no log; in a script it does nothing.
 // Live: runLive(LINE) runs one command now, without a time field (the page's wwdosStage.run). Windows it opens are
 // stage windows: the next seek or replay closes them. loop, end, gate, tempo, section, clock and size are refused.
 // Commands aimed at a window that is not open do nothing; the page trace (window.wwdosTrace) marks them warn.
@@ -196,6 +200,10 @@ struct StageHost
     // re-placed clips stay together.
     virtual double stageAudioTime() { return -1; }
     virtual void stageRetime(double) {}
+    // Where the host drew the mark NAME at the tick on screen, in desktop cells, and the frame it showed (x-ray map).
+    virtual bool stageMarkRect(const std::string&, int&, int&, int&, int&, int&, int&) { return false; }
+    // "xray on|off|toggle|inspect" from a live line: the page's x-ray view (never part of the film).
+    virtual void stageXray(const std::string&) {}
 };
 
 class Stage
@@ -251,6 +259,9 @@ public:
     // The stage's windows, front first, as JSON: [{"name","x","y","w","h","title","ghost","file"}] (speech bubbles
     // are named _sayN). Cells are desktop cells: the menu bar row is not counted. The page's wwdosStage.windows().
     std::string windowsJson();
+    // Every object on the stage for the x-ray view, as JSON: the desktop's place on the screen, whether the clock waits
+    // at a gate, the windows front first (kind, content, rect, frame) and the marks in draw order (stage.cpp).
+    std::string objectsJson();
 
 private:
     struct Cmd { double t; std::string line; };
