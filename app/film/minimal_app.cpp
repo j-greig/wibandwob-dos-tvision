@@ -351,6 +351,8 @@ static const ushort cmPrevSection = 214;
 static const ushort cmFullscreen = 215;
 static const ushort cmKeys = 216;
 static const ushort cmMute = 217;
+static const ushort cmReset = 218;       // Window > Reset windows (Alt+E): Stage::reset
+static const ushort cmRestart = 219;     // File > Restart (Alt+R): Stage::restart, then play
 static bool g_scrub = false;             // stage command "scrubber on": a timeline in the status line
 static bool g_scrubWide = false;         // "scrubber wide": the two-row timeline on the desktop's bottom rows
 static int g_stepReq = 0;                // wwdos_stage_step(N): ticks to run while paused (served at once from idle)
@@ -1059,6 +1061,14 @@ public:
         return bg && bg->markRect(name, x, y, w, h, frame, frames);
     }
     void stageXray(const std::string& mode) override { wwdos_js_xray(mode.c_str()); }
+    // File > Restart, Alt+R, the live line "restart": from 0 with sound from the top, playing
+    void stageRestart() override
+    {
+        stage.restart();
+        if (ww_anim_paused) { ww_anim_paused = false; wwdos_js_sound("!resume"); }
+        if (statusLine) statusLine->drawView();
+        refreshWide();
+    }
     void stageMark(const std::string& name, const StageMark& m) override
     {
         if (auto* bg = dynamic_cast<TWeatherBackground*>(deskTop->background)) bg->setInk(name, m);
@@ -1194,23 +1204,28 @@ TMenuBar* TMinApp::initMenuBar(TRect r)
     // A stage page (a film) has no Open Primer: the file system holds only the film's own files.
     TSubMenu& file = *new TSubMenu("~F~ile", kbAltF);
     file + *new TMenuItem("~P~lay / Pause", cmPause, kbF9, hcNoContext, "F9");
+    // the viewer's controls on every film page; a scene with "film_menu": false (Module.wwdosOpts.filmmenu 0) leaves them out
+    const bool filmMenu = isStagePage() && wwdos_js_opt("filmmenu") != 0;
+    if (filmMenu) file + *new TMenuItem("~R~estart", cmRestart, kbAltR, hcNoContext, "Alt-R");
     if (isStagePage()) file + *new TMenuItem("~M~ute / Unmute", cmMute, kbNoKey, hcNoContext, "M");
     file + newLine();
     if (!isStagePage())
         file + *new TMenuItem("~O~pen Primer...", cmOpenPrimer, kbCtrlO, hcNoContext, "Ctrl-O") + newLine();
     file + *new TMenuItem("E~x~it", cmQuit, kbAltX, hcNoContext, "Alt-X");
+    TSubMenu& win = *new TSubMenu("~W~indow", kbAltW);
+    win + *new TMenuItem("~C~ascade", cmCascade, kbNoKey) +
+          *new TMenuItem("Ti~l~e", cmTile, kbNoKey);
+    if (filmMenu) win + *new TMenuItem("~R~eset windows", cmReset, kbAltE, hcNoContext, "Alt-E");
+    win + *new TMenuItem("Send to Bac~k~", cmSendToBack, kbNoKey) +
+          newLine() +
+          *new TMenuItem("~N~ext", cmNext, kbF6, hcNoContext, "F6") +
+          *new TMenuItem("~P~revious", cmPrev, kbShiftF6, hcNoContext, "Shift-F6") +
+          newLine() +
+          *new TMenuItem("Clos~e~", cmClose, kbAltF3, hcNoContext, "Alt-F3") +
+          *new TMenuItem("Close ~A~ll", cmCloseAll, kbNoKey);
     return new TMinMenuBar(r,
         file +
-        *new TSubMenu("~W~indow", kbAltW) +
-            *new TMenuItem("~C~ascade", cmCascade, kbNoKey) +
-            *new TMenuItem("Ti~l~e", cmTile, kbNoKey) +
-            *new TMenuItem("Send to Bac~k~", cmSendToBack, kbNoKey) +
-            newLine() +
-            *new TMenuItem("~N~ext", cmNext, kbF6, hcNoContext, "F6") +
-            *new TMenuItem("~P~revious", cmPrev, kbShiftF6, hcNoContext, "Shift-F6") +
-            newLine() +
-            *new TMenuItem("Clos~e~", cmClose, kbAltF3, hcNoContext, "Alt-F3") +
-            *new TMenuItem("Close ~A~ll", cmCloseAll, kbNoKey) +
+        win +
         *new TSubMenu("~V~iew", kbAltV) +
             *new TMenuItem("Hide ~B~ars", cmToggleBars, kbF4, hcNoContext, "F4") +
             *new TMenuItem("~S~tep", cmStep, kbF8, hcNoContext, "F8") +
@@ -1375,6 +1390,9 @@ void TMinApp::handleEvent(TEvent& event)
             case kbF8: cmd = cmStep; break;
             case kbPgDn: cmd = cmNextSection; break;
             case kbPgUp: cmd = cmPrevSection; break;
+            // the viewer's controls work with the bars hidden too (a hidden menu bar takes no hot keys)
+            case kbAltR: if (g_stage && wwdos_js_opt("filmmenu") != 0) cmd = cmRestart; break;
+            case kbAltE: if (g_stage && wwdos_js_opt("filmmenu") != 0) cmd = cmReset; break;
         }
         if (cmd) { event.what = evCommand; event.message.command = cmd; event.message.infoPtr = nullptr; }
     }
@@ -1402,8 +1420,8 @@ void TMinApp::handleEvent(TEvent& event)
         case cmKeys:
             {
             TRect d = deskTop->getExtent();
-            TRect r(0, 0, 58, 16);
-            r.move(std::max(0, (d.b.x - 58) / 2), std::max(0, (d.b.y - 16) / 2));
+            TRect r(0, 0, 58, 18);
+            r.move(std::max(0, (d.b.x - 58) / 2), std::max(0, (d.b.y - 18) / 2));
             messageBoxRect(r, mfInformation | mfOKButton,
                 "Option+Enter, fn+F3   fullscreen\n"
                 "Tab                   fullscreen (start screen)\n"
@@ -1414,12 +1432,16 @@ void TMinApp::handleEvent(TEvent& event)
                 "Q                     jump on: bar / beat / at once\n"
                 "fn+F5 / fn+F7         forward / back 2 seconds\n"
                 "fn+F4                 hide / show the bars\n"
+                "Alt+R                 restart the film from the start\n"
+                "Alt+E                 reset the windows to the script's places\n"
                 "F10                   open the menu");
             }
             break;
         case cmNextSection: case cmPrevSection:
             queueSection(event.message.command == cmNextSection ? 1 : -1);
             break;
+        case cmReset: if (g_stage) stage.reset(); break;
+        case cmRestart: if (g_stage) stageRestart(); break;
         case cmSendToBack:
             if (deskTop->current && deskTop->background)
                 deskTop->current->putInFrontOf((TView*)deskTop->background);

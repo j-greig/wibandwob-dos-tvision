@@ -133,5 +133,10 @@ Nothing is generated from it yet: the dispatch in `Stage::run` and `COMMANDS` ar
   `Stage::input` matches an event against the handlers and queues the jump (landed in `tick()`), leaving exit and go to
   the host. A gate passes when a jump is already queued. Inputs are kept with the session tick while recording
   (`wwdos_stage_inputs`, `wwdos_stage_session`); `wwdos_stage_input` feeds one, so a session replays exactly.
+- Reset windows and Restart are the engine's, on every film page: File > Restart (Alt+R) and Window > Reset windows
+  (Alt+E) come from `TMinApp::initMenuBar`, the live lines `reset` and `restart` from `Stage::runLive` (not logged).
+  `Stage::reset` is the resize replay at the tick on screen; `Stage::restart` is `seek(0)` and the host plays on. A page
+  option `filmmenu` 0 (scene `"film_menu": false`) leaves both out. The desktop app (`wwdos`) cannot play a stage, so
+  it has neither.
 - The core's native desktop build (`wwdos`) was not built here (it needs the macOS-era dependencies); the app edits
   were built in the browser desktop (`dist-web/wwdos*.html`, smoke test passes) and in the film targets.

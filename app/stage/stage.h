@@ -105,6 +105,9 @@
 //   loop [T]                          clock back to T seconds (default 0) and run on
 //   end                               stop the clock
 //   xray on|off|toggle|inspect        live only: the page's x-ray view (see X-ray below); a script line does nothing
+//   reset                             live only: the stage's windows back where the script has them now (Window > Reset
+//                                     windows, Alt+E); same tick, sound and clock untouched; a script line does nothing
+//   restart                           live only: the film from the start, sound from the top (File > Restart, Alt+R)
 // Quantise: a queued jump lands on the next bar line (BAR, the default), on the next beat at the same beat of the
 // target bar (BEAT), or at once (OFF); Q cycles the mode. A second jump before landing replaces the first. PgDn and
 // PgUp queue too. While paused or at a gate a jump lands at once. With no tempo command the engine assumes 120 bpm
@@ -227,6 +230,7 @@ struct StageHost
     virtual bool stageMarkRect(const std::string&, int&, int&, int&, int&, int&, int&) { return false; }
     // "xray on|off|toggle|inspect" from a live line: the page's x-ray view (never part of the film).
     virtual void stageXray(const std::string&) {}
+    virtual void stageRestart() {}         // the live line "restart": the host restarts the film (Stage::restart and play)
 };
 
 class Stage
@@ -279,6 +283,13 @@ public:
     // queued open commands will create. runLive applies it and returns "" or why it did nothing.
     std::string checkLive(const std::string& line, const std::set<std::string>& pending) const;
     std::string runLive(const std::string& line);
+    // Reset windows: every stage window back where the script (and the open log) has it at the tick on screen, after a
+    // viewer's drag, Cascade, Tile or close. No seek: the tick, the clock, queued jumps, gates and sound are untouched,
+    // and nothing is retriggered (the replay is quiet). Not logged.
+    void reset();
+    // Restart: the film again from 0, sound from the top (seek(0)); queued jumps dropped; the log and the inputs are
+    // cleared unless recording. Not logged. The host also lets a paused page play.
+    void restart();
     // The open log (see Log above): every live line that ran, with the tick it ran on and the script position.
     struct LogEntry { int tick; size_t pos; std::string line; bool done; };
     bool recording() const { return rec; }

@@ -413,6 +413,7 @@
       if (XR_DONE.indexOf(l[0]) < 0) return;
       items.push([' ' + pad((on && xr.L[l[0]] ? '\u221a ' : '  ') + l[1], 17) + pad(l[2], 9) + ' ', 'layer:' + l[0]]);
     });
+    items.push([' ' + pad('Reset windows', 17) + pad('Alt+E', 9) + ' ', 'reset'], [' ' + pad('Restart', 17) + pad('Alt+R', 9) + ' ', 'restart']);
     return items.concat([[' ' + pad('Copy stage name', 26) + ' ', 'name'], [' ' + pad('Copy rect', 26) + ' ', 'rect'],
                          [' ' + pad('Close', 17) + pad('Esc', 9) + ' ', 'close']]);
   }
@@ -524,6 +525,7 @@
   function xrDo(what) {
     var id = xr.menu ? xr.menu.target : null; xr.menu = null;
     if (what.indexOf('layer:') === 0) { xrLayer(what.slice(6)); return; }
+    if (what === 'reset' || what === 'restart') { window.wwdosStage[what](); xrRedraw(); return; }
     if (what === 'inspect') { xr.on = true; xr.model = xrModel(); xr.pinned = id; xr.tree = false; }
     else if (what === 'toggle') { xrSet(xr.on ? 'off' : 'on'); return; }
     else if (what === 'tree') { xr.on = true; xr.model = xrModel(); xr.tree = true; var ids = xrTree(); xr.treeAt = Math.max(0, ids.indexOf(id)); xr.pinned = id; }
@@ -752,6 +754,7 @@
   // made when the page loads (it starts suspended) and every clip is decoded then, so a cue right after the first
   // click finds its clip ready and starts from its first sample. The click resumes the context (unlocked); clips wait
   // in the list below until its clock runs, and the first one to start ties script time to it.
+  if ((window.wwdosScene || {}).film_menu === 0) opts.filmmenu = 0;   // a scene with "film_menu": false: no Restart, no Reset windows
   var SC = window.wwdosScene || {}, SND = SC.sounds || {}, SFX = SC.sfx || {}, hasSound = Object.keys(SND).length || Object.keys(SFX).length;
   var actx = null, master = null, bufs = {}, lastSfx = {}, hint = false, unlocked = false;
   // handed: the page that frames this one had the viewer's click (?sound=1 or a {wwdos: 'sound'} message); see handSound
@@ -1222,6 +1225,10 @@
     // One stage command now, no time field: run('open t 2 2 20 5 cyan |hello'). Returns '' or the reason it cannot
     // run. The window is a stage window: the next seek or replay closes it. lastError(): why the last applied
     // command did nothing. pause(on): true pauses, false plays, no argument asks; returns true when paused.
+    // The viewer's controls (Window > Reset windows, File > Restart): reset() puts the stage's windows back where the
+    // script has them at the tick on screen, restart() plays the film from the start; neither is logged.
+    reset: function () { return this.run('reset'); },
+    restart: function () { return this.run('restart'); },
     run: function (line) { return M.ccall ? M.ccall('wwdos_stage_run', 'string', ['string'], [String(line)]) : 'the app is not up yet'; },
     lastError: function () { return M.ccall ? M.ccall('wwdos_stage_live_error', 'string', [], []) : ''; },
     // The stage's windows, front first: [{name, x, y, w, h, ghost, title, file}] in desktop cells. screen(): the

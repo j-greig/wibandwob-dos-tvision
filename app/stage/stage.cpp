@@ -1100,8 +1100,8 @@ void Stage::run(const std::string& line)
         jShow = jTarget = to[pick]; jLand = curT + bars * barLen(); jSent = false; jq = true; jCut = false;
     } else if (cmd == "end") {
         running = false;
-    } else if (cmd == "xray") {
-        warn = "xray runs live only (a view on the film, not part of it)";
+    } else if (cmd == "xray" || cmd == "reset" || cmd == "restart") {
+        warn = "runs live only (wwdosStage.run, the menus), not in a script";
     }
 }
 
@@ -1185,7 +1185,7 @@ std::string Stage::checkLive(const std::string& raw, const std::set<std::string>
     for (const char* k : notLive) if (cmd == k) return cmd + " does not run live";
     static const char* const known[] = {"open", "move", "rect", "close", "raise", "lower", "title", "swap", "say", "hint", "bg",
         "weather", "sound", "scrubber", "theme", "colour", "mark", "drift", "text", "bar", "counter", "shake", "seed", "floors", "tile", "cascade", "bars", "xray",
-        "on", "follow"};
+        "on", "follow", "reset", "restart"};
     bool ok = false;
     for (const char* k : known) if (cmd == k) ok = true;
     if (!ok) return "unknown command: " + cmd;
@@ -1405,6 +1405,8 @@ std::string Stage::runLive(const std::string& raw)
         host.stageXray(mode.empty() ? "toggle" : mode);
         return "";
     }
+    if (line == "reset") { reset(); return ""; }        // the viewer's controls: not run, not logged, not traced
+    if (line == "restart") { host.stageRestart(); return ""; }
     curT = time();
     run(line);
     logAdd(line);
@@ -1412,6 +1414,26 @@ std::string Stage::runLive(const std::string& raw)
     spriteSettle();
     host.stageTrace(curT, line, warn);
     return warn ? warn : "";
+}
+
+// Reset windows (stage.h): the replay a resize does, at the tick on screen. replay() leaves the clock at the tick to
+// run next; the advance of the tick on screen is run again so glides and bubbles stand where that tick shows them.
+void Stage::reset()
+{
+    int d = shown, n = now;
+    replay(now, next);
+    now = d; advance();
+    now = n; shown = d;
+    host.stageFlush();
+    settle();
+}
+
+void Stage::restart()
+{
+    cancelJump();
+    if (!rec) { liveLog.clear(); inputLog.clear(); }
+    handClosed.clear();
+    seek(0);
 }
 
 // The open log (stage.h, Log). A line is kept with the tick it ran on and the script position, after every entry

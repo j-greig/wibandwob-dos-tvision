@@ -45,4 +45,6 @@ loop       run  0   n   n    n    | clock back to T seconds (default 0)
 end        run  0   n   n    n    | stops the clock
 on         run  2   n   y    y    | viewer input from now on: on EVENT [WHAT] jump TARGET|next|exit|go|off
 follow     run  2   n   n    y    | after BARS bars, jump to TARGET (one of several, chosen by the seed)
+reset      run  0   n   n    y    | live only: the stage's windows back where the script has them at this tick (Window > Reset windows)
+restart    run  0   n   n    y    | live only: the film from the start, sound from the top (File > Restart)
 xray       run  0   n   n    y    | live only: the page's x-ray view on, off, toggle or inspect (never part of the film)
