@@ -175,9 +175,14 @@
                  'picture film': 10, picture: 10, drawing: 7, text: 7, bar: 7, counter: 7, mirror: 9, 'line art': 12 };
   var XR_PARENT = 3, XR_DIM = 8;
   var xr = { on: q.get('xray') === '1', hover: null, pinned: null, tree: false, treeAt: 0, menu: null, px: -1, py: -1,
-             eat: false, press: null, model: null, kinds: null, panel: true };
+             eat: false, press: null, model: null, kinds: null, panel: true,
+             L: { boxes: true, transport: false, next: false, paths: false, sound: false, sheet: false, listen: false, flash: false } };
   var XB = { light: '┌┐└┘─│', dash: '┌┐└┘┄┆',
              heavy: '┏┓┗┛━┃', dbl: '╔╗╚╝═║' };
+  (function () {
+    var v = q.get('xray');
+    if (v && v !== '1' && v !== '0') { xr.on = true; xr.L.boxes = false; v.split(',').forEach(function (k) { if (k in xr.L) xr.L[k] = true; }); }
+  })();
   function xrActive() { return xr.on || !!xr.menu; }
   // The x-ray model: the engine's map (wwdos_stage_objects) in screen cells, with nesting and what covers what.
   function xrModel() {
@@ -354,16 +359,16 @@
         var order = m.objs.filter(function (o) { return o.kind !== 'desktop' && xrKind(o) && (!o.inner || (sel && (sel.id === o.id || sel.id === o.parent))); });
         var rank = function (o) { return o.kind === 'gate' ? 0 : o.kind === 'mark' ? 1 : o.kind === 'group' ? 2 : 3; };
         order.sort(function (a, b) { return rank(a) - rank(b) || (a.kind === 'mark' ? a.layer - b.layer : 0) || (b.z - a.z) || (a.inner ? 1 : 0) - (b.inner ? 1 : 0); });
-        order.forEach(function (o) {
+        if (xr.L.boxes) order.forEach(function (o) {
           var ink = XR_EGA[sel ? (chain[o.id] ? XR_PARENT : sel.id === o.id ? XR_INK[o.kind] || 7 : XR_DIM) : XR_INK[o.kind] || 7];
           box(o, sel && sel.id === o.id ? 'heavy' : chain[o.id] ? 'dbl' : o.shows === 'covered' || o.shows === 'off screen' ? 'dash' : 'light', ink);
         });
-        if (sel && sel.kind !== 'desktop') box(sel, 'heavy', XR_EGA[XR_INK[sel.kind] || 7]);
+        if (sel && sel.kind !== 'desktop' && sel.w > 0) box(sel, 'heavy', XR_EGA[XR_INK[sel.kind] || 7]);
         // labels last: the chosen object's first, then front to back; a label stops where a label in front of it
         // already lies, so where two collide the top-most object's label is the one left whole
         var used = new Uint8Array(C * R), lab = order.slice().reverse();
         if (sel) lab.sort(function (a, b) { return (b.id === sel.id) - (a.id === sel.id); });
-        lab.forEach(function (o) {
+        if (xr.L.boxes) lab.forEach(function (o) {
           if (o.w < 4 || o.y < 0 || o.y >= R) return;
           var on = !sel || sel.id === o.id || chain[o.id];
           var k = sel && chain[o.id] ? XR_PARENT : XR_INK[o.kind] || 7;
@@ -373,6 +378,7 @@
           for (var j = 0; j < n; j++) { var xj = x0 + j; if (xj >= 0 && xj < C) used[o.y * C + xj] = 1; }
           text(x0, o.y, s, 0, XR_EGA[on ? k : XR_DIM], n);
         });
+        xrLayers({ put: put, text: text, box: box, panel: panel, C: C, R: R, m: m, sel: sel, cells: cells });
         if (xr.tree) {
           var ids = xrTree(), lines = ids.map(function (id) { var o = m.objs[id]; return rep('  ', o.depth) + o.name + ' ' + o.kind + (o.shows !== 'visible' ? ' (' + o.shows + ')' : ''); });
           xr.treeAt = Math.max(0, Math.min(ids.length - 1, xr.treeAt));
@@ -396,11 +402,111 @@
     return xr.kinds.indexOf(k.kind) >= 0 || (xr.kinds.indexOf('picture') >= 0 && /picture/.test(k.content || ''));
   }
   function rep(s, n) { var o = ''; while (n-- > 0) o += s; return o; }
+  // The layers: each has a key (with x-ray on) and a menu entry, and can be on alone (B turns the boxes off).
+  var XR_LAYERS = [['boxes', 'Boxes', 'B'], ['transport', 'Transport', '1'], ['next', 'Next cues', '2'], ['paths', 'Paths', '3'],
+                   ['sound', 'Sound lanes', '4'], ['sheet', 'Dope sheet', '5'], ['listen', 'Input state', '6'], ['flash', 'Changed cells', '7']];
+  function pad(s, n) { s = String(s); while (s.length < n) s += ' '; return s.slice(0, n); }
   function xrMenuItems() {
-    var on = xr.on;
-    return [[' Inspect          Shift+F2 ', 'inspect'], [' X-ray ' + (on ? 'off' : 'on ') + '        F2       ', 'toggle'],
-            [' Object tree      T        ', 'tree'], [' Copy stage name           ', 'name'], [' Copy rect                 ', 'rect'],
-            [' Close            Esc      ', 'close']];
+    var on = xr.on, items = [[' ' + pad('Inspect', 17) + pad('Shift+F2', 9) + ' ', 'inspect'],
+      [' ' + pad('X-ray ' + (on ? 'off' : 'on'), 17) + pad('F2', 9) + ' ', 'toggle'], [' ' + pad('Object tree', 17) + pad('T', 9) + ' ', 'tree']];
+    XR_LAYERS.forEach(function (l) {
+      if (XR_DONE.indexOf(l[0]) < 0) return;
+      items.push([' ' + pad((on && xr.L[l[0]] ? '\u221a ' : '  ') + l[1], 17) + pad(l[2], 9) + ' ', 'layer:' + l[0]]);
+    });
+    return items.concat([[' ' + pad('Copy stage name', 26) + ' ', 'name'], [' ' + pad('Copy rect', 26) + ' ', 'rect'],
+                         [' ' + pad('Close', 17) + pad('Esc', 9) + ' ', 'close']]);
+  }
+  var XR_DONE = ['boxes', 'transport'];   // layers built so far
+  function xrLayer(name, on) { xr.on = true; xr.L[name] = on === undefined ? !xr.L[name] : !!on; xrRedraw(); }
+  // ---- the script as the page holds it (wwdosScene.files['stage.txt']), parsed once: the commands with their times,
+  // ticks and source lines, the tempo, the loop, the sections. The layers read the film from this and from the engine.
+  var xrS = null;
+  function xrScript() {
+    if (xrS) return xrS;
+    var SS = window.wwdosScene || {}, txt = (SS.files && SS.files['stage.txt']) || '', X = SS.xray || {}, at = X.at || [], files = X.files || [];
+    var hz = 8, size = [0, 0], cmds = [], k = 0;
+    txt.split('\n').forEach(function (l) {
+      l = l.trim();
+      if (/^clock /.test(l)) hz = Math.max(1, parseInt(l.slice(6), 10) || 8);
+      else if (/^size /.test(l)) { var z = l.split(/\s+/); size = [+z[1], +z[2]]; }
+      else if (l[0] === '@') {
+        var m = /^@(\S+)\s+(.*)$/.exec(l); if (!m) return;
+        var line = m[2], w = line.split(/\s+/), a = at[k];
+        cmds.push({ t: parseFloat(m[1]), line: line, cmd: w[0], name: w[1] || '', i: k, src: a ? files[a[0]] + ':' + a[1] : '' });
+        k++;
+      }
+    });
+    cmds = cmds.map(function (c, j) { c.j = j; return c; }).sort(function (a, b) { return a.t - b.t || a.j - b.j; });
+    var tick = function (t) { return Math.max(0, Math.ceil(t * hz - 0.5 - 1e-9)); };
+    cmds.forEach(function (c) { c.k = tick(c.t); });
+    var tempo = null, sections = [], loop = null, end = null;
+    cmds.forEach(function (c) {
+      if (c.cmd === 'tempo' && !tempo) { var w = c.line.split(/\s+/); tempo = { t0: c.t, bpm: +w[1] || 120, beats: +w[2] || 4 }; }
+      if (c.cmd === 'section') sections.push({ t: c.t, name: (c.line.split('|')[1] || '').replace(/^ /, '') });
+      if (c.cmd === 'loop' && !loop) loop = { at: c.t, to: +(c.line.split(/\s+/)[1] || 0) };
+      if (c.cmd === 'end' && end === null) end = c.t;
+    });
+    if (!tempo) tempo = { t0: sections.length ? sections[0].t : 0, bpm: 120, beats: 4, assumed: true };
+    xrS = { cmds: cmds, hz: hz, size: size, tempo: tempo, sections: sections, loop: loop, end: end, tick: tick,
+            beat: 60 / tempo.bpm, bar: tempo.beats * 60 / tempo.bpm };
+    return xrS;
+  }
+  function xrNow() { var S = window.wwdosStage; return S ? S.shown() : 0; }
+  function xrSectionAt(t) { var n = ''; xrScript().sections.forEach(function (s) { if (s.t <= t + 1e-6) n = s.name; }); return n; }
+  function xrBarBeat(t) {
+    var s = xrScript(), b = (t - s.tempo.t0) / s.bar;
+    if (b < 0) return '-';
+    var bar = Math.floor(b + 1e-6), beat = Math.floor((b - bar) * s.tempo.beats + 1e-6);
+    return (bar + 1) + '.' + (beat + 1);
+  }
+  // ---- 1. transport: one row, at the top or the bottom of the desktop, whichever the film leaves freer and the
+  // object under the pointer does not touch
+  function xrTransportText(cells, C, R, m) {
+    var S = window.wwdosStage, s = xrScript(), t = xrNow(), k = Math.round(t * s.hz);
+    var ink = 0, all = 0, D = m.desk;
+    for (var y = D.y; y < Math.min(R, D.y + D.h); y++) for (var x = D.x; x < Math.min(C, D.x + D.w); x++) {
+      var cp = cells[(y * C + x) * 3] & 0x1FFFFF; all++; if (cp > 32 && cp !== 0x2591 && cp !== 0x2592 && cp !== 0x2593) ink++;
+    }
+    var parts = [(S.pause() ? '\u2016 paused' : '\u25b6 playing') + (S.waiting() ? ' at a gate' : ''), t.toFixed(3) + 's', 'tick ' + k,
+                 'bar ' + xrBarBeat(t), xrSectionAt(t) || 'no section',
+                 s.loop ? 'loop ' + s.loop.to + '-' + s.loop.at + 's' : (s.end !== null ? 'ends ' + s.end + 's' : 'length ' + S.length().toFixed(1) + 's'),
+                 s.tempo.bpm + ' bpm ' + s.tempo.beats + '/4' + (s.tempo.assumed ? ' (assumed)' : ''),
+                 'clock ' + s.hz, 'ink ' + (all ? Math.round(100 * ink / all) : 0) + '%'];
+    return ' ' + parts.join(' \u2502 ') + ' ';
+  }
+  function xrRowFill(cells, C, y, x0, x1) {
+    var n = 0; for (var x = x0; x < x1; x++) { var cp = cells[(y * C + x) * 3] & 0x1FFFFF; if (cp > 32 && cp !== 0x2591 && cp !== 0x2592 && cp !== 0x2593) n++; }
+    return n;
+  }
+  function xrLayers(g) {
+    var m = g.m, D = m.desk, R = g.R, C = g.C;
+    if (xr.L.transport) {
+      var top = D.y, bot = Math.min(R, D.y + D.h) - 1, row = xrRowFill(g.cells, C, top, D.x, D.x + D.w) <= xrRowFill(g.cells, C, bot, D.x, D.x + D.w) ? top : bot;
+      var under = xrObj(xrPick(xr.px, xr.py, false));
+      if (under && under.kind !== 'desktop' && row >= under.y && row < under.y + under.h) row = row === top ? bot : top;
+      var txt = xrTransportText(g.cells, C, R, m);
+      for (var x = 0; x < C; x++) g.put(x, row, ' ', 0xFFFFFF, 0x000055);
+      g.text(0, row, txt, 0xFFFF55, 0x000055, C);
+      xr.transportRow = row;
+    }
+  }
+  // transport keys (x-ray on): Space pause/play, , and . a tick, [ and ] a bar, Home the section start; all by seek
+  function xrTransportKey(k) {
+    var S = window.wwdosStage, s = xrScript(), t = xrNow();
+    // a seek asked for a moment ago and not yet shown: step on from it, so two quick presses move two ticks
+    if (xr.goal !== undefined && performance.now() - xr.goalAt < 600 && Math.abs(t - xr.goal) > 1e-6) t = xr.goal;
+    if (k === ' ') { S.pause(!S.pause()); return true; }
+    var to = null;
+    if (k === ',' || k === '.') to = t + (k === '.' ? 1 : -1) / s.hz;
+    else if (k === '[' || k === ']') {
+      var b = Math.floor((t - s.tempo.t0) / s.bar + 1e-6) + (k === ']' ? 1 : (Math.abs((t - s.tempo.t0) / s.bar - Math.round((t - s.tempo.t0) / s.bar)) < 1e-6 ? -1 : 0));
+      to = s.tempo.t0 + b * s.bar;
+    } else if (k === 'Home') { to = 0; s.sections.forEach(function (x) { if (x.t <= t + 1e-6) to = x.t; }); if (Math.abs(to - t) < 1e-6) s.sections.forEach(function (x) { if (x.t < t - 1e-6) to = x.t; }); }
+    else return false;
+    S.pause(true);
+    xr.goal = Math.max(0, Math.min(Math.round(to * s.hz) / s.hz, S.length())); xr.goalAt = performance.now();
+    S.seek(xr.goal);
+    return true;
   }
   function xrRedraw() {
     if (last && !noDraw) draw(menuNote(xv(last, lastCols, lastRows), lastCols), lastCols, lastRows, lastCx, lastCy);
@@ -417,6 +523,7 @@
   function xrCopy(s) { try { navigator.clipboard.writeText(s); } catch (e) {} window.wwdosXrayCopied = s; }
   function xrDo(what) {
     var id = xr.menu ? xr.menu.target : null; xr.menu = null;
+    if (what.indexOf('layer:') === 0) { xrLayer(what.slice(6)); return; }
     if (what === 'inspect') { xr.on = true; xr.model = xrModel(); xr.pinned = id; xr.tree = false; }
     else if (what === 'toggle') { xrSet(xr.on ? 'off' : 'on'); return; }
     else if (what === 'tree') { xr.on = true; xr.model = xrModel(); xr.tree = true; var ids = xrTree(); xr.treeAt = Math.max(0, ids.indexOf(id)); xr.pinned = id; }
@@ -498,6 +605,9 @@
       eat(e); xrRedraw(); return;
     }
     var sel = xrObj(xrSel());
+    var lay = XR_LAYERS.filter(function (l) { return XR_DONE.indexOf(l[0]) >= 0 && (l[2] === k || l[2] === k.toUpperCase()); })[0];
+    if (lay) { eat(e); xrLayer(lay[0]); return; }
+    if (xr.L.transport && xrTransportKey(k)) { eat(e); xrRedraw(); return; }
     if (k === 't' || k === 'T') { xr.model = xrModel(); xr.tree = true; var ids2 = xrTree(); xr.treeAt = Math.max(0, ids2.indexOf(xrSel())); if (xr.pinned === null) xr.pinned = ids2[xr.treeAt]; }
     else if ((k === 'p' || k === 'P') && sel) xr.pinned = sel.parent >= 0 ? sel.parent : sel.id;
     else if ((k === 'c' || k === 'C') && sel) {
@@ -525,7 +635,10 @@
       return id === null ? null : xrReadout(xr.model.objs[id]);
     },
     tree: function (on) { xr.tree = !!on; xrRedraw(); },
-    panel: function (on) { xr.panel = !!on; xrRedraw(); },   // the readout panel on the grid (the terminal tool prints it below)
+    panel: function (on) { xr.panel = !!on; xrRedraw(); },
+    // layers({transport: true, boxes: false, ...}) switches layers (x-ray on); with no argument it reads them
+    layers: function (set) { if (set) { xr.on = true; for (var k in set) if (k in xr.L) xr.L[k] = !!set[k]; xrRedraw(); } var o = {}; for (var j in xr.L) o[j] = xr.L[j]; return o; },
+    transport: function () { if (!last) return ''; xr.model = xrModel(); return xr.model ? xrTransportText(last, lastCols, lastRows, xr.model).trim() : ''; },   // the readout panel on the grid (the terminal tool prints it below)
     kinds: function (list) { xr.kinds = list && list.length ? list : null; xrRedraw(); },
     menu: function (x, y) { if (x === undefined) { xr.menu = null; xrRedraw(); return null; } xrOpenMenu(x, y); return xrMenuItems().map(function (e) { return e[0].trim(); }); },
     // the cells as painted with the x-ray (the engine's own stay in window.wwdosTerm.cells)
