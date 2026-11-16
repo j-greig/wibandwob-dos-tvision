@@ -274,6 +274,21 @@ public:
     int loadLog(const std::string& text);
     std::string logText() const;          // the log as "TICK POS LINE" lines, oldest position first
     void go() { if (gated) { gated = false; rebase(); } }
+    // Viewer input (the page's events out, docs/stage.md § Events): the front stage window under desktop cell p ("" for
+    // none; speech bubbles count as their own windows), a window's rect, and the names of stage windows the viewer
+    // closed (Alt+F3, the close icon) since the last call.
+    std::string nameAt(TPoint p);
+    bool rectOf(const std::string& name, TRect& r);
+    std::vector<std::string> takeClosed()
+    {
+        std::vector<std::string> names, v;
+        for (auto& kv : wins) names.push_back(kv.first);
+        for (auto& n : names) win(n);            // a window closed by hand is found (and forgotten) by win()
+        v.swap(handClosed);
+        return v;
+    }
+    // The name of the front (active) stage window, "" when the front window is not a stage window.
+    std::string frontName();
     // The stage's windows, front first, as JSON: [{"name","x","y","w","h","title","ghost","file"}] (speech bubbles
     // are named _sayN). Cells are desktop cells: the menu bar row is not counted. The page's wwdosStage.windows().
     std::string windowsJson();
@@ -339,6 +354,7 @@ private:
     int bubbleSerial = 0;
 
     void run(const std::string& line);
+    std::vector<std::string> handClosed;  // stage windows the viewer closed, for the host's close events
     std::vector<LogEntry> liveLog;        // ordered by (tick, pos), then by arrival
     bool rec = false;                     // recording: the log outlives seeks and loops (an overdub of the script)
     void logAdd(const std::string& line);

@@ -594,6 +594,14 @@
     wwdosQueue: [], wwdosResized: false, wwdosWake: null,
     wwdosWrite: function () {},           // ANSI mode-set sequences from TermIO: nothing to do here
     wwdosXray: function (mode) { xrSet(mode); },   // the live line "xray MODE" (stage.cpp runLive)
+    // Events out (docs/stage.md § Events): {wwdos: 'event', kind, name, x, y, value, t, seq}, kept in window.wwdosEvents
+    // (the last 1000) and posted to the page that frames this one.
+    wwdosEvent: function (kind, name, x, y, value, t) {
+      var a = window.wwdosEvents || (window.wwdosEvents = []), e = { wwdos: 'event', kind: kind, name: name, x: x, y: y, value: value, t: t,
+        seq: (window.wwdosEventSeq = (window.wwdosEventSeq | 0) + 1) };
+      if (a.push(e) > 1000) a.shift();
+      if (window.parent !== window) window.parent.postMessage(e, '*');
+    },
     wwdosUnder: function (u) { under = u; },   // the under-glyph list, sent with every draw of a desktop with marks
     wwdosCols: function () { return cols; },
     wwdosRows: function () { return rows; },
@@ -1113,6 +1121,8 @@
       var text = typeof log === 'string' ? log : (log || []).map(function (e) { return e.tick + ' ' + e.pos + ' ' + e.line; }).join('\n');
       if (M.ccall) { M.ccall('wwdos_stage_log_load', null, ['string'], [text]); wake(); }
     },
+    // events(SINCE): the events out with seq above SINCE (default all kept), oldest first
+    events: function (since) { since = +since || 0; return (window.wwdosEvents || []).filter(function (e) { return e.seq > since; }); },
     get scale() { return devScale; }
   };
   // A page that holds this film in an iframe may be another origin (every file:// page is), so it cannot call

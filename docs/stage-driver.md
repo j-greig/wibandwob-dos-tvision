@@ -126,5 +126,8 @@ Nothing is generated from it yet: the dispatch in `Stage::run` and `COMMANDS` ar
   logged lines back among the script's; with recording on (`record(true)`) the log outlives seeks and loops. The
   host exports `wwdos_stage_log`, `wwdos_stage_record`, `wwdos_stage_log_clear`, `wwdos_stage_log_load` (applied at idle)
   and `wwdos_stage_clock`.
+- Events out (on-chain `docs/stage.md` § Events): `TMinApp::getEvent` sees every event before the views; a click,
+  drag (resolved at idle, after the views acted), key, submit and close on a named stage window go to the page through
+  `wwdos_js_event` (`Stage::nameAt`, `rectOf`, `frontName`, `takeClosed`). The terminal build writes them to `--trace`.
 - The core's native desktop build (`wwdos`) was not built here (it needs the macOS-era dependencies); the app edits
   were built in the browser desktop (`dist-web/wwdos*.html`, smoke test passes) and in the film targets.

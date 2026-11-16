@@ -384,6 +384,10 @@ EM_JS(double, wwdos_js_audio_time, (), { return Module.wwdosAudioTime ? Module.w
 EM_JS(void, wwdos_js_sections, (const char *json), { window.wwdosSections = JSON.parse(UTF8ToString(json)); });
 // Stage gate: 1 lets the clock run on (sound on already, no sounds, ?t= or ?autostart=1; web/shell-webgl.html).
 EM_JS(int, wwdos_js_gate_pass, (), { return Module.wwdosGatePass ? Module.wwdosGatePass() : 1; });
+// Events out (docs/stage.md § Events): a click, key, drag, close or submit on a named window, for the page to post.
+EM_JS(void, wwdos_js_event, (const char *kind, const char *name, int x, int y, const char *value, double t), {
+    if (Module.wwdosEvent) Module.wwdosEvent(UTF8ToString(kind), UTF8ToString(name), x, y, UTF8ToString(value), t);
+});
 // "xray on|off|toggle|inspect" from a live line: the page's x-ray view (web/shell-webgl.html, Module.wwdosXray).
 EM_JS(void, wwdos_js_xray, (const char *mode), { if (Module.wwdosXray) Module.wwdosXray(UTF8ToString(mode)); });
 #else
@@ -479,6 +483,13 @@ static void wwdos_js_trace(double t, const char *line, const char *warn)
 }
 static int wwdos_js_gate_pass() { return g_autostart; }
 static void wwdos_js_xray(const char*) {}   // the terminal build has no x-ray view (tools/stage.py xray reads the page)
+// Events out natively: one line each in the --trace file ("event KIND NAME X Y VALUE").
+static void wwdos_js_event(const char *kind, const char *name, int x, int y, const char *value, double t)
+{
+    if (!g_traceFile) return;
+    fprintf(g_traceFile, "%.3f\tevent %s %s %d %d %s\n", t, kind, *name ? name : "-", x, y, value);
+    fflush(g_traceFile);
+}
 static void wwdos_js_sections(const char*) {}
 static double wwdos_js_audio_time() { return -1; }
 #endif
@@ -821,11 +832,75 @@ public:
     }
 };
 
+// A key as an event's value: the character for a printable key, else its name (Enter, Esc, Up, F5, ...).
+static std::string keyName(const TEvent& e)
+{
+    ushort k = e.keyDown.keyCode;
+    switch (k) {
+        case kbEnter: return "Enter"; case kbEsc: return "Esc"; case kbTab: return "Tab"; case kbShiftTab: return "ShiftTab";
+        case kbBack: return "Backspace"; case kbUp: return "Up"; case kbDown: return "Down"; case kbLeft: return "Left";
+        case kbRight: return "Right"; case kbHome: return "Home"; case kbEnd: return "End"; case kbPgUp: return "PgUp";
+        case kbPgDn: return "PgDn"; case kbIns: return "Ins"; case kbDel: return "Del";
+        case kbF1: return "F1"; case kbF2: return "F2"; case kbF3: return "F3"; case kbF4: return "F4"; case kbF5: return "F5";
+        case kbF6: return "F6"; case kbF7: return "F7"; case kbF8: return "F8"; case kbF9: return "F9"; case kbF10: return "F10";
+        case kbF11: return "F11"; case kbF12: return "F12";
+    }
+    if (e.keyDown.textLength > 0) {
+        std::string t(e.keyDown.text, e.keyDown.textLength);
+        return t == " " ? "Space" : t;
+    }
+    char c = e.keyDown.charScan.charCode;
+    if (c >= 32 && c < 127) return c == ' ' ? "Space" : std::string(1, c);
+    char b[16]; snprintf(b, sizeof b, "0x%04x", k);
+    return b;
+}
+
 class TMinApp : public TApplication, public StageHost
 {
 public:
     TMinApp();
     void handleEvent(TEvent& event) override;
+    // Every event passes here before any view takes it, a window drag's own loop included, so the page hears a click,
+    // a key or a drag on a named window whoever handles it (docs/stage.md § Events).
+    void getEvent(TEvent& event) override
+    {
+        TApplication::getEvent(event);
+        if (g_stage) watchInput(event);
+    }
+    struct Press { bool on = false, due = false; std::string name; TPoint at {0, 0}, up {0, 0}; TRect was; };
+    // A press and its release, after the views have acted on them (a title-bar drag has moved its window, or not): a
+    // window that moved is a drag, at its new place; a release where the press was made is a click, in the window's
+    // own cells (desktop cells when on no window); a release elsewhere is a drag there.
+    void resolvePress()
+    {
+        press.due = false;
+        TRect now;
+        bool named = !press.name.empty() && stage.rectOf(press.name, now);
+        if (named && now != press.was) emit("drag", press.name, now.a.x, now.a.y, "");
+        else if (press.up == press.at) emit("click", press.name, named ? press.at.x - now.a.x : press.at.x, named ? press.at.y - now.a.y : press.at.y, "");
+        else emit("drag", named ? press.name : "", press.up.x, press.up.y, "");
+    }
+    Press press;
+    void emit(const char* kind, const std::string& name, int x, int y, const std::string& value)
+    {
+        wwdos_js_event(kind, name.c_str(), x, y, value.c_str(), stage.shownTime());
+    }
+    void watchInput(const TEvent& ev)
+    {
+        if (ev.what == evMouseDown && (ev.mouse.buttons & mbLeftButton) && !press.on) {
+            TPoint p = deskTop->makeLocal(ev.mouse.where);
+            if (p.x < 0 || p.y < 0 || p.x >= deskTop->size.x || p.y >= deskTop->size.y) return;
+            press.on = true; press.at = p; press.name = stage.nameAt(p);
+            if (!press.name.empty()) stage.rectOf(press.name, press.was);
+        } else if (ev.what == evMouseUp && press.on) {
+            press.on = false; press.due = true;          // resolved at the next idle call, once the views have acted
+            press.up = deskTop->makeLocal(ev.mouse.where);
+        } else if (ev.what == evKeyDown) {
+            std::string k = keyName(ev), name = stage.frontName();
+            emit("key", name, -1, -1, k);
+            if (k == "Enter") emit("submit", name, -1, -1, "");
+        }
+    }
     void idle() override
     {
         TApplication::idle();
@@ -835,6 +910,8 @@ public:
         serveTools();
         if (g_liveRedrawStatus) { g_liveRedrawStatus = false; if (statusLine) statusLine->drawView(); }
         if (g_logLoadDue) { g_logLoadDue = false; stage.loadLog(g_logLoad); g_logLoad.clear(); }
+        if (g_stage && press.due) resolvePress();
+        if (g_stage) for (auto& n : stage.takeClosed()) emit("close", n, -1, -1, "");
         if (g_liveQueue.empty()) return;
         std::vector<std::string> lines; lines.swap(g_liveQueue);
         for (auto& l : lines) g_liveErr = stage.runLive(l);

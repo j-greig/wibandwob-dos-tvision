@@ -736,7 +736,10 @@ TFrameAnimationWindow* Stage::win(const std::string& name)
 {
     auto it = wins.find(name);
     if (it == wins.end()) return nullptr;
-    if (host.stageDesk()->indexOf(it->second) == 0) { wins.erase(it); return nullptr; }  // closed by hand
+    if (host.stageDesk()->indexOf(it->second) == 0) {   // closed by hand (Alt+F3, the close icon)
+        if (!quiet) handClosed.push_back(it->first);
+        wins.erase(it); return nullptr;
+    }
     return it->second;
 }
 
@@ -1200,6 +1203,35 @@ std::string Stage::windowsJson()
         v = v->next;
     } while (v != d->first());
     return out + "]";
+}
+
+std::string Stage::nameAt(TPoint p)
+{
+    TDeskTop* d = host.stageDesk();
+    std::map<TView*, std::string> byView;
+    for (auto& kv : wins) if (win(kv.first)) byView[kv.second] = kv.first;
+    TView* v = d->first();
+    if (v) do {
+        auto it = byView.find(v);
+        if (it != byView.end() && (v->state & sfVisible) && v->getBounds().contains(p)) return it->second;
+        v = v->next;
+    } while (v != d->first());
+    return "";
+}
+
+bool Stage::rectOf(const std::string& name, TRect& r)
+{
+    TFrameAnimationWindow* w = win(name);
+    if (!w) return false;
+    r = w->getBounds();
+    return true;
+}
+
+std::string Stage::frontName()
+{
+    TView* cur = host.stageDesk()->current;
+    for (auto& kv : wins) if (kv.second == cur && win(kv.first)) return kv.first;
+    return "";
 }
 
 // The x-ray map (stage.h objectsJson). Rects are desktop cells; "desk" places the desktop on the screen.
