@@ -49,7 +49,9 @@ target_compile_options(wwdos PRIVATE -Wno-deprecated-declarations -fexceptions)
 target_link_libraries(wwdos PRIVATE tvision)
 # The primer library is embedded in the wasm data segment, so the page needs no fetch.
 target_link_options(wwdos PRIVATE ${WWDOS_WEB_LINK_FLAGS} -fexceptions
-    "SHELL:--embed-file ${APP}/../modules/wibwob-2026/primers@/modules/wibwob-2026/primers"
-    # the TR-808's recordings (13 short WAVs), mixed by the sound stream through WebAudio
-    "SHELL:--embed-file ${APP}/../modules/tr808/samples@/modules/tr808/samples")
+    "SHELL:--embed-file ${APP}/../modules/wibwob-2026/primers@/modules/wibwob-2026/primers")
+# the TR-808's recordings (13 short WAVs), mixed by the sound stream through WebAudio; a PDF plays no sound
+if(NOT WWDOS_PDF)
+    target_link_options(wwdos PRIVATE "SHELL:--embed-file ${APP}/../modules/tr808/samples@/modules/tr808/samples")
+endif()
 set_target_properties(wwdos PROPERTIES SUFFIX ".js" RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})

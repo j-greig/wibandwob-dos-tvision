@@ -50,6 +50,8 @@ The desktop (`wwdos`) cannot play a stage; only `film` links the driver. The fil
 
 The native build (top-level `CMakeLists.txt`) does not read `kernel/` and is unchanged.
 
+The same app also runs inside a PDF (asm.js, `kernel/build-pdf.sh`): see `docs/pdf-port.md`.
+
 The desktop page plays the machine's sound through WebAudio from the first key or click (`docs/machine-sound.md`
 § In the browser). `app/web/CMakeLists.txt` keeps the wwdos target's source list; a source file added to
 `app/CMakeLists.txt` goes there too, or the page stops linking.
