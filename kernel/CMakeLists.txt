@@ -35,6 +35,28 @@ set(WWDOS_WEB_LINK_FLAGS
     -sSINGLE_FILE=$<BOOL:${WWDOS_SINGLE_FILE}>
     -Os)
 
+# The PDF build (kernel/build-pdf.sh): the same app as plain JavaScript (asm.js through wasm2js), because a
+# PDF viewer's script engine has no WebAssembly. ENVIRONMENT=shell keeps the output free of DOM and
+# fetch code; kernel/pages/pdf-host.js supplies setTimeout, performance and the screen. See docs/pdf-port.md.
+option(WWDOS_PDF "Link every page as asm.js for the PDF host instead of WebAssembly" OFF)
+if(WWDOS_PDF)
+    set(WWDOS_WEB_LINK_FLAGS
+        -sWASM=0
+        -sASYNCIFY=1
+        -sASYNCIFY_STACK_SIZE=262144
+        -sSTACK_SIZE=1048576
+        -sALLOW_MEMORY_GROWTH=1
+        -sINITIAL_MEMORY=33554432
+        -sMODULARIZE=1
+        -sEXPORT_NAME=WWDOS
+        -sENVIRONMENT=shell
+        -sEXIT_RUNTIME=0
+        -sINVOKE_RUN=1
+        -sEXPORTED_RUNTIME_METHODS=ENV
+        -Wno-deprecated
+        -Os)
+endif()
+
 # Turbo Vision's own hello demo: the smallest page that proves the platform layer.
 add_executable(hello ${WWDOS_TV}/hello.cpp)
 target_link_libraries(hello PRIVATE tvision)
