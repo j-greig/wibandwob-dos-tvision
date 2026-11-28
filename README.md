@@ -13,12 +13,14 @@ WibWob-DOS is a text-native dual operating system built on [Turbo Vision](https:
 
 *The desktop in a Chrome tab, on a Linux kernel compiled to WebAssembly. See [Run in a browser tab](#run-in-a-browser-tab).*
 
-![WibWob-DOS — multiple ASCII art windows, primers, animations and generative patterns running concurrently](screenshots/wibwobdos-UI-collage.png)
+<!-- Earlier screenshots, hidden:
+![WibWob-DOS: multiple ASCII art windows, primers, animations and generative patterns running concurrently](screenshots/wibwobdos-UI-collage.png)
 
 <table><tr>
 <td><img src="screenshots/wibwobdos-UI-bg-color-changer.png" alt="Background colour themes"></td>
 <td><img src="screenshots/wibwobdos-UI-grimoire-monsters.jpg" alt="Monster grimoire gallery"></td>
 </tr></table>
+-->
 
 ---
 
