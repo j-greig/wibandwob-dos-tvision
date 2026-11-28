@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WibWob-DOS</title>
+<link rel="stylesheet" href="/xterm/css/xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #screen { position: fixed; inset: 0; }
+  #note {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #aaa; font: 14px/1.5 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap;
+    text-align: center; padding: 16px; pointer-events: none;
+  }
+  #note[hidden] { display: none; }
+  #note button { pointer-events: auto; font: inherit; margin-top: 12px; padding: 4px 14px; }
+</style>
+</head>
+<body>
+<div id="screen"></div>
+<div id="note">WIBWOB-DOS</div>
+<script src="/xterm/lib/xterm.js"></script>
+<script src="/xterm-fit/lib/addon-fit.js"></script>
+<script type="module" src="/main.js"></script>
+</body>
+</html>

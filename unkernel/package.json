@@ -1,0 +1,17 @@
+{
+  "name": "wibwob-dos-unkernel",
+  "private": true,
+  "description": "WibWob-DOS as the user space of a Linux kernel compiled to WebAssembly (unkernel)",
+  "type": "module",
+  "scripts": {
+    "build": "./build.sh",
+    "boot": "unkernel --initrd ../build-unkernel/wwdos.cpio.gz --no-net --mem 256",
+    "serve": "node serve.mjs"
+  },
+  "engines": { "node": ">=24" },
+  "dependencies": {
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
+    "unkernel": "0.2.0-261127-3b71fa5"
+  }
+}
