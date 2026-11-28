@@ -14,8 +14,6 @@ WibWob-DOS is a text-native dual operating system built on [Turbo Vision](https:
 *The desktop in a Chrome tab, on a Linux kernel compiled to WebAssembly. See [Run in a browser tab](#run-in-a-browser-tab).*
 
 <!-- Earlier screenshots, hidden:
-![WibWob-DOS: multiple ASCII art windows, primers, animations and generative patterns running concurrently](screenshots/wibwobdos-UI-collage.png)
-
 <table><tr>
 <td><img src="screenshots/wibwobdos-UI-bg-color-changer.png" alt="Background colour themes"></td>
 <td><img src="screenshots/wibwobdos-UI-grimoire-monsters.jpg" alt="Monster grimoire gallery"></td>
@@ -175,3 +173,5 @@ the Emscripten runtime and the Unifont glyphs stay under their own terms: see TH
 ---
 
 *This is the TVision/C++ build. A sibling repo, [j-greig/wibandwob-dos](https://github.com/j-greig/wibandwob-dos), takes the same idea into TypeScript/Bun.*
+
+![WibWob-DOS: multiple ASCII art windows, primers, animations and generative patterns running concurrently](screenshots/wibwobdos-UI-collage.png)
