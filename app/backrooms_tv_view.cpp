@@ -23,8 +23,10 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <dirent.h>
-#ifndef __EMSCRIPTEN__
+#if defined(__APPLE__)
 #include <util.h>       // forkpty() on macOS
+#elif !defined(__EMSCRIPTEN__)
+#include <pty.h>        // forkpty() on Linux
 #endif
 #include <map>
 #include <set>

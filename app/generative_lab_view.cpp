@@ -5,8 +5,18 @@
 #ifdef __EMSCRIPTEN__
 #include <cstdint>
 static int _NSGetExecutablePath(char *, uint32_t *) { return -1; } // no executable path in the browser
-#else
+#elif defined(__APPLE__)
 #include <mach-o/dyld.h>
+#else
+#include <cstdint>
+#include <unistd.h>
+// Linux: the executable's path is the target of /proc/self/exe.
+static int _NSGetExecutablePath(char *buf, uint32_t *size) {
+    ssize_t n = readlink("/proc/self/exe", buf, *size - 1);
+    if (n <= 0) return -1;
+    buf[n] = '\0';
+    return 0;
+}
 #endif
 #include <ctime>
 #include <unistd.h>
