@@ -4,7 +4,8 @@
 # Boot it with: npx unkernel --initrd build-unkernel/wwdos.cpio.gz --no-net
 #
 # Needs (Debian/Ubuntu, with the arm64 architecture added to apt):
-#   g++-aarch64-linux-gnu libncurses-dev:arm64 libssl-dev:arm64 libgpm-dev:arm64 cmake ninja-build cpio
+#   g++-aarch64-linux-gnu libncurses-dev:arm64 libssl-dev:arm64 libgpm-dev:arm64 zlib1g-dev:arm64 cmake ninja-build cpio
+#   make wget xz-utils ca-certificates
 # and a static arm64 busybox: BUSYBOX=<file>, else `apt-get download busybox-static:arm64`.
 set -euo pipefail
 
@@ -24,7 +25,7 @@ cmake --build "$out/cmake" --target wwdos
 # 2. The root file system.
 root=$out/root
 rm -rf "$root"
-mkdir -p "$root"/{bin,dev,proc,sys,tmp,run,root,wwdos/tools,wwdos/app/llm,usr/share/terminfo}
+mkdir -p "$root"/{bin,dev,etc,proc,sys,tmp,run,root,wwdos/tools,wwdos/app/llm,usr/share/terminfo}
 
 aarch64-linux-gnu-gcc -static -Os -Wall -o "$root/init" "$here/init.c"
 aarch64-linux-gnu-strip "$root/init"
@@ -36,6 +37,9 @@ for d in modules scores tracks casts paintings residents rooms workspaces; do
 done
 cp "$repo/tools/term_exec.sh" "$root/wwdos/tools/"
 cp -a "$repo/app/llm/config" "$root/wwdos/app/llm/config"
+# The machine has no claude CLI or Node: chat goes straight to the API with the key the page hands over.
+sed -i -e 's/"activeProvider": "claude_code_sdk"/"activeProvider": "anthropic_api"/' \
+    -e '/"anthropic_api"/,/}/ s/"enabled": false/"enabled": true/' "$root/wwdos/app/llm/config/llm_config.json"
 
 # The terminal descriptions ncurses looks up.
 ti=$(dirname "$(dirname "$(find /usr/share/terminfo /lib/terminfo -name xterm-256color 2>/dev/null | head -1)")")
@@ -60,9 +64,19 @@ fi
 cp "$busybox" "$root/bin/busybox"
 for a in sh ash ls cat cp mv rm mkdir rmdir ln echo printf ps top kill sleep date uname free df du \
          mount umount grep sed awk head tail wc sort uniq find vi less more clear reset stty tty env \
-         id hostname dmesg poweroff reboot sync touch chmod tar gzip gunzip hexdump seq tr cut tee test true false; do
+         id hostname dmesg poweroff reboot sync touch chmod tar gzip gunzip hexdump seq tr cut tee test true false \
+         ifconfig route ip udhcpc ping nslookup wget nc telnet; do
     ln -sf busybox "$root/bin/$a"
 done
+
+# The network: /init runs udhcpc with this script when the machine has an eth0.
+install -m 755 "$here/udhcpc.script" "$root/etc/udhcpc.script"
+
+# curl with the certificate authorities: the desktop runs it for its model calls.
+"$here/build-curl.sh" "$out/curl"
+cp "$out/curl/curl" "$root/bin/curl"
+mkdir -p "$root/etc/ssl/certs"
+cp -L /etc/ssl/certs/ca-certificates.crt "$root/etc/ssl/certs/"
 
 # 3. One archive: the initramfs the kernel unpacks and runs /init from.
 (cd "$root" && find . | LC_ALL=C sort | cpio --quiet -o -H newc --owner=0:0 | gzip -9n) > "$out/wwdos.cpio.gz"
