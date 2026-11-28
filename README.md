@@ -9,6 +9,10 @@ WibWob-DOS is a text-native dual operating system built on [Turbo Vision](https:
 つ⚆‿◕‿◕༽つ  Wob  — the scientist. Methodical analysis, precise systems, structured control.
 ```
 
+![WibWob-DOS running in a browser tab on a Linux kernel compiled to WebAssembly: thirteen windows of ASCII beings, among them a donkey with antlers, a jellyfish, a void creature, Wib, Wob, a cat and a castle tower](screenshots/wibwobdos-unkernel-beings.png)
+
+*The desktop in a Chrome tab, on a Linux kernel compiled to WebAssembly. See [Run in a browser tab](#run-in-a-browser-tab).*
+
 ![WibWob-DOS — multiple ASCII art windows, primers, animations and generative patterns running concurrently](screenshots/wibwobdos-UI-collage.png)
 
 <table><tr>
@@ -45,6 +49,20 @@ brew install cmake chafa
 # Linux (Debian/Ubuntu)
 sudo apt install cmake libncursesw5-dev chafa
 ```
+
+## Run in a browser tab
+
+`unkernel/` boots WibWob-DOS as the whole user space of a Linux kernel compiled to WebAssembly
+([unkernel](https://github.com/pithings/unkernel)). The desktop is the unmodified static arm64 Linux build.
+One 12.5 MB image holds `/init`, the desktop, busybox and curl.
+
+```bash
+unkernel/build-docker.sh          # macOS (Docker); on arm64 Debian/Ubuntu run unkernel/build.sh
+cd unkernel && npm install && npm run serve    # http://localhost:8137
+```
+
+The machine has a network (DHCP, DNS, HTTPS), takes an Anthropic API key from the page, and answers desktop
+commands from the host. Sound and a persistent disk are not built. Details: [unkernel/README.md](unkernel/README.md).
 
 ## Python API Server
 

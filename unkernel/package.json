@@ -8,8 +8,11 @@
     "boot": "unkernel --initrd ../build-unkernel/wwdos.cpio.gz --no-net --mem 256",
     "serve": "node serve.mjs"
   },
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "dependencies": {
+    "@mercuryworkshop/wisp-js": "0.5.3",
     "@xterm/addon-fit": "0.10.0",
     "@xterm/xterm": "5.5.0",
     "unkernel": "0.2.0-261127-3b71fa5"

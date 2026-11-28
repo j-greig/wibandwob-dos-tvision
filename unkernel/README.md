@@ -18,12 +18,16 @@ On Debian or Ubuntu (x86-64), with the arm64 architecture added to apt:
 
 ```sh
 sudo apt-get install g++-aarch64-linux-gnu libncurses-dev:arm64 libssl-dev:arm64 libgpm-dev:arm64 \
-    cmake ninja-build cpio
-unkernel/build.sh                       # build-unkernel/wwdos.cpio.gz (about 10 MB)
+    zlib1g-dev:arm64 \
+    cmake ninja-build cpio make wget xz-utils
+unkernel/build.sh                       # build-unkernel/wwdos.cpio.gz (about 12.5 MB)
 cd unkernel && npm install              # the kernel and SDK, xterm.js; needs Node 24+
 npm run boot                            # in this terminal; Ctrl-] quits
 npm run serve                           # in Chrome 137+: http://localhost:8137
 ```
+
+On macOS, with Docker running: `unkernel/build-docker.sh` runs the same build in an Ubuntu 24.04 container
+(about 2 minutes), then `npm install` and `npm run serve` as above.
 
 Page parameters: `?shell=1` boots to a shell on the console, `?mem=512` sets guest memory in MiB,
 `?font=13` the font size.
@@ -32,11 +36,15 @@ Page parameters: `?shell=1` boots to a shell on the console, `?mem=512` sets gue
 
 | File | What |
 | --- | --- |
-| `init.c` | PID 1: mounts `/dev`, `/proc`, `/sys`, `/tmp`, `/dev/pts`; runs `/wwdos/wwdos` on `/dev/hvc0`; powers off when it exits |
+| `init.c` | PID 1: mounts `/dev`, `/proc`, `/sys`, `/tmp`, `/dev/pts`; starts the network and the control bridge; runs `/wwdos/wwdos` on `/dev/hvc0`; powers off when it exits |
 | `build.sh` | cross-builds `wwdos` (static, aarch64), stages the root, packs the initramfs |
+| `build-docker.sh` | runs `build.sh` in an Ubuntu 24.04 container (macOS hosts) |
 | `aarch64-linux.cmake` | the CMake toolchain file for that build |
 | `web/` | the page: xterm.js as the screen, the SDK's `createKernel({ initrd })` |
-| `serve.mjs` | a static server for the page (sets the cross-origin isolation headers) |
+| `build-curl.sh` | builds the static `curl` for the image |
+| `udhcpc.script` | sets the address, route and DNS from the DHCP lease |
+| `layouts/` | saved window layouts as command lines |
+| `serve.mjs` | a static server for the page (sets the cross-origin isolation headers), the Wisp proxy, the `/ctl` relay |
 
 ## State (2026-11-28)
 
@@ -50,12 +58,39 @@ Not done:
 - Sound. The mixer's output is an AudioQueue (macOS); the image runs it with `WWDOS_SOUND_OUT=null`.
   unkernel offers an ALSA card played through Web Audio, so an ALSA output in `app/sound/stream.cpp`
   and `sound:` in `web/main.js` would connect it.
-- Network. The page passes no `net`, and `/init` runs no DHCP client. Model calls from the guest need
-  a Wisp proxy of your own (`wispBackend()`); the public one accepts only known origins.
 - Persistence. `/root/.wwdos` is in memory: every boot is a first waking. A data disk (`openDataDisk()`)
   mounted at `/root` would keep the self in the browser.
-- The API server, the chat bridge (Node) and `open_terminal exec=` (its wrapper needs perl) are not in
-  the image.
+- Chat tool calls. With an API key the chat window answers, but a reply that calls a desktop tool stops at
+  the printed `<tool_call>`.
+- The API server and `open_terminal exec=` (its wrapper needs perl) are not in the image.
 - Only this path was tried: Chromium, one CPU, kernel on the page's thread.
 
 The kernel in the npm package is GPL-2.0; the SDK is MIT.
+
+## Network
+
+`serve.mjs` runs a Wisp proxy at `/wisp/` and the page passes it to the kernel as `net`. The proxy accepts
+WebSocket upgrades only from this server's own origin. `/init` runs `udhcpc` on `eth0` (`udhcpc.script` sets the
+address, route and `/etc/resolv.conf`); `/tmp/net.log` has the result. Page parameters: `?net=0` boots without a
+network, `?wisp=wss://host/` names another Wisp server.
+
+Use `curl` for HTTPS (static, OpenSSL, CA bundle at `/etc/ssl/certs/ca-certificates.crt`; `build-curl.sh`).
+busybox `wget` works for HTTP only: its TLS fails in the guest with `bad MAC`.
+
+## API key
+
+The page asks once for an Anthropic API key, keeps it in the browser's local storage and hands it to `/init`
+over vsock port 7138 at boot; `/init` sets `ANTHROPIC_API_KEY` for the desktop (status line `LLM KEY`).
+`?key=1` asks again, `?key=0` boots without a key.
+
+## Control from the host
+
+`/init` listens on vsock port 7137 and forwards one command line per connection to `/tmp/wwdos.sock`.
+
+- In the page: `await wwdos("cmd:get_state")`.
+- From a shell, through the latest open page: `curl -s -X POST --data-binary 'cmd:get_state' http://127.0.0.1:8137/ctl`.
+  JSON bodies: `{"keys":"\r"}` types on the console, `{"screen":true}` returns the terminal text.
+- `layouts/NAME.ctl` holds one command per line; post each `cmd:` line to `/ctl` to rebuild a layout.
+
+The server binds 127.0.0.1; set `HOST` to change it. The guest's files live in RAM: copy a saved workspace out
+before reloading the page.
